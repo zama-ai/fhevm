@@ -3,16 +3,17 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
-import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 
 import {HCULimit} from "../../contracts/HCULimit.sol";
+import {HCUConfigurator} from "../../contracts/HCUConfigurator.sol";
 import {ACL} from "../../contracts/ACL.sol";
-import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
-import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, hcuConfiguratorAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract HCULimitInvariantHandler is Test {
     HCULimit internal immutable hcuLimit;
+    HCUConfigurator internal immutable hcuConfigurator;
     address internal immutable owner;
     address internal immutable fhevmExecutor;
 
@@ -37,18 +38,19 @@ contract HCULimitInvariantHandler is Test {
     bool public tierViolation;
     bool public capacityViolation;
 
-    constructor(HCULimit _hcuLimit, address _owner) {
+    constructor(HCULimit _hcuLimit, HCUConfigurator _hcuConfigurator, address _owner) {
         hcuLimit = _hcuLimit;
+        hcuConfigurator = _hcuConfigurator;
         owner = _owner;
         fhevmExecutor = _hcuLimit.getFHEVMExecutorAddress();
 
         vm.startPrank(owner);
-        hcuLimit.setQuota(UNCAPPED_QUOTA, type(uint48).max, type(uint48).max);
-        hcuLimit.assignQuota(UNCAPPED_QUOTA, UNCAPPED_CALLER);
-        hcuLimit.setTier(1, 5_000);
-        hcuLimit.setQuotaTier(UNCAPPED_QUOTA, 1);
-        hcuLimit.setQuota(PARTNER_QUOTA, 1_000_000, 1_000_000);
-        hcuLimit.setQuotaAdmin(PARTNER_QUOTA, PARTNER_ADMIN);
+        hcuConfigurator.setQuota(UNCAPPED_QUOTA, type(uint48).max, type(uint48).max);
+        hcuConfigurator.assignQuota(UNCAPPED_QUOTA, UNCAPPED_CALLER);
+        hcuConfigurator.setTier(1, 5_000);
+        hcuConfigurator.setQuotaTier(UNCAPPED_QUOTA, 1);
+        hcuConfigurator.setQuota(PARTNER_QUOTA, 1_000_000, 1_000_000);
+        hcuConfigurator.setQuotaAdmin(PARTNER_QUOTA, PARTNER_ADMIN);
         vm.stopPrank();
     }
 
@@ -56,8 +58,8 @@ contract HCULimitInvariantHandler is Test {
         uint16[3] memory quotaIds = [DEFAULT_QUOTA, UNCAPPED_QUOTA, PARTNER_QUOTA];
         uint16 quotaId = quotaIds[bound(uint256(rawQuota), 0, 2)];
         vm.prank(owner);
-        if (paused) hcuLimit.pauseQuota(quotaId);
-        else hcuLimit.unpauseQuota(quotaId);
+        if (paused) hcuConfigurator.pauseQuota(quotaId);
+        else hcuConfigurator.unpauseQuota(quotaId);
     }
 
     /// @dev The admin may only move a contract from the default quota into its quota or back, never while it is paused.
@@ -68,9 +70,9 @@ contract HCULimitInvariantHandler is Test {
         (uint48 defaultMax, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
         vm.prank(PARTNER_ADMIN);
         if (grant) {
-            try hcuLimit.grantQuota(PARTNER_QUOTA, caller) {} catch {}
+            try hcuConfigurator.grantQuota(PARTNER_QUOTA, caller) {} catch {}
         } else {
-            try hcuLimit.revokeQuota(PARTNER_QUOTA, caller) {} catch {}
+            try hcuConfigurator.revokeQuota(PARTNER_QUOTA, caller) {} catch {}
         }
         uint16 afterMove = hcuLimit.getContractQuota(caller);
         if (afterMove == before) return;
@@ -86,23 +88,23 @@ contract HCULimitInvariantHandler is Test {
         if (maxHCU == 0) decayPerBlock = 0;
         else if (decayPerBlock == 0) decayPerBlock = 1;
         vm.prank(owner);
-        hcuLimit.setQuota(DEFAULT_QUOTA, maxHCU, decayPerBlock);
+        hcuConfigurator.setQuota(DEFAULT_QUOTA, maxHCU, decayPerBlock);
     }
 
     /// @dev A fuzzed maximum of 0 leaves the capacity unmetered; otherwise it drains a quarter of its maximum per block,
     ///      so a burst can pass a threshold. Tier 1 holds the uncapped quota.
     function setCapacityAndTier(uint48 maxHCU, uint16 tierBps) external {
         vm.startPrank(owner);
-        if (maxHCU == 0) hcuLimit.setCapacity(NO_CAP, NO_CAP);
-        else hcuLimit.setCapacity(maxHCU, maxHCU / 4 + 1);
-        hcuLimit.setTier(1, uint16(bound(uint256(tierBps), 0, MAX_BPS)));
+        if (maxHCU == 0) hcuConfigurator.setCapacity(NO_CAP, NO_CAP);
+        else hcuConfigurator.setCapacity(maxHCU, maxHCU / 4 + 1);
+        hcuConfigurator.setTier(1, uint16(bound(uint256(tierBps), 0, MAX_BPS)));
         vm.stopPrank();
     }
 
     function assignCaller(address caller, bool uncapped) external {
         caller = _sanitizeCaller(caller);
         vm.prank(owner);
-        hcuLimit.assignQuota(uncapped ? UNCAPPED_QUOTA : DEFAULT_QUOTA, caller);
+        hcuConfigurator.assignQuota(uncapped ? UNCAPPED_QUOTA : DEFAULT_QUOTA, caller);
     }
 
     function mine(uint8 rawBlocks) external {
@@ -219,7 +221,7 @@ contract HCULimitInvariantHandler is Test {
     }
 }
 
-contract HCULimitInvariantTest is StdInvariant, Test {
+contract HCULimitInvariantTest is StdInvariant, HostContractsDeployerTestUtils {
     HCULimit internal hcuLimit;
     HCULimitInvariantHandler internal handler;
 
@@ -237,22 +239,10 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         // This harness intentionally validates accounting invariants only, not cap-exhaustion behavior.
         _deployAndEtchACL();
 
-        address proxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
-
-        address implementation = address(new HCULimit());
-        vm.startPrank(owner);
-        UnsafeUpgrades.upgradeProxy(
-            proxy,
-            implementation,
-            abi.encodeCall(HCULimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
-        );
-        vm.stopPrank();
-
-        hcuLimit = HCULimit(proxy);
-        handler = new HCULimitInvariantHandler(hcuLimit, owner);
+        _deployHCULimit(owner);
+        hcuLimit = HCULimit(hcuLimitAdd);
+        _deployHCUConfigurator(owner);
+        handler = new HCULimitInvariantHandler(hcuLimit, HCUConfigurator(hcuConfiguratorAdd), owner);
 
         targetContract(address(handler));
 

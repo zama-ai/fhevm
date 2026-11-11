@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {HCULimit} from "../../contracts/HCULimit.sol";
 import {HCULimitOperators} from "../../contracts/HCULimitOperators.sol";
+import {HCUConfigurator} from "../../contracts/HCUConfigurator.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {SupportedTypesConstants} from "../fhevmExecutor/fhevmExecutor.t.sol";
 import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
 import {IPauserSet} from "../../contracts/interfaces/IPauserSet.sol";
-import {aclAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, hcuConfiguratorAdd, hcuLimitAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract MockHCULimit is HCULimit {
     function getHCUForTransaction() external view returns (uint256) {
@@ -56,8 +57,9 @@ contract MockHCULimit is HCULimit {
     }
 }
 
-contract HCULimitTest is Test, SupportedTypesConstants {
+contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants {
     MockHCULimit internal hcuLimit;
+    HCUConfigurator internal hcuConfigurator;
 
     address internal constant owner = address(456);
 
@@ -100,20 +102,21 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      */
     function setUp() public {
         _deployAndEtchACL();
-        /// @dev It uses UnsafeUpgrades for measuring code coverage.
-        proxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
+        // HCUConfigurator writes to hcuLimitAdd, and HCULimit accepts settings from hcuConfiguratorAdd only.
+        proxy = hcuLimitAdd;
+        _deployEmptyProxyAt(proxy);
 
         implementation = address(new MockHCULimit());
         vm.startPrank(owner);
+        /// @dev It uses UnsafeUpgrades for measuring code coverage.
         UnsafeUpgrades.upgradeProxy(
             proxy,
             implementation,
             abi.encodeCall(hcuLimit.initializeFromEmptyProxy, (type(uint48).max, 5_000_000, 20_000_000))
         );
         vm.stopPrank();
+        _deployHCUConfigurator(owner);
+        hcuConfigurator = HCUConfigurator(hcuConfiguratorAdd);
         hcuLimit = MockHCULimit(proxy);
         fhevmExecutor = hcuLimit.getFHEVMExecutorAddress();
     }
@@ -140,6 +143,36 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     function test_PostProxyUpgradeCheck() public view {
         assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.6.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
+        assertEq(hcuLimit.getHCUConfiguratorAddress(), hcuConfiguratorAdd);
+        assertEq(hcuConfigurator.getVersion(), "HCUConfigurator v0.1.0");
+    }
+
+    function test_ownerCannotChangeTheSettingsWithoutHCUConfigurator() public {
+        _expectOnlyHCUConfiguratorChangesTheSettings(owner);
+    }
+
+    function test_onlyHCUConfiguratorChangesTheSettings(address caller) public {
+        vm.assume(caller != hcuConfiguratorAdd);
+        _expectOnlyHCUConfiguratorChangesTheSettings(caller);
+    }
+
+    function _expectOnlyHCUConfiguratorChangesTheSettings(address caller) internal {
+        bytes[8] memory calls = [
+            abi.encodeCall(HCULimit.setQuota, (3, 1, 1)),
+            abi.encodeCall(HCULimit.assignQuota, (3, address(0xBEEF))),
+            abi.encodeCall(HCULimit.setQuotaPaused, (3, true)),
+            abi.encodeCall(HCULimit.setQuotaTier, (3, 1)),
+            abi.encodeCall(HCULimit.setTier, (1, 5_000)),
+            abi.encodeCall(HCULimit.setCapacity, (1, 1)),
+            abi.encodeCall(HCULimit.setTxLimits, (1, 1)),
+            abi.encodeCall(HCULimit.setCrossTxDepthLimit, (1, 1))
+        ];
+        for (uint256 i = 0; i < calls.length; i++) {
+            vm.prank(caller);
+            (bool ok, bytes memory returned) = address(hcuLimit).call(calls[i]);
+            assertFalse(ok);
+            assertEq(returned, abi.encodeWithSelector(HCULimit.CallerMustBeHCUConfigurator.selector));
+        }
     }
 
     function test_setHCUForHandleRevertsForZeroHandle() public {
@@ -1262,13 +1295,13 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
     function test_setQuotaRefusesOnlyOneOfMaximumAndDecayAtZero() public {
         vm.startPrank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, uint16(5)));
-        hcuLimit.setQuota(5, 100_000, 0);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, uint16(5)));
-        hcuLimit.setQuota(5, type(uint48).max, 0);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, uint16(5)));
-        hcuLimit.setQuota(5, 0, 100_000);
-        hcuLimit.setQuota(5, 0, 0);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidQuota.selector, uint16(5)));
+        hcuConfigurator.setQuota(5, 100_000, 0);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidQuota.selector, uint16(5)));
+        hcuConfigurator.setQuota(5, type(uint48).max, 0);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidQuota.selector, uint16(5)));
+        hcuConfigurator.setQuota(5, 0, 100_000);
+        hcuConfigurator.setQuota(5, 0, 0);
         vm.stopPrank();
     }
 
@@ -1295,8 +1328,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
     function test_setMaxHCUDepthPerTxRevertsIfAboveMaxPerTx() public {
         vm.prank(owner);
-        vm.expectRevert(HCULimit.MaxHCUPerTxBelowDepth.selector);
-        hcuLimit.setMaxHCUDepthPerTx(20_000_001);
+        vm.expectRevert(HCUConfigurator.MaxHCUPerTxBelowDepth.selector);
+        hcuConfigurator.setMaxHCUDepthPerTx(20_000_001);
     }
 
     function test_unmeteredDefaultQuotaRecordsNoUsage() public {
@@ -1413,10 +1446,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _assign(3, account);
         _pause(_mockPauser(address(0x9A)), 3);
 
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.QuotaPauseSet(3, false, owner);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.QuotaPauseSet(3, false, owner);
         vm.prank(owner);
-        hcuLimit.unpauseQuota(3);
+        hcuConfigurator.unpauseQuota(3);
 
         assertFalse(hcuLimit.isQuotaPaused(3));
         _add(account, 0x1001);
@@ -1427,7 +1460,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _pause(pauser, 3);
         vm.prank(pauser);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
-        hcuLimit.unpauseQuota(3);
+        hcuConfigurator.unpauseQuota(3);
     }
 
     function test_ownerMovesAContractOutOfAPausedQuota() public {
@@ -1460,31 +1493,31 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _stopDefaultQuota();
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, uint16(7)));
-        hcuLimit.assignQuota(7, address(0xBEEF));
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidQuota.selector, uint16(7)));
+        hcuConfigurator.assignQuota(7, address(0xBEEF));
         _assign(DEFAULT_QUOTA, address(0xBEEF));
     }
 
     function test_setQuotaAdminRefusesTheDefaultQuota() public {
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, DEFAULT_QUOTA));
-        hcuLimit.setQuotaAdmin(DEFAULT_QUOTA, PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidQuota.selector, DEFAULT_QUOTA));
+        hcuConfigurator.setQuotaAdmin(DEFAULT_QUOTA, PARTNER_ADMIN);
     }
 
     function test_quotaAdminGrantsAndRevokesContractsOfItsQuota() public {
         address auction = address(0xA1);
         _setUpPartner();
 
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.ContractQuotaAssigned(PARTNER_QUOTA, auction, PARTNER_ADMIN);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.ContractQuotaAssigned(PARTNER_QUOTA, auction, PARTNER_ADMIN);
         _grant(auction);
         assertEq(hcuLimit.getContractQuota(auction), PARTNER_QUOTA);
         _add(auction, 0x1001);
 
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.ContractQuotaAssigned(DEFAULT_QUOTA, auction, PARTNER_ADMIN);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.ContractQuotaAssigned(DEFAULT_QUOTA, auction, PARTNER_ADMIN);
         vm.prank(PARTNER_ADMIN);
-        hcuLimit.revokeQuota(PARTNER_QUOTA, auction);
+        hcuConfigurator.revokeQuota(PARTNER_QUOTA, auction);
         vm.prank(fhevmExecutor);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaStopped.selector, auction, DEFAULT_QUOTA));
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1002)), auction);
@@ -1496,7 +1529,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _assign(PARTNER_QUOTA, wrapper);
 
         vm.prank(PARTNER_ADMIN);
-        hcuLimit.revokeQuota(PARTNER_QUOTA, wrapper);
+        hcuConfigurator.revokeQuota(PARTNER_QUOTA, wrapper);
         assertEq(hcuLimit.getContractQuota(wrapper), DEFAULT_QUOTA);
     }
 
@@ -1506,8 +1539,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _setAdmin(PARTNER_QUOTA, PARTNER_ADMIN);
 
         vm.prank(PARTNER_ADMIN);
-        vm.expectRevert(HCULimit.DefaultQuotaNotStopped.selector);
-        hcuLimit.grantQuota(PARTNER_QUOTA, address(0xA1));
+        vm.expectRevert(HCUConfigurator.DefaultQuotaNotStopped.selector);
+        hcuConfigurator.grantQuota(PARTNER_QUOTA, address(0xA1));
     }
 
     function test_grantQuotaOnlyTakesContractsFromTheDefaultQuota() public {
@@ -1517,8 +1550,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _assign(5, other);
 
         vm.prank(PARTNER_ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.ContractNotInQuota.selector, other, DEFAULT_QUOTA));
-        hcuLimit.grantQuota(PARTNER_QUOTA, other);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.ContractNotInQuota.selector, other, DEFAULT_QUOTA));
+        hcuConfigurator.grantQuota(PARTNER_QUOTA, other);
     }
 
     function test_revokeQuotaOnlyReleasesContractsOfItsQuota() public {
@@ -1528,8 +1561,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _assign(5, other);
 
         vm.prank(PARTNER_ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.ContractNotInQuota.selector, other, PARTNER_QUOTA));
-        hcuLimit.revokeQuota(PARTNER_QUOTA, other);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.ContractNotInQuota.selector, other, PARTNER_QUOTA));
+        hcuConfigurator.revokeQuota(PARTNER_QUOTA, other);
     }
 
     function test_grantQuotaRefusesAStoppedQuota() public {
@@ -1537,8 +1570,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _setQuota(PARTNER_QUOTA, 0, 0);
 
         vm.prank(PARTNER_ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, PARTNER_QUOTA));
-        hcuLimit.grantQuota(PARTNER_QUOTA, address(0xA1));
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidQuota.selector, PARTNER_QUOTA));
+        hcuConfigurator.grantQuota(PARTNER_QUOTA, address(0xA1));
     }
 
     function test_quotaAdminCannotActOnAnotherQuota() public {
@@ -1546,10 +1579,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _setQuotaPerBlock(13, 1_000_000);
 
         vm.startPrank(PARTNER_ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, uint16(13), PARTNER_ADMIN));
-        hcuLimit.grantQuota(13, address(0xA1));
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, uint16(13), PARTNER_ADMIN));
-        hcuLimit.revokeQuota(13, address(0xA1));
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.NotQuotaAdmin.selector, uint16(13), PARTNER_ADMIN));
+        hcuConfigurator.grantQuota(13, address(0xA1));
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.NotQuotaAdmin.selector, uint16(13), PARTNER_ADMIN));
+        hcuConfigurator.revokeQuota(13, address(0xA1));
         vm.stopPrank();
     }
 
@@ -1561,10 +1594,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
         // The admin can neither move its contracts out to escape the pause nor add others to it.
         vm.startPrank(PARTNER_ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.QuotaMembershipPaused.selector, PARTNER_QUOTA));
-        hcuLimit.revokeQuota(PARTNER_QUOTA, auction);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.QuotaMembershipPaused.selector, PARTNER_QUOTA));
-        hcuLimit.grantQuota(PARTNER_QUOTA, address(0xA2));
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.QuotaMembershipPaused.selector, PARTNER_QUOTA));
+        hcuConfigurator.revokeQuota(PARTNER_QUOTA, auction);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.QuotaMembershipPaused.selector, PARTNER_QUOTA));
+        hcuConfigurator.grantQuota(PARTNER_QUOTA, address(0xA2));
         vm.stopPrank();
     }
 
@@ -1574,10 +1607,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _grant(auction);
 
         _setAdmin(PARTNER_QUOTA, address(0));
-        assertEq(hcuLimit.getQuotaAdmin(PARTNER_QUOTA), address(0));
+        assertEq(hcuConfigurator.getQuotaAdmin(PARTNER_QUOTA), address(0));
         vm.prank(PARTNER_ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, PARTNER_QUOTA, PARTNER_ADMIN));
-        hcuLimit.revokeQuota(PARTNER_QUOTA, auction);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.NotQuotaAdmin.selector, PARTNER_QUOTA, PARTNER_ADMIN));
+        hcuConfigurator.revokeQuota(PARTNER_QUOTA, auction);
         assertEq(hcuLimit.getContractQuota(auction), PARTNER_QUOTA);
     }
 
@@ -1592,19 +1625,19 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _expectQuotaPaused(abused, jail);
         // No admin can reach it: grants only take contracts from the default quota.
         vm.prank(PARTNER_ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.ContractNotInQuota.selector, abused, DEFAULT_QUOTA));
-        hcuLimit.grantQuota(PARTNER_QUOTA, abused);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.ContractNotInQuota.selector, abused, DEFAULT_QUOTA));
+        hcuConfigurator.grantQuota(PARTNER_QUOTA, abused);
     }
 
     function test_pauserCannotCallOwnerOnlyQuotaSetters() public {
         address pauser = _mockPauser(address(0x9A));
         vm.startPrank(pauser);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
-        hcuLimit.setQuota(DEFAULT_QUOTA, 0, 0);
+        hcuConfigurator.setQuota(DEFAULT_QUOTA, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
-        hcuLimit.assignQuota(DEFAULT_QUOTA, address(0xBEEF));
+        hcuConfigurator.assignQuota(DEFAULT_QUOTA, address(0xBEEF));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
-        hcuLimit.setQuotaAdmin(PARTNER_QUOTA, pauser);
+        hcuConfigurator.setQuotaAdmin(PARTNER_QUOTA, pauser);
         vm.stopPrank();
     }
 
@@ -1613,12 +1646,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.mockCall(pauserSetAdd, abi.encodeCall(IPauserSet.isPauser, (stranger)), abi.encode(false));
 
         vm.startPrank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotPauser.selector, stranger));
-        hcuLimit.pauseQuota(DEFAULT_QUOTA);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, PARTNER_QUOTA, stranger));
-        hcuLimit.grantQuota(PARTNER_QUOTA, address(0xBEEF));
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, PARTNER_QUOTA, stranger));
-        hcuLimit.revokeQuota(PARTNER_QUOTA, address(0xBEEF));
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.NotPauser.selector, stranger));
+        hcuConfigurator.pauseQuota(DEFAULT_QUOTA);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.NotQuotaAdmin.selector, PARTNER_QUOTA, stranger));
+        hcuConfigurator.grantQuota(PARTNER_QUOTA, address(0xBEEF));
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.NotQuotaAdmin.selector, PARTNER_QUOTA, stranger));
+        hcuConfigurator.revokeQuota(PARTNER_QUOTA, address(0xBEEF));
         vm.stopPrank();
     }
 
@@ -1695,16 +1728,16 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
         // Without leaving the allowlist, it would compute unmetered in quota 2 instead.
         vm.prank(PARTNER_ADMIN);
-        hcuLimit.revokeQuota(PARTNER_QUOTA, ALLOWED_BLOCK_WHITELISTED);
+        hcuConfigurator.revokeQuota(PARTNER_QUOTA, ALLOWED_BLOCK_WHITELISTED);
         _expectQuotaStopped(ALLOWED_BLOCK_WHITELISTED, DEFAULT_QUOTA);
     }
 
     function test_quotasThatReplacedTheAllowlistTakeNoAdmin() public {
         vm.startPrank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, ALLOWLIST_QUOTA));
-        hcuLimit.setQuotaAdmin(ALLOWLIST_QUOTA, PARTNER_ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, BLOCK_WHITELIST_QUOTA));
-        hcuLimit.setQuotaAdmin(BLOCK_WHITELIST_QUOTA, PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidQuota.selector, ALLOWLIST_QUOTA));
+        hcuConfigurator.setQuotaAdmin(ALLOWLIST_QUOTA, PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidQuota.selector, BLOCK_WHITELIST_QUOTA));
+        hcuConfigurator.setQuotaAdmin(BLOCK_WHITELIST_QUOTA, PARTNER_ADMIN);
         vm.stopPrank();
     }
 
@@ -1730,8 +1763,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _setAdmin(PARTNER_QUOTA, PARTNER_ADMIN);
 
         vm.prank(PARTNER_ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.ContractNotInQuota.selector, ALLOWED, DEFAULT_QUOTA));
-        hcuLimit.grantQuota(PARTNER_QUOTA, ALLOWED);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.ContractNotInQuota.selector, ALLOWED, DEFAULT_QUOTA));
+        hcuConfigurator.grantQuota(PARTNER_QUOTA, ALLOWED);
 
         _grant(UNKNOWN);
         assertEq(hcuLimit.getContractQuota(UNKNOWN), PARTNER_QUOTA);
@@ -1870,22 +1903,22 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
     function test_setQuotaTierRefusesATierWithoutThreshold() public {
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidTier.selector, uint8(9)));
-        hcuLimit.setQuotaTier(LOW_QUOTA, 9);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidTier.selector, uint8(9)));
+        hcuConfigurator.setQuotaTier(LOW_QUOTA, 9);
     }
 
     function test_setTierRefusesAboveTenThousandBasisPoints() public {
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidTier.selector, uint8(1)));
-        hcuLimit.setTier(1, 10_001);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidTier.selector, uint8(1)));
+        hcuConfigurator.setTier(1, 10_001);
     }
 
     function test_setCapacityRefusesOnlyOneOfMaximumAndDecayAtZero() public {
         vm.startPrank(owner);
-        vm.expectRevert(HCULimit.InvalidCapacity.selector);
-        hcuLimit.setCapacity(100_000, 0);
-        vm.expectRevert(HCULimit.InvalidCapacity.selector);
-        hcuLimit.setCapacity(0, 100_000);
+        vm.expectRevert(HCUConfigurator.InvalidCapacity.selector);
+        hcuConfigurator.setCapacity(100_000, 0);
+        vm.expectRevert(HCUConfigurator.InvalidCapacity.selector);
+        hcuConfigurator.setCapacity(0, 100_000);
         vm.stopPrank();
     }
 
@@ -1893,11 +1926,11 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         address pauser = _mockPauser(address(0x9A));
         vm.startPrank(pauser);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
-        hcuLimit.setCapacity(0, 0);
+        hcuConfigurator.setCapacity(0, 0);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
-        hcuLimit.setTier(1, 0);
+        hcuConfigurator.setTier(1, 0);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
-        hcuLimit.setQuotaTier(PARTNER_QUOTA, 0);
+        hcuConfigurator.setQuotaTier(PARTNER_QUOTA, 0);
         vm.stopPrank();
     }
 
@@ -1914,24 +1947,24 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     }
 
     function _setCapacity(uint48 maxHCU, uint48 decayPerBlock) internal {
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.CapacitySet(maxHCU, decayPerBlock, owner);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.CapacitySet(maxHCU, decayPerBlock, owner);
         vm.prank(owner);
-        hcuLimit.setCapacity(maxHCU, decayPerBlock);
+        hcuConfigurator.setCapacity(maxHCU, decayPerBlock);
     }
 
     function _setTier(uint8 tier, uint16 maxLoadBps) internal {
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.TierSet(tier, maxLoadBps, owner);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.TierSet(tier, maxLoadBps, owner);
         vm.prank(owner);
-        hcuLimit.setTier(tier, maxLoadBps);
+        hcuConfigurator.setTier(tier, maxLoadBps);
     }
 
     function _setQuotaTier(uint16 quotaId, uint8 tier) internal {
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.QuotaTierSet(quotaId, tier, owner);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.QuotaTierSet(quotaId, tier, owner);
         vm.prank(owner);
-        hcuLimit.setQuotaTier(quotaId, tier);
+        hcuConfigurator.setQuotaTier(quotaId, tier);
         assertEq(hcuLimit.getQuotaTier(quotaId), tier);
     }
 
@@ -1961,10 +1994,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     }
 
     function _setQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) internal {
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.QuotaSet(quotaId, maxHCU, decayPerBlock, owner);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.QuotaSet(quotaId, maxHCU, decayPerBlock, owner);
         vm.prank(owner);
-        hcuLimit.setQuota(quotaId, maxHCU, decayPerBlock);
+        hcuConfigurator.setQuota(quotaId, maxHCU, decayPerBlock);
     }
 
     /// @dev Expects one 84,000 HCU addition by `caller` to exceed its quota with `retryAfterBlocks`.
@@ -1975,34 +2008,26 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     }
 
     function _assign(uint16 quotaId, address account) internal {
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.ContractQuotaAssigned(quotaId, account, owner);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.ContractQuotaAssigned(quotaId, account, owner);
         vm.prank(owner);
-        hcuLimit.assignQuota(quotaId, account);
+        hcuConfigurator.assignQuota(quotaId, account);
     }
 
-    /// @dev Replaces the proxy under test with one upgraded from V5: a global cap of 100,000 HCU per block, ALLOWED and
+    /// @dev Takes the proxy under test back to V5 and upgrades it: a global cap of 100,000 HCU per block, ALLOWED and
     ///      ALLOWED_BLOCK_WHITELISTED allowlisted, ALLOWED_BLOCK_WHITELISTED and BLOCK_WHITELISTED_ONLY block-whitelisted.
+    ///      setUp's limits per transaction, 20,000,000 and 5,000,000, are those of a deployed V5; reinitializeV6
+    ///      overwrites every other field setUp's initializer wrote.
     function _upgradeFromV5(bool allowlistActivated) internal {
-        address upgradedProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
-        vm.startPrank(owner);
-        UnsafeUpgrades.upgradeProxy(upgradedProxy, address(new MockHCULimit()), "");
-        MockHCULimit upgraded = MockHCULimit(upgradedProxy);
-        upgraded.setLegacyGlobalCapForTest(100_000);
-        upgraded.setAllowlistActivatedForTest(allowlistActivated);
-        upgraded.setAllowlistedForTest(ALLOWED);
-        upgraded.setAllowlistedForTest(ALLOWED_BLOCK_WHITELISTED);
-        upgraded.setBlockHCUWhitelistedForTest(ALLOWED_BLOCK_WHITELISTED);
-        upgraded.setBlockHCUWhitelistedForTest(BLOCK_WHITELISTED_ONLY);
-        upgraded.reinitializeV6();
-        // A deployed V5 already has these limits; the upgrade keeps them.
-        upgraded.setMaxHCUPerTx(20_000_000);
-        upgraded.setMaxHCUDepthPerTx(5_000_000);
-        vm.stopPrank();
-        hcuLimit = upgraded;
+        // V5 runs at reinitializer version 6.
+        vm.store(proxy, INITIALIZABLE_STORAGE, bytes32(uint256(6)));
+        hcuLimit.setLegacyGlobalCapForTest(100_000);
+        hcuLimit.setAllowlistActivatedForTest(allowlistActivated);
+        hcuLimit.setAllowlistedForTest(ALLOWED);
+        hcuLimit.setAllowlistedForTest(ALLOWED_BLOCK_WHITELISTED);
+        hcuLimit.setBlockHCUWhitelistedForTest(ALLOWED_BLOCK_WHITELISTED);
+        hcuLimit.setBlockHCUWhitelistedForTest(BLOCK_WHITELISTED_ONLY);
+        hcuLimit.reinitializeV6();
     }
 
     function _stopDefaultQuota() internal {
@@ -2018,21 +2043,21 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
     function _grant(address account) internal {
         vm.prank(PARTNER_ADMIN);
-        hcuLimit.grantQuota(PARTNER_QUOTA, account);
+        hcuConfigurator.grantQuota(PARTNER_QUOTA, account);
     }
 
     function _setAdmin(uint16 quotaId, address admin) internal {
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.QuotaAdminSet(quotaId, admin);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.QuotaAdminSet(quotaId, admin);
         vm.prank(owner);
-        hcuLimit.setQuotaAdmin(quotaId, admin);
+        hcuConfigurator.setQuotaAdmin(quotaId, admin);
     }
 
     function _pause(address pauser, uint16 quotaId) internal {
-        vm.expectEmit(address(hcuLimit));
-        emit HCULimit.QuotaPauseSet(quotaId, true, pauser);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.QuotaPauseSet(quotaId, true, pauser);
         vm.prank(pauser);
-        hcuLimit.pauseQuota(quotaId);
+        hcuConfigurator.pauseQuota(quotaId);
     }
 
     /// @dev Expects one 84,000 HCU addition by `caller` to revert because its quota is stopped.
@@ -2186,6 +2211,17 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      */
     function upgrade(address randomAccount) external {
         UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxy()), "", randomAccount);
+    }
+
+    function upgradeHCUConfigurator(address randomAccount) external {
+        UnsafeUpgrades.upgradeProxy(hcuConfiguratorAdd, address(new EmptyUUPSProxy()), "", randomAccount);
+    }
+
+    function test_OnlyOwnerCanAuthorizeHCUConfiguratorUpgrade(address randomAccount) public {
+        vm.assume(randomAccount != owner);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
+        this.upgradeHCUConfigurator(randomAccount);
+        this.upgradeHCUConfigurator(owner);
     }
 
     /**

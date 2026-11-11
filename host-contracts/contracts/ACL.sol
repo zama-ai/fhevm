@@ -148,7 +148,7 @@ contract ACL is
      */
     struct Permission {
         bool allowed;
-        /// @notice The handle's carried depth when it was granted (see HCULimit.setCrossTxDepthLimit).
+        /// @notice The handle's carried depth when it was granted (see HCUConfigurator.setCrossTxDepthLimit).
         uint48 depth;
         /// @notice The block number of the grant.
         uint48 storedBlock;
@@ -615,7 +615,7 @@ contract ACL is
 
     /**
      * @notice Returns the carried depth stored with `account`'s permission for `handle` and the block
-     *         it was stored at (see HCULimit.setCrossTxDepthLimit). Both are 0 without a stored permission.
+     *         it was stored at (see HCUConfigurator.setCrossTxDepthLimit). Both are 0 without a stored permission.
      */
     function getStoredDepth(bytes32 handle, address account) external view returns (uint48 depth, uint48 storedBlock) {
         Permission storage permission = _getACLStorage().persistedAllowedPairs[handle][account];

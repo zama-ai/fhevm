@@ -42,3 +42,16 @@ uint8 constant EXTRA_DATA_V1 = 0x01;
 
 /// @dev Version byte for v2 extraData layout: [version(1)] [contextId(32)] [epochId(32)].
 uint8 constant EXTRA_DATA_V2 = 0x02;
+
+/// @dev HCU quota of every contract that was never assigned.
+uint16 constant DEFAULT_QUOTA = 0;
+
+/// @dev HCU quota of contracts the allowlist admitted and nobody assigned yet, while the default quota is stopped.
+uint16 constant ALLOWLIST_QUOTA = 1;
+
+/// @dev HCU quota of contracts both allowlisted and block-whitelisted that nobody assigned yet, while the default
+///      quota is stopped. Quotas up to this one take no admin.
+uint16 constant BLOCK_WHITELIST_QUOTA = 2;
+
+/// @dev An HCU tier threshold of this many basis points admits operations until the capacity is full.
+uint16 constant MAX_BPS = 10_000;

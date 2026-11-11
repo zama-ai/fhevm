@@ -20,7 +20,7 @@ If any of these limits is exceeded, the transaction will revert.
 
 ## HCU limit
 
-The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. Quotas are set on-chain by governance (via `HCULimit.setQuota`); you can read a contract's quota with `getContractQuota(contract)`, and that quota's maximum, decay per block and current usage with `getQuota(quotaId)`. If any HCU limit is exceeded, the transaction will revert.
+The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. Quotas are set on-chain by governance (via `HCUConfigurator.setQuota`); you can read a contract's quota with `getContractQuota(contract)`, and that quota's maximum, decay per block and current usage with `getQuota(quotaId)`. If any HCU limit is exceeded, the transaction will revert.
 
 To resolve a per-transaction revert, you must do one of the following:
 
@@ -50,7 +50,7 @@ Options include:
 - **Reduce the HCU footprint** of the transaction so it is more likely to fit alongside others (same techniques as for per-transaction reverts).
 - **Ask for your contract to join a quota**: your partner's quota admin can grant it, or governance can assign one for contracts that need more HCU.
 
-Three roles manage quotas, following OpenZeppelin's role admins (`AccessControl`) and closed targets (`AccessManager`):
+Three roles manage quotas, following OpenZeppelin's role admins (`AccessControl`) and closed targets (`AccessManager`). They call `HCUConfigurator`, which checks each change and passes it to `HCULimit`. Every function in this guide that changes a setting is on `HCUConfigurator`, with the errors it raises. The other reads, and the errors an FHE operation raises, are on `HCULimit`.
 
 | Role        | Functions                                                         | What it does                                                                                                                                                        |
 | ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -58,7 +58,7 @@ Three roles manage quotas, following OpenZeppelin's role admins (`AccessControl`
 | Quota admin | `grantQuota(quotaId, contract)`, `revokeQuota(quotaId, contract)` | A partner's address: moves contracts from the default quota into its quota, and any contract of its quota back to the default quota, without a governance proposal. |
 | Pauser      | `pauseQuota(quotaId)`                                             | Stops every contract in a quota. The quota keeps its size and contracts, and its admin cannot move them until governance unpauses it.                               |
 
-A quota admin can add contracts only while the default quota is stopped (`DefaultQuotaNotStopped` otherwise), so joining a quota never leaves a contract with less room than it had. It can send any contract of its quota back to the default quota, including one governance assigned. It cannot resize its quota or take a contract from another quota. You can read a quota's admin with `getQuotaAdmin(quotaId)` and whether it is paused with `isQuotaPaused(quotaId)`.
+A quota admin can add contracts only while the default quota is stopped (`DefaultQuotaNotStopped` otherwise), so joining a quota never leaves a contract with less room than it had. It can send any contract of its quota back to the default quota, including one governance assigned. It cannot resize its quota or take a contract from another quota. You can read a quota's admin with `HCUConfigurator.getQuotaAdmin(quotaId)` and whether it is paused with `HCULimit.isQuotaPaused(quotaId)`.
 
 ### Chain capacity and tiers
 

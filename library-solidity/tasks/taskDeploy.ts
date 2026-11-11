@@ -46,6 +46,7 @@ task('task:deployAllHostContracts')
     }
     await hre.run('task:deployKMSVerifier');
     await hre.run('task:deployInputVerifier');
+    await hre.run('task:deployHCUConfigurator');
     await hre.run('task:deployHCULimit');
 
     // Compile examples
@@ -346,6 +347,22 @@ task('task:deployHCULimit').setAction(async function (_taskArguments: TaskArgume
     call: { fn: 'initializeFromEmptyProxy', args: [BigInt('281474976710655'), BigInt('5000000'), BigInt('20000000')] },
   });
   console.info('HCULimit code set successfully at address:', proxyAddress);
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// HCUConfigurator
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployHCUConfigurator').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('HCUConfigurator', deployer);
+  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const proxyAddress = parsedEnv.HCU_CONFIGURATOR_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'initializeFromEmptyProxy' } });
+  console.info('HCUConfigurator code set successfully at address:', proxyAddress);
 });
 
 ////////////////////////////////////////////////////////////////////////////////

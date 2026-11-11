@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { getTxHCUFromTxReceipt } from '../coprocessorUtils';
 import { createInstances } from '../instance';
-import { initializeHCULimit } from '../paymentUtils';
+import { initializeHCUConfigurator, initializeHCULimit } from '../paymentUtils';
 import { getSigners, initSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
@@ -21,12 +21,13 @@ describe('EncryptedERC20:HCU', function () {
     this.erc20 = contract;
     this.instances = await createInstances(this.signers);
     this.hcuLimit = await initializeHCULimit();
+    this.hcuConfigurator = await initializeHCUConfigurator();
   });
 
   afterEach(async function () {
-    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.setQuota(0, MAX_UINT48, MAX_UINT48);
-    await ownerHcuLimit.setCrossTxDepthLimit(0, 0);
+    const ownerConfigurator = this.hcuConfigurator.connect(this.signers.fred);
+    await ownerConfigurator.setQuota(0, MAX_UINT48, MAX_UINT48);
+    await ownerConfigurator.setCrossTxDepthLimit(0, 0);
   });
 
   it('should transfer tokens between two users', async function () {
@@ -102,8 +103,8 @@ describe('EncryptedERC20:HCU', function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
-    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.setQuota(0, 1_000_000_000, 1_000_000_000);
+    const ownerConfigurator = this.hcuConfigurator.connect(this.signers.fred);
+    await ownerConfigurator.setQuota(0, 1_000_000_000, 1_000_000_000);
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
@@ -124,10 +125,10 @@ describe('EncryptedERC20:HCU', function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
-    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.setQuota(0, 1_000_000_000, 1_000_000_000);
-    await ownerHcuLimit.setQuota(3, MAX_UINT48, MAX_UINT48);
-    await ownerHcuLimit.assignQuota(3, this.contractAddress);
+    const ownerConfigurator = this.hcuConfigurator.connect(this.signers.fred);
+    await ownerConfigurator.setQuota(0, 1_000_000_000, 1_000_000_000);
+    await ownerConfigurator.setQuota(3, MAX_UINT48, MAX_UINT48);
+    await ownerConfigurator.assignQuota(3, this.contractAddress);
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
@@ -147,7 +148,7 @@ describe('EncryptedERC20:HCU', function () {
   });
 
   it('should refuse dependent transfers at the cross-transaction depth limit until decay frees room', async function () {
-    await (await this.hcuLimit.connect(this.signers.fred).setCrossTxDepthLimit(5_000_000, 1)).wait();
+    await (await this.hcuConfigurator.connect(this.signers.fred).setCrossTxDepthLimit(5_000_000, 1)).wait();
     await (await this.erc20.mint(10000)).wait();
 
     // Each transfer computes on the balances left by the previous one, so the chain deepens every time.

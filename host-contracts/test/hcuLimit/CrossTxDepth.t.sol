@@ -4,9 +4,10 @@ pragma solidity ^0.8.24;
 import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {HCULimit} from "../../contracts/HCULimit.sol";
+import {HCUConfigurator} from "../../contracts/HCUConfigurator.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuConfiguratorAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 /// @dev A contract that keeps one encrypted value and extends it by one addition per transaction.
 contract DepthUser {
@@ -73,15 +74,18 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     ACL internal acl;
     HCULimit internal hcu;
+    HCUConfigurator internal hcuConfigurator;
     DepthUser internal alice;
     DepthUser internal bob;
 
     function setUp() public {
         _deployACL(owner);
         _deployHCULimit(owner);
+        _deployHCUConfigurator(owner);
         _deployFHEVMExecutor(owner);
         acl = ACL(aclAdd);
         hcu = HCULimit(hcuLimitAdd);
+        hcuConfigurator = HCUConfigurator(hcuConfiguratorAdd);
         alice = new DepthUser();
         bob = new DepthUser();
     }
@@ -89,7 +93,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     function test_SmallChainedTransactionsAccumulateUntilTheLimit() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setLimit(start + 3 * step, 1);
 
         alice.addOne(alice.value());
@@ -108,7 +112,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     function test_CarriedDepthDecaysWithBlocks() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setLimit(start + 2 * step, step);
         alice.addOne(alice.value());
         bytes32 last = alice.value();
@@ -153,7 +157,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         }
         alice.share(address(bob));
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(start + 2 * step);
+        hcuConfigurator.setMaxHCUDepthPerTx(start + 2 * step);
 
         // The stored handle carries more depth, but the new chain is deeper within this transaction.
         bytes32 stored = alice.value();
@@ -196,7 +200,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     function test_TransactionDepthLimitIgnoresCarriedDepth() public {
         (, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         for (uint256 i = 0; i < 4; i++) {
             alice.addOne(alice.value());
         }
@@ -222,21 +226,21 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     function test_LimitAndDecayMustBeBothSetOrBothZero() public {
         vm.startPrank(owner);
-        vm.expectRevert(HCULimit.InvalidCrossTxDepthLimit.selector);
-        hcu.setCrossTxDepthLimit(1_000_000, 0);
-        vm.expectRevert(HCULimit.InvalidCrossTxDepthLimit.selector);
-        hcu.setCrossTxDepthLimit(0, 1);
+        vm.expectRevert(HCUConfigurator.InvalidCrossTxDepthLimit.selector);
+        hcuConfigurator.setCrossTxDepthLimit(1_000_000, 0);
+        vm.expectRevert(HCUConfigurator.InvalidCrossTxDepthLimit.selector);
+        hcuConfigurator.setCrossTxDepthLimit(0, 1);
         vm.stopPrank();
     }
 
     function test_LimitCoversTransactionDepthLimitFromBothSetters() public {
         uint48 maxDepthPerTx = hcu.getMaxHCUDepthPerTx();
         vm.startPrank(owner);
-        vm.expectRevert(HCULimit.CrossTxDepthBelowMaxDepthPerTx.selector);
-        hcu.setCrossTxDepthLimit(maxDepthPerTx - 1, 1);
-        hcu.setCrossTxDepthLimit(maxDepthPerTx, 1);
-        vm.expectRevert(HCULimit.CrossTxDepthBelowMaxDepthPerTx.selector);
-        hcu.setMaxHCUDepthPerTx(maxDepthPerTx + 1);
+        vm.expectRevert(HCUConfigurator.CrossTxDepthBelowMaxDepthPerTx.selector);
+        hcuConfigurator.setCrossTxDepthLimit(maxDepthPerTx - 1, 1);
+        hcuConfigurator.setCrossTxDepthLimit(maxDepthPerTx, 1);
+        vm.expectRevert(HCUConfigurator.CrossTxDepthBelowMaxDepthPerTx.selector);
+        hcuConfigurator.setMaxHCUDepthPerTx(maxDepthPerTx + 1);
         vm.stopPrank();
     }
 
@@ -245,8 +249,8 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         vm.mockCallRevert(aclAdd, abi.encodeWithSelector(ACL.getStoredDepth.selector), "");
         vm.startPrank(owner);
         vm.expectRevert();
-        hcu.setCrossTxDepthLimit(20_000_000, 10_000_000);
-        hcu.setCrossTxDepthLimit(0, 0);
+        hcuConfigurator.setCrossTxDepthLimit(20_000_000, 10_000_000);
+        hcuConfigurator.setCrossTxDepthLimit(0, 0);
         vm.stopPrank();
     }
 
@@ -261,7 +265,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     function _setLimit(uint48 maxDepth, uint48 decayPerBlock) internal {
         vm.prank(owner);
-        hcu.setCrossTxDepthLimit(maxDepth, decayPerBlock);
+        hcuConfigurator.setCrossTxDepthLimit(maxDepth, decayPerBlock);
     }
 
     function _storedDepth(DepthUser user) internal view returns (uint48 depth) {
