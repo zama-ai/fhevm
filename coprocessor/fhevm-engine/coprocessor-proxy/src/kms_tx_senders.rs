@@ -289,12 +289,13 @@ fn describe_transport_error(error: &TransportError) -> String {
     }
 }
 
-/// The first KMS context id, given any later one. Ids are `KMS_CONTEXT_COUNTER_BASE` (host-contracts
-/// `shared/Constants.sol`: a type tag in the top byte) plus a counter from 1, so the first id keeps
-/// the later id's top byte. `None` for 0: no context is Active yet.
-fn first_context_id(later: U256) -> Option<U256> {
+/// The first KMS context id, given the latest Active one. Ids are `KMS_CONTEXT_COUNTER_BASE`
+/// (host-contracts `shared/Constants.sol`: a type tag in the top byte) plus a counter from 1, so
+/// the first id keeps its top byte. `None` for 0: no context is Active yet.
+fn first_context_id(latest_active: U256) -> Option<U256> {
     const TYPE_TAG_SHIFT: usize = 248;
-    (!later.is_zero()).then(|| ((later >> TYPE_TAG_SHIFT) << TYPE_TAG_SHIFT) + U256::ONE)
+    (!latest_active.is_zero())
+        .then(|| ((latest_active >> TYPE_TAG_SHIFT) << TYPE_TAG_SHIFT) + U256::ONE)
 }
 
 #[cfg(test)]
