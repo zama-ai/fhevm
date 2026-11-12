@@ -89,6 +89,11 @@ pub fn describe_metrics() {
         Unit::Count,
         "Total chain reorganizations detected"
     );
+    describe_counter!(
+        "listener_rearms_total",
+        Unit::Count,
+        "Cursor re-arms after inconsistent or unavailable block data (flow=live|reorg)"
+    );
 
     // ── Block heights ───────────────────────────────────────────────────
     describe_gauge!(

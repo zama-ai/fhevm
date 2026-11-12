@@ -69,8 +69,10 @@ Resolving the http latency, and ensure no event is missed.
    1. the cursor stops its progression.
    2. we backtrack from block `n` to handle the reorg and get matching blocks by hash sequentially until the canonical chain is build again, we pass previous data to uncle (refer to algo 1) in a new data structure.
    3. and we start a new task one to get fresher information from block `n`, and a new cursor strategy on top of this one.
+   4. if a block of the walk can no longer be fetched consistently by hash (still `null` after `reorg_not_found_max_retries` on any call of the by-hash fetch, or receipts that do not belong to it), a newer reorg replaced it and the RPC may never serve it again. The walk is abandoned before any DB write, waits `loop_delay_ms`, and the cursor is re-armed: it resumes from the DB tip, so the reorg is re-detected from fresh chain data at any depth.
 
 4. When the cursor arrives to the end of the data structure, it launches the next iteration for the task one parallel poller, and keep at least the latest block from the previous iteration to compare hash and parent hash.
+5. If a block's receipts do not belong to it (count, tx hashes or `blockHash`: the chain moved between the block and receipts calls), the cursor stops at the last contiguous published block, waits `loop_delay_ms` and is re-armed, instead of failing the iteration as a transient error. The `blockHash` check runs only in the live cursor and the reorg walk; catch-up and finality flows are unchanged (see `error_flows.md`, "Stalls and recovery per flow").
 
 ## Features
 
