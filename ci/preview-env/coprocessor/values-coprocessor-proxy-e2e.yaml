@@ -24,6 +24,11 @@ coprocessorProxy:
                 app: fhevm-test-suite
         ports:
           - {port: 9100, protocol: TCP}
+  # zws-pool scales up: a rolling restart needs room for a second pod.
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
 
 prfService:
   enabled: true
@@ -38,6 +43,10 @@ prfService:
     maxConcurrentPerConnector: 2048
     maxInFlightPerConnector: 8
     padPendingMaxAgeSeconds: 60
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
 
 # Compares the reference digests of the lanes of all operators, so that the lanes start.
 consensusDetector:
