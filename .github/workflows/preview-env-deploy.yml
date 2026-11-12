@@ -1056,6 +1056,18 @@ jobs:
           echo "POLLER_SEED_START_BLOCK=$((hex))" >> "$GITHUB_ENV"
           echo "blockchain-dev host head block $((hex))"
 
+      - name: Install safe-chain
+        shell: bash
+        env:
+          SAFE_CHAIN_VERSION: "1.5.3"
+          # sha256 of install-safe-chain.sh 1.5.3 (immutable release asset; matches the
+          # digest GitHub publishes for it)
+          SAFE_CHAIN_SHA256: "0107cbbbf90159379756157e902acae512d62ffbd174307e42c5fe9f266792d3"
+        run: |
+          curl -fsSL -o /tmp/install-safe-chain.sh "https://github.com/AikidoSec/safe-chain/releases/download/${SAFE_CHAIN_VERSION}/install-safe-chain.sh"
+          echo "${SAFE_CHAIN_SHA256}  /tmp/install-safe-chain.sh" | sha256sum -c -
+          sh /tmp/install-safe-chain.sh --ci
+
       - name: Install ethers for wallet derivation
         run: |
           mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
