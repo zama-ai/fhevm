@@ -1999,7 +1999,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=435b539774d3e284db02332af1d5114718c9cb78#435b539774d3e284db02332af1d5114718c9cb78"
+source = "git+https://github.com/zama-ai/kms.git?rev=7c36c344514c0e069c140f493dac8a81e7007f48#7c36c344514c0e069c140f493dac8a81e7007f48"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -2179,7 +2179,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
- "tonic 0.14.6",
+ "tonic 0.14.9",
  "tower-service",
  "url",
  "winapi",
@@ -2193,7 +2193,7 @@ checksum = "85a885520bf6249ab931a764ffdb87b0ceef48e6e7d807cfdb21b751e086e1ad"
 dependencies = [
  "prost 0.14.4",
  "prost-types",
- "tonic 0.14.6",
+ "tonic 0.14.9",
  "tonic-prost",
  "ureq",
 ]
@@ -2552,7 +2552,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml",
- "tonic 0.14.6",
+ "tonic 0.14.9",
  "tower",
  "tracing",
  "tracing-opentelemetry",
@@ -3875,9 +3875,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.9.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6299f016b246a94207e63da54dbe807655bf9e00044f73ded42c3ac5305fbcca"
+checksum = "2c3e324da4c95177d6291d4c8730197c0d1822f8a9766814a4a44fa5ab797c9c"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -4365,7 +4365,7 @@ dependencies = [
 [[package]]
 name = "kms-grpc"
 version = "0.16.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=435b539774d3e284db02332af1d5114718c9cb78#435b539774d3e284db02332af1d5114718c9cb78"
+source = "git+https://github.com/zama-ai/kms.git?rev=7c36c344514c0e069c140f493dac8a81e7007f48#7c36c344514c0e069c140f493dac8a81e7007f48"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -4385,7 +4385,7 @@ dependencies = [
  "thiserror 2.0.20",
  "threshold-hashing",
  "threshold-types",
- "tonic 0.14.6",
+ "tonic 0.14.9",
  "tonic-prost",
  "tonic-prost-build",
  "tracing",
@@ -4426,7 +4426,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "toml",
- "tonic 0.14.6",
+ "tonic 0.14.9",
  "tonic-health",
  "tracing",
  "tracing-opentelemetry",
@@ -7587,7 +7587,7 @@ dependencies = [
 [[package]]
 name = "threshold-hashing"
 version = "0.16.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=435b539774d3e284db02332af1d5114718c9cb78#435b539774d3e284db02332af1d5114718c9cb78"
+source = "git+https://github.com/zama-ai/kms.git?rev=7c36c344514c0e069c140f493dac8a81e7007f48#7c36c344514c0e069c140f493dac8a81e7007f48"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -7600,7 +7600,7 @@ dependencies = [
 [[package]]
 name = "threshold-types"
 version = "0.16.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=435b539774d3e284db02332af1d5114718c9cb78#435b539774d3e284db02332af1d5114718c9cb78"
+source = "git+https://github.com/zama-ai/kms.git?rev=7c36c344514c0e069c140f493dac8a81e7007f48#7c36c344514c0e069c140f493dac8a81e7007f48"
 dependencies = [
  "aes",
  "anyhow",
@@ -7868,9 +7868,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.14.6"
+version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac2a5518c70fa84342385732db33fb3f44bc4cc748936eb5833d2df34d6445ef"
+checksum = "e2cdfc673aabd30fe8fee92e65837b644c37c5d47f0f97ae6d5e0f1237d15e1b"
 dependencies = [
  "async-trait",
  "axum",
@@ -7891,6 +7891,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-stream",
+ "tokio-util",
  "tower",
  "tower-layer",
  "tower-service",
@@ -7899,9 +7900,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.14.6"
+version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c68f61875ac5293cf72e6c8cf0158086428c82c37229e98c840878f1706b0322"
+checksum = "ac6d916d206ed7bdda1778ddff9bda43303789c258877e7bc22fb44ee5c984b4"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -7918,26 +7919,26 @@ dependencies = [
  "prost 0.14.4",
  "tokio",
  "tokio-stream",
- "tonic 0.14.6",
+ "tonic 0.14.9",
  "tonic-prost",
 ]
 
 [[package]]
 name = "tonic-prost"
-version = "0.14.6"
+version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50849f68853be452acf590cde0b146665b8d507b3b8af17261df47e02c209ea0"
+checksum = "eba464054e2226f182a34489b8b079bf4c6e3e7ab5fd7fc30e024f24aa92a484"
 dependencies = [
  "bytes",
  "prost 0.14.4",
- "tonic 0.14.6",
+ "tonic 0.14.9",
 ]
 
 [[package]]
 name = "tonic-prost-build"
-version = "0.14.6"
+version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "654e5643eff75d7f8c99197ce1440ed19a3474eada74c12bbac488b2cafdae27"
+checksum = "2ea216ddc448e08e7839ab09e20e60b06b6a1c32745ccb212c0ebd161c199f1b"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -8385,9 +8386,9 @@ dependencies = [
 
 [[package]]
 name = "want"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa7760aed19e106de2c7c0b581b509f2f25d3dacaf737cb82ac61bc6d760b0e"
+checksum = "ec4cdd0dd910afe868b7ef477227d8d538b46b3075031afee8a9f2acb0a2ed0b"
 dependencies = [
  "try-lock",
 ]

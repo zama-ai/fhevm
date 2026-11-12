@@ -23,8 +23,9 @@ tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "435b539774d3e284db02332af1d5114718c9cb78", default-features = true }
-bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "435b539774d3e284db02332af1d5114718c9cb78", default-features = true }
+# Last merged KMS PR: https://github.com/zama-ai/kms/pull/1001
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "7c36c344514c0e069c140f493dac8a81e7007f48", default-features = true }
+bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "7c36c344514c0e069c140f493dac8a81e7007f48", default-features = true }
 tfhe = { version = "=1.8.2", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
 fhevm-sig-auth = { path = "../shared/fhevm-sig-auth" }
@@ -103,7 +104,7 @@ tokio = { version = "=1.54.1", default-features = false, features = [
 ] }
 tokio-util = { version = "=0.7.18", default-features = false }
 tokio-stream = { version = "=0.1.17", default-features = false }
-tonic = { version = "=0.14.6", default-features = true, features = [
+tonic = { version = "=0.14.9", default-features = true, features = [
     "tls-ring",
     "tls-native-roots",
 ] }
