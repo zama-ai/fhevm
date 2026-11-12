@@ -496,19 +496,9 @@ describe("compat", () => {
     expect(supportsPadWorker(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-pad-worker"] }]))).toBe(true);
     expect(supportsPadWorker(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }]))).toBe(false);
     // The suite behind the proxy needs a lane that computes its output.
-    // The lane starts once the consensus-detectors agree on its reference digest.
-    const proxyAndPrf = {
-      COPROCESSOR_PROXY_VERSION: "02f6cc0",
-      COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0",
-      COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "02f6cc0",
-    };
+    const proxyAndPrf = { COPROCESSOR_PROXY_VERSION: "02f6cc0", COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0" };
     expect(runsCoprocessorProxy(stateFor(proxyAndPrf))).toBe(false);
     expect(runsCoprocessorProxy(stateFor({ ...proxyAndPrf, COPROCESSOR_PAD_WORKER_VERSION: "02f6cc0" }))).toBe(true);
-    expect(
-      runsCoprocessorProxy(
-        stateFor({ ...proxyAndPrf, COPROCESSOR_PAD_WORKER_VERSION: "02f6cc0", COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "" }),
-      ),
-    ).toBe(false);
   });
 
   test("enables the kms-connector HTTP path only when both the endpoint and proxy images are pinned or locally built", () => {

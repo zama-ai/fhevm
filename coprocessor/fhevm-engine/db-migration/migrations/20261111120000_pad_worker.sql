@@ -31,12 +31,6 @@ CREATE TRIGGER pads_work_available
 CREATE TABLE IF NOT EXISTS prf_lanes
 (
     prf_instance INTEGER PRIMARY KEY CHECK (prf_instance BETWEEN 0 AND 65535),
-    -- Agreed by all operators. NULL: no agreement yet.
-    reference_digest BYTEA NULL CHECK (OCTET_LENGTH(reference_digest) = 32),
-    -- The operators do not agree.
-    reference_mismatch_at TIMESTAMPTZ NULL,
-    -- The lane passed its start check.
-    ready_at TIMESTAMPTZ NULL,
-    -- The last pass of the claim loop.
+    -- Set once the lane has its key, then on each pass of the claim loop.
     heartbeat_at TIMESTAMPTZ NULL
 );

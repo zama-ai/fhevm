@@ -6,7 +6,7 @@ pub mod rows;
 pub mod upload;
 
 use alloy::primitives::keccak256;
-use anyhow::{anyhow, bail, Context};
+use anyhow::Context;
 use ciphertext_attestation::{
     prf::Version as AttestationVersion, PrfOutputAttestation, PrfOutputAttestationPayload,
 };
@@ -16,7 +16,6 @@ use fhevm_engine_common::{
     db_keys::DbKeyId,
     healthz_server::{HealthCheckService, HealthStatus, Version},
     pg_pool::is_fatal_connection_error,
-    prf_reference::{reference_digest, reference_outputs},
     types::CoproSigner,
 };
 use rows::{Claim, Output};
@@ -36,7 +35,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
-use upload::{reference_key, s3_key, Uploader};
+use upload::{s3_key, Uploader};
 
 /// The same limit as the database check of `HealthStatus`.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -67,8 +66,6 @@ pub struct Config {
     pub gc_interval: Duration,
     /// The GC clears the ct64 of rows older than this (`PAD_CT64_MAX_AGE`).
     pub ct64_max_age: Duration,
-    /// Interval of the reference digest read until the lane is ready (`PAD_START_CHECK_INTERVAL`).
-    pub start_check_interval: Duration,
 }
 
 /// Why a claim has no output.
@@ -86,7 +83,7 @@ pub struct PadWorker {
     signer: CoproSigner,
     uploader: Option<Uploader>,
     cancel_token: CancellationToken,
-    /// Set after the start check: until then, a rollout keeps the old pod.
+    /// Set once the lane is registered: until then, a rollout keeps the old pod.
     ready: Arc<AtomicBool>,
 }
 
@@ -122,14 +119,11 @@ impl PadWorker {
         }
     }
 
-    /// Registers the lane, waits for the start check, then claims rows until `cancel_token`. Fails
-    /// on a lost database connection or on bytes that are not the agreed ones.
+    /// Registers the lane, then claims rows until `cancel_token`. Fails on a lost database
+    /// connection.
     pub async fn run(self) -> anyhow::Result<()> {
         register_lane(&self.pool, self.config.prf_instance).await?;
-        info!(prf_instance = self.config.prf_instance, "Lane registered");
-        if !self.start_check().await? {
-            return Ok(());
-        }
+        info!(prf_instance = self.config.prf_instance, "Lane ready");
         self.ready.store(true, Ordering::Relaxed);
         let mut listener = PgListener::connect_with(&self.pool).await?;
         listener.listen(PAD_WORK_AVAILABLE).await?;
@@ -190,77 +184,6 @@ impl PadWorker {
         tasks.shutdown().await;
         info!("pad-worker stopped");
         Ok(())
-    }
-
-    /// Waits until the operators agree on a reference digest. Returns true when the lane is ready,
-    /// false on `cancel_token`. Fails if the agreed digest is another.
-    async fn start_check(&self) -> anyhow::Result<bool> {
-        let prf_instance = self.config.prf_instance;
-        let mut outputs = Vec::new();
-        for (label, pad_length) in reference_outputs() {
-            let claim = Claim {
-                prf_instance,
-                label,
-                pad_length,
-            };
-            match self.compute(claim).await {
-                Ok((output, _)) => outputs.push(output),
-                Err(OutputError::Evaluation(e) | OutputError::Signing(e)) => {
-                    return Err(anyhow!("reference output {claim:?}: {e}"));
-                }
-            }
-        }
-        let digest = reference_digest(outputs.iter().map(|o| {
-            (
-                o.attestation.ciphertext_digest,
-                o.attestation.sns_ciphertext_digest,
-            )
-        }));
-        let mut uploaded = false;
-        loop {
-            let agreement = rows::lane_agreement(&self.pool, prf_instance).await?;
-            match agreement.reference_digest {
-                Some(agreed) if agreed == digest => {
-                    rows::set_ready(&self.pool, prf_instance).await?;
-                    info!(%digest, "Reference digest agreed, lane ready");
-                    return Ok(true);
-                }
-                Some(agreed) => bail!(
-                    "reference digest {digest} is not the agreed {agreed}: this image changes the \
-                     bytes of instance {prf_instance}, so it needs a new prfId"
-                ),
-                // A new instance: the consensus-detector compares the reference objects.
-                None => {
-                    if !uploaded {
-                        uploaded = self.upload_references(&outputs).await;
-                    }
-                    if agreement.mismatch {
-                        error!(%digest, "Operators have other reference digests, lane not ready");
-                    } else {
-                        info!(%digest, "Waiting for the agreed reference digest");
-                    }
-                }
-            }
-            tokio::select! {
-                () = self.cancel_token.cancelled() => return Ok(false),
-                () = sleep(self.config.start_check_interval) => {}
-            }
-        }
-    }
-
-    /// Returns true if all the reference objects are in S3, or if there is no uploader.
-    async fn upload_references(&self, outputs: &[Output]) -> bool {
-        let Some(uploader) = &self.uploader else {
-            return true;
-        };
-        for output in outputs {
-            let _slot = uploader.slot(true).await;
-            if let Err(e) = uploader.upload(&reference_key(&output.claim), output).await {
-                warn!(claim = ?output.claim, error = %e, "Reference upload failed");
-                return false;
-            }
-        }
-        true
     }
 
     /// Evaluates and signs the output of `claim`. Also returns the ct64.
@@ -434,10 +357,11 @@ fn non_fatal(e: sqlx::Error) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Adds the `prf_lanes` row of `prf_instance`, if it does not exist.
+/// Adds the `prf_lanes` row of `prf_instance` with a heartbeat: prf-service then admits requests.
 pub async fn register_lane(pool: &PgPool, prf_instance: u16) -> anyhow::Result<()> {
     sqlx::query!(
-        "INSERT INTO prf_lanes (prf_instance) VALUES ($1) ON CONFLICT DO NOTHING",
+        "INSERT INTO prf_lanes (prf_instance, heartbeat_at) VALUES ($1, NOW())
+         ON CONFLICT (prf_instance) DO UPDATE SET heartbeat_at = NOW()",
         i32::from(prf_instance),
     )
     .execute(pool)
@@ -446,7 +370,7 @@ pub async fn register_lane(pool: &PgPool, prf_instance: u16) -> anyhow::Result<(
     Ok(())
 }
 
-/// Readiness: the start check, the database and the rights on `pads` and `prf_lanes`.
+/// Readiness: the lane registration, the database and the rights on `pads` and `prf_lanes`.
 pub struct Health {
     pool: PgPool,
     ready: Arc<AtomicBool>,
@@ -457,7 +381,7 @@ impl HealthCheckService for Health {
         let mut status = HealthStatus::default();
         let ready = self.ready.load(Ordering::Relaxed);
         if !ready {
-            status.add_error_details("The lane has not passed its start check".to_string());
+            status.add_error_details("The lane is not registered".to_string());
         }
         status.set_custom_check("lane_ready", ready, false);
         status.set_db_connected(&self.pool).await;

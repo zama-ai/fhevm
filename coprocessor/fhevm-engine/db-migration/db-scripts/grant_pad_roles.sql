@@ -20,8 +20,7 @@ BEGIN
         REVOKE UPDATE (prf_instance, label, pad_length, triggered_by, created_at)
             ON pads FROM pad_worker;
         REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER ON prf_lanes FROM pad_worker;
-        REVOKE UPDATE (prf_instance, reference_digest, reference_mismatch_at)
-            ON prf_lanes FROM pad_worker;
+        REVOKE UPDATE (prf_instance) ON prf_lanes FROM pad_worker;
         REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON keys FROM pad_worker;
         -- No INSERT, and no UPDATE of the key or the payer.
         GRANT SELECT, DELETE ON pads TO pad_worker;
@@ -31,9 +30,8 @@ BEGIN
             attestation_version
         ) ON pads TO pad_worker;
         GRANT SELECT ON prf_lanes TO pad_worker;
-        GRANT INSERT (prf_instance) ON prf_lanes TO pad_worker;
-        -- Only the consensus-detector writes the reference digest.
-        GRANT UPDATE (ready_at, heartbeat_at) ON prf_lanes TO pad_worker;
+        GRANT INSERT (prf_instance, heartbeat_at) ON prf_lanes TO pad_worker;
+        GRANT UPDATE (heartbeat_at) ON prf_lanes TO pad_worker;
         GRANT SELECT ON keys TO pad_worker;
     ELSE
         RAISE NOTICE 'Role pad_worker does not exist: no grants';

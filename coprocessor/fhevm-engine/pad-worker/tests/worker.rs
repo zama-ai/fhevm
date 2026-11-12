@@ -1,18 +1,15 @@
 use alloy::{
-    primitives::{keccak256, B256, U256},
+    primitives::{B256, U256},
     signers::local::PrivateKeySigner,
 };
 use ciphertext_attestation::{
     consensus::Attestation, prf::Version, PrfOutputAttestation, PrfOutputRef,
 };
-use fhevm_engine_common::{
-    healthz_server::HealthCheckService,
-    prf_reference::{reference_digest, reference_outputs},
-};
+use fhevm_engine_common::healthz_server::HealthCheckService;
 use pad_worker::{
     evaluator::{MockEvaluator, PadEvaluator, PadOutputs},
     rows,
-    upload::{reference_key, s3_key, Uploader},
+    upload::{s3_key, Uploader},
     Config, PadWorker,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -41,22 +38,7 @@ async fn db() -> (DBInstance, PgPool) {
         .connect(instance.db_url())
         .await
         .unwrap();
-    // The operators agreed on the reference digest of the mock, so the lane starts ready.
-    sqlx::query("INSERT INTO prf_lanes (prf_instance, reference_digest) VALUES ($1, $2)")
-        .bind(i32::from(LANE))
-        .bind(agreed_digest().as_slice())
-        .execute(&pool)
-        .await
-        .unwrap();
     (instance, pool)
-}
-
-/// The reference digest of the mock evaluator for `LANE`.
-fn agreed_digest() -> B256 {
-    reference_digest(reference_outputs().into_iter().map(|(label, pad_length)| {
-        let outputs = MockEvaluator.evaluate(LANE, label, pad_length).unwrap();
-        (keccak256(&outputs.ct64), keccak256(&outputs.ct128))
-    }))
 }
 
 fn config() -> Config {
@@ -70,7 +52,6 @@ fn config() -> Config {
         output_max_age: None,
         gc_interval: Duration::from_secs(3600),
         ct64_max_age: Duration::from_secs(3600),
-        start_check_interval: Duration::from_millis(100),
     }
 }
 
@@ -176,12 +157,8 @@ impl PadEvaluator for Counting {
 
 struct Failing;
 
-/// Fails all outputs except the reference outputs, so that the lane can start.
 impl PadEvaluator for Failing {
-    fn evaluate(&self, prf: u16, label: B256, pad_length: u16) -> anyhow::Result<PadOutputs> {
-        if reference_outputs().contains(&(label, pad_length)) {
-            return MockEvaluator.evaluate(prf, label, pad_length);
-        }
+    fn evaluate(&self, _prf: u16, _label: B256, _pad_length: u16) -> anyhow::Result<PadOutputs> {
         anyhow::bail!("bad parameters")
     }
 }
@@ -223,7 +200,7 @@ async fn computes_signs_and_writes_a_row() {
         attestation.ciphertext_digest,
         alloy::primitives::keccak256(&expected.ct64)
     );
-    until(&pool, "SELECT heartbeat_at IS NOT NULL FROM prf_lanes").await;
+    until(&pool, "SELECT EXISTS (SELECT 1 FROM prf_lanes WHERE heartbeat_at IS NOT NULL)").await;
 
     cancel.cancel();
     run.await.unwrap().unwrap();
@@ -259,9 +236,7 @@ async fn two_pods_compute_each_row_once() {
     let (_, cancel_b, run_b) = start(&pool, config(), evaluations.clone());
 
     until(&pool, "SELECT bool_and(signature IS NOT NULL) FROM pads").await;
-    // Each pod also computes the reference outputs at start.
-    let references = 2 * reference_outputs().len();
-    assert_eq!(evaluations.0.load(Ordering::SeqCst), 10 + references);
+    assert_eq!(evaluations.0.load(Ordering::SeqCst), 10);
 
     cancel_a.cancel();
     cancel_b.cancel();
@@ -621,90 +596,6 @@ async fn the_gc_runs_in_the_worker() {
     run.await.unwrap().unwrap();
 }
 
-async fn object_exists(client: &aws_sdk_s3::Client, key: &str) -> bool {
-    client
-        .head_object()
-        .bucket(BUCKET)
-        .key(key)
-        .send()
-        .await
-        .is_ok()
-}
-
-#[tokio::test]
-async fn waits_for_the_agreed_reference_digest() {
-    let (_instance, pool) = db().await;
-    let (_localstack, client, uploader) = s3().await;
-    client.create_bucket().bucket(BUCKET).send().await.unwrap();
-    sqlx::query("UPDATE prf_lanes SET reference_digest = NULL")
-        .execute(&pool)
-        .await
-        .unwrap();
-    add_row(&pool, LANE, 1, 1, 0.0).await;
-    let (_signer, cancel, run) =
-        start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
-
-    // A new instance: the lane uploads the reference objects, and does not claim.
-    let keys: Vec<String> = reference_outputs()
-        .into_iter()
-        .map(|(label, pad_length)| {
-            reference_key(&rows::Claim {
-                prf_instance: LANE,
-                label,
-                pad_length,
-            })
-        })
-        .collect();
-    let deadline = tokio::time::Instant::now() + DEADLINE;
-    for key in &keys {
-        while !object_exists(&client, key).await {
-            assert!(tokio::time::Instant::now() < deadline, "no object {key}");
-            sleep(Duration::from_millis(50)).await;
-        }
-    }
-    // The operators do not agree: the lane still waits.
-    sqlx::query("UPDATE prf_lanes SET reference_mismatch_at = NOW()")
-        .execute(&pool)
-        .await
-        .unwrap();
-    sleep(Duration::from_millis(300)).await;
-    assert!(!run.is_finished());
-    assert!(pending(&pool, LANE, 1).await);
-    let ready: bool = sqlx::query_scalar("SELECT ready_at IS NOT NULL FROM prf_lanes")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert!(!ready);
-
-    // The operators agree on the digest of the lane: it is ready, and claims.
-    sqlx::query("UPDATE prf_lanes SET reference_digest = $1, reference_mismatch_at = NULL")
-        .bind(agreed_digest().as_slice())
-        .execute(&pool)
-        .await
-        .unwrap();
-    until(&pool, "SELECT ready_at IS NOT NULL FROM prf_lanes").await;
-    until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
-
-    cancel.cancel();
-    run.await.unwrap().unwrap();
-}
-
-#[tokio::test]
-async fn exits_if_the_agreed_reference_digest_is_another() {
-    let (_instance, pool) = db().await;
-    sqlx::query("UPDATE prf_lanes SET reference_digest = $1")
-        .bind(B256::repeat_byte(9).as_slice())
-        .execute(&pool)
-        .await
-        .unwrap();
-    add_row(&pool, LANE, 1, 1, 0.0).await;
-    let (_signer, _cancel, run) = start(&pool, config(), Arc::new(MockEvaluator));
-
-    let error = run.await.unwrap().unwrap_err();
-    assert!(error.to_string().contains("not the agreed"), "{error}");
-    assert!(pending(&pool, LANE, 1).await);
-}
-
 #[tokio::test]
 async fn clears_the_old_ct64_and_keeps_the_digest() {
     let (_instance, pool) = db().await;
@@ -735,12 +626,8 @@ async fn clears_the_old_ct64_and_keeps_the_digest() {
 }
 
 #[tokio::test]
-async fn is_not_ready_until_the_start_check_passes() {
+async fn is_ready_once_the_lane_is_registered() {
     let (_instance, pool) = db().await;
-    sqlx::query("UPDATE prf_lanes SET reference_digest = NULL")
-        .execute(&pool)
-        .await
-        .unwrap();
     let cancel = CancellationToken::new();
     let worker = PadWorker::new(
         config(),
@@ -750,16 +637,9 @@ async fn is_not_ready_until_the_start_check_passes() {
         cancel.clone(),
     );
     let health = worker.health();
+    assert!(!health.health_check().await.is_healthy());
     let run = tokio::spawn(worker.run());
 
-    sleep(Duration::from_millis(300)).await;
-    assert!(!health.health_check().await.is_healthy());
-
-    sqlx::query("UPDATE prf_lanes SET reference_digest = $1")
-        .bind(agreed_digest().as_slice())
-        .execute(&pool)
-        .await
-        .unwrap();
     let deadline = tokio::time::Instant::now() + DEADLINE;
     while !health.health_check().await.is_healthy() {
         assert!(tokio::time::Instant::now() < deadline, "not ready");
@@ -784,7 +664,7 @@ impl PadEvaluator for Slow {
 async fn a_stop_lets_the_claimed_rows_complete() {
     let (_instance, pool) = db().await;
     let (_signer, cancel, run) = start(&pool, config(), Arc::new(Slow(Duration::from_secs(1))));
-    until(&pool, "SELECT ready_at IS NOT NULL FROM prf_lanes").await;
+    until(&pool, "SELECT EXISTS (SELECT 1 FROM prf_lanes WHERE heartbeat_at IS NOT NULL)").await;
     add_row(&pool, LANE, 1, 1, 0.0).await;
     until(&pool, "SELECT claimed_at IS NOT NULL FROM pads").await;
 

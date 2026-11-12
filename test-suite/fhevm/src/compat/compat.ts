@@ -489,9 +489,8 @@ export const supportsCoprocessorProxy = (state: Pick<CompatState, "versions" | "
   );
 
 /**
- * Whether a stack runs coprocessor-proxy: the bundle has the proxy, prf-service, the pad-worker that
- * computes the outputs and the consensus-detector that starts it, and the stack is not blue-green (one
- * proxy per fleet comes later). Takes a state (`scenario`) or a stack spec (`blueGreen`).
+ * Whether a stack runs coprocessor-proxy: the bundle has the proxy, prf-service and the pad-worker that
+ * computes the outputs, and the stack is not blue-green (one proxy per fleet comes later). Takes a state (`scenario`) or a stack spec (`blueGreen`).
  */
 export const runsCoprocessorProxy = (
   state: Pick<CompatState, "versions" | "overrides"> & { scenario?: { kind: string }; blueGreen?: unknown },
@@ -500,8 +499,7 @@ export const runsCoprocessorProxy = (
   !state.blueGreen &&
   supportsCoprocessorProxy(state) &&
   supportsPrfService(state) &&
-  supportsPadWorker(state) &&
-  supportsConsensusDetector(state);
+  supportsPadWorker(state);
 
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>

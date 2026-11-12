@@ -62,10 +62,6 @@ struct Args {
     #[arg(long, default_value_t = 30)]
     poll_interval_secs: u64,
 
-    /// Interval of the PRF reference digest comparison.
-    #[arg(long, default_value = "30s", value_parser = parse_duration)]
-    prf_reference_interval: Duration,
-
     /// How often to call `fetch_state_commitments` while waiting for unanimity.
     #[arg(long, default_value = "5s", value_parser = parse_duration)]
     commitment_poll_interval: Duration,
@@ -302,7 +298,6 @@ async fn main() -> anyhow::Result<()> {
                 .map_err(anyhow::Error::msg)?,
         },
         manifest_signer,
-        prf_reference_interval: args.prf_reference_interval,
     };
 
     info!(

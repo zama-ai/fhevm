@@ -12,9 +12,8 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "${script_dir}/../lib.sh"
 
 ######################################################################
-# coprocessor-proxy, prf-service and consensus-detector, except on blue-green
-# stacks: one of each per party, in its coprocessor-<i> release
-# (values-coprocessor-proxy-e2e.yaml). The pad-worker lane of PRF instance 0
+# coprocessor-proxy and prf-service, except on blue-green stacks: one of each
+# per party, in its coprocessor-<i> release (values-coprocessor-proxy-e2e.yaml). The pad-worker lane of PRF instance 0
 # runs in the pad release coprocessor-<i>-pads (values-coprocessor-pads-e2e.yaml).
 # What the e2e suite needs (test-suite/e2e/test/coprocessorProxy) goes in
 # the coprocessor-proxy ConfigMap:
@@ -71,11 +70,11 @@ SELECT format('ALTER ROLE %I PASSWORD %L', :'user', :'password') \gexec
 SQL
 }
 
-# Waits until the lane of PRF instance 0 of party i is ready: the detectors agreed on its digest.
+# Waits until the lane of PRF instance 0 of party i is ready.
 wait_pad_lane() {
   local i="$1"
   for _ in $(seq 1 60); do
-    if [[ "$(psql_owner "${i}" -c 'SELECT ready_at IS NOT NULL FROM prf_lanes WHERE prf_instance = 0')" == "t" ]]; then
+    if [[ "$(psql_owner "${i}" -c 'SELECT heartbeat_at IS NOT NULL FROM prf_lanes WHERE prf_instance = 0')" == "t" ]]; then
       return
     fi
     sleep 5
@@ -251,9 +250,6 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
       --set-string "prfService.image.tag=$(jq -r .coprocessor_prf_service <<<"${TAGS_JSON}")"
       # Only this party's prf-service. The chart default selects all parties.
       --set-json "coprocessorProxy.prfServiceNetworkPolicy.podSelector={\"app\":\"coprocessor-prf-service\",\"app.kubernetes.io/name\":\"$(prf_service "${i}")\"}"
-      # The detector has no tag of its own: it is built with the workers.
-      --set-string "consensusDetector.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")"
-      --set-string "consensusDetector.serviceAccountName=coprocessor-${i}"
     )
   fi
   helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \

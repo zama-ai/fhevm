@@ -23,8 +23,8 @@ pub async fn prf_service_pool(admin: &PgPool, db_url: &str, max_connections: u32
     sqlx::raw_sql(GRANTS).execute(admin).await.unwrap();
     // A live lane for instance 0. The heartbeat is in the future, so it stays live during a test.
     sqlx::raw_sql(
-        "INSERT INTO prf_lanes (prf_instance, ready_at, heartbeat_at)
-         VALUES (0, NOW(), NOW() + INTERVAL '1 day') ON CONFLICT DO NOTHING",
+        "INSERT INTO prf_lanes (prf_instance, heartbeat_at)
+         VALUES (0, NOW() + INTERVAL '1 day') ON CONFLICT DO NOTHING",
     )
     .execute(admin)
     .await
