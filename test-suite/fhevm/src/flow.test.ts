@@ -269,7 +269,6 @@ describe("resumeRepairStep", () => {
           COPROCESSOR_PROXY_VERSION: "02f6cc0",
           COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0",
           COPROCESSOR_PAD_WORKER_VERSION: "02f6cc0",
-          COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.15.0",
         },
       },
     };

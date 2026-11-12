@@ -194,13 +194,11 @@ Before you add a lane:
   use `$(DATABASE_USER)`. The migration job of the fleet release gives the table rights.
 - Set `padWorkerShared.config.s3BucketName` to the bucket of the operator, and
   `padWorkerShared.wallet` to the coprocessor signer.
-- Do not set an S3 lifecycle rule on `pads-reference/`. The reference objects must stay for the life
-  of the instance. A rule on `pads/` can delete objects after
+- An S3 lifecycle rule on `pads/` can delete objects after
   `padWorkerShared.config.outputMaxAgeSeconds`.
 
 A lane keeps its image (`padLanes[].image`) for the life of its instance. An image that changes the
-bytes of the outputs needs a new `prfId`: the lane exits at start if its reference digest is not the
-agreed one.
+bytes of the outputs needs a new `prfId`.
 
 The lane has no Service except the metrics one, and `padWorkerShared.serviceMonitor.enabled` adds a
 ServiceMonitor: nothing calls a lane.

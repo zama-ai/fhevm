@@ -46,8 +46,8 @@ const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
 
 /** The object store container: it has curl, which the coprocessor images do not have. */
 const OBJECT_STORE_CONTAINER = "fhevm-object-store";
-/** The pad-worker log line after the start check. */
-const PAD_WORKER_READY = /Reference digest agreed, lane ready/;
+/** The pad-worker log line once the lane claims rows. */
+const PAD_WORKER_READY = /Lane ready/;
 
 /** The default `/healthz` port of coprocessor-proxy and prf-service. */
 const COPROCESSOR_PROXY_HEALTHCHECK_PORT = 8080;
@@ -391,7 +391,6 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
     }
     if (includeProxy) {
       await waitForHealthz(prefix, "prf-service");
-      // The lane claims rows only after the consensus-detectors agree on its reference digest.
       await waitForLog(`${prefix}pad-worker`, PAD_WORKER_READY);
       await waitForHealthz(prefix, "proxy");
     }
