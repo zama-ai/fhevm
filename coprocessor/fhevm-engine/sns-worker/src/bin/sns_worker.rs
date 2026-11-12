@@ -86,6 +86,12 @@ async fn main() {
         "otlp-layer",
     );
 
+    if let Err(err) = fhevm_engine_common::db_keys::reject_legacy_server_key_override() {
+        error!(error = %err, "Invalid server-key configuration");
+        telemetry::flush();
+        std::process::exit(1);
+    }
+
     #[cfg(feature = "gpu")]
     if let Err(err) = fhevm_engine_common::gpu_arch::ensure_matching_visible_devices() {
         error!(error = %err, "GPU runtime architecture does not match image target");
