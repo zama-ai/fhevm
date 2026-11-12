@@ -9,17 +9,21 @@ export function generateSolidityHCULimit(priceData: PriceData): string {
   pragma solidity ^0.8.24;
 
   import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+  import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
   import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
-  import {fhevmExecutorAdd} from "../addresses/FHEVMHostAddresses.sol";
+  import {aclAdd, fhevmExecutorAdd} from "../addresses/FHEVMHostAddresses.sol";
   import {ACLOwnable} from "./shared/ACLOwnable.sol";
 
   import {FheType} from "./shared/FheType.sol";
 
   /**
    * @title HCULimit
-   * @notice This contract manages the total allowed complexity for FHE operations at the
-   * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
+   * @notice Controls admission to HCU-charged FHE computation and enforces block and transaction HCU limits.
    * @dev The contract is designed to be used with the FHEVMExecutor contract.
+   * The computation allowlist controls which dapps may compute while activated. Membership grants no
+   * exemption from HCU limits. The independent block HCU whitelist exempts callers only from the global
+   * block cap and meter; transaction and depth limits still apply. A caller on the block HCU whitelist
+   * must also be on the computation allowlist while allowlist is activated.
   */
 /// @dev This contract was migrated from Ownable2StepUpgradeable to ACLOwnable.
 /// Deployed proxies retain residual \`_owner\` and \`_pendingOwner\` values in the
@@ -38,6 +42,27 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// @notice Returned if the address is not block HCU whitelisted.
     error NotBlockHCUWhitelisted(address account);
+
+    /// @notice Returned if a computation caller is absent from the active allowlist.
+    error CallerNotAllowlisted(address caller);
+
+    /// @notice Returned if the sender is neither the ACL owner nor an active allowlister.
+    error CallerNotACLOwnerOrAllowlister(address caller);
+
+    /// @notice Returned if the address is not allowlisted.
+    error NotAllowlisted(address account);
+
+    /// @notice Returned if an allowlist admission or removal batch is empty.
+    error EmptyBatch();
+
+    /// @notice Returned if an allowlister deadline is not in the future.
+    error InvalidAllowlisterDeadline(uint256 deadline);
+
+    /// @notice Returned if an account without a stored allowlister grant tries to renounce.
+    error NotAllowlister(address account);
+
+    /// @notice Returned if an addition uses the zero address.
+    error InvalidZeroAddress();
 
     /// @notice Returned if the transaction exceeds the maximum allowed homomorphic complexity units.
     error HCUTransactionLimitExceeded();
@@ -81,6 +106,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @param account Caller address that was removed from the whitelist.
     event BlockHCUWhitelistRemoved(address indexed account);
 
+    /// @notice Emitted when computation allowlist activation is set.
+    event AllowlistActivationChanged(bool activated);
+
+    /// @notice Emitted for each dapp admitted by the ACL owner or an active allowlister.
+    event AllowlistAdded(address indexed account, address indexed addedBy);
+
+    /// @notice Emitted for each dapp removed from the computation allowlist.
+    event AllowlistRemoved(address indexed account);
+
+    /// @notice Emitted when an allowlister deadline is granted or replaced.
+    event AllowlisterAdded(address indexed account, uint256 deadline);
+
+    /// @notice Emitted when a nonzero stored allowlister deadline is cleared.
+    event AllowlisterRemoved(address indexed account);
+
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "HCULimit";
 
@@ -88,7 +128,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 5;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -103,9 +143,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev All five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
     struct HCULimitStorage {
-        /// @notice Maximum homomorphic complexity units per block for non-whitelisted callers.
+        /// @notice Maximum homomorphic complexity units per block for callers outside the block HCU whitelist.
         uint48 globalHCUCapPerBlock;
-        /// @notice Used HCU in the current block for non-whitelisted callers.
+        /// @notice Used HCU in the current block for callers outside the block HCU whitelist.
         uint48 usedBlockHCU;
         /// @notice Last seen block number for the block meter.
         uint48 lastSeenBlockNumber;
@@ -113,13 +153,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint48 maxHCUDepthPerTx;
         /// @notice Maximum total HCU per transaction.
         uint48 maxHCUPerTx;
-        /// @notice Whitelisted callers bypass block-level cap.
+        /// @notice Callers exempt from the global block HCU cap and meter.
+        /// @dev Membership grants no computation admission or exemption from transaction and depth limits.
         mapping(address account => bool isWhitelisted) blockHCUWhitelist;
+        /// @notice Dapps admitted to HCU-charged computation while the allowlist is active.
+        /// @dev Membership grants no exemption from HCU limits.
+        mapping(address account => bool allowed) isAllowlisted;
+        /// @notice Delegated allowlister deadlines as Unix timestamps in seconds.
+        mapping(address account => uint256 deadline) allowlisters;
+        /// @notice Whether only allowlisted dapps may request HCU-charged computation.
+        bool isAllowlistActivated;
     }
 
     /// Constant used for making sure the version number used in the \`reinitializer\` modifier is
     /// identical between \`initializeFromEmptyProxy\` and the \`reinitializeVX\` method
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCU_LIMIT_STORAGE_LOCATION =
@@ -150,11 +198,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V4, leaving the computation allowlist inactive.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
 \n\n`;
 
@@ -162,10 +210,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     const functionName = `checkHCUFor${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
     const lhsName = operation === 'fheMulDiv' ? 'factor1' : 'lhs';
     const rhsName = operation === 'fheMulDiv' ? 'factor2' : 'rhs';
-    const lhsDoc =
-      operation === 'fheMulDiv' ? 'The first multiplication factor.' : 'The left-hand side operand.';
-    const rhsDoc =
-      operation === 'fheMulDiv' ? 'The second multiplication factor.' : 'The right-hand side operand.';
+    const lhsDoc = operation === 'fheMulDiv' ? 'The first multiplication factor.' : 'The left-hand side operand.';
+    const rhsDoc = operation === 'fheMulDiv' ? 'The second multiplication factor.' : 'The right-hand side operand.';
 
     if (data.supportScalar && data.scalar && data.nonScalar) {
       switch (data.numberInputs) {
@@ -369,7 +415,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
   return (
     output +
     `    /**
-     * @notice Sets the block-level HCU limit for non-whitelisted callers.
+     * @notice Sets the block-level HCU limit for callers outside the block HCU whitelist.
      * @param hcuPerBlock New block-level cap.
      */
     function setHCUPerBlock(uint48 hcuPerBlock) external onlyACLOwner {
@@ -393,8 +439,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Adds one caller to the block-cap whitelist.
-     * @param account Caller to whitelist.
+     * @notice Exempts one caller from the global block HCU cap and meter.
+     * @dev An active computation allowlist and transaction and depth limits still apply to this caller.
+     * @param account Caller to add to the block HCU whitelist.
      */
     function addToBlockHCUWhitelist(address account) external onlyACLOwner {
         HCULimitStorage storage $ = _getHCULimitStorage();
@@ -404,8 +451,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Removes one caller from the block-cap whitelist.
-     * @param account Caller to remove from whitelist.
+     * @notice Removes one caller's exemption from the global block HCU cap and meter.
+     * @dev Does not change computation allowlist membership.
+     * @param account Caller to remove from the block HCU whitelist.
      */
     function removeFromBlockHCUWhitelist(address account) external onlyACLOwner {
         HCULimitStorage storage $ = _getHCULimitStorage();
@@ -414,6 +462,100 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         emit BlockHCUWhitelistRemoved(account);
     }
 
+    /**
+     * @notice Activates or deactivates the computation allowlist without clearing membership or deadlines.
+     * @dev When active, callers on the block HCU whitelist must also be on the computation allowlist.
+     * @param activated Whether computation requires allowlist membership.
+     */
+    function setAllowlistActivated(bool activated) external onlyACLOwner {
+        _getHCULimitStorage().isAllowlistActivated = activated;
+        emit AllowlistActivationChanged(activated);
+    }
+
+    /**
+     * @notice Atomically admits dapps, including addresses approved before deployment.
+     * @dev Admission grants no exemption from HCU limits or membership in the block HCU whitelist.
+     * Existing members and repeated addresses are skipped without emitting events.
+     * @param accounts Nonempty list of nonzero dapp addresses to admit.
+     */
+    function addToAllowlist(address[] calldata accounts) external {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if (msg.sender != Ownable2StepUpgradeable(aclAdd).owner() && $.allowlisters[msg.sender] <= block.timestamp) {
+            revert CallerNotACLOwnerOrAllowlister(msg.sender);
+        }
+        if (accounts.length == 0) revert EmptyBatch();
+        for (uint256 i = 0; i < accounts.length; ++i) {
+            address account = accounts[i];
+            if (account == address(0)) revert InvalidZeroAddress();
+            if ($.isAllowlisted[account]) continue;
+            $.isAllowlisted[account] = true;
+            emit AllowlistAdded(account, msg.sender);
+        }
+    }
+
+    /**
+     * @notice Atomically removes dapps from the computation allowlist.
+     * @dev While allowlist is activated, removed dapps cannot compute even if on the block HCU whitelist.
+     * @param accounts Nonempty list of allowlisted dapp addresses to remove.
+     */
+    function removeFromAllowlist(address[] calldata accounts) external onlyACLOwner {
+        if (accounts.length == 0) revert EmptyBatch();
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        for (uint256 i = 0; i < accounts.length; ++i) {
+            address account = accounts[i];
+            if (!$.isAllowlisted[account]) revert NotAllowlisted(account);
+            $.isAllowlisted[account] = false;
+            emit AllowlistRemoved(account);
+        }
+    }
+
+    /**
+     * @notice Grants or replaces an allowlister deadline, including renewal of expired grants.
+     * @param account Nonzero account allowed to admit dapps until the deadline.
+     * @param deadline Future Unix timestamp in seconds; authority expires at this timestamp.
+     */
+    function addAllowlister(address account, uint256 deadline) external onlyACLOwner {
+        if (account == address(0)) revert InvalidZeroAddress();
+        if (deadline <= block.timestamp) revert InvalidAllowlisterDeadline(deadline);
+        _getHCULimitStorage().allowlisters[account] = deadline;
+        emit AllowlisterAdded(account, deadline);
+    }
+
+    /**
+     * @notice Clears an allowlister grant without removing previously admitted dapps.
+     * @dev Clears active or expired deadlines. An absent grant succeeds without emitting an event.
+     * @param account Account whose allowlister grant is cleared.
+     */
+    function removeAllowlister(address account) external onlyACLOwner {
+        _removeAllowlister(account);
+    }
+
+    /// @notice Clears the sender's stored allowlister grant, active or expired, without removing previously admitted dapps.
+    function renounceAllowlister() external {
+        if (_getHCULimitStorage().allowlisters[msg.sender] == 0) revert NotAllowlister(msg.sender);
+        _removeAllowlister(msg.sender);
+    }
+
+    function _removeAllowlister(address account) private {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.allowlisters[account] == 0) return;
+        delete $.allowlisters[account];
+        emit AllowlisterRemoved(account);
+    }
+
+
+    /**
+     * @notice Checks the HCU depth for an operation with no ciphertext operands.
+     */
+    function _adjustAndCheckFheTransactionLimitZeroOp(uint256 opHCU, address caller, bytes32 result) internal virtual {
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+
+        if (opHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+
+        _setHCUForHandle(result, opHCU);
+    }
 
     /**
      * @notice Adjusts the sequential HCU for the transaction.
@@ -476,13 +618,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Updates and verifies the HCU transaction limit.
      * @param opHCU The HCU for the operation.
-     * @param caller Original caller address for block-level checks.
+     * @param caller Original dapp caller address for allowlist and block-level checks.
      */
     function _updateAndVerifyHCUTransactionLimit(uint256 opHCU, address caller) internal virtual {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.isAllowlistActivated && !$.isAllowlisted[caller]) {
+            revert CallerNotAllowlisted(caller);
+        }
         _updateAndVerifyHCUBlockLimit(opHCU, caller);
 
         uint256 transactionHCU = opHCU + _getHCUForTransaction();
-        if (transactionHCU > uint256(_getHCULimitStorage().maxHCUPerTx)) {
+        if (transactionHCU > uint256($.maxHCUPerTx)) {
             revert HCUTransactionLimitExceeded();
         }
         _setHCUForTransaction(transactionHCU);
@@ -671,11 +817,33 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Returns whether a caller bypasses the global block HCU cap.
+     * @dev This exemption grants no computation admission and leaves transaction and depth limits in force.
      * @param account Caller address.
      */
     function isBlockHCUWhitelisted(address account) public view virtual returns (bool) {
         HCULimitStorage storage $ = _getHCULimitStorage();
         return $.blockHCUWhitelist[account];
+    }
+
+    /// @notice Returns whether HCU-charged computation requires allowlist membership.
+    function isAllowlistActivated() public view virtual returns (bool) {
+        return _getHCULimitStorage().isAllowlistActivated;
+    }
+
+    /// @notice Returns whether a dapp is on the computation allowlist, independently of activation.
+    /// @dev Membership grants no exemption from the block cap, transaction limit, or depth limit.
+    function isAllowlisted(address account) public view virtual returns (bool) {
+        return _getHCULimitStorage().isAllowlisted[account];
+    }
+
+    /// @notice Returns whether the account's allowlister deadline is strictly in the future.
+    function isAllowlister(address account) public view virtual returns (bool) {
+        return _getHCULimitStorage().allowlisters[account] > block.timestamp;
+    }
+
+    /// @notice Returns the stored Unix deadline in seconds, including expired grants; zero means no grant.
+    function allowlisterDeadline(address account) public view virtual returns (uint256) {
+        return _getHCULimitStorage().allowlisters[account];
     }
 
     /**
@@ -784,8 +952,7 @@ function generateCheckTransactionLimit(
   if (!isScalar) {
     switch (numberInputs) {
       case 0:
-        return `_updateAndVerifyHCUTransactionLimit(opHCU, caller);
-                _setHCUForHandle(result, opHCU);`;
+        return `_adjustAndCheckFheTransactionLimitZeroOp(opHCU, caller, result);`;
       case 1:
         return `_adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, ct, result);`;
       case 2:
@@ -800,8 +967,7 @@ function generateCheckTransactionLimit(
       case 0:
         throw new Error('Number of inputs must be greater than 0 if scalar');
       case 1:
-        return `_updateAndVerifyHCUTransactionLimit(opHCU, caller);
-                _setHCUForHandle(result, opHCU);`;
+        return `_adjustAndCheckFheTransactionLimitZeroOp(opHCU, caller, result);`;
       case 2:
         return `_adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, ${lhsName}, result);`;
       default:
