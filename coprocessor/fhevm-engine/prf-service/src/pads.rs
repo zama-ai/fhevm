@@ -41,10 +41,8 @@ pub enum Admission {
     Existing(PadState),
     /// The connector has no budget for this row.
     OverBudget,
-    /// The row is pending and expired: no lane computes it.
+    /// The row is pending and expired: no pad-worker computes it.
     Expired,
-    /// The lane of the instance has no heartbeat, or an old one: no row is added.
-    NoLane,
 }
 
 /// Admits requests in one pod.
@@ -54,8 +52,6 @@ pub struct Admissions {
     max_adds_per_connector: NonZeroUsize,
     /// Pending rows older than this do not count in the budget.
     pending_max_age: Duration,
-    /// A lane with an older heartbeat is down.
-    lane_heartbeat_max_age: Duration,
     /// One semaphore for each connector with an add in progress in this pod.
     adds: Adds,
 }
@@ -66,14 +62,12 @@ impl Admissions {
         max_pending_bits: i64,
         max_adds_per_connector: NonZeroUsize,
         pending_max_age: Duration,
-        lane_heartbeat_max_age: Duration,
     ) -> Self {
         Self {
             pool,
             max_pending_bits,
             max_adds_per_connector,
             pending_max_age,
-            lane_heartbeat_max_age,
             adds: Adds::default(),
         }
     }
@@ -85,19 +79,10 @@ impl Admissions {
         path: &PrfOutputRef,
         connector: Address,
     ) -> anyhow::Result<Admission> {
-        let row = read_for_admission(
-            &self.pool,
-            path,
-            self.pending_max_age,
-            self.lane_heartbeat_max_age,
-        )
-        .await?;
+        let row = read_for_admission(&self.pool, path, self.pending_max_age).await?;
         match row.state {
-            // A complete or failed row is served also when the lane is down.
             Some(PadState::Pending) if row.expired => return Ok(Admission::Expired),
-            Some(PadState::Pending) if !row.lane_live => return Ok(Admission::NoLane),
             Some(state) => return Ok(Admission::Existing(state)),
-            None if !row.lane_live => return Ok(Admission::NoLane),
             None => {}
         }
         // Wait in memory: a request that waits for the lock in Postgres holds a connection.
@@ -209,21 +194,18 @@ async fn add(
     })
 }
 
-/// The row of a request, and the lane of its instance.
+/// The row of a request.
 struct AdmissionRow {
     state: Option<PadState>,
     /// The row is older than `pending_max_age`.
     expired: bool,
-    /// The lane has a heartbeat newer than `lane_heartbeat_max_age`.
-    lane_live: bool,
 }
 
-/// Reads the row of `path`, its age and the lane of its instance, in one query.
+/// Reads the row of `path` and its age, in one query.
 async fn read_for_admission(
     pool: &PgPool,
     path: &PrfOutputRef,
     pending_max_age: Duration,
-    lane_heartbeat_max_age: Duration,
 ) -> anyhow::Result<AdmissionRow> {
     let row = sqlx::query!(
         r#"SELECT p.is_error AS "is_error?", OCTET_LENGTH(p.ciphertext128) AS body_length,
@@ -231,11 +213,7 @@ async fn read_for_admission(
                   p.ciphertext_digest AS "ciphertext_digest?",
                   p.ciphertext128_digest AS "ciphertext128_digest?", p.signer AS "signer?",
                   p.signature AS "signature?",
-                  COALESCE(p.created_at <= NOW() - make_interval(secs => $4), FALSE) AS "expired!",
-                  EXISTS (
-                      SELECT 1 FROM prf_lanes
-                       WHERE prf_instance = $1 AND heartbeat_at > NOW() - make_interval(secs => $5)
-                  ) AS "lane_live!"
+                  COALESCE(p.created_at <= NOW() - make_interval(secs => $4), FALSE) AS "expired!"
              FROM (VALUES (1)) AS one
              LEFT JOIN pads p
                ON p.prf_instance = $1 AND p.label = $2 AND p.pad_length = $3"#,
@@ -243,7 +221,6 @@ async fn read_for_admission(
         path.label.as_slice(),
         i32::from(path.pad_length),
         pending_max_age.as_secs_f64(),
-        lane_heartbeat_max_age.as_secs_f64(),
     )
     .fetch_one(pool)
     .await?;
@@ -264,7 +241,6 @@ async fn read_for_admission(
     Ok(AdmissionRow {
         state,
         expired: row.expired,
-        lane_live: row.lane_live,
     })
 }
 
@@ -387,7 +363,6 @@ mod tests {
             64,
             NonZeroUsize::new(2).unwrap(),
             Duration::from_secs(600),
-            Duration::from_secs(30),
         )
     }
 

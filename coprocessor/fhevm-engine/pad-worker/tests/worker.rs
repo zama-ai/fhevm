@@ -28,7 +28,8 @@ use test_harness::{
 use tokio::{task::JoinHandle, time::sleep};
 use tokio_util::sync::CancellationToken;
 
-const LANE: u16 = 1;
+/// The PRF instance of the tests.
+const INSTANCE: u16 = 1;
 const DEADLINE: Duration = Duration::from_secs(20);
 
 async fn db() -> (DBInstance, PgPool) {
@@ -43,7 +44,7 @@ async fn db() -> (DBInstance, PgPool) {
 
 fn config() -> Config {
     Config {
-        prf_instance: LANE,
+        prf_instance: INSTANCE,
         key_id: U256::from(1).to_be_bytes::<32>().to_vec(),
         max_concurrent: NonZeroUsize::new(4).unwrap(),
         claim_timeout: Duration::from_secs(60),
@@ -166,7 +167,7 @@ impl PadEvaluator for Failing {
 #[tokio::test]
 async fn computes_signs_and_writes_a_row() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE, 0xab, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 0xab, 1, 0.0).await;
     let (signer, cancel, run) = start(&pool, config(), Arc::new(MockEvaluator));
 
     until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
@@ -179,7 +180,7 @@ async fn computes_signs_and_writes_a_row() {
     .await
     .unwrap();
     let label = B256::repeat_byte(0xab);
-    let expected = MockEvaluator.evaluate(LANE, label, 64).unwrap();
+    let expected = MockEvaluator.evaluate(INSTANCE, label, 64).unwrap();
     assert_eq!(row.0, expected.ct128);
     let ct64: Vec<u8> = sqlx::query_scalar("SELECT ciphertext64 FROM pads")
         .fetch_one(&pool)
@@ -194,13 +195,12 @@ async fn computes_signs_and_writes_a_row() {
         signature: row.4,
     };
     attestation
-        .verify(&PrfOutputRef::new(LANE, label, 64), signer.address())
+        .verify(&PrfOutputRef::new(INSTANCE, label, 64), signer.address())
         .unwrap();
     assert_eq!(
         attestation.ciphertext_digest,
         alloy::primitives::keccak256(&expected.ct64)
     );
-    until(&pool, "SELECT EXISTS (SELECT 1 FROM prf_lanes WHERE heartbeat_at IS NOT NULL)").await;
 
     cancel.cancel();
     run.await.unwrap().unwrap();
@@ -209,8 +209,8 @@ async fn computes_signs_and_writes_a_row() {
 #[tokio::test]
 async fn computes_only_the_rows_of_its_instance() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE, 1, 1, 0.0).await;
-    add_row(&pool, LANE + 1, 2, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE + 1, 2, 1, 0.0).await;
     let (_signer, cancel, run) = start(&pool, config(), Arc::new(MockEvaluator));
 
     until(
@@ -219,7 +219,7 @@ async fn computes_only_the_rows_of_its_instance() {
     )
     .await;
     sleep(Duration::from_millis(300)).await;
-    assert!(pending(&pool, LANE + 1, 2).await);
+    assert!(pending(&pool, INSTANCE + 1, 2).await);
 
     cancel.cancel();
     run.await.unwrap().unwrap();
@@ -229,7 +229,7 @@ async fn computes_only_the_rows_of_its_instance() {
 async fn two_pods_compute_each_row_once() {
     let (_instance, pool) = db().await;
     for label in 0..10 {
-        add_row(&pool, LANE, label, 1, 0.0).await;
+        add_row(&pool, INSTANCE, label, 1, 0.0).await;
     }
     let evaluations = Arc::new(Counting::default());
     let (_, cancel_a, run_a) = start(&pool, config(), evaluations.clone());
@@ -247,8 +247,8 @@ async fn two_pods_compute_each_row_once() {
 #[tokio::test]
 async fn takes_a_stale_claim_again_but_not_a_live_one() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE, 1, 1, 0.0).await;
-    add_row(&pool, LANE, 2, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 2, 1, 0.0).await;
     // Row 1: claimed by a pod that stopped. Row 2: claimed by a pod that still works on it.
     sqlx::query(
         "UPDATE pads SET claimed_at = CASE WHEN label = $1 THEN NOW() - INTERVAL '1 hour'
@@ -266,8 +266,8 @@ async fn takes_a_stale_claim_again_but_not_a_live_one() {
     )
     .await;
     sleep(Duration::from_millis(300)).await;
-    assert!(!pending(&pool, LANE, 1).await);
-    assert!(pending(&pool, LANE, 2).await);
+    assert!(!pending(&pool, INSTANCE, 1).await);
+    assert!(pending(&pool, INSTANCE, 2).await);
 
     cancel.cancel();
     run.await.unwrap().unwrap();
@@ -276,8 +276,8 @@ async fn takes_a_stale_claim_again_but_not_a_live_one() {
 #[tokio::test]
 async fn skips_expired_rows() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE, 1, 1, 3600.0).await;
-    add_row(&pool, LANE, 2, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 3600.0).await;
+    add_row(&pool, INSTANCE, 2, 1, 0.0).await;
     let (_signer, cancel, run) = start(&pool, config(), Arc::new(MockEvaluator));
 
     until(
@@ -286,7 +286,7 @@ async fn skips_expired_rows() {
     )
     .await;
     sleep(Duration::from_millis(300)).await;
-    assert!(pending(&pool, LANE, 1).await);
+    assert!(pending(&pool, INSTANCE, 1).await);
 
     cancel.cancel();
     run.await.unwrap().unwrap();
@@ -295,7 +295,7 @@ async fn skips_expired_rows() {
 #[tokio::test]
 async fn a_failed_evaluation_fails_the_row() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     let (_signer, cancel, run) = start(&pool, config(), Arc::new(Failing));
 
     until(
@@ -311,9 +311,9 @@ async fn a_failed_evaluation_fails_the_row() {
 #[tokio::test]
 async fn a_temporary_error_retries_the_row_after_a_backoff() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     let claim_timeout = Duration::from_secs(60);
-    let claim = || rows::claim(&pool, LANE, Duration::from_secs(600), claim_timeout);
+    let claim = || rows::claim(&pool, INSTANCE, Duration::from_secs(600), claim_timeout);
     let first = claim().await.unwrap().unwrap();
 
     for _ in 0..5 {
@@ -346,13 +346,13 @@ async fn a_temporary_error_retries_the_row_after_a_backoff() {
 async fn the_connector_with_fewer_rows_in_progress_goes_first() {
     let (_instance, pool) = db().await;
     // Connector 1 asked first, for two rows. Connector 2 asked later, for one row.
-    add_row(&pool, LANE, 1, 1, 30.0).await;
-    add_row(&pool, LANE, 2, 1, 20.0).await;
-    add_row(&pool, LANE, 3, 2, 10.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 30.0).await;
+    add_row(&pool, INSTANCE, 2, 1, 20.0).await;
+    add_row(&pool, INSTANCE, 3, 2, 10.0).await;
     let claim = || {
         rows::claim(
             &pool,
-            LANE,
+            INSTANCE,
             Duration::from_secs(600),
             Duration::from_secs(60),
         )
@@ -375,17 +375,17 @@ async fn uploads_the_output_with_its_attestation() {
     let (_instance, pool) = db().await;
     let (_localstack, client, uploader) = s3().await;
     client.create_bucket().bucket(BUCKET).send().await.unwrap();
-    add_row(&pool, LANE, 0xab, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 0xab, 1, 0.0).await;
     let (signer, cancel, run) =
         start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
 
     until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
 
     let label = B256::repeat_byte(0xab);
-    let key = format!("pads/{LANE}/{}/64/ct128", hex::encode(label));
+    let key = format!("pads/{INSTANCE}/{}/64/ct128", hex::encode(label));
     assert_eq!(
         s3_key(&rows::Claim {
-            prf_instance: LANE,
+            prf_instance: INSTANCE,
             label,
             pad_length: 64
         }),
@@ -403,12 +403,12 @@ async fn uploads_the_output_with_its_attestation() {
     )
     .unwrap();
     attestation
-        .verify(&PrfOutputRef::new(LANE, label, 64), signer.address())
+        .verify(&PrfOutputRef::new(INSTANCE, label, 64), signer.address())
         .unwrap();
     let body = object.body.collect().await.unwrap().into_bytes();
     assert_eq!(
         body.as_ref(),
-        MockEvaluator.evaluate(LANE, label, 64).unwrap().ct128
+        MockEvaluator.evaluate(INSTANCE, label, 64).unwrap().ct128
     );
 
     cancel.cancel();
@@ -419,7 +419,7 @@ async fn uploads_the_output_with_its_attestation() {
 async fn a_failed_upload_is_tried_again() {
     let (_instance, pool) = db().await;
     let (_localstack, client, uploader) = s3().await;
-    add_row(&pool, LANE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     let config = Config {
         claim_timeout: Duration::from_secs(1),
         ..config()
@@ -445,10 +445,10 @@ async fn a_failed_upload_is_tried_again() {
 #[tokio::test]
 async fn writes_the_output_of_a_pending_row_only() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     let claim = rows::claim(
         &pool,
-        LANE,
+        INSTANCE,
         Duration::from_secs(600),
         Duration::from_secs(60),
     )
@@ -524,32 +524,32 @@ async fn deletes_old_rows_of_all_instances_that_are_uploaded_or_failed() {
         (3, 3600.0, "not_uploaded"),
         (4, 60.0, "uploaded"),
     ] {
-        add_row(&pool, LANE, label, 1, age).await;
-        set_state(&pool, LANE, label, state).await;
+        add_row(&pool, INSTANCE, label, 1, age).await;
+        set_state(&pool, INSTANCE, label, state).await;
     }
-    add_row(&pool, LANE + 1, 5, 1, 3600.0).await;
-    set_state(&pool, LANE + 1, 5, "uploaded").await;
+    add_row(&pool, INSTANCE + 1, 5, 1, 3600.0).await;
+    set_state(&pool, INSTANCE + 1, 5, "uploaded").await;
 
     let deleted = rows::delete_old_outputs(&pool, Duration::from_secs(1800))
         .await
         .unwrap();
 
     assert_eq!(deleted, 3);
-    assert_eq!(labels(&pool, LANE).await, vec![3, 4]);
-    assert!(labels(&pool, LANE + 1).await.is_empty());
+    assert_eq!(labels(&pool, INSTANCE).await, vec![3, 4]);
+    assert!(labels(&pool, INSTANCE + 1).await.is_empty());
 }
 
 #[tokio::test]
 async fn deletes_expired_pending_rows_of_all_instances_without_a_live_claim() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE, 1, 1, 3600.0).await;
-    add_row(&pool, LANE, 2, 1, 3600.0).await;
-    set_state(&pool, LANE, 2, "claimed").await;
-    add_row(&pool, LANE, 3, 1, 3600.0).await;
-    set_state(&pool, LANE, 3, "not_uploaded").await;
+    add_row(&pool, INSTANCE, 1, 1, 3600.0).await;
+    add_row(&pool, INSTANCE, 2, 1, 3600.0).await;
+    set_state(&pool, INSTANCE, 2, "claimed").await;
+    add_row(&pool, INSTANCE, 3, 1, 3600.0).await;
+    set_state(&pool, INSTANCE, 3, "not_uploaded").await;
     // Another instance: one expired row, one new row.
-    add_row(&pool, LANE + 1, 4, 1, 3600.0).await;
-    add_row(&pool, LANE + 1, 5, 1, 60.0).await;
+    add_row(&pool, INSTANCE + 1, 4, 1, 3600.0).await;
+    add_row(&pool, INSTANCE + 1, 5, 1, 60.0).await;
 
     let deleted =
         rows::delete_expired_pending(&pool, Duration::from_secs(600), Duration::from_secs(60))
@@ -557,18 +557,18 @@ async fn deletes_expired_pending_rows_of_all_instances_without_a_live_claim() {
             .unwrap();
 
     assert_eq!(deleted, 2);
-    assert_eq!(labels(&pool, LANE).await, vec![2, 3]);
-    assert_eq!(labels(&pool, LANE + 1).await, vec![5]);
+    assert_eq!(labels(&pool, INSTANCE).await, vec![2, 3]);
+    assert_eq!(labels(&pool, INSTANCE + 1).await, vec![5]);
 }
 
 #[tokio::test]
 async fn gives_the_age_of_the_oldest_rows_of_each_instance() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE, 1, 1, 100.0).await;
-    add_row(&pool, LANE, 2, 1, 200.0).await;
-    set_state(&pool, LANE, 2, "not_uploaded").await;
-    add_row(&pool, LANE + 1, 3, 1, 300.0).await;
-    set_state(&pool, LANE + 1, 3, "uploaded").await;
+    add_row(&pool, INSTANCE, 1, 1, 100.0).await;
+    add_row(&pool, INSTANCE, 2, 1, 200.0).await;
+    set_state(&pool, INSTANCE, 2, "not_uploaded").await;
+    add_row(&pool, INSTANCE + 1, 3, 1, 300.0).await;
+    set_state(&pool, INSTANCE + 1, 3, "uploaded").await;
 
     let mut oldest = rows::oldest_rows(&pool).await.unwrap();
     oldest.sort_by_key(|o| o.prf_instance);
@@ -583,7 +583,7 @@ async fn gives_the_age_of_the_oldest_rows_of_each_instance() {
 #[tokio::test]
 async fn the_gc_runs_in_the_worker() {
     let (_instance, pool) = db().await;
-    add_row(&pool, LANE + 1, 1, 1, 3600.0).await;
+    add_row(&pool, INSTANCE + 1, 1, 1, 3600.0).await;
     let config = Config {
         gc_interval: Duration::from_millis(100),
         ..config()
@@ -600,8 +600,8 @@ async fn the_gc_runs_in_the_worker() {
 async fn clears_the_old_ct64_and_keeps_the_digest() {
     let (_instance, pool) = db().await;
     for (label, age) in [(1, 3600.0), (2, 60.0)] {
-        add_row(&pool, LANE, label, 1, age).await;
-        set_state(&pool, LANE, label, "uploaded").await;
+        add_row(&pool, INSTANCE, label, 1, age).await;
+        set_state(&pool, INSTANCE, label, "uploaded").await;
     }
     sqlx::query("UPDATE pads SET ciphertext64 = '\\x0102'")
         .execute(&pool)
@@ -626,7 +626,7 @@ async fn clears_the_old_ct64_and_keeps_the_digest() {
 }
 
 #[tokio::test]
-async fn is_ready_once_the_lane_is_registered() {
+async fn is_ready_once_it_listens_for_rows() {
     let (_instance, pool) = db().await;
     let cancel = CancellationToken::new();
     let worker = PadWorker::new(
@@ -664,13 +664,12 @@ impl PadEvaluator for Slow {
 async fn a_stop_lets_the_claimed_rows_complete() {
     let (_instance, pool) = db().await;
     let (_signer, cancel, run) = start(&pool, config(), Arc::new(Slow(Duration::from_secs(1))));
-    until(&pool, "SELECT EXISTS (SELECT 1 FROM prf_lanes WHERE heartbeat_at IS NOT NULL)").await;
-    add_row(&pool, LANE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     until(&pool, "SELECT claimed_at IS NOT NULL FROM pads").await;
 
     cancel.cancel();
     run.await.unwrap().unwrap();
-    assert!(!pending(&pool, LANE, 1).await);
+    assert!(!pending(&pool, INSTANCE, 1).await);
 }
 
 #[tokio::test]
@@ -687,7 +686,7 @@ async fn leaves_the_output_to_resubmit_when_all_upload_slots_are_taken() {
     let slot = uploader.slot(false).await.unwrap();
     let (_signer, cancel, run) =
         start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
-    add_row(&pool, LANE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
 
     // The output does not wait for the slot, and resubmit waits for the claim timeout.
@@ -708,7 +707,7 @@ async fn uploads_without_a_checksum_for_s3_servers_without_support() {
     let (_instance, pool) = db().await;
     let (_localstack, client, uploader) = s3().await;
     client.create_bucket().bucket(BUCKET).send().await.unwrap();
-    add_row(&pool, LANE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     let (_signer, cancel, run) = start_with(
         &pool,
         config(),
@@ -726,7 +725,7 @@ async fn uploads_without_a_checksum_for_s3_servers_without_support() {
 async fn uploads_a_complete_row_without_a_claim() {
     let (_instance, pool) = db().await;
     let (_localstack, client, uploader) = s3().await;
-    add_row(&pool, LANE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     let (_signer, cancel, run) =
         start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
 

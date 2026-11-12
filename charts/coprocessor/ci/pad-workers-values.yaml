@@ -1,12 +1,12 @@
 # ct lint renders the chart once per file of this directory: this one is a pad release with two
-# lanes and no other component. Test values only.
+# pad-workers and no other component. Test values only.
 dbMigration:
   enabled: false
 tfheWorker:
   enabled: false
 commonConfig:
   databaseUrl: "postgres://$(DATABASE_USER):$(DATABASE_PASSWORD)@coprocessor-db:5432/coprocessor"
-padLanes:
+padWorkers:
   - prfId: 0
     keyId: "0x01"
   - prfId: 1

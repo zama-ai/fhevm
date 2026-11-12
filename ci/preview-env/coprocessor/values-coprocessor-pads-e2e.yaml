@@ -1,4 +1,4 @@
-# Pad release of party i, `coprocessor-<i>-pads`: the pad-worker lanes and no other component.
+# Pad release of party i, `coprocessor-<i>-pads`: the pad-workers and no other component.
 # scripts/deploy/deploy-coprocessor.sh applies it with the per-party values, except on blue-green
 # stacks.
 commonConfig:
@@ -11,7 +11,7 @@ tfheWorker:
   enabled: false
 
 # The instance of the "Coprocessor proxy" suite. Mock evaluator: the key ID is a placeholder.
-padLanes:
+padWorkers:
   - prfId: 0
     keyId: "0x01"
 
