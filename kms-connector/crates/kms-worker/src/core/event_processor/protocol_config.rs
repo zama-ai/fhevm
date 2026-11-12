@@ -1,4 +1,7 @@
-use crate::core::{config::Config, event_processor::ProcessingError};
+use crate::core::{
+    config::Config,
+    event_processor::{ProcessingError, SIGNING_SCHEMES},
+};
 use alloy::{
     eips::BlockId,
     primitives::{FixedBytes, Keccak256, U256, keccak256},
@@ -30,11 +33,6 @@ use kms_grpc::kms::v1::{
     KeyDigest as GrpcKeyDigest, KeyInfo as GrpcKeyInfo, MpcContext, MpcNode, NewMpcContextRequest,
     NewMpcEpochRequest, PcrValues, PreviousEpochInfo, SchemeDigest, SigningSchemeType,
 };
-
-/// The signature schemes requested from the KMS Core.
-///
-/// Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
-const SIGNING_SCHEMES: [i32; 1] = [SigningSchemeType::Ecdsa256k1 as i32];
 
 /// Builder for the KMS Core gRPC requests triggered by `ProtocolConfig` events.
 #[derive(Clone)]
