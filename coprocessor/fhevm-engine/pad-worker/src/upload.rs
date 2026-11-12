@@ -5,7 +5,6 @@ use anyhow::{ensure, Context};
 use aws_sdk_s3::{primitives::ByteStream, types::ChecksumMode, Client};
 use base64::Engine;
 use ciphertext_attestation::{PrfOutputAttestation, S3_METADATA_ATTESTATION_KEY};
-use fhevm_engine_common::prf_reference;
 use sha2::{Digest, Sha256};
 use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -103,9 +102,4 @@ pub fn s3_key(claim: &Claim) -> String {
         hex::encode(claim.label),
         claim.pad_length
     )
-}
-
-/// The key of a reference output.
-pub fn reference_key(claim: &Claim) -> String {
-    prf_reference::reference_key(claim.prf_instance, claim.label, claim.pad_length)
 }
