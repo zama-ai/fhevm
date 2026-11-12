@@ -822,3 +822,22 @@ async fn leaves_the_output_to_resubmit_when_all_upload_slots_are_taken() {
     cancel.cancel();
     run.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn uploads_without_a_checksum_for_s3_servers_without_support() {
+    let (_instance, pool) = db().await;
+    let (_localstack, client, uploader) = s3().await;
+    client.create_bucket().bucket(BUCKET).send().await.unwrap();
+    add_row(&pool, LANE, 1, 1, 0.0).await;
+    let (_signer, cancel, run) = start_with(
+        &pool,
+        config(),
+        Arc::new(MockEvaluator),
+        Some(uploader.without_sha256_checksum()),
+    );
+
+    until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+}
