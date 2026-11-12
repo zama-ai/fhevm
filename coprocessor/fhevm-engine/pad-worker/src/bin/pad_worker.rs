@@ -1,6 +1,9 @@
-use alloy::signers::{
-    aws::{aws_sdk_kms, AwsSigner},
-    local::PrivateKeySigner,
+use alloy::{
+    primitives::U256,
+    signers::{
+        aws::{aws_sdk_kms, AwsSigner},
+        local::PrivateKeySigner,
+    },
 };
 use anyhow::{anyhow, Context};
 use aws_config::{timeout::TimeoutConfig, BehaviorVersion};
@@ -26,9 +29,9 @@ struct Args {
     #[arg(long, env = "PRF_INSTANCE")]
     prf_instance: u16,
 
-    /// KMSGeneration key ID of the instance, in hex, as in `keys.key_id_gw`.
+    /// KMSGeneration key ID of the instance, in decimal or `0x` hex.
     #[arg(long, env = "PRF_KEY_ID", value_parser = parse_key_id)]
-    prf_key_id: KeyId,
+    prf_key_id: U256,
 
     /// Postgres database URL. Falls back to the DATABASE_URL env var.
     #[arg(long)]
@@ -117,16 +120,11 @@ struct Args {
     stack_version: bool,
 }
 
-/// A key ID, so that clap takes one value, not a list of bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct KeyId(Vec<u8>);
-
-fn parse_key_id(s: &str) -> Result<KeyId, String> {
-    let bytes = hex::decode(s.strip_prefix("0x").unwrap_or(s)).map_err(|e| e.to_string())?;
-    if bytes.is_empty() {
+fn parse_key_id(s: &str) -> Result<U256, String> {
+    if s.is_empty() {
         return Err("empty key ID".to_string());
     }
-    Ok(KeyId(bytes))
+    s.parse().map_err(|e| format!("{e}"))
 }
 
 async fn signer(args: &Args) -> anyhow::Result<CoproSigner> {
@@ -191,7 +189,7 @@ async fn main() -> anyhow::Result<()> {
     );
     info!(
         prf_instance = args.prf_instance,
-        prf_key_id = hex::encode(&args.prf_key_id.0),
+        prf_key_id = %args.prf_key_id,
         database_pool_size = args.database_pool_size,
         max_concurrent = args.max_concurrent,
         claim_timeout = ?args.claim_timeout,
@@ -231,7 +229,7 @@ async fn main() -> anyhow::Result<()> {
     let worker = PadWorker::new(
         Config {
             prf_instance: args.prf_instance,
-            key_id: args.prf_key_id.0,
+            key_id: args.prf_key_id.to_be_bytes::<32>().to_vec(),
             max_concurrent: args.max_concurrent,
             claim_timeout: args.claim_timeout,
             poll_interval: args.poll_interval,
@@ -279,13 +277,13 @@ mod tests {
         let args = Args::try_parse_from([
             "pad-worker",
             "--prf-instance=1",
-            "--prf-key-id=0xab01",
+            "--prf-key-id=0xab",
             "--s3-bucket=b",
             "--claim-timeout=2m",
         ])
         .unwrap();
         assert_eq!(args.prf_instance, 1);
-        assert_eq!(args.prf_key_id, KeyId(vec![0xab, 0x01]));
+        assert_eq!(args.prf_key_id, U256::from(0xab));
         assert_eq!(args.claim_timeout, Duration::from_secs(120));
         assert_eq!(args.pending_max_age, Duration::from_secs(600));
     }
@@ -300,5 +298,8 @@ mod tests {
         assert!(parse(None).is_err());
         assert!(parse(Some("--prf-key-id=zz")).is_err());
         assert!(parse(Some("--prf-key-id=")).is_err());
+        // Above 2^256.
+        let too_large = format!("--prf-key-id=0x1{}", "0".repeat(64));
+        assert!(parse(Some(&too_large)).is_err());
     }
 }

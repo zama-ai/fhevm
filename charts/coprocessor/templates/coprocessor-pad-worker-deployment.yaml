@@ -24,9 +24,9 @@
 {{- if not $lane.keyId }}
 {{- fail (printf "padLanes[%d].keyId is required" $index) }}
 {{- end }}
-{{- /* YAML reads an unquoted 0x0a as the number 10: another key. */}}
-{{- if not (kindIs "string" $lane.keyId) }}
-{{- fail (printf "padLanes[%d].keyId must be a quoted hex string" $index) }}
+{{- /* Quoted: YAML reads a large unquoted ID as a float, and loses digits. */}}
+{{- if not (and (kindIs "string" $lane.keyId) (regexMatch "^(0x[0-9a-fA-F]{1,64}|[0-9]{1,78})$" $lane.keyId)) }}
+{{- fail (printf "padLanes[%d].keyId must be a quoted decimal or 0x hex key ID" $index) }}
 {{- end }}
 {{- $name := printf "%s-pad-worker-%d" $.Release.Name (int $lane.prfId) | trunc 63 | trimSuffix "-" }}
 {{- $image := mergeOverwrite (deepCopy $component.image) ($lane.image | default dict) }}

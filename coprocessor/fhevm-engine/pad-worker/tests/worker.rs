@@ -1,5 +1,5 @@
 use alloy::{
-    primitives::{keccak256, B256},
+    primitives::{keccak256, B256, U256},
     signers::local::PrivateKeySigner,
 };
 use ciphertext_attestation::{
@@ -62,7 +62,7 @@ fn agreed_digest() -> B256 {
 fn config() -> Config {
     Config {
         prf_instance: LANE,
-        key_id: vec![1],
+        key_id: U256::from(1).to_be_bytes::<32>().to_vec(),
         max_concurrent: NonZeroUsize::new(4).unwrap(),
         claim_timeout: Duration::from_secs(60),
         poll_interval: Duration::from_millis(100),
