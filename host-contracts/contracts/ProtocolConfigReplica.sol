@@ -98,6 +98,12 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
             revert NonIncreasingEpochId(epochId, currentEpochId);
         }
 
+        // A canonical proxy upgraded in place can hold a Pending context above the active one.
+        uint256 currentKmsContextId = $.currentKmsContextId;
+        if (contextId <= currentKmsContextId) {
+            revert NonIncreasingKmsContextId(contextId, currentKmsContextId);
+        }
+
         _storeAndActivateKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
         emit MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
     }
@@ -114,7 +120,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
         }
 
         $.epochCounter = epochId;
-        _activateEpoch(epochId, contextId);
+        _activateKmsContextAndEpoch(contextId, epochId);
         emit MirrorKmsEpoch(contextId, epochId);
     }
 
