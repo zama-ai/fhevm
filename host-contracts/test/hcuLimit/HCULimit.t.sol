@@ -105,7 +105,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.4.0")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.5.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
@@ -484,6 +484,143 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
         vm.assertGe(totalTransactionHCU, 23000);
         vm.assertLe(totalTransactionHCU, 30000);
+    }
+
+    function test_ZeroOperandOperationsRevertAboveDepthLimit(
+        uint8 operationKind,
+        uint8 typeIndex,
+        bool whitelisted
+    ) public {
+        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(uint48(opHCU - 1), whitelisted);
+        _assertZeroOperandDepthRevert(callData);
+    }
+
+    function test_ZeroOperandOperationsRevertAtZeroDepthLimit(
+        uint8 operationKind,
+        uint8 typeIndex,
+        bool whitelisted
+    ) public {
+        (bytes memory callData, ) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(0, whitelisted);
+        _assertZeroOperandDepthRevert(callData);
+    }
+
+    function test_ZeroOperandOperationsAcceptAtDepthLimit(
+        uint8 operationKind,
+        uint8 typeIndex,
+        bool whitelisted
+    ) public {
+        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(uint48(opHCU), whitelisted);
+        _assertZeroOperandSuccess(callData, opHCU, whitelisted);
+    }
+
+    function test_ZeroOperandOperationsAcceptBelowDepthLimit(
+        uint8 operationKind,
+        uint8 typeIndex,
+        bool whitelisted
+    ) public {
+        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(uint48(opHCU + 1), whitelisted);
+        _assertZeroOperandSuccess(callData, opHCU, whitelisted);
+    }
+
+    function test_ZeroOperandOperationsIncludeDepthInDependentCast(uint8 operationKind, bool whitelisted) public {
+        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, 0);
+        _configureZeroOperandDepthLimit(uint48(opHCU + 31), whitelisted);
+        _assertZeroOperandSuccess(callData, opHCU, whitelisted);
+
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(HCULimit.HCUTransactionDepthLimitExceeded.selector);
+        hcuLimit.checkHCUForCast(FheType.Uint16, mockResult, mockLHS, address(0xBEEF));
+
+        assertEq(hcuLimit.getHCUForTransaction(), opHCU);
+        (, uint48 usedHCU) = hcuLimit.getBlockMeter();
+        assertEq(usedHCU, whitelisted ? 0 : opHCU);
+
+        vm.prank(owner);
+        hcuLimit.setMaxHCUDepthPerTx(uint48(opHCU + 32));
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForCast(FheType.Uint16, mockResult, mockLHS, address(0xBEEF));
+
+        assertEq(hcuLimit.getHCUForHandle(mockLHS), opHCU + 32);
+        assertEq(hcuLimit.getHCUForTransaction(), opHCU + 32);
+        (, usedHCU) = hcuLimit.getBlockMeter();
+        assertEq(usedHCU, whitelisted ? 0 : opHCU + 32);
+    }
+
+    function _zeroOperandOperation(uint8 operationKind, uint8 typeIndex) internal view returns (bytes memory, uint256) {
+        operationKind %= 3;
+        if (operationKind == 0) {
+            FheType[8] memory types = [
+                FheType.Bool,
+                FheType.Uint8,
+                FheType.Uint16,
+                FheType.Uint32,
+                FheType.Uint64,
+                FheType.Uint128,
+                FheType.Uint160,
+                FheType.Uint256
+            ];
+            return (
+                abi.encodeCall(
+                    HCULimit.checkHCUForTrivialEncrypt,
+                    (types[typeIndex % types.length], mockResult, address(0xBEEF))
+                ),
+                32
+            );
+        }
+
+        FheType[7] memory randomTypes = [
+            FheType.Bool,
+            FheType.Uint8,
+            FheType.Uint16,
+            FheType.Uint32,
+            FheType.Uint64,
+            FheType.Uint128,
+            FheType.Uint256
+        ];
+        uint256[7] memory prices = [uint256(19000), 23000, 23000, 24000, 24000, 25000, 30000];
+        uint256 index = operationKind == 1
+            ? typeIndex % randomTypes.length
+            : 1 + (typeIndex % (randomTypes.length - 1));
+        bytes memory callData = operationKind == 1
+            ? abi.encodeCall(HCULimit.checkHCUForFheRand, (randomTypes[index], mockResult, address(0xBEEF)))
+            : abi.encodeCall(HCULimit.checkHCUForFheRandBounded, (randomTypes[index], mockResult, address(0xBEEF)));
+        return (callData, prices[index]);
+    }
+
+    function _configureZeroOperandDepthLimit(uint48 depthLimit, bool whitelisted) internal {
+        address[] memory callers = new address[](1);
+        callers[0] = address(0xBEEF);
+        vm.startPrank(owner);
+        hcuLimit.addToAllowlist(callers);
+        hcuLimit.setAllowlistActivated(true);
+        hcuLimit.setMaxHCUDepthPerTx(depthLimit);
+        if (whitelisted) hcuLimit.addToBlockHCUWhitelist(callers[0]);
+        vm.stopPrank();
+    }
+
+    function _assertZeroOperandDepthRevert(bytes memory callData) internal {
+        vm.prank(fhevmExecutor);
+        (bool success, bytes memory reason) = address(hcuLimit).call(callData);
+        assertFalse(success);
+        assertEq(reason, abi.encodeWithSelector(HCULimit.HCUTransactionDepthLimitExceeded.selector));
+        assertEq(hcuLimit.getHCUForHandle(mockResult), 0);
+        assertEq(hcuLimit.getHCUForTransaction(), 0);
+        (, uint48 usedHCU) = hcuLimit.getBlockMeter();
+        assertEq(usedHCU, 0);
+    }
+
+    function _assertZeroOperandSuccess(bytes memory callData, uint256 opHCU, bool whitelisted) internal {
+        vm.prank(fhevmExecutor);
+        (bool success, ) = address(hcuLimit).call(callData);
+        assertTrue(success);
+        assertEq(hcuLimit.getHCUForHandle(mockResult), opHCU);
+        assertEq(hcuLimit.getHCUForTransaction(), opHCU);
+        (, uint48 usedHCU) = hcuLimit.getBlockMeter();
+        assertEq(usedHCU, whitelisted ? 0 : opHCU);
     }
 
     function test_OnlyFHEVMExecutorCanCallcheckHCUForFheAdd(address randomAccount) public {
@@ -1388,7 +1525,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedHCU, 0);
     }
 
-    function test_reinitializeV4SucceedsOnUpgradePath() public {
+    function test_reinitializeV5SucceedsOnUpgradePath() public {
         address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, ())
@@ -1399,7 +1536,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, implementationWithoutInitCall, "");
 
         MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
-        upgraded.reinitializeV4();
+        upgraded.reinitializeV5();
         vm.stopPrank();
     }
 
