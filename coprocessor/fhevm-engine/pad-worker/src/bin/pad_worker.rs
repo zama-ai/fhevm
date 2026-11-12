@@ -7,6 +7,7 @@ use alloy::{
 };
 use anyhow::{anyhow, Context};
 use aws_config::{timeout::TimeoutConfig, BehaviorVersion};
+use aws_sdk_s3::config::{RequestChecksumCalculation, ResponseChecksumValidation};
 use clap::Parser;
 use fhevm_engine_common::{
     database::{connect_pool_with_options, resolve_database_url_from_option},
@@ -87,6 +88,10 @@ struct Args {
     #[arg(long, env = "PAD_S3_MAX_CONCURRENT_UPLOADS", default_value = "16")]
     s3_max_concurrent_uploads: NonZeroUsize,
 
+    /// For S3 servers without checksum support.
+    #[arg(long, env = "PAD_S3_DISABLE_SHA256_CHECKSUM", default_value_t = false)]
+    s3_disable_sha256_checksum: bool,
+
     /// Interval of the read that finds failed uploads claimed before `PAD_CLAIM_TIMEOUT`.
     #[arg(long, env = "PAD_S3_RESUBMIT_INTERVAL", default_value = "30s", value_parser = humantime::parse_duration)]
     s3_resubmit_interval: Duration,
@@ -148,20 +153,28 @@ async fn signer(args: &Args) -> anyhow::Result<CoproSigner> {
 
 async fn uploader(args: &Args) -> Uploader {
     let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
-    let config = aws_sdk_s3::config::Builder::from(&aws_conf)
-        .timeout_config(
-            TimeoutConfig::builder()
-                .connect_timeout(Duration::from_secs(10))
-                .operation_attempt_timeout(Duration::from_secs(60))
-                .build(),
-        )
-        .build();
-    Uploader::new(
-        aws_sdk_s3::Client::from_conf(config),
+    let mut config = aws_sdk_s3::config::Builder::from(&aws_conf).timeout_config(
+        TimeoutConfig::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .operation_attempt_timeout(Duration::from_secs(60))
+            .build(),
+    );
+    if args.s3_disable_sha256_checksum {
+        // Also turn off the default checksum of the SDK.
+        config = config
+            .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
+            .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
+    }
+    let uploader = Uploader::new(
+        aws_sdk_s3::Client::from_conf(config.build()),
         args.s3_bucket.clone(),
         args.s3_max_concurrent_uploads,
         args.s3_resubmit_interval,
-    )
+    );
+    if args.s3_disable_sha256_checksum {
+        return uploader.without_sha256_checksum();
+    }
+    uploader
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
