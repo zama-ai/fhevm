@@ -20,7 +20,14 @@ use fhevm_engine_common::{
 };
 use rows::{Claim, Output};
 use sqlx::{postgres::PgListener, PgPool};
-use std::{num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{
+    num::NonZeroUsize,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
     task::JoinSet,
@@ -34,6 +41,8 @@ use upload::{reference_key, s3_key, Uploader};
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 /// Maximum rows for each resubmit read.
 const RESUBMIT_BATCH: i64 = 16;
+/// On a stop, the time for the claimed rows to complete. Below the 30 s grace period.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
 /// Channel of the `pads_work_available` trigger.
 pub const PAD_WORK_AVAILABLE: &str = "pad_work_available";
 
@@ -76,6 +85,8 @@ pub struct PadWorker {
     signer: CoproSigner,
     uploader: Option<Uploader>,
     cancel_token: CancellationToken,
+    /// Set after the start check: until then, a rollout keeps the old pod.
+    ready: Arc<AtomicBool>,
 }
 
 impl PadWorker {
@@ -93,6 +104,7 @@ impl PadWorker {
             signer,
             uploader: None,
             cancel_token,
+            ready: Arc::default(),
         }
     }
 
@@ -103,7 +115,10 @@ impl PadWorker {
     }
 
     pub fn health(&self) -> Health {
-        Health(self.pool.clone())
+        Health {
+            pool: self.pool.clone(),
+            ready: self.ready.clone(),
+        }
     }
 
     /// Registers the lane, waits for the start check, then claims rows until `cancel_token`. Fails
@@ -114,6 +129,7 @@ impl PadWorker {
         if !self.start_check().await? {
             return Ok(());
         }
+        self.ready.store(true, Ordering::Relaxed);
         let mut listener = PgListener::connect_with(&self.pool).await?;
         listener.listen(PAD_WORK_AVAILABLE).await?;
 
@@ -156,7 +172,20 @@ impl PadWorker {
                 Some(done) = tasks.join_next() => done??,
             }
         }
-        // An aborted row keeps its claim: another pod takes it after the timeout.
+        // Let the claimed rows complete. A row still running after the limit keeps its claim.
+        let drained = timeout(DRAIN_TIMEOUT, async {
+            while let Some(done) = tasks.join_next().await {
+                match done {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => warn!(error = %e, "task failed during the stop"),
+                    Err(e) => error!(error = %e, "task panicked during the stop"),
+                }
+            }
+        })
+        .await;
+        if drained.is_err() {
+            warn!("claimed rows did not complete before the stop");
+        }
         tasks.shutdown().await;
         info!("pad-worker stopped");
         Ok(())
@@ -224,6 +253,7 @@ impl PadWorker {
             return true;
         };
         for output in outputs {
+            let _slot = uploader.slot(true).await;
             if let Err(e) = uploader.upload(&reference_key(&output.claim), output).await {
                 warn!(claim = ?output.claim, error = %e, "Reference upload failed");
                 return false;
@@ -307,12 +337,16 @@ impl PadWorker {
             Err(e) => return self.retry(&claim, &format!("write: {e}")).await,
         }
         drop(slot);
-        self.upload(output).await
+        self.upload(output, false).await
     }
 
     /// Uploads the output and sets `s3_verified_at`. If the upload fails, `resubmit` tries again.
-    async fn upload(&self, output: Output) -> anyhow::Result<()> {
+    /// With `wait` false and no free slot, it leaves the output to `resubmit`.
+    async fn upload(&self, output: Output, wait: bool) -> anyhow::Result<()> {
         let Some(uploader) = &self.uploader else {
+            return Ok(());
+        };
+        let Some(_slot) = uploader.slot(wait).await else {
             return Ok(());
         };
         if let Err(e) = uploader.upload(&s3_key(&output.claim), &output).await {
@@ -370,7 +404,7 @@ impl PadWorker {
             match claimed {
                 Ok(outputs) => {
                     futures_util::future::try_join_all(
-                        outputs.into_iter().map(|output| self.upload(output)),
+                        outputs.into_iter().map(|output| self.upload(output, true)),
                     )
                     .await?;
                 }
@@ -411,19 +445,27 @@ pub async fn register_lane(pool: &PgPool, prf_instance: u16) -> anyhow::Result<(
     Ok(())
 }
 
-/// Readiness: the database, and the rights of the pad-worker on `pads` and `prf_lanes`.
-pub struct Health(pub PgPool);
+/// Readiness: the start check, the database and the rights on `pads` and `prf_lanes`.
+pub struct Health {
+    pool: PgPool,
+    ready: Arc<AtomicBool>,
+}
 
 impl HealthCheckService for Health {
     async fn health_check(&self) -> HealthStatus {
         let mut status = HealthStatus::default();
-        status.set_db_connected(&self.0).await;
+        let ready = self.ready.load(Ordering::Relaxed);
+        if !ready {
+            status.add_error_details("The lane has not passed its start check".to_string());
+        }
+        status.set_custom_check("lane_ready", ready, false);
+        status.set_db_connected(&self.pool).await;
         let rights = sqlx::query_scalar::<_, bool>(
             "SELECT has_column_privilege('pads', 'signature', 'UPDATE')
                 AND has_column_privilege('pads', 'ciphertext64', 'UPDATE')
                 AND has_column_privilege('prf_lanes', 'heartbeat_at', 'UPDATE')",
         )
-        .fetch_one(&self.0);
+        .fetch_one(&self.pool);
         let has_rights = matches!(timeout(DB_CHECK_TIMEOUT, rights).await, Ok(Ok(true)));
         if !has_rights {
             status.add_error_details("No UPDATE rights on pads and prf_lanes".to_string());

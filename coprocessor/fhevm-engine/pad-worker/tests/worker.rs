@@ -5,7 +5,10 @@ use alloy::{
 use ciphertext_attestation::{
     consensus::Attestation, prf::Version, PrfOutputAttestation, PrfOutputRef,
 };
-use fhevm_engine_common::prf_reference::{reference_digest, reference_outputs};
+use fhevm_engine_common::{
+    healthz_server::HealthCheckService,
+    prf_reference::{reference_digest, reference_outputs},
+};
 use pad_worker::{
     evaluator::{MockEvaluator, PadEvaluator, PadOutputs},
     rows,
@@ -729,4 +732,93 @@ async fn clears_the_old_ct64_and_keeps_the_digest() {
     let states: Vec<(u8, bool, bool)> = rows.into_iter().map(|(l, c, d)| (l[0], c, d)).collect();
     assert_eq!(states, vec![(1, true, true), (2, false, true)]);
     assert_eq!(rows::stored_ct64_bytes(&pool).await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn is_not_ready_until_the_start_check_passes() {
+    let (_instance, pool) = db().await;
+    sqlx::query("UPDATE prf_lanes SET reference_digest = NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let cancel = CancellationToken::new();
+    let worker = PadWorker::new(
+        config(),
+        pool.clone(),
+        Arc::new(MockEvaluator),
+        Arc::new(PrivateKeySigner::random()),
+        cancel.clone(),
+    );
+    let health = worker.health();
+    let run = tokio::spawn(worker.run());
+
+    sleep(Duration::from_millis(300)).await;
+    assert!(!health.health_check().await.is_healthy());
+
+    sqlx::query("UPDATE prf_lanes SET reference_digest = $1")
+        .bind(agreed_digest().as_slice())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+    while !health.health_check().await.is_healthy() {
+        assert!(tokio::time::Instant::now() < deadline, "not ready");
+        sleep(Duration::from_millis(50)).await;
+    }
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+}
+
+/// The mock, after a delay.
+struct Slow(Duration);
+
+impl PadEvaluator for Slow {
+    fn evaluate(&self, prf: u16, label: B256, pad_length: u16) -> anyhow::Result<PadOutputs> {
+        std::thread::sleep(self.0);
+        MockEvaluator.evaluate(prf, label, pad_length)
+    }
+}
+
+#[tokio::test]
+async fn a_stop_lets_the_claimed_rows_complete() {
+    let (_instance, pool) = db().await;
+    let (_signer, cancel, run) = start(&pool, config(), Arc::new(Slow(Duration::from_secs(1))));
+    until(&pool, "SELECT ready_at IS NOT NULL FROM prf_lanes").await;
+    add_row(&pool, LANE, 1, 1, 0.0).await;
+    until(&pool, "SELECT claimed_at IS NOT NULL FROM pads").await;
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+    assert!(!pending(&pool, LANE, 1).await);
+}
+
+#[tokio::test]
+async fn leaves_the_output_to_resubmit_when_all_upload_slots_are_taken() {
+    let (_instance, pool) = db().await;
+    let (_localstack, client, _) = s3().await;
+    client.create_bucket().bucket(BUCKET).send().await.unwrap();
+    let uploader = Uploader::new(
+        client.clone(),
+        BUCKET.to_string(),
+        NonZeroUsize::new(1).unwrap(),
+        Duration::from_millis(100),
+    );
+    let slot = uploader.slot(false).await.unwrap();
+    let (_signer, cancel, run) =
+        start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
+    add_row(&pool, LANE, 1, 1, 0.0).await;
+    until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
+
+    // The output does not wait for the slot, and resubmit waits for the claim timeout.
+    drop(slot);
+    sleep(Duration::from_millis(500)).await;
+    let uploaded: bool = sqlx::query_scalar("SELECT s3_verified_at IS NOT NULL FROM pads")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!uploaded);
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
 }

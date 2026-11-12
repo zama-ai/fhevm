@@ -7,7 +7,7 @@ use aws_sdk_s3::{primitives::ByteStream, Client};
 use ciphertext_attestation::{PrfOutputAttestation, S3_METADATA_ATTESTATION_KEY};
 use fhevm_engine_common::prf_reference;
 use std::{num::NonZeroUsize, sync::Arc, time::Duration};
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 #[derive(Clone)]
 pub struct Uploader {
@@ -33,9 +33,17 @@ impl Uploader {
         }
     }
 
-    /// Uploads the output to `key`, then reads it back and checks it.
+    /// An upload slot. With `wait` false, `None` if all slots are taken.
+    pub async fn slot(&self, wait: bool) -> Option<OwnedSemaphorePermit> {
+        if wait {
+            self.slots.clone().acquire_owned().await.ok()
+        } else {
+            self.slots.clone().try_acquire_owned().ok()
+        }
+    }
+
+    /// Uploads the output to `key`, then reads it back and checks it. Hold a `slot` while it runs.
     pub async fn upload(&self, key: &str, output: &Output) -> anyhow::Result<()> {
-        let _slot = self.slots.acquire().await?;
         let attestation = serde_json::to_string(&output.attestation)?;
         self.client
             .put_object()
