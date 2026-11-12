@@ -11,7 +11,7 @@
     "_assert:compiled": "node -e \"require('fs').existsSync('typechain-types/index.ts') || (console.error('typechain-types/ is missing: run npm run build (or npx hardhat task:compileAll) first'), process.exit(1))\"",
     "_check:peer-deps": "node ci/check-peer-deps.mjs",
     "build": "hardhat task:compileAll && npm run lint",
-    "clean": "rimraf ./artifacts ./cache ./coverage ./typechain-types ./fhevmTemp",
+    "clean": "rimraf ./artifacts ./cache ./coverage ./typechain-types ./fhevmTemp ./out ./cache_forge",
     "codegen": "./codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
     "codegen:overloads": "./codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "coverage": "hardhat test --coverage",
