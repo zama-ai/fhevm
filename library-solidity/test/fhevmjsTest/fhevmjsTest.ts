@@ -19,7 +19,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     await input.encrypt();
   });
 
-  it('should be unable to pack more than 256 ebools', async function () {
+  it('should be unable to pack more than 256 ebools', function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     for (let i = 0; i < 256; i++) {
       input.addBool(true);
@@ -37,7 +37,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     await input.encrypt();
   });
 
-  it('should be unable to pack more than 32 euint64s', async function () {
+  it('should be unable to pack more than 32 euint64s', function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     for (let i = 0; i < 32; i++) {
       input.add64(37n);
@@ -53,7 +53,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     await input.encrypt();
   });
 
-  it('should not be able to pack more than 8 euint256s', async function () {
+  it('should not be able to pack more than 8 euint256s', function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     for (let i = 0; i < 8; i++) {
       input.add256(797979n);
@@ -63,7 +63,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     );
   });
 
-  it('should be able to pack up to 2048 bits but not more', async function () {
+  it('should be able to pack up to 2048 bits but not more', function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add256(797979n);
     input.add256(797978n);
@@ -75,7 +75,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     input.add128(6887n);
     input.add64(6887n);
     input.add64(6887n);
-    let bits = input.getBits();
+    const bits = input.getBits();
     let total = 0;
     for (let i = 0; i < bits.length; ++i) {
       total += bits[i];

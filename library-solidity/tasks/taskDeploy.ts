@@ -1,13 +1,20 @@
 import type { HardhatEthersHelpers } from '@nomicfoundation/hardhat-ethers/types';
-import { HardhatUpgrades } from '@openzeppelin/hardhat-upgrades';
+import type { HardhatUpgrades } from '@openzeppelin/hardhat-upgrades';
+import type { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import dotenv from 'dotenv';
-import { Wallet } from 'ethers';
-import * as fs from 'fs-extra';
-import { task, types } from 'hardhat/config';
-import type { TaskArguments } from 'hardhat/types';
 import path from 'path';
+import * as fs from 'fs';
+import { getAddress, isAddress, Wallet } from 'ethers';
+import { task, types } from 'hardhat/config';
 
 import { getRequiredEnvVar } from './utils/loadVariables';
+import { getZamaConfigAddresses } from './utils/zamaConfig';
+
+// Generated files holding the host contract addresses. Absolute paths, resolved from this file's location
+// so they do not depend on the directory the process runs from.
+const HOST_ADDRESSES_DIR = path.resolve(__dirname, '../fhevmTemp/addresses');
+const HOST_ADDRESSES_ENV_PATH = path.join(HOST_ADDRESSES_DIR, '.env.host');
+const FHEVM_HOST_ADDRESSES_SOL_PATH = path.join(HOST_ADDRESSES_DIR, 'FHEVMHostAddresses.sol');
 
 const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContracts is deprecated and will be removed after the v0.13 rollout.
 It deploys KMSGeneration and is valid only for canonical-host deployments.
@@ -22,7 +29,7 @@ task('task:deployAllHostContracts')
     'withKmsGeneration',
     'Whether to deploy canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
     undefined,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, hre) {
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
@@ -58,10 +65,14 @@ task('task:deployLegacyAllHostContracts').setAction(async function (_, hre) {
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// UUPS
+// UUPS Helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-async function deployEmptyUUPSForACL(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
+async function _deployEmptyUUPSForACL(
+  ethers: HardhatEthersHelpers,
+  upgrades: HardhatUpgrades,
+  deployer: Wallet,
+): Promise<string> {
   console.log('Deploying an EmptyUUPSProxyACL proxy contract...');
   const factory = await ethers.getContractFactory('EmptyUUPSProxyACL', deployer);
   const UUPSEmptyACL = await upgrades.deployProxy(factory, [deployer.address], {
@@ -74,7 +85,11 @@ async function deployEmptyUUPSForACL(ethers: HardhatEthersHelpers, upgrades: Har
   return UUPSEmptyACLAddress;
 }
 
-async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
+async function _deployEmptyUUPS(
+  ethers: HardhatEthersHelpers,
+  upgrades: HardhatUpgrades,
+  deployer: Wallet,
+): Promise<string> {
   console.info('Deploying an EmptyUUPSProxy proxy contract...');
   const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const UUPSEmpty = await upgrades.deployProxy(factory, {
@@ -87,12 +102,16 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
   return UUPSEmptyAddress;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Deploy Empty UUPS Proxies
+////////////////////////////////////////////////////////////////////////////////
+
 task('task:deployEmptyUUPSProxies')
   .addParam(
     'withKmsGeneration',
     'Whether to deploy the canonical-host-only KMSGeneration proxy. Required: true for canonical host, false for non-canonical host.',
     undefined,
-    types.boolean
+    types.boolean,
   )
   .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, { ethers, upgrades, run }) {
     // Compile the EmptyUUPS proxy contract for ACL
@@ -101,40 +120,40 @@ task('task:deployEmptyUUPSProxies')
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
 
     // Ensure the addresses directory exists.
-    fs.mkdirSync(path.join(__dirname, '../fhevmTemp/addresses'), { recursive: true });
+    fs.mkdirSync(HOST_ADDRESSES_DIR, { recursive: true });
 
-    const aclAddress = await deployEmptyUUPSForACL(ethers, upgrades, deployer);
+    const aclAddress = await _deployEmptyUUPSForACL(ethers, upgrades, deployer);
     await run('task:setACLAddress', { address: aclAddress });
 
     // Compile the EmptyUUPS proxy contract for other contracts
     await run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxy' });
 
-    const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    const fhevmExecutorAddress = await _deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setFHEVMExecutorAddress', { address: fhevmExecutorAddress });
 
-    const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    const kmsVerifierAddress = await _deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setKMSVerifierAddress', { address: kmsVerifierAddress });
 
-    const inputVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    const inputVerifierAddress = await _deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setInputVerifierAddress', { address: inputVerifierAddress });
 
-    const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    const HCULimitAddress = await _deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setHCULimitAddress', { address: HCULimitAddress });
 
-    const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    const protocolConfigAddress = await _deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
 
     if (withKmsGeneration) {
-      const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+      const kmsGenerationAddress = await _deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
 
-    const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    const confidentialBridgeAddress = await _deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
-// ACL
+// Deploy ACL
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployACL').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
@@ -142,7 +161,7 @@ task('task:deployACL').setAction(async function (_taskArguments: TaskArguments, 
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxyACL', deployer);
   const newImplem = await ethers.getContractFactory('ACL', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const parsedEnv = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
   const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem);
@@ -150,16 +169,15 @@ task('task:deployACL').setAction(async function (_taskArguments: TaskArguments, 
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// FHEVMExecutor
+// Deploy FHEVMExecutor
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  let newImplem;
-  newImplem = await ethers.getContractFactory('fhevmTemp/contracts/FHEVMExecutor.sol:FHEVMExecutor', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/FHEVMExecutor.sol:FHEVMExecutor', deployer);
+  const parsedEnv = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
   const proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem);
@@ -167,10 +185,23 @@ task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskA
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// KMSVerifier
+// Deploy KMSVerifier
 ////////////////////////////////////////////////////////////////////////////////
 
-function buildKmsNodeParams(): {
+// Returns the integer value of the `name` env variable, or `defaultValue` if it is not set or empty.
+function getOptionalIntegerEnvVar(name: string, defaultValue: number): number {
+  const value = process.env[name];
+  if (value === undefined || value === '') {
+    return defaultValue;
+  }
+  const integer = Number(value);
+  if (value.trim() === '' || !Number.isInteger(integer)) {
+    throw new Error(`"${name}" env variable must be an integer, got "${value}"`);
+  }
+  return integer;
+}
+
+function buildKmsNodeParams(): Array<{
   txSenderAddress: string;
   signerAddress: string;
   ipAddress: string;
@@ -179,9 +210,9 @@ function buildKmsNodeParams(): {
   mpcIdentity: string;
   caCert: string;
   storagePrefix: string;
-}[] {
+}> {
   const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
-  const nodes: {
+  const nodes: Array<{
     txSenderAddress: string;
     signerAddress: string;
     ipAddress: string;
@@ -190,13 +221,13 @@ function buildKmsNodeParams(): {
     mpcIdentity: string;
     caCert: string;
     storagePrefix: string;
-  }[] = [];
+  }> = [];
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
     const signerAddress = getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`);
     const ipAddress = getRequiredEnvVar(`KMS_NODE_IP_${idx}`);
     const storageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
-    const partyId = process.env[`KMS_NODE_PARTY_ID_${idx}`] ? +getRequiredEnvVar(`KMS_NODE_PARTY_ID_${idx}`) : idx;
+    const partyId = getOptionalIntegerEnvVar(`KMS_NODE_PARTY_ID_${idx}`, idx);
     const mpcIdentity = getRequiredEnvVar(`KMS_NODE_MPC_IDENTITY_${idx}`);
     const caCert = getRequiredEnvVar(`KMS_NODE_CA_CERT_${idx}`);
     const storagePrefix = getRequiredEnvVar(`KMS_NODE_STORAGE_PREFIX_${idx}`);
@@ -205,7 +236,12 @@ function buildKmsNodeParams(): {
   return nodes;
 }
 
-export function buildKmsThresholds() {
+export function buildKmsThresholds(): {
+  publicDecryption: number;
+  userDecryption: number;
+  kmsGen: number;
+  mpc: number;
+} {
   return {
     publicDecryption: +getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD'),
     userDecryption: +getRequiredEnvVar('USER_DECRYPTION_THRESHOLD'),
@@ -219,7 +255,7 @@ task('task:deployKMSVerifier').setAction(async function (_taskArguments: TaskArg
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const parsedEnv = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
   const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
@@ -235,7 +271,7 @@ task('task:deployKMSVerifier').setAction(async function (_taskArguments: TaskArg
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// ProtocolConfig
+// Deploy ProtocolConfig
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployProtocolConfig').setAction(async function (_taskArguments: TaskArguments, hre) {
@@ -244,12 +280,12 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/ProtocolConfig.sol:ProtocolConfig', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const parsedEnv = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
-  const softwareVersion = process.env.KMS_SOFTWARE_VERSION || '';
-  const pcrValues: { pcr0: string; pcr1: string; pcr2: string }[] = [];
+  const softwareVersion = process.env.KMS_SOFTWARE_VERSION ?? '';
+  const pcrValues: Array<{ pcr0: string; pcr1: string; pcr2: string }> = [];
 
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
@@ -261,7 +297,7 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// KMSGeneration
+// Deploy KMSGeneration
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployKMSGeneration').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
@@ -269,7 +305,7 @@ task('task:deployKMSGeneration').setAction(async function (_taskArguments: TaskA
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/KMSGeneration.sol:KMSGeneration', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const parsedEnv = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
   const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
@@ -280,7 +316,7 @@ task('task:deployKMSGeneration').setAction(async function (_taskArguments: TaskA
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// InputVerifier
+// Deploy InputVerifier
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployInputVerifier')
@@ -288,24 +324,24 @@ task('task:deployInputVerifier')
     'useAddress',
     'Use addresses instead of private keys env variables for kms signers',
     true,
-    types.boolean
+    types.boolean,
   )
-  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+  .setAction(async function ({ useAddress }: { useAddress: boolean }, { ethers, upgrades }) {
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
     const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/InputVerifier.sol:InputVerifier', deployer);
-    const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+    const parsedEnv = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
 
     const proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
     const verifyingContractSource = getRequiredEnvVar('INPUT_VERIFICATION_ADDRESS');
     const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
 
-    let initialSigners: string[] = [];
+    const initialSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
     for (let idx = 0; idx < +numSigners; idx++) {
-      if (!taskArguments.useAddress) {
+      if (!useAddress) {
         const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`);
         const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
         initialSigners.push(inputSigner.address);
@@ -327,7 +363,7 @@ task('task:deployInputVerifier')
   });
 
 ////////////////////////////////////////////////////////////////////////////////
-// HCULimit
+// Deploy HCULimit
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployHCULimit').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
@@ -335,7 +371,7 @@ task('task:deployHCULimit').setAction(async function (_taskArguments: TaskArgume
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('HCULimit', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const parsedEnv = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
   const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
@@ -345,7 +381,7 @@ task('task:deployHCULimit').setAction(async function (_taskArguments: TaskArgume
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// PauserSet
+// Deploy PauserSet
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployPauserSet').setAction(async function (_, hre) {
@@ -369,31 +405,23 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 
 task('task:setACLAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
-    const content = `ACL_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-    try {
-      fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.info(`ACL address ${taskArguments.address} written successfully!`);
-    } catch (err) {
-      console.error('Failed to write ACL address:', err);
-    }
+  .setAction(async function ({ address }: { address: string }, hre) {
+    await _assertMatchesZamaConfig(hre, {
+      taskName: 'task:setACLAddress',
+      contractName: 'ACL',
+      zamaConfigField: 'ACLAddress',
+      address,
+    });
 
-    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant aclAdd = ${taskArguments.address};\n`;
-
-    try {
-      fs.writeFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'w',
-      });
-      console.info('./fhevmTemp/addresses/FHEVMHostAddresses.sol file generated successfully!');
-    } catch (error) {
-      console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
-    }
+    // ACL is the first contract. Output files are created here.
+    await _resetHostContractAddressFiles();
+    await _appendHostContractAddress({
+      taskName: 'task:setACLAddress',
+      contractName: 'ACL',
+      envVarName: 'ACL_CONTRACT_ADDRESS',
+      solidityConstantName: 'aclAdd',
+      address,
+    });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -402,28 +430,21 @@ address constant aclAdd = ${taskArguments.address};\n`;
 
 task('task:setFHEVMExecutorAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
-    const content = `FHEVM_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-    try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
-      console.info(`FHEVMExecutor address ${taskArguments.address} written successfully!`);
-    } catch (err) {
-      console.error('Failed to write FHEVMExecutor address:', err);
-    }
+  .setAction(async function ({ address }: { address: string }, hre) {
+    await _assertMatchesZamaConfig(hre, {
+      taskName: 'task:setFHEVMExecutorAddress',
+      contractName: 'FHEVMExecutor',
+      zamaConfigField: 'CoprocessorAddress',
+      address,
+    });
 
-    const solidityTemplate = `
-address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
-
-    try {
-      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
-      console.info('./fhevmTemp/addresses/FHEVMHostAddresses.sol file appended with fhevmExecutorAdd successfully!');
-    } catch (error) {
-      console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
-    }
+    await _appendHostContractAddress({
+      taskName: 'task:setFHEVMExecutorAddress',
+      contractName: 'FHEVMExecutor',
+      envVarName: 'FHEVM_EXECUTOR_CONTRACT_ADDRESS',
+      solidityConstantName: 'fhevmExecutorAdd',
+      address,
+    });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -432,28 +453,21 @@ address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 
 task('task:setKMSVerifierAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
-    const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-    try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
-      console.info(`KMSVerifier address ${taskArguments.address} written successfully!`);
-    } catch (err) {
-      console.error('Failed to write KMSVerifier address:', err);
-    }
+  .setAction(async function ({ address }: { address: string }, hre) {
+    await _assertMatchesZamaConfig(hre, {
+      taskName: 'task:setKMSVerifierAddress',
+      contractName: 'KMSVerifier',
+      zamaConfigField: 'KMSVerifierAddress',
+      address,
+    });
 
-    const solidityTemplate = `
-address constant kmsVerifierAdd = ${taskArguments.address};\n`;
-
-    try {
-      fs.writeFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
-      console.info('./fhevmTemp/addresses/FHEVMHostAddresses.sol file appended with kmsVerifierAdd successfully!');
-    } catch (error) {
-      console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
-    }
+    await _appendHostContractAddress({
+      taskName: 'task:setKMSVerifierAddress',
+      contractName: 'KMSVerifier',
+      envVarName: 'KMS_VERIFIER_CONTRACT_ADDRESS',
+      solidityConstantName: 'kmsVerifierAdd',
+      address,
+    });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -462,29 +476,14 @@ address constant kmsVerifierAdd = ${taskArguments.address};\n`;
 
 task('task:setInputVerifierAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    // this script also computes the coprocessor address from its private key
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
-    const content = `INPUT_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-    try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
-      console.log(`InputVerifier address ${taskArguments.address} written successfully!`);
-    } catch (err) {
-      console.error('Failed to write InputVerifier address:', err);
-    }
-
-    const solidityTemplate = `
-address constant inputVerifierAdd = ${taskArguments.address};\n`;
-
-    try {
-      fs.writeFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
-      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol file appended with inputVerifierAdd successfully!');
-    } catch (error) {
-      console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
-    }
+  .setAction(async function ({ address }: { address: string }) {
+    await _appendHostContractAddress({
+      taskName: 'task:setInputVerifierAddress',
+      contractName: 'InputVerifier',
+      envVarName: 'INPUT_VERIFIER_CONTRACT_ADDRESS',
+      solidityConstantName: 'inputVerifierAdd',
+      address,
+    });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -493,28 +492,14 @@ address constant inputVerifierAdd = ${taskArguments.address};\n`;
 
 task('task:setHCULimitAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
-    const content = `HCU_LIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-    try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
-      console.log(`HCULimit address ${taskArguments.address} written successfully!`);
-    } catch (err) {
-      console.error('Failed to write HCULimit address:', err);
-    }
-
-    const solidityTemplate = `
-address constant hcuLimitAdd = ${taskArguments.address};\n`;
-
-    try {
-      fs.writeFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
-      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol file appended with hcuLimitAdd successfully!');
-    } catch (error) {
-      console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
-    }
+  .setAction(async function ({ address }: { address: string }) {
+    await _appendHostContractAddress({
+      taskName: 'task:setHCULimitAddress',
+      contractName: 'HCULimit',
+      envVarName: 'HCU_LIMIT_CONTRACT_ADDRESS',
+      solidityConstantName: 'hcuLimitAdd',
+      address,
+    });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -523,28 +508,14 @@ address constant hcuLimitAdd = ${taskArguments.address};\n`;
 
 task('task:setPauserSetAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
-    const content = `PAUSER_SET_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-    try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
-      console.log(`PauserSet address ${taskArguments.address} written successfully!`);
-    } catch (err) {
-      console.error('Failed to write PauserSet address:', err);
-    }
-
-    const solidityTemplate = `
-address constant pauserSetAdd = ${taskArguments.address};\n`;
-
-    try {
-      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
-      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with hcuLimitAdd successfully!');
-    } catch (error) {
-      console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
-    }
+  .setAction(async function ({ address }: { address: string }) {
+    await _appendHostContractAddress({
+      taskName: 'task:setPauserSetAddress',
+      contractName: 'PauserSet',
+      envVarName: 'PAUSER_SET_CONTRACT_ADDRESS',
+      solidityConstantName: 'pauserSetAdd',
+      address,
+    });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -553,28 +524,14 @@ address constant pauserSetAdd = ${taskArguments.address};\n`;
 
 task('task:setProtocolConfigAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
-    const content = `PROTOCOL_CONFIG_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-    try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
-      console.log(`ProtocolConfig address ${taskArguments.address} written successfully!`);
-    } catch (err) {
-      throw new Error(`Failed to write ProtocolConfig address: ${String(err)}`);
-    }
-
-    const solidityTemplate = `
-address constant protocolConfigAdd = ${taskArguments.address};\n`;
-
-    try {
-      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
-      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with protocolConfigAdd successfully!');
-    } catch (error) {
-      throw new Error(`Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol: ${String(error)}`);
-    }
+  .setAction(async function ({ address }: { address: string }) {
+    await _appendHostContractAddress({
+      taskName: 'task:setProtocolConfigAddress',
+      contractName: 'ProtocolConfig',
+      envVarName: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
+      solidityConstantName: 'protocolConfigAdd',
+      address,
+    });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -583,28 +540,14 @@ address constant protocolConfigAdd = ${taskArguments.address};\n`;
 
 task('task:setBridgeAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
-    const content = `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-    try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
-      console.log(`ConfidentialBridge address ${taskArguments.address} written successfully!`);
-    } catch (err) {
-      throw new Error(`Failed to write ConfidentialBridge address: ${String(err)}`);
-    }
-
-    const solidityTemplate = `
-address constant confidentialBridgeAdd = ${taskArguments.address};\n`;
-
-    try {
-      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
-      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with confidentialBridgeAdd successfully!');
-    } catch (error) {
-      throw new Error(`Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol: ${String(error)}`);
-    }
+  .setAction(async function ({ address }: { address: string }) {
+    await _appendHostContractAddress({
+      taskName: 'task:setBridgeAddress',
+      contractName: 'ConfidentialBridge',
+      envVarName: 'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS',
+      solidityConstantName: 'confidentialBridgeAdd',
+      address,
+    });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -613,26 +556,105 @@ address constant confidentialBridgeAdd = ${taskArguments.address};\n`;
 
 task('task:setKMSGenerationAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
-    const content = `KMS_GENERATION_CONTRACT_ADDRESS=${taskArguments.address}\n`;
-    try {
-      fs.appendFileSync(envFilePath, content, { flag: 'a' });
-      console.log(`KMSGeneration address ${taskArguments.address} written successfully!`);
-    } catch (err) {
-      throw new Error(`Failed to write KMSGeneration address: ${String(err)}`);
-    }
-
-    const solidityTemplate = `
-address constant kmsGenerationAdd = ${taskArguments.address};\n`;
-
-    try {
-      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
-      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with kmsGenerationAdd successfully!');
-    } catch (error) {
-      throw new Error(`Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol: ${String(error)}`);
-    }
+  .setAction(async function ({ address }: { address: string }) {
+    await _appendHostContractAddress({
+      taskName: 'task:setKMSGenerationAddress',
+      contractName: 'KMSGeneration',
+      envVarName: 'KMS_GENERATION_CONTRACT_ADDRESS',
+      solidityConstantName: 'kmsGenerationAdd',
+      address,
+    });
   });
+
+////////////////////////////////////////////////////////////////////////////////
+// Helpers
+////////////////////////////////////////////////////////////////////////////////
+
+// Resets fhevmTemp/addresses/.env.host to empty and fhevmTemp/addresses/FHEVMHostAddresses.sol to its Solidity header,
+// before the host contract addresses are appended with appendHostContractAddress.
+async function _resetHostContractAddressFiles(): Promise<void> {
+  const solidityHeader = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+`;
+  await fs.promises.mkdir(HOST_ADDRESSES_DIR, { recursive: true });
+  await fs.promises.writeFile(HOST_ADDRESSES_ENV_PATH, '');
+  await fs.promises.writeFile(FHEVM_HOST_ADDRESSES_SOL_PATH, solidityHeader, { encoding: 'utf8' });
+}
+
+// On a chain supported by config/ZamaConfig.sol, throws unless `address` is the address ZamaConfig.sol hardcodes for
+// that chain in `zamaConfigField`: otherwise contracts using ZamaConfig would point to a different contract.
+// Does nothing on chains ZamaConfig.sol does not support.
+async function _assertMatchesZamaConfig(
+  hre: HardhatRuntimeEnvironment,
+  {
+    taskName,
+    contractName,
+    zamaConfigField,
+    address,
+  }: {
+    taskName: string;
+    contractName: string;
+    zamaConfigField: 'ACLAddress' | 'CoprocessorAddress' | 'KMSVerifierAddress';
+    address: string;
+  },
+): Promise<void> {
+  const chainId = (await hre.ethers.provider.getNetwork()).chainId;
+  const expected = getZamaConfigAddresses(chainId)?.[zamaConfigField];
+  if (expected === undefined) {
+    return;
+  }
+  if (!isAddress(address) || getAddress(address) !== expected) {
+    throw new Error(
+      `${taskName}: ${contractName} address ${address} does not match ZamaConfig.sol's ${zamaConfigField} ` +
+        `${expected} for chain ${chainId}`,
+    );
+  }
+}
+
+// Appends a host contract address to fhevmTemp/addresses/.env.host (as `<envVarName>=<address>`) and to
+// fhevmTemp/addresses/FHEVMHostAddresses.sol (as `address constant <solidityConstantName> = <address>;`).
+// Both files are created by task:setACLAddress, which must run first.
+async function _appendHostContractAddress({
+  taskName,
+  contractName,
+  envVarName,
+  solidityConstantName,
+  address,
+}: {
+  taskName: string;
+  contractName: string;
+  envVarName: string;
+  solidityConstantName: string;
+  address: string;
+}): Promise<void> {
+  if (!isAddress(address)) {
+    throw new Error(`${taskName}: invalid address ${address}`);
+  }
+
+  // Both files must already exist (created by task:setACLAddress): appending would otherwise silently
+  // create them without the Solidity header and the ACL address.
+  for (const filePath of [HOST_ADDRESSES_ENV_PATH, FHEVM_HOST_ADDRESSES_SOL_PATH]) {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`${taskName}: ${filePath} does not exist, run task:setACLAddress first`);
+    }
+  }
+
+  const content = `${envVarName}=${address}\n`;
+  try {
+    await fs.promises.appendFile(HOST_ADDRESSES_ENV_PATH, content);
+    console.info(`${contractName} address ${address} written successfully!`);
+  } catch (err) {
+    console.error(`Failed to write ${contractName} address:`, err);
+  }
+
+  const solidityTemplate = `
+address constant ${solidityConstantName} = ${address};\n`;
+
+  try {
+    await fs.promises.appendFile(FHEVM_HOST_ADDRESSES_SOL_PATH, solidityTemplate, { encoding: 'utf8' });
+    console.info(`${FHEVM_HOST_ADDRESSES_SOL_PATH} file appended with ${solidityConstantName} successfully!`);
+  } catch (error) {
+    console.error(`Failed to write ${FHEVM_HOST_ADDRESSES_SOL_PATH}`, error);
+  }
+}

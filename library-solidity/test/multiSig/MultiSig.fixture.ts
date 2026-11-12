@@ -10,5 +10,5 @@ export async function deploySimpleMultiSigFixture(): Promise<SimpleMultiSig> {
   const contract = await contractFactory.connect(signers.alice).deploy([signers.alice, signers.bob, signers.carol]); // City of Zama's battle
   await contract.waitForDeployment();
 
-  return contract as unknown as SimpleMultiSig;
+  return contract;
 }

@@ -1,42 +1,35 @@
-import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { exec as oldExec } from 'child_process';
 import { config, ethers } from 'hardhat';
-import { promisify } from 'util';
-
-import { waitForBalance } from './utils';
-
-const exec = promisify(oldExec);
+import type { Signer } from 'ethers';
 
 export interface Signers {
-  alice: HardhatEthersSigner;
-  bob: HardhatEthersSigner;
-  carol: HardhatEthersSigner;
-  dave: HardhatEthersSigner;
-  eve: HardhatEthersSigner;
+  alice: Signer & { address: string };
+  bob: Signer & { address: string };
+  carol: Signer & { address: string };
+  dave: Signer & { address: string };
+  eve: Signer & { address: string };
 }
 
-let signers: Signers;
+let signers: Signers | undefined = undefined;
 
-const keys: (keyof Signers)[] = ['alice', 'bob', 'carol', 'dave', 'eve'];
+const signerNames: Array<keyof Signers> = ['alice', 'bob', 'carol', 'dave', 'eve'];
 
-const getCoin = async (address: string) => {
-  const containerName = process.env['TEST_CONTAINER_NAME'] || 'zama-dev-fhevm-validator-1';
-  const response = await exec(`docker exec -i ${containerName} faucet ${address} | grep height`);
-  const res = JSON.parse(response.stdout);
-  if (res.raw_log.includes('account sequence mismatch')) await getCoin(address);
-};
-
-const faucet = async (address: string) => {
+async function _faucet(address: string): Promise<void> {
   const balance = await ethers.provider.getBalance(address);
-  if (balance > 0) return;
-  await getCoin(address);
-  await waitForBalance(address);
-};
+  if (balance === 0n) {
+    throw new Error(`Signer ${address} has no balance and no faucet is available to fund it.`);
+  }
+}
 
-export const initSigners = async (quantity: number): Promise<void> => {
-  const q = process.env.HARDHAT_PARALLEL ? Math.min(quantity, 5) : 5;
+// Set by `hardhat test --parallel`. Any non-empty value means parallel mode.
+function _isHardhatParallel(): boolean {
+  const value = process.env.HARDHAT_PARALLEL;
+  return value !== undefined && value !== '';
+}
+
+export async function initSigners(quantity: number): Promise<void> {
+  const q = _isHardhatParallel() ? Math.min(quantity, 5) : 5;
   if (!signers) {
-    if (process.env.HARDHAT_PARALLEL && config.defaultNetwork === 'local') {
+    if (_isHardhatParallel() && config.defaultNetwork === 'local') {
       signers = {
         alice: ethers.Wallet.createRandom().connect(ethers.provider),
         bob: ethers.Wallet.createRandom().connect(ethers.provider),
@@ -44,7 +37,7 @@ export const initSigners = async (quantity: number): Promise<void> => {
         dave: ethers.Wallet.createRandom().connect(ethers.provider),
         eve: ethers.Wallet.createRandom().connect(ethers.provider),
       };
-    } else if (!process.env.HARDHAT_PARALLEL) {
+    } else if (!_isHardhatParallel()) {
       const eSigners = await ethers.getSigners();
       signers = {
         alice: eSigners[0],
@@ -58,18 +51,20 @@ export const initSigners = async (quantity: number): Promise<void> => {
     }
 
     if (config.defaultNetwork === 'local') {
-      const faucetP: Promise<void>[] = [];
+      const faucetP: Array<Promise<void>> = [];
       for (let i = 0; i < q; i += 1) {
-        const account = signers[keys[i]];
-        faucetP.push(faucet(account.address));
+        const account = signers[signerNames[i]];
+        faucetP.push(_faucet(account.address));
       }
       await Promise.all(faucetP);
     }
   }
-};
+}
 
-export const getSigners = async (): Promise<Signers> => {
+// eslint-disable-next-line @typescript-eslint/require-await
+export async function getSigners(): Promise<Signers> {
+  if (signers === undefined) {
+    throw new Error('Signers not initialized: call initSigners() first');
+  }
   return signers;
-};
-
-export const requestFaucet = faucet;
+}

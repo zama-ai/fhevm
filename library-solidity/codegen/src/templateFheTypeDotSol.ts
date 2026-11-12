@@ -25,7 +25,7 @@ export function generateSolidityFheType(fheTypeInfos: FheTypeInfo[]): string {
 }
 
 function createSolidityEnumFromFheTypes(fheTypes: FheTypeInfo[]): string {
-  return `${fheTypes
+  return fheTypes
     .map((fheType: FheTypeInfo, index: number) => `${fheType.type}${index < fheTypes.length - 1 ? ',' : ''}`)
-    .join('\n')}`;
+    .join('\n');
 }
