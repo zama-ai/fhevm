@@ -121,11 +121,11 @@ async fn test_processing_request(
             };
             asserter.push_success(&vec![rpc_log]);
         }
-        // The `NewKmsEpoch` flow fetches the previous epoch material from `KMSGeneration` via two
-        // `eth_call`s at `materialBlockNumber`: `getCompletedKeyIds()` then `getCompletedCrsIds()`.
-        // Returning empty id lists short-circuits the per-key/per-crs follow-ups, so these two
-        // responses are all a fetch needs. The material is fetched once for the request, skipped
-        // on `already_sent` retries, and once for the response.
+        // The `NewKmsEpoch` flow fetches the previous epoch material from `KMSGeneration` at
+        // `materialBlockNumber`. Each fetch is two `eth_call`s: `getCompletedKeyIds()` then
+        // `getCompletedCrsIds()`. Returning empty id lists skips the per-key/per-crs follow-up calls.
+        // The material is fetched twice: to build the request (skipped on `already_sent` retries),
+        // and to build the response.
         TestEventType::NewKmsEpoch => {
             let fetch_count = if already_sent { 1 } else { 2 };
             for _ in 0..2 * fetch_count {
