@@ -577,10 +577,14 @@ const validateEnvMaps = (
 };
 
 /**
- * What the "Coprocessor proxy" suite reads, one entry per coprocessor. Remove with that suite when the
- * RFC-038 pad connector and its e2e land, including the mapping of party 1's connector key below.
+ * What the "Coprocessor proxy" and "PRF endpoint" suites read, one entry per coprocessor. Remove with
+ * them when the RFC-038 pad connector and its e2e land, including the connector key mapping below.
  */
-const applyCoprocessorProxyTestSuiteEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+const applyCoprocessorProxyTestSuiteEnv = (
+  envs: Record<string, Record<string, string>>,
+  plan: StackSpec,
+  kmsParties: KmsParty[],
+) => {
   const supported = plan.coprocessor && runsCoprocessorProxy(plan);
   const indices = supported ? [...Array(plan.topology.count).keys()] : [];
   envs["test-suite"].COPROCESSOR_PROXY_URLS = indices
@@ -600,6 +604,10 @@ const applyCoprocessorProxyTestSuiteEnv = (envs: Record<string, Record<string, s
     .join(",");
   // The suite signs as party 1's connector, a KMS tx-sender of the active context.
   envs["test-suite"].KMS_CONNECTOR_PRIVATE_KEY = supported ? envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY : "";
+  // The "PRF endpoint" suite signs as each committee connector. Spares are not tx-senders yet.
+  envs["test-suite"].KMS_CONNECTOR_PRIVATE_KEYS = supported
+    ? kmsParties.slice(0, plan.kms.committeeSize).map((party) => party.privateKey).join(",")
+    : "";
 };
 
 const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
@@ -687,7 +695,7 @@ export const renderEnvMaps = async (
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
   envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
   envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
-  applyCoprocessorProxyTestSuiteEnv(envs, plan);
+  applyCoprocessorProxyTestSuiteEnv(envs, plan, kmsParties);
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
 
   // Propagate SNS-worker S3 migration configuration.
