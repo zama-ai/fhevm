@@ -327,7 +327,6 @@ services:
       - --s3-bucket=${BUCKET_NAME}
       - --signer-type=private-key
       - --private-key=${TX_SENDER_PRIVATE_KEY}
-      - --start-check-interval=2s
       # e2e limits, short so the "PRF endpoint" suite reaches them; the same ages as prf-service.
       - --pending-max-age=60s
       - --output-max-age=300s

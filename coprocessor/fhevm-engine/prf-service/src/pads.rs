@@ -43,7 +43,7 @@ pub enum Admission {
     OverBudget,
     /// The row is pending and expired: no lane computes it.
     Expired,
-    /// The lane of the instance is not ready, or its heartbeat is old: no row is added.
+    /// The lane of the instance has no heartbeat, or an old one: no row is added.
     NoLane,
 }
 
@@ -214,7 +214,7 @@ struct AdmissionRow {
     state: Option<PadState>,
     /// The row is older than `pending_max_age`.
     expired: bool,
-    /// The lane passed its start check and has a heartbeat newer than `lane_heartbeat_max_age`.
+    /// The lane has a heartbeat newer than `lane_heartbeat_max_age`.
     lane_live: bool,
 }
 
@@ -234,8 +234,7 @@ async fn read_for_admission(
                   COALESCE(p.created_at <= NOW() - make_interval(secs => $4), FALSE) AS "expired!",
                   EXISTS (
                       SELECT 1 FROM prf_lanes
-                       WHERE prf_instance = $1 AND ready_at IS NOT NULL
-                         AND heartbeat_at > NOW() - make_interval(secs => $5)
+                       WHERE prf_instance = $1 AND heartbeat_at > NOW() - make_interval(secs => $5)
                   ) AS "lane_live!"
              FROM (VALUES (1)) AS one
              LEFT JOIN pads p

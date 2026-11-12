@@ -1,6 +1,5 @@
-# coprocessor-proxy, prf-service and consensus-detector of party i.
-# scripts/deploy/deploy-coprocessor.sh applies it, except on blue-green stacks, and sets the
-# per-party values. apply-chain-env.sh sets the chain ID.
+# coprocessor-proxy and prf-service of party i. scripts/deploy/deploy-coprocessor.sh applies it,
+# except on blue-green stacks, and sets the per-party values. apply-chain-env.sh sets the chain ID.
 commonConfig:
   canonicalProtocolConfigChainId: "12345"
 
@@ -47,8 +46,3 @@ prfService:
     karpenter.sh/nodepool: zws-pool
   tolerations:
     - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
-
-# Compares the reference digests of the lanes of all operators, so that the lanes start.
-consensusDetector:
-  enabled: true
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/consensus-detector, tag: latest}

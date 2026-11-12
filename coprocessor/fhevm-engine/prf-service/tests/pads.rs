@@ -304,14 +304,12 @@ async fn expired_pending_rows_do_not_count_in_the_budget() {
     );
 }
 
-/// Sets the lane of instance 0: `ready` passed its start check, with a heartbeat `age_secs` ago.
-async fn set_lane(pool: &PgPool, ready: bool, age_secs: f64) {
+/// Sets the heartbeat of the lane of instance 0 to `age_secs` ago. `None`: no heartbeat.
+async fn set_lane(pool: &PgPool, age_secs: Option<f64>) {
     sqlx::query(
-        "UPDATE prf_lanes SET ready_at = CASE WHEN $1 THEN NOW() END,
-                              heartbeat_at = NOW() - make_interval(secs => $2)
+        "UPDATE prf_lanes SET heartbeat_at = NOW() - make_interval(secs => $1)
           WHERE prf_instance = 0",
     )
-    .bind(ready)
     .bind(age_secs)
     .execute(pool)
     .await
@@ -327,8 +325,8 @@ async fn no_row_is_added_or_joined_without_a_live_lane() {
         Admission::Created
     );
 
-    for (ready, age_secs) in [(false, 0.0), (true, 3600.0)] {
-        set_lane(&pool, ready, age_secs).await;
+    for age_secs in [None, Some(3600.0)] {
+        set_lane(&pool, age_secs).await;
         assert_eq!(
             admissions.admit(&path(1, 64), CONNECTOR).await.unwrap(),
             Admission::NoLane
@@ -742,7 +740,7 @@ async fn prf_service_role_writes_only_the_queue() {
     for allowed in [
         INSERT_PAD,
         "SELECT prf_instance, signature FROM pads",
-        "SELECT ready_at, heartbeat_at FROM prf_lanes",
+        "SELECT heartbeat_at FROM prf_lanes",
     ] {
         as_prf_service(&pool, allowed).await.expect(allowed);
     }
@@ -755,7 +753,7 @@ async fn prf_service_role_writes_only_the_queue() {
         "UPDATE pads SET signature = NULL",
         "DELETE FROM pads",
         "INSERT INTO prf_lanes (prf_instance) VALUES (1)",
-        "UPDATE prf_lanes SET ready_at = NOW()",
+        "UPDATE prf_lanes SET heartbeat_at = NOW()",
     ] {
         assert_denied(as_prf_service(&pool, denied).await, denied);
     }
@@ -781,9 +779,9 @@ async fn pad_worker_role_writes_only_outputs_and_lane_state() {
         "UPDATE pads SET ciphertext128 = NULL, ciphertext_digest = NULL, ciphertext128_digest = NULL,
              signer = NULL, signature = NULL, attestation_version = NULL, ciphertext64 = NULL",
         "DELETE FROM pads",
-        "INSERT INTO prf_lanes (prf_instance) VALUES (1) ON CONFLICT DO NOTHING",
-        "UPDATE prf_lanes SET ready_at = NOW(), heartbeat_at = NOW()",
-        "SELECT reference_digest, reference_mismatch_at FROM prf_lanes",
+        "INSERT INTO prf_lanes (prf_instance, heartbeat_at) VALUES (1, NOW())
+             ON CONFLICT (prf_instance) DO UPDATE SET heartbeat_at = NOW()",
+        "SELECT heartbeat_at FROM prf_lanes",
         "SELECT 1 FROM keys",
     ] {
         as_role(&pool, "pad_worker", allowed).await.expect(allowed);
@@ -795,8 +793,7 @@ async fn pad_worker_role_writes_only_outputs_and_lane_state() {
         INSERT_PAD,
         "UPDATE pads SET triggered_by = triggered_by",
         "UPDATE pads SET label = label",
-        "UPDATE prf_lanes SET reference_digest = NULL",
-        "UPDATE prf_lanes SET reference_mismatch_at = NOW()",
+        "UPDATE prf_lanes SET prf_instance = prf_instance",
         "DELETE FROM prf_lanes",
     ] {
         assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
@@ -812,7 +809,7 @@ async fn pad_worker_grants_keep_newer_rights_and_drop_forbidden_ones() {
          ALTER TABLE pads ADD COLUMN future_output BYTEA NULL;
          GRANT UPDATE (future_output) ON pads TO pad_worker;
          GRANT UPDATE (triggered_by) ON pads TO pad_worker;
-         GRANT UPDATE (reference_digest) ON prf_lanes TO pad_worker;",
+         GRANT UPDATE (prf_instance) ON prf_lanes TO pad_worker;",
     )
     .execute(&pool)
     .await
@@ -826,7 +823,7 @@ async fn pad_worker_grants_keep_newer_rights_and_drop_forbidden_ones() {
         .expect("a newer right stays");
     for denied in [
         "UPDATE pads SET triggered_by = triggered_by",
-        "UPDATE prf_lanes SET reference_digest = NULL",
+        "UPDATE prf_lanes SET prf_instance = prf_instance",
     ] {
         assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
     }
