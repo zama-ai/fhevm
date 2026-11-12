@@ -587,11 +587,11 @@ async fn host_consensus_candidates(
             -- A record whose pbs is the empty-aggregate hash is never uploaded
             -- (and never counts as a vote), so it must not occupy one of the
             -- {MAX_ANCHOR_CANDIDATES} candidate slots either.
-            AND sh.state_hash NOT LIKE '%\"pbs\":\"{empty}\"%'
+            AND sh.state_hash NOT LIKE '{empty_pbs}'
             {nontrivial}
           ORDER BY sh.block_number
           LIMIT {MAX_ANCHOR_CANDIDATES}",
-        empty = state_hash::EMPTY_BLOCK_STATE_HASH,
+        empty_pbs = state_hash::empty_pbs_like_pattern(),
     );
     let rows: Vec<(i64,)> = sqlx::query_as(&sql)
         .bind(host_chain_id)
