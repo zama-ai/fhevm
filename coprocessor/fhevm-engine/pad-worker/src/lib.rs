@@ -50,7 +50,7 @@ pub const PAD_WORK_AVAILABLE: &str = "pad_work_available";
 pub struct Config {
     /// The PRF instance of this lane.
     pub prf_instance: u16,
-    /// Gateway key ID (`key_id_gw`) of the instance.
+    /// KMSGeneration key ID of the instance, as in `keys.key_id_gw`.
     pub key_id: Vec<u8>,
     /// Evaluations at the same time (`PRF_MAX_CONCURRENT`).
     pub max_concurrent: NonZeroUsize,

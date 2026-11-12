@@ -26,7 +26,7 @@ struct Args {
     #[arg(long, env = "PRF_INSTANCE")]
     prf_instance: u16,
 
-    /// Gateway key ID (`key_id_gw`) of the instance, in hex.
+    /// KMSGeneration key ID of the instance, in hex, as in `keys.key_id_gw`.
     #[arg(long, env = "PRF_KEY_ID", value_parser = parse_key_id)]
     prf_key_id: KeyId,
 
