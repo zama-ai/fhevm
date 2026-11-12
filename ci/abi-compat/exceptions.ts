@@ -100,7 +100,7 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       // and a threshold change is a new context, so UpdateCoprocessorThreshold is gone.
       "event UpdateCoprocessors((address,address,string)[],uint256)",
       "event UpdateCoprocessorThreshold(uint256)",
-      // The coprocessor threshold must be a strict majority, as in ProtocolConfig. One error replaces the
+      // The coprocessor threshold must be a strict majority, as in CoprocessorConfig. One error replaces the
       // null and too-high threshold errors.
       "error InvalidNullCoprocessorThreshold()",
       "error InvalidHighCoprocessorThreshold(uint256,uint256)",

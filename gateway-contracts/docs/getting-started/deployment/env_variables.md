@@ -28,7 +28,7 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `USER_DECRYPTION_THRESHOLD`         | User decryption threshold                  | uint256       | -                                                                                                   | Must be non-null and less than or equal to the number of KMS nodes registered  |
 | `KMS_GENERATION_THRESHOLD`          | KMS public material generation threshold   | uint256       | -                                                                                                   | Must be non-null and less than or equal to the number of KMS nodes registered  |
 | `COPROCESSOR_THRESHOLD`             | Coprocessor threshold                      | uint256       | -                                                                                                   | Must be over half and at most the number of coprocessors registered            |
-| `COPROCESSOR_CONTEXT_ID`            | ID of the first coprocessor context        | uint256       | -                                                                                                   | Must match the ID the Ethereum `ProtocolConfig` gives the same coprocessor set |
+| `COPROCESSOR_CONTEXT_ID`            | ID of the first coprocessor context        | uint256       | -                                                                                                   | Must match the ID Ethereum's `CoprocessorConfig` gives to this coprocessor set |
 | `NUM_KMS_NODES`                     | Number of KMS nodes to register            | -             | -                                                                                                   | Must be at least the number of KMS nodes registered below                      |
 | `KMS_TX_SENDER_ADDRESS_{i}`         | Address of the KMS node `i`                | address       | -                                                                                                   | If `i` >= `NUM_KMS_NODES`, the variable is ignored                             |
 | `KMS_SIGNER_ADDRESS_{i}`            | Signer address of the KMS node `i`         | address       | -                                                                                                   | If `i` >= `NUM_KMS_NODES`, the variable is ignored                             |
@@ -112,7 +112,7 @@ KMS_GENERATION_THRESHOLD="3" # (uint256)
 COPROCESSOR_THRESHOLD="2" # (uint256)
 ```
 
-`COPROCESSOR_THRESHOLD` must be more than half the number of coprocessors registered below, and at most that number. This matches the rule `ProtocolConfig` applies to coprocessor contexts.
+`COPROCESSOR_THRESHOLD` must be more than half the number of coprocessors registered below, and at most that number. This matches the rule `CoprocessorConfig` applies to coprocessor contexts.
 
 - Coprocessor context ID:
 
@@ -120,7 +120,7 @@ COPROCESSOR_THRESHOLD="2" # (uint256)
 COPROCESSOR_CONTEXT_ID="4070815637249397495359917441711684260466522898401426079512180687778195963905" # (uint256)
 ```
 
-`COPROCESSOR_CONTEXT_ID` is the ID of the first coprocessor context, which holds the coprocessors registered below. It must be the ID the Ethereum `ProtocolConfig` gives the same coprocessor set (type `0x09` in the top byte). The `GatewayConfig` upgrade that introduces coprocessor contexts also reads it.
+`COPROCESSOR_CONTEXT_ID` is the ID of the first coprocessor context, which holds the coprocessors registered below. It must be the ID the Ethereum `CoprocessorConfig` gives the same coprocessor set (type `0x09` in the top byte). The `GatewayConfig` upgrade that introduces coprocessor contexts also reads it.
 
 - KMS Nodes:
 

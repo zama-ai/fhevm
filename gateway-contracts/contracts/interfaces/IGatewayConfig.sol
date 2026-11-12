@@ -84,7 +84,7 @@ interface IGatewayConfig {
 
     /**
      * @notice Emitted when a coprocessor context has been stored and made current.
-     * @param contextId The coprocessor context ID, as assigned by `ProtocolConfig`.
+     * @param contextId The coprocessor context ID, as assigned by `CoprocessorConfig`.
      * @param newCoprocessors The coprocessors of the context.
      * @param newCoprocessorThreshold The majority threshold of the context.
      */
@@ -408,10 +408,10 @@ interface IGatewayConfig {
 
     /**
      * @notice Update the coprocessor context: coprocessors and majority threshold for a given context ID.
-     * @dev The context is copied from `ProtocolConfig` and becomes the current one. Earlier contexts stay
+     * @dev The context is copied from `CoprocessorConfig` and becomes the current one. Earlier contexts stay
      *      readable. New input verification requests use this context, and requests in progress complete
      *      under the context they recorded.
-     * @param newContextId The new context ID to associate with the coprocessors, as assigned by `ProtocolConfig`.
+     * @param newContextId The new context ID to associate with the coprocessors, as assigned by `CoprocessorConfig`.
      * @param newCoprocessors The new coprocessors.
      * @param newCoprocessorThreshold The new majority threshold.
      */

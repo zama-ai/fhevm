@@ -34,7 +34,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice Upper bound on the coprocessor set size.
-     * @dev Mirrors `ProtocolConfig.MAX_COPROCESSORS`. The input proof encodes the signature count in
+     * @dev Mirrors `CoprocessorConfigBase.MAX_COPROCESSORS`. The input proof encodes the signature count in
      *      a single byte.
      */
     uint256 private constant MAX_COPROCESSORS = type(uint8).max;
@@ -288,7 +288,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @dev Requests the former priority sender already responded to, without reaching consensus, become
      *      finalizable again: their count resumes against the coprocessor threshold.
      * @dev Stores the registered coprocessor set and threshold as the first coprocessor context.
-     * @param initialCoprocessorContextId ID of the coprocessor context that `ProtocolConfig` defines with this
+     * @param initialCoprocessorContextId ID of the coprocessor context that `CoprocessorConfig` defines with this
      *        same set.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
