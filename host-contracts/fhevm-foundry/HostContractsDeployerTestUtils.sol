@@ -9,6 +9,7 @@ import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
 import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
 import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
+import {HCUConfigurator} from "@fhevm-host-contracts/contracts/HCUConfigurator.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "@fhevm-host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
@@ -19,7 +20,7 @@ import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProto
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, EXTRA_DATA_V2} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuConfiguratorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -174,13 +175,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
     }
 
     function _deployHCULimit(address owner) internal returns (HCULimit hcuLimitProxy, address hcuLimitImplementation) {
-        address emptyProxyImplementation = address(new EmptyUUPSProxy());
-
-        deployCodeTo(
-            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
-            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
-            hcuLimitAdd
-        );
+        _deployEmptyProxyAt(hcuLimitAdd);
         vm.label(hcuLimitAdd, "HCULimit Proxy");
 
         hcuLimitImplementation = address(new HCULimit());
@@ -193,6 +188,33 @@ abstract contract HostContractsDeployerTestUtils is Test {
         );
 
         hcuLimitProxy = HCULimit(hcuLimitAdd);
+    }
+
+    function _deployHCUConfigurator(
+        address owner
+    ) internal returns (HCUConfigurator hcuConfiguratorProxy, address hcuConfiguratorImplementation) {
+        _deployEmptyProxyAt(hcuConfiguratorAdd);
+        vm.label(hcuConfiguratorAdd, "HCUConfigurator Proxy");
+
+        hcuConfiguratorImplementation = address(new HCUConfigurator());
+        vm.label(hcuConfiguratorImplementation, "HCUConfigurator Implementation");
+
+        vm.prank(owner);
+        EmptyUUPSProxy(hcuConfiguratorAdd).upgradeToAndCall(
+            hcuConfiguratorImplementation,
+            abi.encodeCall(HCUConfigurator.initializeFromEmptyProxy, ())
+        );
+
+        hcuConfiguratorProxy = HCUConfigurator(hcuConfiguratorAdd);
+    }
+
+    /// @dev Deploys an initialized EmptyUUPSProxy at a fixed address, as task:deployEmptyUUPSProxies does.
+    function _deployEmptyProxyAt(address proxyAddress) internal {
+        deployCodeTo(
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(address(new EmptyUUPSProxy()), abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            proxyAddress
+        );
     }
 
     function _deployFullHostStack(
@@ -210,6 +232,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         PauserSet pauserSet = _deployPauserSet();
         (FHEVMExecutor fheExecutor, ) = _deployFHEVMExecutor(owner);
         _deployHCULimit(owner);
+        _deployHCUConfigurator(owner);
         (ProtocolConfig protocolConfigProxy, ) = _deployProtocolConfig(owner, initialKmsNodeParams, initialThresholds);
         _deployKMSGeneration(owner);
         _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource);

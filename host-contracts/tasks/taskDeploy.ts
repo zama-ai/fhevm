@@ -136,6 +136,7 @@ task('task:deployAllHostContracts')
     }
     await hre.run('task:deployKMSVerifier');
     await hre.run('task:deployInputVerifier');
+    await hre.run('task:deployHCUConfigurator');
     await hre.run('task:deployHCULimit');
 
     await hre.run('task:deployBridge');
@@ -268,15 +269,23 @@ task('task:deployEmptyUUPSProxies')
       );
       await run('task:setBridgeAddress', { address: ethers.ZeroAddress });
     }
+
+    // Deployed last, so the addresses of the proxies above do not change.
+    const hcuConfiguratorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setHCUConfiguratorAddress', { address: hcuConfiguratorAddress });
   });
 
-task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, { ethers, upgrades, run }) {
+// Deploys the empty proxy of a contract that a chain deployed from an earlier release lacks, and writes its address,
+// unless addresses/.env.host already has one.
+async function deployMissingEmptyProxy(
+  envKey: string,
+  setAddressTask: string,
+  { ethers, upgrades, run }: HardhatRuntimeEnvironment,
+) {
   ensureAddressesDirectoryExists();
 
-  if (readExistingHostEnv().CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS) {
-    console.warn(
-      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS.',
-    );
+  if (readExistingHostEnv()[envKey]) {
+    console.warn(`Empty-proxy bootstrap is a no-op; addresses/.env.host already contains ${envKey}.`);
     return;
   }
 
@@ -284,8 +293,16 @@ task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, 
   await run('compile:specific', { contract: 'contracts/emptyProxy' });
 
   const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setBridgeAddress', { address: proxyAddress });
-  process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS = proxyAddress;
+  await run(setAddressTask, { address: proxyAddress });
+  process.env[envKey] = proxyAddress;
+}
+
+task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, hre) {
+  await deployMissingEmptyProxy('CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS', 'task:setBridgeAddress', hre);
+});
+
+task('task:deployEmptyProxyForHCUConfigurator').setAction(async function (_, hre) {
+  await deployMissingEmptyProxy('HCU_CONFIGURATOR_CONTRACT_ADDRESS', 'task:setHCUConfiguratorAddress', hre);
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -413,6 +430,21 @@ task('task:deployHCULimit').setAction(async function (taskArguments: TaskArgumen
     call: { fn: 'initializeFromEmptyProxy', args: [BigInt('281474976710655'), BigInt('5000000'), BigInt('20000000')] },
   });
   console.log('HCULimit code set successfully at address:', proxyAddress);
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// HCUConfigurator
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployHCUConfigurator').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('HCUConfigurator', deployer);
+  const proxyAddress = readHostEnv().HCU_CONFIGURATOR_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'initializeFromEmptyProxy' } });
+  console.log('HCUConfigurator code set successfully at address:', proxyAddress);
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1011,6 +1043,33 @@ address constant hcuLimitAdd = ${taskArguments.address};\n`;
     try {
       writeHostAddressesSol(solidityTemplate, 'a');
       console.log(`${HOST_ADDRESSES_FILE} appended with hcuLimitAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup HCUConfigurator Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setHCUConfiguratorAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const content = `HCU_CONFIGURATOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`HCUConfigurator address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write HCUConfigurator address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant hcuConfiguratorAdd = ${taskArguments.address};\n`;
+
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with hcuConfiguratorAdd successfully!`);
     } catch (error) {
       throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
     }

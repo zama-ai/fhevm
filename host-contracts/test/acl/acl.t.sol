@@ -10,7 +10,7 @@ import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {ACLEvents} from "../../contracts/ACLEvents.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
 import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd, aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd, aclAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract ACLTest is HostContractsDeployerTestUtils {
     using stdStorage for StdStorage;
@@ -84,6 +84,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
      */
     function setUp() public {
         _deployACL(owner);
+        _deployHCULimit(owner);
         acl = ACL(aclAdd);
         proxy = aclAdd;
         _deployPauserSet();
@@ -98,11 +99,34 @@ contract ACLTest is HostContractsDeployerTestUtils {
      * It checks that the version is correct, the owner/pauser are set to the expected addresses, and the fhevmExecutor address is correct.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.6.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.7.0")));
         assertEq(acl.owner(), owner);
         assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
         assertEq(acl.getPauserSetAddress(), pauserSetAdd);
+    }
+
+    /**
+     * @dev The ACL upgrade must refuse to run before HCULimit is upgraded, since `allow` calls it. It upgrades from
+     *      reinitializer 6 (the 0.14.x releases) and from 7 (the v0.15.0 release candidates).
+     */
+    function test_reinitializeV7RevertsUntilHCULimitIsUpgraded() public {
+        bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
+        assertEq(uint256(vm.load(proxy, initializableStorage)), 8);
+        bytes memory upgradedHCULimit = hcuLimitAdd.code;
+
+        for (uint256 previous = 6; previous <= 7; previous++) {
+            vm.store(proxy, initializableStorage, bytes32(previous));
+
+            // An implementation without getCrossTxDepthLimit, like HCULimit before this upgrade.
+            vm.etch(hcuLimitAdd, hex"00");
+            vm.expectRevert();
+            acl.reinitializeV7();
+
+            vm.etch(hcuLimitAdd, upgradedHCULimit);
+            acl.reinitializeV7();
+            assertEq(uint256(vm.load(proxy, initializableStorage)), 8);
+        }
     }
 
     /**

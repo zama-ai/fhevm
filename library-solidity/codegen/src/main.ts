@@ -19,7 +19,7 @@ import {
 } from './config';
 import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos';
 import { type OverloadTests, generateOverloads } from './generateOverloads';
-import { generateSolidityHCULimit } from './hcuLimitGenerator';
+import { generateSolidityHCULimitOperators } from './hcuLimitGenerator';
 import { ALL_OPERATORS } from './operators';
 import { ALL_OPERATORS_PRICES } from './operatorsPrices';
 import { fromDirToFile, fromFileToFile, isDirectory } from './paths';
@@ -156,7 +156,7 @@ export async function commandGenerateAllFiles(options: any) {
   const implDotSol = `${path.join(absConfig.lib.outDir, 'Impl.sol')}`;
   const ecdsaDotSol = `${path.join(absConfig.lib.outDir, 'cryptography', 'FhevmECDSA.sol')}`;
   const fheDotSol = `${path.join(absConfig.lib.outDir, 'FHE.sol')}`;
-  const hcuLimitDotSol = `${path.join(absConfig.hostContracts.outDir, 'HCULimit.sol')}`;
+  const hcuLimitOperatorsDotSol = `${path.join(absConfig.hostContracts.outDir, 'HCULimitOperators.sol')}`;
 
   // Confidential-bridge OApp abstracts (`lib/bridge/`); only emitted when `lib.bridge` is enabled.
   const iDstAppDotSol = `${path.join(absConfig.lib.outDir, 'bridge', 'IDstApp.sol')}`;
@@ -196,7 +196,7 @@ export async function commandGenerateAllFiles(options: any) {
   if (!absConfig.noHostContracts) {
     debugLog(`============= Host Contracts =============`);
     debugLog(`hostContractsDir:   ${absConfig.hostContracts.outDir}`);
-    debugLog(`HCULimit.sol:       ${hcuLimitDotSol}`);
+    debugLog(`HCULimitOperators.sol: ${hcuLimitOperatorsDotSol}`);
   }
 
   debugLog(`============ Tests ============`);
@@ -248,10 +248,10 @@ export async function commandGenerateAllFiles(options: any) {
   }
 
   if (config.noHostContracts !== true) {
-    const hcuCode = generateSolidityHCULimit(ALL_OPERATORS_PRICES);
+    const hcuCode = generateSolidityHCULimitOperators(ALL_OPERATORS_PRICES, ALL_FHE_TYPE_INFOS);
     // host contracts directory must exist.
     // Generate Host contracts contract files.
-    await formatAndWriteFile(`${hcuLimitDotSol}`, hcuCode);
+    await formatAndWriteFile(`${hcuLimitOperatorsDotSol}`, hcuCode);
   } else {
     debugLog(`Skipping host contracts generation.`);
   }

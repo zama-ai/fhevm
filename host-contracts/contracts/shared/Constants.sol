@@ -42,3 +42,33 @@ uint8 constant EXTRA_DATA_V1 = 0x01;
 
 /// @dev Version byte for v2 extraData layout: [version(1)] [contextId(32)] [epochId(32)].
 uint8 constant EXTRA_DATA_V2 = 0x02;
+
+/// @dev HCU quota of every contract that was never assigned.
+uint16 constant DEFAULT_QUOTA = 0;
+
+/// @dev HCU quota of contracts the allowlist admitted and nobody assigned yet, while the default quota is stopped.
+uint16 constant ALLOWLIST_QUOTA = 1;
+
+/// @dev HCU quota of contracts both allowlisted and block-whitelisted that nobody assigned yet, while the default
+///      quota is stopped. Quotas up to this one take no admin.
+uint16 constant BLOCK_WHITELIST_QUOTA = 2;
+
+/// @dev 100% in basis points: a tier threshold that admits operations until the capacity is full, and the capacity
+///      scale at which the capacity is the owner's.
+uint16 constant MAX_BPS = 10_000;
+
+/// @dev An HCU quota or capacity with this maximum is not metered.
+uint48 constant NO_CAP = type(uint48).max;
+
+/// @dev HCU tier of every quota never moved to another tier. Its threshold is fixed at MAX_BPS.
+uint8 constant RESERVED_TIER = 0;
+
+/// @dev Highest HCU tier. An operation charges the meter of its tier and of every tier above it, so this bounds the
+///      meters each operation reads and writes.
+uint8 constant MAX_TIER = 3;
+
+/// @dev Returns `value` at the HCU capacity scale `scaleBps`, rounded up so that a value above 0 never scales to 0.
+///      HCULimit's meters and HCUConfigurator's bounds on the scale both use it.
+function hcuScaled(uint256 value, uint16 scaleBps) pure returns (uint256) {
+    return (value * scaleBps + MAX_BPS - 1) / MAX_BPS;
+}

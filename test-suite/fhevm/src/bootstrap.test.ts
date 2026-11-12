@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   CANONICAL_HOST_CONTRACT_UPGRADES,
+  HCU_CONFIGURATOR_BOOTSTRAP_COMMAND,
   GATEWAY_CONTRACT_UPGRADES,
   HOST_CONTRACT_UPGRADES,
   bootstrapBootOverrides,
@@ -148,8 +149,8 @@ describe("blue-green bootstrap", () => {
     expect(CANONICAL_HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual(["KMSGeneration"]);
     expect(HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual([
       "FHEVMExecutor",
-      "ACL",
       "HCULimit",
+      "ACL",
       "InputVerifier",
       "KMSVerifier",
       "ProtocolConfig",
@@ -161,6 +162,14 @@ describe("blue-green bootstrap", () => {
     ]) {
       expect(task).toBe(`task:upgrade${contract}`);
     }
+    expect(HCU_CONFIGURATOR_BOOTSTRAP_COMMAND.split("\n")).toEqual([
+      "if [ -f previous-contracts/HCUConfigurator.sol ]; then",
+      '  echo "[bootstrap] HCUConfigurator: already in the snapshot; nothing to deploy"; exit 0',
+      "fi",
+      "npx hardhat task:deployEmptyProxyForHCUConfigurator",
+      "npx hardhat compile:specific --contract contracts",
+      "npx hardhat task:deployHCUConfigurator",
+    ]);
     const command = contractUpgradeCommand("task:upgradeDecryption", "Decryption");
     expect(command).toContain("previous-contracts/Decryption.sol | grep");
     expect(command).toContain('[ "$prev" = "$next" ]');

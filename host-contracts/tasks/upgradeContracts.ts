@@ -4,6 +4,7 @@ import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
 import { assertBridgeEndpointImmutable } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { acceptsStorageException } from './utils/storageExceptions';
 import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
@@ -84,12 +85,19 @@ async function upgradeCurrentToNew(
 
   // Prepare the new implementation factory and execute the upgrade by calling the reinitialize function
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
+  const unsafeSkipStorageCheck = await acceptsStorageException(
+    hre,
+    proxyAddress,
+    currentImplementationFactory,
+    newImplementationFactory,
+  );
 
   await hre.upgrades.upgradeProxy(currentProxyContract, newImplementationFactory, {
     call: {
       fn: reinitializeFunction.name,
       args: reinitializeArgs,
     },
+    unsafeSkipStorageCheck,
   });
   console.log('Proxy contract successfully upgraded!');
 
@@ -132,11 +140,18 @@ async function deployImplementationForPreparedUpgrade(
     throw new Error(`No reinitialize function found in ${newImplementation}`);
   }
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
+  const unsafeSkipStorageCheck = await acceptsStorageException(
+    hre,
+    proxyAddress,
+    currentImplementationFactory,
+    newImplementationFactory,
+  );
 
   console.log(`Deploying "${newImplementation}" for prepared upgrade on proxy ${proxyAddress}...`);
   const implementationAddress = String(
     await hre.upgrades.prepareUpgrade(proxyAddress, newImplementationFactory, {
       kind: 'uups',
+      unsafeSkipStorageCheck,
     }),
   );
   console.log('New implementation deployed at:', implementationAddress);
@@ -423,6 +438,43 @@ task('task:prepareUpgradeConfidentialBridge')
       lzEndpoint,
       '[task:prepareUpgradeConfidentialBridge]',
     );
+
+    printUpgradeProposal(preparedUpgrade);
+    if (taskArgs.verifyContract) {
+      await verifyProposalImplementation(hre, preparedUpgrade);
+    }
+    return preparedUpgrade;
+  });
+
+// Governance prepare for the first HCUConfigurator upgrade: EmptyUUPSProxy -> HCUConfigurator via
+// initializeFromEmptyProxy. The proposal runs it before HCULimit's upgrade, whose reinitializeV6 needs it.
+task('task:prepareUpgradeHCUConfigurator')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    if (taskArgs.useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('HCU_CONFIGURATOR_CONTRACT_ADDRESS');
+
+    await hre.run('compile:specific', { contract: 'contracts' });
+
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
+      proxyAddress,
+      contractName: 'contracts/HCUConfigurator.sol:HCUConfigurator',
+      innerFunctionName: 'initializeFromEmptyProxy',
+      decodedArgs: [],
+    });
 
     printUpgradeProposal(preparedUpgrade);
     if (taskArgs.verifyContract) {
