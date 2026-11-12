@@ -8,7 +8,7 @@ use alloy::{
     transports::mock::Asserter,
 };
 use coprocessor_proxy::kms_tx_senders::Follower;
-use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::getCurrentKmsContextIdCounterCall;
+use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::getCurrentKmsContextIdCall;
 use fhevm_sig_auth::RefreshableSigners;
 use std::time::Duration;
 
@@ -33,7 +33,7 @@ fn timestamp() -> i64 {
 async fn freshness_tracks_only_successfully_applied_finalized_blocks() {
     let asserter = Asserter::new();
     let no_context: alloy::primitives::Bytes =
-        getCurrentKmsContextIdCounterCall::abi_encode_returns(&U256::ZERO).into();
+        getCurrentKmsContextIdCall::abi_encode_returns(&U256::ZERO).into();
     asserter.push_failure_msg("initial RPC failure");
     asserter.push_success(&block(100, 1_000));
     asserter.push_success(&no_context);

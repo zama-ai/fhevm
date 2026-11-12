@@ -22,8 +22,8 @@ use coprocessor_proxy::{
     monitoring::health,
 };
 use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
-    IProtocolConfigBaseCalls, KmsNode, getCurrentKmsContextIdCounterCall,
-    getKmsNodesForContextCall, isValidKmsContextCall,
+    IProtocolConfigBaseCalls, KmsNode, getCurrentKmsContextIdCall, getKmsNodesForContextCall,
+    isValidKmsContextCall,
 };
 use http::uri::{Authority, PathAndQuery};
 use serde_json::{Value, json};
@@ -379,13 +379,13 @@ fn answer(state: &mut RpcState, call: &Value) -> Response {
             .map(|index| &state.contexts[index])
     };
     let result = match IProtocolConfigBaseCalls::abi_decode(&hex::decode(data).unwrap()).unwrap() {
-        IProtocolConfigBaseCalls::getCurrentKmsContextIdCounter(_) => {
-            let counter = match state.contexts.len() {
-                0 => U256::ZERO,
-                n => context_id(n - 1),
-            };
-            Some(getCurrentKmsContextIdCounterCall::abi_encode_returns(
-                &counter,
+        IProtocolConfigBaseCalls::getCurrentKmsContextId(_) => {
+            let latest_active = (0..state.contexts.len())
+                .rev()
+                .find(|&index| state.contexts[index].active)
+                .map_or(U256::ZERO, context_id);
+            Some(getCurrentKmsContextIdCall::abi_encode_returns(
+                &latest_active,
             ))
         }
         IProtocolConfigBaseCalls::isValidKmsContext(call) => {
