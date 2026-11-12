@@ -178,15 +178,15 @@ Before you enable it:
 - With `prfService.serviceMonitor.enabled`, add an ingress rule for the metrics port to
   `coprocessorProxy.prfServiceNetworkPolicy.extraIngress`. The NetworkPolicy admits only the proxy.
 
-## Pad-worker lanes
+## Pad workers
 
-`padLanes` deploys one pad-worker for each PRF instance, `<release>-pad-worker-<prfId>`. A lane runs
-outside the blue and green fleets, for the life of its instance. Deploy the lanes in a separate pad
-release of the operator, for example `coprocessor-<party>-pads`, with `dbMigration.enabled` and
-`tfheWorker.enabled` set to `false` and no other component. Leave `padLanes` empty in the fleet
-releases. `ci/pad-lanes-values.yaml` is an example.
+`padWorkers` deploys one pad-worker for each PRF instance, `<release>-pad-worker-<prfId>`. A
+pad-worker runs outside the blue and green fleets, for the life of its instance. Deploy the
+pad-workers in a separate pad release of the operator, for example `coprocessor-<party>-pads`, with
+`dbMigration.enabled` and `tfheWorker.enabled` set to `false` and no other component. Leave
+`padWorkers` empty in the fleet releases. `ci/pad-workers-values.yaml` is an example.
 
-Before you add a lane:
+Before you add a pad-worker:
 
 - Create the database role `pad_worker` with `LOGIN`, and `GRANT rds_iam TO pad_worker` for IAM
   authentication. Set `padWorkerShared.databaseUser` (required), and
@@ -197,8 +197,8 @@ Before you add a lane:
 - An S3 lifecycle rule on `pads/` can delete objects after
   `padWorkerShared.config.outputMaxAgeSeconds`.
 
-A lane keeps its image (`padLanes[].image`) for the life of its instance. An image that changes the
-bytes of the outputs needs a new `prfId`.
+A pad-worker keeps its image (`padWorkers[].image`) for the life of its instance. An image that
+changes the bytes of the outputs needs a new `prfId`.
 
-The lane has no Service except the metrics one, and `padWorkerShared.serviceMonitor.enabled` adds a
-ServiceMonitor: nothing calls a lane.
+The pad-worker has no Service except the metrics one, and `padWorkerShared.serviceMonitor.enabled`
+adds a ServiceMonitor: nothing calls a pad-worker.

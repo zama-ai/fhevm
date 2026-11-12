@@ -87,9 +87,8 @@ default), so the 4 faulty connectors that the protocol tolerates cannot fill it.
 A pending row older than `PAD_PENDING_MAX_AGE` (default 10 min) does not count in the budget: no
 pad-worker computes it.
 
-A request that adds or joins a pending row gets `503 unavailable` when the lane of its instance has
-no heartbeat, or one older than `PAD_LANE_HEARTBEAT_MAX_AGE` (default 30 s). No row is
-added. A complete row is served also when the lane is down.
+A request for such a row gets `503 unavailable`. After the GC deletes the row, a new request adds
+it again.
 
 Do not autoscale `prf-service`. With more pods, one connector can have more requests in progress.
 

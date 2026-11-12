@@ -1,5 +1,4 @@
-//! Evaluations of the lane, and row age gauges for each `prfId`. Each lane sets the gauges for all
-//! instances, to show a dead lane.
+//! The evaluations of the pad-worker, and the row age gauges of each `prfId` (of all instances).
 
 use crate::rows::OldestRows;
 use prometheus::{

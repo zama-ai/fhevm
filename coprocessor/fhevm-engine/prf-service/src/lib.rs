@@ -48,8 +48,6 @@ pub struct Config {
     pub max_body_bytes_per_connector: NonZeroU32,
     /// Pending rows older than this do not count in the budget (`PAD_PENDING_MAX_AGE`).
     pub pad_pending_max_age: Duration,
-    /// A lane with an older heartbeat is down (`PAD_LANE_HEARTBEAT_MAX_AGE`).
-    pub lane_heartbeat_max_age: Duration,
 }
 
 /// The internal PRF output endpoint. Only the proxy calls it.
@@ -79,7 +77,6 @@ impl PrfService {
                 config.max_pending_bits,
                 config.max_adds_per_connector,
                 config.pad_pending_max_age,
-                config.lane_heartbeat_max_age,
             ),
             waiter: waiter.clone(),
             bodies: BodyBudget::new(

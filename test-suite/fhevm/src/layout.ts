@@ -280,8 +280,8 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
 
 /**
- * The services that `runsCoprocessorProxy` gates, in start order: the pad-worker lane that computes
- * the PRF outputs, and the proxy.
+ * The services that `runsCoprocessorProxy` gates, in start order: the pad-worker that computes the
+ * PRF outputs, and the proxy.
  */
 export const COPROCESSOR_PROXY_SUFFIXES = ["pad-worker", "proxy"];
 

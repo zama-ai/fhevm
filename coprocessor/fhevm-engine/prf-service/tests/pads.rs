@@ -22,7 +22,6 @@ use tokio_util::sync::CancellationToken;
 const LIMIT: i64 = 100;
 const MAX_ADDS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
 const PENDING_MAX_AGE: Duration = Duration::from_secs(600);
-const LANE_MAX_AGE: Duration = Duration::from_secs(30);
 const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
 
 /// A database and an admin pool.
@@ -46,7 +45,6 @@ async fn test_db() -> (DBInstance, PgPool, PgPool, Arc<Admissions>) {
         LIMIT,
         MAX_ADDS,
         PENDING_MAX_AGE,
-        LANE_MAX_AGE,
     ));
     (instance, pool, service, admissions)
 }
@@ -143,13 +141,7 @@ async fn concurrent_requests_of_a_connector_stay_in_its_budget() {
 #[tokio::test]
 async fn requests_on_two_pods_stay_in_the_budget() {
     let (_instance, _pool, service, pod_a) = test_db().await;
-    let pod_b = Arc::new(Admissions::new(
-        service,
-        LIMIT,
-        MAX_ADDS,
-        PENDING_MAX_AGE,
-        LANE_MAX_AGE,
-    ));
+    let pod_b = Arc::new(Admissions::new(service, LIMIT, MAX_ADDS, PENDING_MAX_AGE));
     let requests: Vec<_> = (0..10)
         .map(|label| {
             let pod = if label % 2 == 0 {
@@ -283,7 +275,7 @@ async fn expired_pending_rows_do_not_count_in_the_budget() {
         Admission::OverBudget
     );
 
-    // No lane computed the first row in time.
+    // No pad-worker computed the first row in time.
     sqlx::query("UPDATE pads SET created_at = NOW() - make_interval(secs => $1)")
         .bind(PENDING_MAX_AGE.as_secs_f64() + 1.0)
         .execute(&pool)
@@ -301,56 +293,6 @@ async fn expired_pending_rows_do_not_count_in_the_budget() {
             .await
             .unwrap(),
         Admission::Expired
-    );
-}
-
-/// Sets the heartbeat of the lane of instance 0 to `age_secs` ago. `None`: no heartbeat.
-async fn set_lane(pool: &PgPool, age_secs: Option<f64>) {
-    sqlx::query(
-        "UPDATE prf_lanes SET heartbeat_at = NOW() - make_interval(secs => $1)
-          WHERE prf_instance = 0",
-    )
-    .bind(age_secs)
-    .execute(pool)
-    .await
-    .unwrap();
-}
-
-#[tokio::test]
-async fn no_row_is_added_or_joined_without_a_live_lane() {
-    let (_instance, pool, _service, admissions) = test_db().await;
-    let pending = path(2, 64);
-    assert_eq!(
-        admissions.admit(&pending, CONNECTOR).await.unwrap(),
-        Admission::Created
-    );
-
-    for age_secs in [None, Some(3600.0)] {
-        set_lane(&pool, age_secs).await;
-        assert_eq!(
-            admissions.admit(&path(1, 64), CONNECTOR).await.unwrap(),
-            Admission::NoLane
-        );
-        assert_eq!(
-            admissions.admit(&pending, OTHER_CONNECTOR).await.unwrap(),
-            Admission::NoLane
-        );
-    }
-    sqlx::query("DELETE FROM prf_lanes")
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        admissions.admit(&path(1, 64), CONNECTOR).await.unwrap(),
-        Admission::NoLane
-    );
-    assert_eq!(read(&pool, &path(1, 64)).await.unwrap(), None);
-
-    // A complete row is still served: its output exists.
-    set_output(&pool, &pending, 1).await;
-    assert_eq!(
-        admissions.admit(&pending, OTHER_CONNECTOR).await.unwrap(),
-        Admission::Existing(PadState::Complete(output(1)))
     );
 }
 
@@ -530,7 +472,7 @@ async fn trigger_wakes_the_request_of_each_row() {
 }
 
 #[tokio::test]
-async fn a_new_row_wakes_the_lane_of_its_instance() {
+async fn a_new_row_wakes_the_pad_worker_of_its_instance() {
     let (_instance, pool, _service, admissions) = test_db().await;
     let mut listener = sqlx::postgres::PgListener::connect_with(&pool)
         .await
@@ -737,11 +679,7 @@ async fn prf_service_role_writes_only_the_queue() {
     sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
     sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
 
-    for allowed in [
-        INSERT_PAD,
-        "SELECT prf_instance, signature FROM pads",
-        "SELECT heartbeat_at FROM prf_lanes",
-    ] {
+    for allowed in [INSERT_PAD, "SELECT prf_instance, signature FROM pads"] {
         as_prf_service(&pool, allowed).await.expect(allowed);
     }
 
@@ -752,15 +690,13 @@ async fn prf_service_role_writes_only_the_queue() {
         "UPDATE pads SET is_error = false",
         "UPDATE pads SET signature = NULL",
         "DELETE FROM pads",
-        "INSERT INTO prf_lanes (prf_instance) VALUES (1)",
-        "UPDATE prf_lanes SET heartbeat_at = NOW()",
     ] {
         assert_denied(as_prf_service(&pool, denied).await, denied);
     }
 }
 
 #[tokio::test]
-async fn pad_worker_role_writes_only_outputs_and_lane_state() {
+async fn pad_worker_role_writes_only_outputs() {
     let (_instance, pool) = admin_db().await;
     sqlx::raw_sql(
         "DO $$ BEGIN CREATE ROLE pad_worker NOLOGIN;
@@ -779,9 +715,6 @@ async fn pad_worker_role_writes_only_outputs_and_lane_state() {
         "UPDATE pads SET ciphertext128 = NULL, ciphertext_digest = NULL, ciphertext128_digest = NULL,
              signer = NULL, signature = NULL, attestation_version = NULL, ciphertext64 = NULL",
         "DELETE FROM pads",
-        "INSERT INTO prf_lanes (prf_instance, heartbeat_at) VALUES (1, NOW())
-             ON CONFLICT (prf_instance) DO UPDATE SET heartbeat_at = NOW()",
-        "SELECT heartbeat_at FROM prf_lanes",
         "SELECT 1 FROM keys",
     ] {
         as_role(&pool, "pad_worker", allowed).await.expect(allowed);
@@ -793,8 +726,6 @@ async fn pad_worker_role_writes_only_outputs_and_lane_state() {
         INSERT_PAD,
         "UPDATE pads SET triggered_by = triggered_by",
         "UPDATE pads SET label = label",
-        "UPDATE prf_lanes SET prf_instance = prf_instance",
-        "DELETE FROM prf_lanes",
     ] {
         assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
     }
@@ -808,23 +739,18 @@ async fn pad_worker_grants_keep_newer_rights_and_drop_forbidden_ones() {
          EXCEPTION WHEN duplicate_object THEN NULL; END $$;
          ALTER TABLE pads ADD COLUMN future_output BYTEA NULL;
          GRANT UPDATE (future_output) ON pads TO pad_worker;
-         GRANT UPDATE (triggered_by) ON pads TO pad_worker;
-         GRANT UPDATE (prf_instance) ON prf_lanes TO pad_worker;",
+         GRANT UPDATE (triggered_by) ON pads TO pad_worker;",
     )
     .execute(&pool)
     .await
     .unwrap();
 
-    // An older copy of the file does not know `future_output`: the lane keeps that right.
+    // An older copy of the file does not know `future_output`: the pad-worker keeps that right.
     sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
 
     as_role(&pool, "pad_worker", "UPDATE pads SET future_output = NULL")
         .await
         .expect("a newer right stays");
-    for denied in [
-        "UPDATE pads SET triggered_by = triggered_by",
-        "UPDATE prf_lanes SET prf_instance = prf_instance",
-    ] {
-        assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
-    }
+    let denied = "UPDATE pads SET triggered_by = triggered_by";
+    assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
 }

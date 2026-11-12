@@ -533,17 +533,16 @@ skipped with a warning. The in-cluster test-suite still calls
 Except on blue-green stacks and with a `coprocessor_version` pin (a pinned release may predate
 `pads`), each `coprocessor-<i>` release also runs the coprocessor-proxy and the prf-service
 behind it (`values-coprocessor-proxy-e2e.yaml`), one replica each. A pad release
-`coprocessor-<i>-pads` runs the pad-worker lane of PRF instance 0, with the mock evaluator
+`coprocessor-<i>-pads` runs the pad-worker of PRF instance 0, with the mock evaluator
 (`values-coprocessor-pads-e2e.yaml`). Without them, the `Coprocessor proxy` suite
 skips. `scripts/deploy/deploy-coprocessor.sh` provides what the chart does not:
 
 - **The `prf_service` and `pad_worker` roles**: created in party i's Postgres before the
   release, from `databaseUser` and `databasePassword` of `prfService` and `padWorkerShared`, so
   the migration grants their rights.
-- **The lane start**: the lane registers and starts. The script waits until
-  `prf_lanes.heartbeat_at` is set for every party. The lane signs its outputs with the party's
-  coprocessor key (its derived wallet, as the sns-worker signs), and the suite checks that
-  attestation as a KMS connector will.
+- **The pad-worker start**: the script waits until the pad-worker of every party is ready. The
+  pad-worker signs its outputs with the party's coprocessor key (its derived wallet, as the
+  sns-worker signs), and the suite checks that attestation as a KMS connector will.
 - **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,
   with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
 - **Per party**: the image tags (`coprocessor_proxy`, `coprocessor_prf_service` and

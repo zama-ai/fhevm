@@ -26,7 +26,7 @@ use tracing::{info, warn, Level};
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// The PRF instance of this lane.
+    /// The PRF instance of this pad-worker.
     #[arg(long, env = "PRF_INSTANCE")]
     prf_instance: u16,
 

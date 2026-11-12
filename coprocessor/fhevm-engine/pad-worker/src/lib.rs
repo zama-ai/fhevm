@@ -1,4 +1,4 @@
-//! The pad-worker: one lane computes the PRF outputs of one PRF instance.
+//! The pad-worker: computes the PRF outputs of one PRF instance.
 
 pub mod evaluator;
 pub mod metrics;
@@ -48,7 +48,7 @@ pub const PAD_WORK_AVAILABLE: &str = "pad_work_available";
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// The PRF instance of this lane.
+    /// The PRF instance of this pad-worker.
     pub prf_instance: u16,
     /// KMSGeneration key ID of the instance, in 32 big-endian bytes as in `keys.key_id`.
     pub key_id: DbKeyId,
@@ -83,7 +83,7 @@ pub struct PadWorker {
     signer: CoproSigner,
     uploader: Option<Uploader>,
     cancel_token: CancellationToken,
-    /// Set once the lane is registered: until then, a rollout keeps the old pod.
+    /// Set once the pad-worker listens for rows: until then, a rollout keeps the old pod.
     ready: Arc<AtomicBool>,
 }
 
@@ -119,14 +119,12 @@ impl PadWorker {
         }
     }
 
-    /// Registers the lane, then claims rows until `cancel_token`. Fails on a lost database
-    /// connection.
+    /// Claims rows until `cancel_token`. Fails on a lost database connection.
     pub async fn run(self) -> anyhow::Result<()> {
-        register_lane(&self.pool, self.config.prf_instance).await?;
-        info!(prf_instance = self.config.prf_instance, "Lane ready");
-        self.ready.store(true, Ordering::Relaxed);
         let mut listener = PgListener::connect_with(&self.pool).await?;
         listener.listen(PAD_WORK_AVAILABLE).await?;
+        info!(prf_instance = self.config.prf_instance, "Pad-worker ready");
+        self.ready.store(true, Ordering::Relaxed);
 
         let worker = Arc::new(self);
         let slots = Arc::new(Semaphore::new(worker.config.max_concurrent.get()));
@@ -136,9 +134,6 @@ impl PadWorker {
             tasks.spawn(worker.clone().resubmit(uploader));
         }
         loop {
-            rows::heartbeat(&worker.pool, worker.config.prf_instance)
-                .await
-                .or_else(non_fatal)?;
             while let Ok(slot) = slots.clone().try_acquire_owned() {
                 let claimed = rows::claim(
                     &worker.pool,
@@ -357,20 +352,7 @@ fn non_fatal(e: sqlx::Error) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Adds the `prf_lanes` row of `prf_instance` with a heartbeat: prf-service then admits requests.
-pub async fn register_lane(pool: &PgPool, prf_instance: u16) -> anyhow::Result<()> {
-    sqlx::query!(
-        "INSERT INTO prf_lanes (prf_instance, heartbeat_at) VALUES ($1, NOW())
-         ON CONFLICT (prf_instance) DO UPDATE SET heartbeat_at = NOW()",
-        i32::from(prf_instance),
-    )
-    .execute(pool)
-    .await
-    .context("register the lane")?;
-    Ok(())
-}
-
-/// Readiness: the lane registration, the database and the rights on `pads` and `prf_lanes`.
+/// Readiness: the listener, the database and the rights on `pads`.
 pub struct Health {
     pool: PgPool,
     ready: Arc<AtomicBool>,
@@ -381,19 +363,18 @@ impl HealthCheckService for Health {
         let mut status = HealthStatus::default();
         let ready = self.ready.load(Ordering::Relaxed);
         if !ready {
-            status.add_error_details("The lane is not registered".to_string());
+            status.add_error_details("The pad-worker does not listen for rows".to_string());
         }
-        status.set_custom_check("lane_ready", ready, false);
+        status.set_custom_check("listening", ready, false);
         status.set_db_connected(&self.pool).await;
         let rights = sqlx::query_scalar::<_, bool>(
             "SELECT has_column_privilege('pads', 'signature', 'UPDATE')
-                AND has_column_privilege('pads', 'ciphertext64', 'UPDATE')
-                AND has_column_privilege('prf_lanes', 'heartbeat_at', 'UPDATE')",
+                AND has_column_privilege('pads', 'ciphertext64', 'UPDATE')",
         )
         .fetch_one(&self.pool);
         let has_rights = matches!(timeout(DB_CHECK_TIMEOUT, rights).await, Ok(Ok(true)));
         if !has_rights {
-            status.add_error_details("No UPDATE rights on pads and prf_lanes".to_string());
+            status.add_error_details("No UPDATE rights on pads".to_string());
         }
         status.set_custom_check("pad_rights", has_rights, true);
         status

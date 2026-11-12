@@ -1830,11 +1830,11 @@ prfService:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
-# Pad worker lanes
+# Pad workers
 # -----------------------------------------------------------------------------
-# One pad-worker Deployment for each PRF instance, `<release>-pad-worker-<prfId>`. Set `padLanes`
+# One pad-worker Deployment for each PRF instance, `<release>-pad-worker-<prfId>`. Set `padWorkers`
 # only in the pad release of the operator (see the README), never in a fleet release.
-padLanes: []
+padWorkers: []
 # - prfId: 0
 #   # KMSGeneration key ID of the instance, in quoted decimal or 0x hex.
 #   # TODO: remove when the instance records give the key of each instance.

@@ -1,4 +1,4 @@
--- A lane can run an older image than the stack: add only, and keep the `pad_ready` payload.
+-- A pad-worker can run an older image than the stack: add only, and keep the `pad_ready` payload.
 
 ALTER TABLE pads
     ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ NULL,
@@ -11,7 +11,7 @@ CREATE INDEX IF NOT EXISTS idx_pads_pending_by_instance
     ON pads (prf_instance, created_at)
     WHERE signature IS NULL AND NOT is_error;
 
--- Wakes the lane of a new row. Payload: `<prf>`.
+-- Wakes the pad-worker of a new row. Payload: `<prf>`.
 CREATE OR REPLACE FUNCTION notify_pad_work_available()
     RETURNS trigger AS $$
 BEGIN
@@ -26,11 +26,3 @@ CREATE TRIGGER pads_work_available
     ON pads
     FOR EACH ROW
     EXECUTE FUNCTION notify_pad_work_available();
-
--- One row for each PRF instance that has a pad-worker lane.
-CREATE TABLE IF NOT EXISTS prf_lanes
-(
-    prf_instance INTEGER PRIMARY KEY CHECK (prf_instance BETWEEN 0 AND 65535),
-    -- Set once the lane has its key, then on each pass of the claim loop.
-    heartbeat_at TIMESTAMPTZ NULL
-);

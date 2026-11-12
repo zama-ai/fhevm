@@ -309,9 +309,9 @@ services:
       coprocessor-db-migration:
         condition: service_completed_successfully
 
-  # The lane of PRF instance 0, which the "Coprocessor proxy" suite requests. Mock evaluator: the
-  # key ID is a placeholder. Its env file is the coprocessor's, with DATABASE_URL as the pad_worker
-  # role.
+  # The pad-worker of PRF instance 0, which the "Coprocessor proxy" suite requests. Mock evaluator:
+  # the key ID is a placeholder. Its env file is the coprocessor's, with DATABASE_URL as the
+  # pad_worker role.
   coprocessor-pad-worker:
     container_name: coprocessor-pad-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/pad-worker:${COPROCESSOR_PAD_WORKER_VERSION}

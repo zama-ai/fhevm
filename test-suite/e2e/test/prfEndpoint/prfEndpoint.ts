@@ -200,7 +200,7 @@ describe('PRF endpoint', function () {
       const pendingAtAnswer = MAX_IN_FLIGHT - busyAnswered;
       expect(other.status, other.where).to.equal(200);
       for (const reply of await Promise.all(busy)) expect(reply.status, reply.where).to.equal(200);
-      // The lane computes 4 rows at once: in fair order the other row is in round 2, else in round 3.
+      // The pad-worker computes 4 rows at once: in fair order the other row is in round 2, else in round 3.
       expect(pendingAtAnswer, 'rows of the busy connector still pending').to.be.at.least(1);
     });
 

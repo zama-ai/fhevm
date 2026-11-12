@@ -1,4 +1,4 @@
-//! The `pads` rows of one lane: claim, output, failure, upload, GC, and the lane heartbeat.
+//! The `pads` rows of one PRF instance: claim, output, failure, upload and GC.
 
 use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
@@ -144,17 +144,6 @@ pub async fn retry(
     Ok(())
 }
 
-/// Marks the lane as alive.
-pub async fn heartbeat(pool: &PgPool, prf_instance: u16) -> sqlx::Result<()> {
-    sqlx::query!(
-        "UPDATE prf_lanes SET heartbeat_at = NOW() WHERE prf_instance = $1",
-        i32::from(prf_instance),
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 /// A complete row to upload to S3.
 pub struct Output {
     pub claim: Claim,
@@ -235,7 +224,7 @@ pub async fn set_uploaded(pool: &PgPool, claim: &Claim) -> sqlx::Result<()> {
     Ok(())
 }
 
-/// Deletes uploaded or failed rows older than `max_age`, of all instances (also retired lanes).
+/// Deletes uploaded or failed rows older than `max_age`, of all instances.
 pub async fn delete_old_outputs(pool: &PgPool, max_age: Duration) -> sqlx::Result<u64> {
     let result = sqlx::query!(
         "DELETE FROM pads
@@ -248,7 +237,7 @@ pub async fn delete_old_outputs(pool: &PgPool, max_age: Duration) -> sqlx::Resul
     Ok(result.rows_affected())
 }
 
-/// Deletes expired pending rows with no live claim, of all instances (also dead lanes).
+/// Deletes expired pending rows with no live claim, of all instances.
 pub async fn delete_expired_pending(
     pool: &PgPool,
     pending_max_age: Duration,
