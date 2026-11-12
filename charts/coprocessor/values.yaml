@@ -1836,7 +1836,7 @@ prfService:
 # only in the pad release of the operator (see the README), never in a fleet release.
 padLanes: []
 # - prfId: 0
-#   # key_id_gw of the instance, in quoted hex.
+#   # KMSGeneration key ID of the instance, in quoted hex.
 #   # TODO: remove when the instance records give the key of each instance.
 #   keyId: "0x01"
 #   # Optional. Keep the image for the life of the instance (see the README).
