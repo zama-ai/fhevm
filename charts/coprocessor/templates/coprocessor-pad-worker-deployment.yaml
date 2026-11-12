@@ -72,6 +72,8 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
+      {{- /* Above the 20 s drain of the lane on a stop. */}}
+      terminationGracePeriodSeconds: 30
       {{- with $component.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
