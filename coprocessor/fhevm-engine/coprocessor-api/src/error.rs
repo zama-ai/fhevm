@@ -31,7 +31,7 @@ pub enum ErrorCode {
     /// The `prf` is not a supported instance on this coprocessor.
     UnknownPrf,
     MethodNotAllowed,
-    /// A per-connector limit is reached; `Retry-After` is set.
+    /// A per-connector or per-client-IP rate limit is reached; `Retry-After` is set.
     ConcurrencyLimited,
     /// The PRF evaluation failed for good.
     PrfEvaluationFailed,

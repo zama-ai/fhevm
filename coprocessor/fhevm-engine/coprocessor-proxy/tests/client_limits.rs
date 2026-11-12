@@ -1,14 +1,112 @@
-//! End-to-end tests of the proxy's client limits: the connection limits, the first request head's
-//! deadline and the connections it keeps.
+//! End-to-end tests of the proxy's client limits: the client IP, the per-IP rates, the connection
+//! limits, the first request head's deadline and the connections it keeps.
 
 mod common;
 
-use common::{FakeRpc, KmsContext, StubPrfService, TestProxy, prf_path, read_one_response, sender};
-use coprocessor_proxy::core::KEEPALIVE_REQUEST_LIMIT;
+use alloy::transports::http::reqwest::StatusCode;
+use common::{
+    FakeRpc, KmsContext, StubPrfService, TestProxy, assert_proxy_error, prf_path, raw_response,
+    read_one_response, sender,
+};
+use coprocessor_proxy::core::{KEEPALIVE_REQUEST_LIMIT, REQUEST_RATE_INTERVAL};
+use serde_json::Value;
 use std::{
     num::{NonZeroU32, NonZeroUsize},
     time::{Duration, Instant},
 };
+
+#[tokio::test]
+async fn test_forwards_the_client_ip_the_outermost_front_layer_appended() {
+    // The client sent 6.6.6.6 itself; the front layers appended the rest.
+    for (hops, forwarded_for) in [
+        (1, "6.6.6.6, 203.0.113.7"),
+        (2, "6.6.6.6, 203.0.113.7, 10.0.0.1"),
+    ] {
+        let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+            config.forwarded_hops = hops;
+        })
+        .await;
+        let response = t
+            .get(&prf_path(1))
+            .await
+            .header("x-forwarded-for", forwarded_for)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{hops}");
+        let seen = t.prf_service.last_request();
+        let forwarded: Vec<_> = seen.headers.get_all("x-forwarded-for").iter().collect();
+        assert_eq!(forwarded, ["203.0.113.7"], "{hops}");
+    }
+}
+
+#[tokio::test]
+async fn test_refuses_a_request_without_the_client_ip_of_each_front_layer() {
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.forwarded_hops = 2;
+    })
+    .await;
+    for forwarded_for in [None, Some("203.0.113.7"), Some("203.0.113.7:443, 10.0.0.1")] {
+        let mut request = t.get(&prf_path(1)).await;
+        if let Some(forwarded_for) = forwarded_for {
+            request = request.header("x-forwarded-for", forwarded_for);
+        }
+        let response = request.send().await.unwrap();
+        assert_proxy_error(
+            response,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            true,
+        )
+        .await;
+    }
+    assert_eq!(t.prf_service.hits(), 0);
+}
+
+#[tokio::test]
+async fn test_limits_each_client_ips_request_rate_before_the_signature_check() {
+    let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
+    let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {
+        config.forwarded_hops = 1;
+        config.max_requests_per_ip = NonZeroU32::new(2).unwrap();
+    })
+    .await;
+    let path = prf_path(1);
+    let unsigned_from = |forwarded_for: &'static str| {
+        t.client
+            .get(t.url(&path))
+            .header("x-forwarded-for", forwarded_for)
+            .send()
+    };
+
+    // Unsigned requests: a refusal before the signature check is the only one that is not `401`.
+    // Five requests sent within one window span at most two windows, so one of them gets a third.
+    let started = Instant::now();
+    let mut checked = 0;
+    let refused = loop {
+        assert!(checked < 5, "no request was refused");
+        let response = unsigned_from("6.6.6.6, 203.0.113.7").await.unwrap();
+        if response.status() == StatusCode::UNAUTHORIZED {
+            checked += 1;
+            continue;
+        }
+        break response;
+    };
+    assert!(started.elapsed() < REQUEST_RATE_INTERVAL);
+    assert!(checked >= 2, "{checked}");
+    assert_eq!(refused.headers()["retry-after"], "1");
+    let error: Value = refused.json().await.unwrap();
+    assert_eq!(error["code"], "concurrency_limited", "{error}");
+    assert_eq!(error["message"], "client IP rate limit", "{error}");
+
+    // The limit is per client IP: changing the entries the client wrote does not escape it, and
+    // another client behind the same front layer is still served.
+    let response = unsigned_from("7.7.7.7, 203.0.113.7").await.unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    let response = unsigned_from("6.6.6.6, 203.0.113.8").await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(t.prf_service.hits(), 0);
+}
 
 #[tokio::test]
 async fn test_closes_client_connections_idle_between_requests() {
@@ -47,7 +145,9 @@ async fn test_closes_a_client_connection_after_its_request_limit() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
-        config.max_requests_per_signer = NonZeroU32::new(KEEPALIVE_REQUEST_LIMIT * 10).unwrap();
+        let unlimited = NonZeroU32::new(KEEPALIVE_REQUEST_LIMIT * 10).unwrap();
+        config.max_requests_per_ip = unlimited;
+        config.max_requests_per_signer = unlimited;
     })
     .await;
     let mut stream = t.tls.connect(t.addr).await;
@@ -125,10 +225,12 @@ async fn test_serves_a_request_held_longer_than_the_head_deadline() {
 }
 
 #[tokio::test]
-async fn test_closes_the_connection_after_any_answer_before_authentication() {
+async fn test_without_a_front_layer_closes_the_connection_after_any_answer_before_authentication() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    // Kept, the connection would no longer have a head deadline.
+    // Kept, the connection would no longer have a head deadline. Every answer before
+    // authentication goes through the same hook; the per-IP `429` is left out, as it needs other
+    // settings.
     let t = TestProxy::start(StubPrfService::start().await).await;
     let addr = t.addr;
     let path = prf_path(1);
@@ -163,6 +265,58 @@ async fn test_closes_the_connection_after_any_answer_before_authentication() {
             "{response}"
         );
     }
+}
+
+#[tokio::test]
+async fn test_behind_a_front_layer_keeps_the_connection_after_an_answer_before_authentication() {
+    use tokio::io::AsyncWriteExt;
+
+    // The connection is the front layer's: it carries the requests of every client.
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.forwarded_hops = 1;
+    })
+    .await;
+    let addr = t.addr;
+    let path = prf_path(1);
+    let forwarded = "X-Forwarded-For: 203.0.113.7";
+    let mut stream = t.tls.connect(addr).await;
+    for (request, status) in [
+        (format!("GET / HTTP/1.1\r\nHost: {addr}\r\n\r\n"), "404"),
+        (
+            format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\n{forwarded}\r\n\r\n"),
+            "401",
+        ),
+        (t.signed_get_head(&path, "").await, "503"),
+        (
+            t.signed_get_head(&path, &format!("{forwarded}\r\n")).await,
+            "200",
+        ),
+    ] {
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let response = read_one_response(&mut stream).await;
+        assert!(
+            response.starts_with(&format!("HTTP/1.1 {status}")),
+            "{response}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_behind_a_front_layer_closes_the_connection_of_a_refused_request_with_a_body() {
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.forwarded_hops = 1;
+    })
+    .await;
+    // The body never comes. Pingora closes a connection it answered before the end of the request
+    // body; kept, this one would wait for the body with no time limit.
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nContent-Length: 100000\r\n\r\n",
+        prf_path(1),
+        t.addr
+    );
+    let response = raw_response(&t, request.as_bytes()).await;
+    assert!(response.starts_with("HTTP/1.1 401"), "{response}");
+    assert!(response.contains("auth_body_mismatch"), "{response}");
 }
 
 #[tokio::test]
@@ -201,6 +355,29 @@ async fn test_refuses_connections_before_tls_while_the_replica_holds_its_limit()
     stream.write_all(request.as_bytes()).await.unwrap();
     let response = read_one_response(&mut stream).await;
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+}
+
+#[tokio::test]
+async fn test_without_a_front_layer_refuses_new_connections_above_the_rate_of_one_ip() {
+    let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
+    let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {
+        config.max_new_connections_per_ip = NonZeroU32::new(3).unwrap();
+    })
+    .await;
+    // The startup connections leave the rate's 1 s window.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let mut admitted = Vec::new();
+    for _ in 0..10 {
+        admitted.extend(t.tls.try_connect(t.addr).await.ok());
+    }
+    // 3, or up to 6 when the loop runs across the end of a 1 s window.
+    assert!((3..=6).contains(&admitted.len()), "{}", admitted.len());
+    let refused = refused_connections("ip_new_connections_rate");
+    assert!(refused >= 4.0, "{refused}");
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(t.tls.try_connect(t.addr).await.is_ok());
 }
 
 #[tokio::test]

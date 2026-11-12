@@ -51,7 +51,11 @@ async fn fetch_status(base_url: &str) -> anyhow::Result<(StatusCode, HealthRespo
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
 async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
-    let t = TestProxy::start(StubPrfService::start().await).await;
+    // The self-check carries no `X-Forwarded-For`, and must pass behind a front layer too.
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.forwarded_hops = 1;
+    })
+    .await;
     let cancel_token = CancellationToken::new();
     let base_url = serve_health(t.state.clone(), &cancel_token).await;
 
@@ -76,7 +80,12 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     t.prf_service.stop().await;
     let (status_code, status) = fetch_status(&base_url).await?;
     assert_eq!(status_code, StatusCode::OK, "{status:?}");
-    let response = t.get(&prf_path(1)).await.send().await?;
+    let response = t
+        .get(&prf_path(1))
+        .await
+        .header("x-forwarded-for", "127.0.0.1")
+        .send()
+        .await?;
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     let error: Value = response.json().await?;
     assert_eq!(error["code"], "upstream_transient");
@@ -139,11 +148,16 @@ async fn test_not_ready_before_the_first_read() -> anyhow::Result<()> {
 }
 
 #[rstest]
+#[case::without_a_front_layer(0)]
+#[case::behind_a_front_layer(1)]
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
-async fn test_ready_while_the_replica_holds_its_connection_limit() -> anyhow::Result<()> {
+async fn test_ready_while_the_replica_holds_its_connection_limit(
+    #[case] forwarded_hops: usize,
+) -> anyhow::Result<()> {
     let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
         config.max_connections = NonZeroUsize::new(1).unwrap();
+        config.forwarded_hops = forwarded_hops;
     })
     .await;
     let cancel_token = CancellationToken::new();
@@ -153,7 +167,8 @@ async fn test_ready_while_the_replica_holds_its_connection_limit() -> anyhow::Re
     // limit. The proxy counts the startup connections out only after it noticed their close.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
-        match t.get(&prf_path(1)).await.send().await {
+        let request = t.get(&prf_path(1)).await;
+        match request.header("x-forwarded-for", "127.0.0.1").send().await {
             Ok(response) => {
                 assert_eq!(response.status(), StatusCode::OK);
                 response.bytes().await?;

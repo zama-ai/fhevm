@@ -426,6 +426,9 @@ pub struct TestProxy {
     pub rpc: FakeRpc,
     /// The healthcheck state of the proxy, to serve with `healthz_server::HttpServer`.
     pub state: health::State,
+    /// An `X-Forwarded-For` value holding a client IP for each of the proxy's front layers, or one
+    /// the proxy ignores without a front layer.
+    forwarded_for: String,
 }
 
 impl TestProxy {
@@ -457,6 +460,7 @@ impl TestProxy {
         let address = prf_service.addr.to_string().parse().unwrap();
         let mut config = Self::config(addr, &tls, &rpc, address);
         customize(&mut config);
+        let forwarded_for = vec!["127.0.0.1"; config.forwarded_hops.max(1)].join(", ");
         let (proxy, state) = Proxy::from_config(config).unwrap();
         std::thread::spawn(move || proxy.run());
 
@@ -474,6 +478,7 @@ impl TestProxy {
             prf_service,
             rpc,
             state,
+            forwarded_for,
         }
     }
 
@@ -497,9 +502,12 @@ impl TestProxy {
             "--healthcheck-timeout=2s".to_string(),
         ]);
         config.kms_registry_refresh_interval = POLL_INTERVAL;
-        // Each refused request closes its connection, and the tests send many of them from one
-        // client.
+        // The tests connect directly, without a front layer.
+        config.forwarded_hops = 0;
+        // Without a front layer each refused request closes its connection, and the tests send
+        // many of them from one client.
         config.max_new_connections_per_second = NonZeroU32::new(10_000).unwrap();
+        config.max_new_connections_per_ip = NonZeroU32::new(10_000).unwrap();
         config
     }
 
@@ -534,6 +542,7 @@ impl TestProxy {
             .client
             .get(self.url(&path))
             .header("authorization", auth_header(signer, &path, b"x").await)
+            .header("x-forwarded-for", &self.forwarded_for)
             .send()
             .await
             .unwrap();
@@ -656,6 +665,22 @@ pub async fn wait_for_listener(addr: SocketAddr) {
     }
 }
 
+/// Checks an error the proxy wrote itself: its status, RFC-033 body, and that it is not cached.
+pub async fn assert_proxy_error(
+    response: alloy::transports::http::reqwest::Response,
+    status: StatusCode,
+    code: &str,
+    retryable: bool,
+) {
+    assert_eq!(response.status(), status);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert_eq!(response.headers()["content-type"], "application/json");
+    let error: Value = response.json().await.unwrap();
+    assert_eq!(error["code"], code, "{error}");
+    assert_eq!(error["retryable"], retryable, "{error}");
+    assert!(error["message"].is_string(), "{error}");
+}
+
 /// Reads one response with a `Content-Length` body, leaving the connection open.
 pub async fn read_one_response(
     stream: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
@@ -683,4 +708,21 @@ pub async fn read_one_response(
     let mut body = vec![0u8; length];
     stream.read_exact(&mut body).await.unwrap();
     String::from_utf8_lossy(&response).into_owned()
+}
+
+/// Sends raw request bytes over TLS and returns the whole response, read until the server closes,
+/// which it must do within 5 s.
+pub async fn raw_response(t: &TestProxy, request: &[u8]) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut stream = t.tls.connect(t.addr).await;
+    stream.write_all(request).await.unwrap();
+
+    let mut response = Vec::new();
+    // The server may close without a TLS `close_notify`, which surfaces as an EOF error.
+    let read =
+        tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response)).await;
+    let response = String::from_utf8_lossy(&response).into_owned();
+    assert!(read.is_ok(), "the connection stayed open after: {response}");
+    response
 }

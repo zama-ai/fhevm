@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        Config, SIGNER_RATE_INTERVAL,
+        Config, REQUEST_RATE_INTERVAL,
         client_connections::{ClientConnections, ClientConnectionsApp, FirstHeadCallback},
     },
     kms_tx_senders::Follower,
@@ -53,8 +53,10 @@ pub struct Proxy {
     /// [`Config::prf_service_address`], resolved.
     pub(super) prf_service: SocketAddr,
     pub(super) kms_tx_senders: Arc<Follower<DynProvider>>,
-    /// The authenticated requests of each signer, per [`SIGNER_RATE_INTERVAL`].
+    /// The authenticated requests of each signer, per [`REQUEST_RATE_INTERVAL`].
     pub(super) signer_requests: Rate,
+    /// The requests of each client IP, per [`REQUEST_RATE_INTERVAL`].
+    pub(super) ip_requests: Rate,
     /// Set during the shutdown delay: each client connection closes after its next response.
     pub(super) draining: Arc<AtomicBool>,
     client_connections: Arc<ClientConnections>,
@@ -128,6 +130,8 @@ impl Proxy {
         let client_connections = Arc::new(ClientConnections::new(
             config.max_connections.get(),
             config.max_new_connections_per_second.get(),
+            // Behind front layers every connection comes from one of them.
+            (config.forwarded_hops == 0).then_some(config.max_new_connections_per_ip.get()),
             config.request_head_timeout,
         ));
         let state = health::State::new(
@@ -144,7 +148,8 @@ impl Proxy {
             config,
             prf_service,
             kms_tx_senders: Arc::new(follower),
-            signer_requests: Rate::new(SIGNER_RATE_INTERVAL),
+            signer_requests: Rate::new(REQUEST_RATE_INTERVAL),
+            ip_requests: Rate::new(REQUEST_RATE_INTERVAL),
             draining: Arc::default(),
             client_connections,
         };

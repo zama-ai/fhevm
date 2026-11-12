@@ -5,32 +5,21 @@ mod common;
 use alloy::{
     primitives::{Address, keccak256},
     signers::local::PrivateKeySigner,
-    transports::http::reqwest::{Response, StatusCode},
+    transports::http::reqwest::StatusCode,
 };
 use axum::http::Version;
 use common::{
-    ACCEPTED, FakeRpc, KmsContext, StubPrfService, TestProxy, UNKNOWN_SIGNER, auth_header,
-    auth_header_expiring, auth_header_for, now, prf_path, rate_limited_path, sender,
-    stub_attestation, stub_output,
+    ACCEPTED, FakeRpc, KmsContext, StubPrfService, TestProxy, UNKNOWN_SIGNER, assert_proxy_error,
+    auth_header, auth_header_expiring, auth_header_for, now, prf_path, rate_limited_path,
+    raw_response, sender, stub_attestation, stub_output,
 };
-use coprocessor_proxy::core::{SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT};
+use coprocessor_proxy::core::{REQUEST_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT};
 use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
 use std::{
     num::NonZeroU32,
     time::{Duration, Instant},
 };
-
-/// Checks an error the proxy wrote itself: its status, RFC-033 body, and that it is not cached.
-async fn assert_proxy_error(response: Response, status: StatusCode, code: &str, retryable: bool) {
-    assert_eq!(response.status(), status);
-    assert_eq!(response.headers()["cache-control"], "no-store");
-    assert_eq!(response.headers()["content-type"], "application/json");
-    let error: Value = response.json().await.unwrap();
-    assert_eq!(error["code"], code, "{error}");
-    assert_eq!(error["retryable"], retryable, "{error}");
-    assert!(error["message"].is_string(), "{error}");
-}
 
 #[tokio::test]
 async fn test_forwards_authenticated_requests_untouched() {
@@ -637,7 +626,7 @@ async fn test_limits_each_signers_request_rate() {
         }
         forwarded += 1;
     };
-    assert!(started.elapsed() < SIGNER_RATE_INTERVAL);
+    assert!(started.elapsed() < REQUEST_RATE_INTERVAL);
     assert!(forwarded >= 2, "{forwarded}");
     assert_eq!(refused.headers()["retry-after"], "1");
     assert!(!refused.headers().contains_key("www-authenticate"));
@@ -728,21 +717,4 @@ async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
         .nth(1)
         .and_then(|status| StatusCode::from_bytes(status.as_bytes()).ok())
         .unwrap_or_else(|| panic!("unexpected response: {response}"))
-}
-
-/// Sends raw request bytes over TLS and returns the whole response, read until the server closes,
-/// which it must do within 5 s.
-async fn raw_response(t: &TestProxy, request: &[u8]) -> String {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    let mut stream = t.tls.connect(t.addr).await;
-    stream.write_all(request).await.unwrap();
-
-    let mut response = Vec::new();
-    // The server may close without a TLS `close_notify`, which surfaces as an EOF error.
-    let read =
-        tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response)).await;
-    let response = String::from_utf8_lossy(&response).into_owned();
-    assert!(read.is_ok(), "the connection stayed open after: {response}");
-    response
 }

@@ -221,9 +221,11 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
    - `route`: `prf` for the PRF route, `none` for any other path.
    - `status`: HTTP response status; `0` means no response status.
    - `signer`: the authenticated signer, EIP-55 checksummed; empty when the request was not authenticated.
- - **Description**: One count per request the proxy answered. `502` means prf-service could not be reached or failed, `504` that it timed out, `429` that the signer exceeded its request rate (`COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER`).
+ - **Description**: One count per request the proxy answered. `502` means prf-service could not be reached or failed, `504` that it timed out. `429` with a `signer` means that signer exceeded its request rate (`COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER`); `429` without one, that a client IP exceeded its request rate (`COPROCESSOR_PROXY_MAX_REQUESTS_PER_IP`), checked before the signature. `503` on the `prf` route without a `signer` means the request's `X-Forwarded-For` lacks the client IP: `COPROCESSOR_PROXY_FORWARDED_HOPS` does not match the front layers. A `503` with a `signer` comes from prf-service.
  - **Alarm**: Sustained prf-service failures. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
     - **Recommendation**: `sum(increase(coprocessor_proxy_requests_counter{status=~"502|504"}[5m])) > 5`.
+ - **Alarm**: Client IP misread, most likely `COPROCESSOR_PROXY_FORWARDED_HOPS` not matching the front layers, or an ALB sending `ip:port` entries. Too high a value, or a malformed entry, answers most PRF requests `503` before authentication; too low a value puts every client behind one front-layer address, which then hits the per-IP `429`. Either way, refusals with an empty `signer` become most of the PRF route's traffic. The pods stay Ready, so only this shows it.
+    - **Recommendation**: over half of the PRF route's answers for 10 minutes, i.e. `sum(rate(coprocessor_proxy_requests_counter{route="prf",status=~"503|429",signer=""}[10m])) / sum(rate(coprocessor_proxy_requests_counter{route="prf"}[10m])) > 0.5`.
 
 #### Metric Name: `coprocessor_proxy_client_connections`
  - **Type**: Gauge
@@ -234,7 +236,7 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
 #### Metric Name: `coprocessor_proxy_connections_refused_counter`
  - **Type**: Counter
  - **Labels**:
-   - `reason`: before the TLS handshake, `max_connections` when the replica held `COPROCESSOR_PROXY_MAX_CONNECTIONS` connections, or `new_connections_rate` when it had accepted `COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND` in the current second. After the handshake, `first_heads` when `COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND` × `COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT` connections were already waiting for their first request head: a client that held its handshakes back and completed them together.
+   - `reason`: before the TLS handshake, `max_connections` when the replica held `COPROCESSOR_PROXY_MAX_CONNECTIONS` connections, `new_connections_rate` when it had accepted `COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND` in the current second, or `ip_new_connections_rate` when the peer's IP had opened `COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_IP` in the current second (only with `COPROCESSOR_PROXY_FORWARDED_HOPS=0`). After the handshake, `first_heads` when `COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND` × `COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT` connections were already waiting for their first request head: a client that held its handshakes back and completed them together.
  - **Description**: Client connections refused by the proxy's connection limits. The client sees its connection closed, and a connector retries. The readiness check passes these limits, so the replica still shows as ready.
  - **Alarm**: Sustained refusals: a flood of connections, or limits too low for the honest traffic. Starting threshold: refusals in every 5 minutes for 15 minutes.
     - **Recommendation**: `min_over_time(sum by (reason) (increase(coprocessor_proxy_connections_refused_counter[5m]))[15m:5m]) > 0`.
