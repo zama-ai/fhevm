@@ -1445,3 +1445,324 @@ fn test_classify_error_semaphore_closed_is_recoverable() {
         ErrorClassification::Recoverable
     ));
 }
+
+// ── Bounded NotFound retries (reorg walk) ───────────────────────────────
+
+/// Run `retry_with_cancel` with a 1ms interval over an operation that returns
+/// `errors` in order, then `Ok(42)`. Returns the result and the attempt count.
+async fn run_retry(
+    errors: Vec<RpcProviderError>,
+    not_found_max_retries: Option<u32>,
+    cancel_at_attempt: Option<usize>,
+) -> (Result<u32, BlockFetchError>, usize) {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let attempts = AtomicUsize::new(0);
+    let errors = Mutex::new(errors.into_iter());
+    let token = CancellationToken::new();
+    let result = retry_with_cancel(
+        || {
+            let attempt = attempts.fetch_add(1, Ordering::SeqCst) + 1;
+            // Deterministic cancellation: no wall-clock timing involved.
+            if cancel_at_attempt == Some(attempt) {
+                token.cancel();
+            }
+            let next = errors.lock().unwrap().next();
+            async move {
+                match next {
+                    Some(e) => Err(e),
+                    None => Ok(42u32),
+                }
+            }
+        },
+        Duration::from_millis(1),
+        1,
+        &token,
+        not_found_max_retries,
+    )
+    .await;
+    (result, attempts.load(Ordering::SeqCst))
+}
+
+fn not_found(n: usize) -> Vec<RpcProviderError> {
+    (0..n).map(|_| RpcProviderError::NotFound).collect()
+}
+
+#[tokio::test]
+async fn test_not_found_cap_gives_up_after_max_retries() {
+    let (result, attempts) = run_retry(not_found(100), Some(2), None).await;
+    assert!(matches!(
+        result,
+        Err(BlockFetchError::NotFoundAfterRetries { attempts: 3 })
+    ));
+    assert_eq!(attempts, 3);
+}
+
+#[tokio::test]
+async fn test_not_found_cap_zero_gives_up_on_first_null() {
+    let (result, attempts) = run_retry(not_found(100), Some(0), None).await;
+    assert!(matches!(
+        result,
+        Err(BlockFetchError::NotFoundAfterRetries { attempts: 1 })
+    ));
+    assert_eq!(attempts, 1);
+}
+
+#[tokio::test]
+async fn test_not_found_within_cap_still_succeeds() {
+    let (result, attempts) = run_retry(not_found(2), Some(2), None).await;
+    assert_eq!(result.unwrap(), 42);
+    assert_eq!(attempts, 3);
+}
+
+#[tokio::test]
+async fn test_not_found_uncapped_retries_until_cancelled() {
+    // Far beyond any cap: without one, NotFound keeps retrying until cancelled.
+    let (result, attempts) = run_retry(not_found(100), None, Some(20)).await;
+    assert!(matches!(result, Err(BlockFetchError::Cancelled)));
+    assert_eq!(attempts, 20);
+}
+
+#[tokio::test]
+async fn test_not_found_cap_ignores_other_errors() {
+    let errors = vec![
+        RpcProviderError::TransportError("timeout".to_string()),
+        RpcProviderError::TransportError("timeout".to_string()),
+        RpcProviderError::NotFound,
+        RpcProviderError::TransportError("timeout".to_string()),
+    ];
+    let (result, attempts) = run_retry(errors, Some(1), None).await;
+    assert_eq!(result.unwrap(), 42);
+    assert_eq!(attempts, 5);
+}
+
+// ── Receipts must belong to the block ───────────────────────────────────
+
+#[test]
+fn test_first_foreign_receipt() {
+    let block = B256::repeat_byte(0xaa);
+    let other = B256::repeat_byte(0xbb);
+    let tx1 = B256::repeat_byte(0x01);
+    let tx2 = B256::repeat_byte(0x02);
+
+    assert_eq!(first_foreign_receipt(block, std::iter::empty()), None);
+    assert_eq!(
+        first_foreign_receipt(block, [(tx1, Some(block)), (tx2, Some(block))].into_iter()),
+        None
+    );
+    assert_eq!(
+        first_foreign_receipt(block, [(tx1, Some(block)), (tx2, Some(other))].into_iter()),
+        Some((tx2, Some(other)))
+    );
+    assert_eq!(
+        first_foreign_receipt(block, [(tx1, None)].into_iter()),
+        Some((tx1, None))
+    );
+}
+
+#[test]
+fn test_is_inconsistent_snapshot() {
+    let hash = B256::ZERO;
+    let inconsistent = [
+        BlockFetchError::NotFoundAfterRetries { attempts: 6 },
+        BlockFetchError::ReceiptCountMismatch {
+            block_tx_count: 4,
+            receipt_count: 0,
+        },
+        BlockFetchError::MissingReceipt { tx_hash: hash },
+        BlockFetchError::ReceiptBlockMismatch {
+            tx_hash: hash,
+            expected: hash,
+            got: None,
+        },
+    ];
+    for e in &inconsistent {
+        assert!(e.is_inconsistent_snapshot(), "{e} should be inconsistent");
+    }
+
+    let other = [
+        BlockFetchError::Cancelled,
+        BlockFetchError::BlockNotFound,
+        BlockFetchError::BatchUnsupported,
+        BlockFetchError::UnsupportedMethod {
+            method: "m".to_string(),
+            details: "d".to_string(),
+        },
+        BlockFetchError::DeserializationError {
+            method: "m".to_string(),
+            details: "d".to_string(),
+        },
+    ];
+    for e in &other {
+        assert!(
+            !e.is_inconsistent_snapshot(),
+            "{e} should not be inconsistent"
+        );
+    }
+}
+
+// ── Receipt blockHash gate, against an in-process mock JSON-RPC node ────────
+//
+// Real BSC testnet block 142386396 (2 txs) and its receipts, served by a local
+// axum server so the full provider → fetcher → build_fetched_block path runs
+// without network access.
+
+mod mock_rpc {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use axum::extract::State;
+    use axum::routing::post;
+    use axum::{Json, Router};
+    use serde_json::{Value, json};
+
+    const FIXTURE: &str = include_str!("fixtures/bsc_testnet_block_142386396.json");
+
+    pub struct MockNode {
+        pub url: String,
+        pub block_hash: alloy::primitives::B256,
+        pub block_number: u64,
+        pub by_hash_calls: Arc<AtomicUsize>,
+    }
+
+    struct MockState {
+        block: Value,
+        receipts: Value,
+        block_by_hash_null: bool,
+        by_hash_calls: Arc<AtomicUsize>,
+    }
+
+    /// Start a mock node. `receipt_block_hash` overrides every receipt's
+    /// `blockHash`; `block_by_hash_null` makes `eth_getBlockByHash` return null.
+    pub async fn start(receipt_block_hash: Option<&str>, block_by_hash_null: bool) -> MockNode {
+        let fixture: Value = serde_json::from_str(FIXTURE).expect("fixture JSON");
+        let block = fixture["block"].clone();
+        let mut receipts = fixture["receipts"].clone();
+        if let Some(hash) = receipt_block_hash {
+            for r in receipts.as_array_mut().expect("receipts array") {
+                r["blockHash"] = json!(hash);
+            }
+        }
+        let block_hash = block["hash"].as_str().unwrap().parse().unwrap();
+        let block_number = u64::from_str_radix(
+            block["number"].as_str().unwrap().trim_start_matches("0x"),
+            16,
+        )
+        .unwrap();
+        let by_hash_calls = Arc::new(AtomicUsize::new(0));
+        let state = Arc::new(MockState {
+            block,
+            receipts,
+            block_by_hash_null,
+            by_hash_calls: by_hash_calls.clone(),
+        });
+
+        let app = Router::new().route("/", post(handle)).with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        MockNode {
+            url: format!("http://{addr}"),
+            block_hash,
+            block_number,
+            by_hash_calls,
+        }
+    }
+
+    async fn handle(State(state): State<Arc<MockState>>, Json(req): Json<Value>) -> Json<Value> {
+        let result = match req["method"].as_str().unwrap_or_default() {
+            "eth_getBlockByNumber" => state.block.clone(),
+            "eth_getBlockByHash" => {
+                state.by_hash_calls.fetch_add(1, Ordering::SeqCst);
+                if state.block_by_hash_null {
+                    Value::Null
+                } else {
+                    state.block.clone()
+                }
+            }
+            "eth_getBlockReceipts" => state.receipts.clone(),
+            other => panic!("mock node: unexpected method {other}"),
+        };
+        Json(json!({ "jsonrpc": "2.0", "id": req["id"].clone(), "result": result }))
+    }
+}
+
+const FOREIGN_HASH: &str = "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+fn mock_fetcher(url: &str) -> EvmBlockFetcher {
+    let provider = SemEvmRpcProvider::new(url.to_string(), 5, false, 64).expect("provider");
+    EvmBlockFetcher::new(provider).with_retry_interval(Duration::from_millis(1))
+}
+
+/// Flag off (catch-up, final catch-up, finality, startup): a receipt from another
+/// block is accepted exactly as before the check existed.
+#[tokio::test]
+async fn test_receipt_block_hash_check_off_accepts_foreign_receipt() {
+    let node = mock_rpc::start(Some(FOREIGN_HASH), false).await;
+    let fetched = mock_fetcher(&node.url)
+        .fetch_block_with_block_receipts_by_number(node.block_number)
+        .await
+        .expect("flag off must not check receipt blockHash");
+    assert_eq!(fetched.block.header.hash, node.block_hash);
+    assert_eq!(fetched.receipts.len(), 2);
+}
+
+/// Flag on (live cursor, reorg walk): a receipt from another block is rejected.
+#[tokio::test]
+async fn test_receipt_block_hash_check_on_rejects_foreign_receipt() {
+    let node = mock_rpc::start(Some(FOREIGN_HASH), false).await;
+    let err = mock_fetcher(&node.url)
+        .with_verify_receipt_block_hash(true)
+        .fetch_block_with_block_receipts_by_number(node.block_number)
+        .await
+        .expect_err("foreign receipt must be rejected");
+    match &err {
+        BlockFetchError::ReceiptBlockMismatch { expected, got, .. } => {
+            assert_eq!(*expected, node.block_hash);
+            assert_eq!(*got, Some(FOREIGN_HASH.parse().unwrap()));
+        }
+        other => panic!("expected ReceiptBlockMismatch, got {other:?}"),
+    }
+    assert!(err.is_inconsistent_snapshot());
+}
+
+/// Flag on, matching receipts: the block is accepted (by number and by hash).
+#[tokio::test]
+async fn test_receipt_block_hash_check_on_accepts_matching_receipts() {
+    let node = mock_rpc::start(None, false).await;
+    let fetcher = mock_fetcher(&node.url).with_verify_receipt_block_hash(true);
+    let by_number = fetcher
+        .fetch_block_with_block_receipts_by_number(node.block_number)
+        .await
+        .expect("matching receipts by number");
+    let by_hash = fetcher
+        .fetch_block_with_block_receipts_by_hash(node.block_hash)
+        .await
+        .expect("matching receipts by hash");
+    assert_eq!(by_number.block.header.hash, node.block_hash);
+    assert_eq!(by_hash.block.header.hash, node.block_hash);
+}
+
+/// Reorg walk: a block that vanished (null by hash) gives up after the cap
+/// instead of retrying forever (the bnb-testnet 142208778 stall).
+#[tokio::test]
+async fn test_by_hash_null_gives_up_after_cap() {
+    let node = mock_rpc::start(None, true).await;
+    let err = mock_fetcher(&node.url)
+        .with_not_found_max_retries(Some(2))
+        .fetch_block_with_block_receipts_by_hash(node.block_hash)
+        .await
+        .expect_err("vanished block must give up");
+    assert!(
+        matches!(err, BlockFetchError::NotFoundAfterRetries { attempts: 3 }),
+        "got {err:?}"
+    );
+    assert!(err.is_inconsistent_snapshot());
+    // Two strategy-1 tasks each fetch by hash; the first to hit the cap wins.
+    let calls = node.by_hash_calls.load(std::sync::atomic::Ordering::SeqCst);
+    assert!((3..=6).contains(&calls), "by-hash calls: {calls}");
+}

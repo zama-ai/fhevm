@@ -32,6 +32,10 @@ Three-phase crash-safe algorithm:
 
 Crash at any phase → DB untouched or fully committed → retry re-walks safely (at-least-once).
 
+Abandon: a reorged block can vanish from the RPC (newer reorg on top). By-hash fetches cap `NotFound` at `strategy.reorg_not_found_max_retries` (default 5) on every call of the fetch (block and receipts); on the cap or on receipts not matching the block (`BlockFetchError::is_inconsistent_snapshot`), Phase 1 waits `loop_delay_ms` and returns `Ok(())` with the DB untouched, and the handler re-arms the cursor, which re-detects the reorg from fresh data. The live cursor does the same on an inconsistent block (`CursorResult::Rearm`). Counted by `listener_rearms_total{flow}`.
+
+Receipt `blockHash` check (`FetchConfig::verify_receipt_block_hash`): on only for the live cursor and the reorg walk. Catch-up, final catch-up, finality, startup validation, init block and final anchor pass `false` and keep their exact pre-existing behaviour. Per-flow stall/recovery table: `docs/error_flows.md` → "Stalls and recovery per flow".
+
 ### Slot Buffer (`core/slot_buffer.rs`)
 `AsyncSlotBuffer<T>`: fixed-size vec of `Mutex<Option<T>>` + `Notify`. Producers call `set_once(index, value)` in any order. Consumer calls `get(index)` sequentially, awaits `Notify` if slot empty. Cancel-safe.
 

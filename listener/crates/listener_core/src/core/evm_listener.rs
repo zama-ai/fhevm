@@ -77,6 +77,15 @@ pub enum EvmListenerError {
     MessageProcessingError { message: String },
 }
 
+impl EvmListenerError {
+    /// True when a fetch failed because the block and its receipts were not one
+    /// consistent snapshot (see [`BlockFetchError::is_inconsistent_snapshot`]).
+    /// Such failures are resolved by re-arming the cursor with fresher chain data.
+    pub fn is_inconsistent_snapshot(&self) -> bool {
+        matches!(self, Self::CouldNotFetchBlock { source } if source.is_inconsistent_snapshot())
+    }
+}
+
 /// Outcome of a single cursor iteration.
 ///
 /// Reorgs are a normal operational event on blockchains (not an error),
@@ -94,6 +103,11 @@ pub enum CursorResult {
         block_hash: B256,
         parent_hash: B256,
     },
+    /// A block and its receipts were inconsistent (the chain moved between the
+    /// RPC calls). The range is cancelled; the DB tip is the last block the cursor
+    /// published and inserted (contiguous, in order). The handler re-arms the
+    /// cursor, which resumes from that tip.
+    Rearm,
 }
 
 #[derive(Clone)]
@@ -114,6 +128,7 @@ pub struct EvmListener {
     finality_active: bool,
     max_exponential_backoff_ms: u64,
     catchup_max_sub_range: u64,
+    reorg_not_found_max_retries: u32,
 }
 
 impl EvmListener {
@@ -146,6 +161,7 @@ impl EvmListener {
             finality_active: blockchain_settings.finality_active,
             max_exponential_backoff_ms: blockchain_settings.strategy.max_exponential_backoff_ms,
             catchup_max_sub_range: blockchain_settings.catchup.catchup_max_sub_range,
+            reorg_not_found_max_retries: blockchain_settings.strategy.reorg_not_found_max_retries,
         }
     }
 
@@ -192,6 +208,8 @@ impl EvmListener {
     /// * `block_number` - The block number to fetch
     /// * `cancel_token` - Cancellation token for this operation (share across batch for batch cancellation)
     /// * `compute_block` - Whether to verify block integrity (transaction root, receipt root, block hash)
+    /// * `verify_receipt_block_hash` - Reject receipts whose `blockHash` is not this block's hash.
+    ///   Only the live cursor enables it; catch-up, finality and startup fetches keep it off.
     ///
     /// # Cancellation
     /// When `cancel_token.cancel()` is called, this operation will return `BlockFetchError::Cancelled`.
@@ -201,8 +219,11 @@ impl EvmListener {
         block_number: u64,
         cancel_token: CancellationToken,
         compute_block: bool,
+        verify_receipt_block_hash: bool,
     ) -> Result<FetchedBlock, EvmListenerError> {
-        let fetcher = self.create_fetcher(cancel_token, compute_block);
+        let fetcher = self
+            .create_fetcher(cancel_token, compute_block)
+            .with_verify_receipt_block_hash(verify_receipt_block_hash);
 
         let result = match self.fetcher_strategy {
             BlockFetcherStrategy::BlockReceipts => {
@@ -245,13 +266,23 @@ impl EvmListener {
     ///
     /// # Cancellation
     /// When `cancel_token.cancel()` is called, this operation will return `BlockFetchError::Cancelled`.
+    ///
+    /// # Bounded NotFound
+    /// Used by the reorg walk only. A reorged block can disappear from the RPC
+    /// for good, so `NotFound` gives up after `reorg_not_found_max_retries`
+    /// instead of retrying forever.
     pub async fn get_block_by_hash(
         &self,
         hash: B256,
         cancel_token: CancellationToken,
         compute_block: bool,
     ) -> Result<FetchedBlock, EvmListenerError> {
-        let fetcher = self.create_fetcher(cancel_token, compute_block);
+        let fetcher = self
+            .create_fetcher(cancel_token, compute_block)
+            .with_not_found_max_retries(Some(self.reorg_not_found_max_retries))
+            // Only the reorg walk fetches by hash; it must not mix a block with
+            // receipts from another branch.
+            .with_verify_receipt_block_hash(true);
 
         let result = match self.fetcher_strategy {
             BlockFetcherStrategy::BlockReceipts => {
@@ -334,7 +365,7 @@ impl EvmListener {
         // Validate strategy by attempting to fetch the latest block
         let cancel_token = CancellationToken::new();
         match self
-            .get_block_by_number(latest_block_number, cancel_token, self.compute_block)
+            .get_block_by_number(latest_block_number, cancel_token, self.compute_block, false)
             .await
         {
             Ok(fetched_block) => {
@@ -411,7 +442,7 @@ impl EvmListener {
         // Fetch the starting block from the blockchain
         let cancel_token = CancellationToken::new();
         let fetched_block = match self
-            .get_block_by_number(block_start, cancel_token, self.compute_block)
+            .get_block_by_number(block_start, cancel_token, self.compute_block, false)
             .await
         {
             Ok(block) => block,
@@ -585,6 +616,8 @@ impl EvmListener {
             cancel_token.clone(),
             range_start,
             range_length,
+            // Live cursor: receipts must belong to the block (re-arm on mismatch).
+            true,
         ));
 
         // Step 7: Await both tasks to completion.
@@ -666,6 +699,32 @@ impl EvmListener {
                 Ok(cursor_result)
             }
 
+            // === RE-ARM PATH ===
+            // The fetcher saw a block whose receipts do not match it (count, tx hashes
+            // or `blockHash`): the chain moved between the RPC calls. The integrity
+            // check runs before publish, so nothing of this block was sent. Retrying
+            // the same block cannot help, so return Ok and let the handler re-arm the
+            // cursor with fresh chain data (no transient error, no circuit breaker).
+            // The range is cancelled; the DB tip is the last block published and
+            // inserted in order, and the next iteration resumes from it. Visible via
+            // the WARN, the fetcher-task ERROR and `listener_rearms_total{flow="live"}`.
+            (
+                Err(EvmListenerError::CouldNotFetchBlock {
+                    source: BlockFetchError::Cancelled,
+                }),
+                Err(fetcher_err),
+            ) if fetcher_err.is_inconsistent_snapshot() => {
+                warn!(
+                    error = %fetcher_err,
+                    range_start = range_start,
+                    range_end = range_end,
+                    "Cursor: block and receipts inconsistent (chain moved between RPC calls), re-arming cursor"
+                );
+                self.record_rearm("live");
+                tokio::time::sleep(Duration::from_millis(self.loop_delay_ms)).await;
+                Ok(CursorResult::Rearm)
+            }
+
             // === ERROR PATHS ===
 
             // Cursor was cancelled because fetcher failed — return the ROOT CAUSE (fetcher's error).
@@ -707,6 +766,40 @@ impl EvmListener {
         }
     }
 
+    /// Count a cursor re-arm caused by inconsistent or unavailable block data.
+    /// `flow` is `"live"` (cursor) or `"reorg"` (backtrack walk).
+    fn record_rearm(&self, flow: &'static str) {
+        metrics::counter!(
+            "listener_rearms_total",
+            "chain_id" => self.chain_id.to_string(),
+            "flow" => flow,
+        )
+        .increment(1);
+    }
+
+    /// Log and count an abandoned reorg walk, then wait `loop_delay_ms`. Only called
+    /// during Phase 1, so the DB is untouched; the caller returns `Ok(())` and the
+    /// handler re-arms the cursor. The wait mirrors the live re-arm and avoids a fast
+    /// abandon → re-detect loop while RPC upstreams still disagree on the fork.
+    async fn abandon_reorg_walk(
+        &self,
+        block_number: u64,
+        block_hash: B256,
+        blocks_collected: usize,
+        error: &EvmListenerError,
+    ) {
+        warn!(
+            block_number,
+            block_hash = %block_hash,
+            blocks_collected,
+            error = %error,
+            "reorg_backtrack_v2: reorged block no longer available or inconsistent by hash, \
+             abandoning walk (DB untouched) and re-arming cursor"
+        );
+        self.record_rearm("reorg");
+        tokio::time::sleep(Duration::from_millis(self.loop_delay_ms)).await;
+    }
+
     /// Walks backwards from the reorg point to reconstruct the canonical chain.
     ///
     /// # Algorithm
@@ -721,6 +814,11 @@ impl EvmListener {
     ///       (72 bytes) is retained. DB is NEVER modified.
     ///       Stop when fork-point found, genesis reached, or indexing boundary +
     ///       finality_depth exhausted.
+    ///   1c. Abandon: if a block can no longer be fetched consistently by hash
+    ///       (still `NotFound` after `reorg_not_found_max_retries`, or receipts
+    ///       not matching the block), a newer reorg has replaced it. Return
+    ///       `Ok(())` without touching the DB; the handler re-arms the cursor,
+    ///       which re-detects the reorg from fresh chain data if it is still real.
     ///
     /// ## Phase 2 — Commit (single DB transaction)
     ///   Reverse collected blocks to ascending order. Batch-upsert all blocks
@@ -734,6 +832,9 @@ impl EvmListener {
     ///
     /// - Crash during Phase 1: DB untouched → retry re-walks from scratch,
     ///   re-publishes (at-least-once). No false fork-point possible.
+    /// - Abandon during Phase 1: DB untouched → the cursor resumes from the DB tip,
+    ///   so the reorg is re-detected at any depth. Events published so far may
+    ///   be published again (at-least-once).
     /// - Crash during Phase 2: transaction rolled back → DB untouched → same.
     /// - Crash after Phase 2 commit: DB correct → retry finds DB already updated,
     ///   walk terminates in ~1 block, re-publishes ~1 event (at-least-once).
@@ -767,9 +868,18 @@ impl EvmListener {
         // ══════════════════════════════════════════════════════════════
 
         let cancel_token = CancellationToken::new();
-        let block_n = self
+        let block_n = match self
             .get_block_by_hash(event.block_hash, cancel_token, self.compute_block)
-            .await?;
+            .await
+        {
+            Ok(block) => block,
+            Err(e) if e.is_inconsistent_snapshot() => {
+                self.abandon_reorg_walk(block_number, event.block_hash, 0, &e)
+                    .await;
+                return Ok(());
+            }
+            Err(e) => return Err(e),
+        };
 
         publisher::publish_block_events(
             &self.repositories,
@@ -875,13 +985,19 @@ impl EvmListener {
 
             // Fetch parent block by hash from RPC.
             let cancel_token = CancellationToken::new();
-            current_block = self
-                .get_block_by_hash(
-                    current_block.block.header.parent_hash,
-                    cancel_token,
-                    self.compute_block,
-                )
-                .await?;
+            let parent_hash = current_block.block.header.parent_hash;
+            current_block = match self
+                .get_block_by_hash(parent_hash, cancel_token, self.compute_block)
+                .await
+            {
+                Ok(block) => block,
+                Err(e) if e.is_inconsistent_snapshot() => {
+                    self.abandon_reorg_walk(prev_height, parent_hash, collected_blocks.len(), &e)
+                        .await;
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            };
             current_height = prev_height;
 
             // Publish events on-the-go. The FetchedBlock is dropped after this
@@ -1102,6 +1218,8 @@ impl EvmListener {
             cancel_token.clone(),
             range_start,
             range_length,
+            // Catch-up: no receipt blockHash check (unchanged behaviour).
+            false,
         ));
 
         // Step 5 — spawn the catchup consumer (in-order publish, no DB, no hashing).
@@ -1432,6 +1550,8 @@ impl EvmListener {
             cancel_token.clone(),
             range_start,
             range_length,
+            // Final catch-up: no receipt blockHash check (unchanged behaviour).
+            false,
         ));
 
         // Spawn the final catchup consumer (in-order publish, no DB, no hashing).
@@ -1570,7 +1690,7 @@ impl EvmListener {
         // Fetch the anchor block from the blockchain with the configured strategy
         let cancel_token = CancellationToken::new();
         let fetched_block = match self
-            .get_block_by_number(final_block_number, cancel_token, self.compute_block)
+            .get_block_by_number(final_block_number, cancel_token, self.compute_block, false)
             .await
         {
             Ok(block) => block,
@@ -1746,6 +1866,8 @@ impl EvmListener {
             cancel_token.clone(),
             range_start,
             range_length,
+            // Finality: no receipt blockHash check (unchanged behaviour).
+            false,
         ));
 
         // Step 7: Await both tasks to completion.
@@ -2256,6 +2378,7 @@ async fn fetch_blocks_in_parallel(
     cancel_token: CancellationToken,
     range_start: u64,
     range_length: usize,
+    verify_receipt_block_hash: bool,
 ) -> Result<(), EvmListenerError> {
     let compute_block = listener.compute_block;
     let mut join_set: JoinSet<Result<(), EvmListenerError>> = JoinSet::new();
@@ -2270,7 +2393,12 @@ async fn fetch_blocks_in_parallel(
         join_set.spawn(async move {
             let fetch_start = Instant::now();
             let fetched_block = listener
-                .get_block_by_number(block_number, child_token, compute_block)
+                .get_block_by_number(
+                    block_number,
+                    child_token,
+                    compute_block,
+                    verify_receipt_block_hash,
+                )
                 .await?;
 
             metrics::histogram!(
@@ -2457,5 +2585,38 @@ mod split_catchup_range_tests {
         let start = u64::MAX - 5;
         let chunks = split_catchup_range(start, u64::MAX, 1000);
         assert_eq!(chunks, vec![(start, u64::MAX)]);
+    }
+}
+
+#[cfg(test)]
+mod inconsistent_snapshot_tests {
+    use super::{BlockFetchError, EvmListenerError};
+
+    #[test]
+    fn only_fetch_errors_with_inconsistent_source_qualify() {
+        let inconsistent = EvmListenerError::CouldNotFetchBlock {
+            source: BlockFetchError::NotFoundAfterRetries { attempts: 6 },
+        };
+        assert!(inconsistent.is_inconsistent_snapshot());
+
+        let cancelled = EvmListenerError::CouldNotFetchBlock {
+            source: BlockFetchError::Cancelled,
+        };
+        assert!(!cancelled.is_inconsistent_snapshot());
+
+        // CouldNotComputeBlock never qualifies, whatever its source (the variant
+        // guard is on CouldNotFetchBlock only): verification failures stay transient.
+        let compute = EvmListenerError::CouldNotComputeBlock {
+            source: BlockFetchError::ReceiptCountMismatch {
+                block_tx_count: 1,
+                receipt_count: 0,
+            },
+        };
+        assert!(!compute.is_inconsistent_snapshot());
+
+        let invariant = EvmListenerError::InvariantViolation {
+            message: "x".to_string(),
+        };
+        assert!(!invariant.is_inconsistent_snapshot());
     }
 }
