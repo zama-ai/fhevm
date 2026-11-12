@@ -147,8 +147,12 @@ impl StateHashRecord {
     }
 
     /// A record fit for consensus: both components are 64-char hex digests, and
-    /// `pbs` actually commits to ct128 digests - the hash of the EMPTY aggregate
-    /// (`sha256('')` = [`EMPTY_BLOCK_STATE_HASH`]) is rejected. A block whose
+    /// neither is the hash of the EMPTY aggregate (`sha256('')` =
+    /// [`EMPTY_BLOCK_STATE_HASH`], compared ignoring hex case). An empty `fhe`
+    /// is never produced by [`compute_gcs_hash`] (no ciphertext rows means no
+    /// record), so seeing one means zero-length ciphertexts or a forged record;
+    /// it commits to no FHE output and is rejected. `pbs` must actually commit
+    /// to ct128 digests. A block whose
     /// record carries an empty-aggregate `pbs` exercised no squash work, so it
     /// proves nothing about PBS determinism and must not anchor consensus.
     /// Enforced on both sides: locally before publishing (the upload sweep) and
@@ -173,13 +177,29 @@ impl StateHashRecord {
                 clip(&self.pbs)
             ));
         }
-        if self.pbs == EMPTY_BLOCK_STATE_HASH {
+        if self.fhe.eq_ignore_ascii_case(EMPTY_BLOCK_STATE_HASH) {
+            return Err(
+                "empty fhe state-hash (sha256 of the empty ct64 aggregate) is not allowed".into(),
+            );
+        }
+        if self.pbs.eq_ignore_ascii_case(EMPTY_BLOCK_STATE_HASH) {
             return Err(
                 "empty pbs state-hash (sha256 of the empty ct128 aggregate) is not allowed".into(),
             );
         }
         Ok(())
     }
+}
+
+/// SQL `LIKE` pattern matching a stored [`StateHashRecord`] whose `pbs` is the
+/// empty-aggregate hash. A text match on purpose: `state_hash` is not always
+/// JSON (empty blocks store the raw [`EMPTY_BLOCK_STATE_HASH`] sentinel), so a
+/// `::jsonb` cast would make the whole query error on those rows. The pattern
+/// depends on the serialized form, which is pinned by the
+/// `record_serialization_is_canonical_and_stable` and
+/// `empty_pbs_like_pattern_matches_the_serialized_record` tests.
+pub(crate) fn empty_pbs_like_pattern() -> String {
+    format!(r#"%"pbs":"{EMPTY_BLOCK_STATE_HASH}"%"#)
 }
 
 /// Verdict over one block's operator slots on a HOST track, where every vote is
@@ -195,7 +215,7 @@ pub(crate) enum HostSlotsVerdict {
     /// commitment is the hashes, but it is worth a warning.
     Anchor { encoding_skew: bool },
     /// Some operator's payload is not a valid record (unparsable, non-hex
-    /// digest, or empty pbs). The block cannot anchor.
+    /// digest, or empty fhe/pbs). The block cannot anchor.
     Invalid { why: String },
     /// All records valid, but the hashes disagree across operators.
     Diverged { fhe: bool, pbs: bool },
@@ -445,6 +465,8 @@ async fn compute_gcs_hash(
             (SELECT count(*) FROM pbs) AS pbs_total,
             (SELECT count(*) FROM pbs
               WHERE NOT pbs.is_completed OR pbs.ciphertext128 IS NULL) AS pbs_pending,
+            (SELECT count(*) FROM pbs
+              WHERE pbs.is_completed AND pbs.ciphertext128 IS NULL) AS pbs_no_digest,
             CASE WHEN (SELECT bool_and(is_completed) FROM bc)
                   AND NOT EXISTS (
                       SELECT 1 FROM pbs
@@ -485,6 +507,7 @@ async fn compute_gcs_hash(
     let fhe_done: Option<bool> = row.try_get("fhe_done")?;
     let pbs_total: i64 = row.try_get("pbs_total")?;
     let pbs_pending: i64 = row.try_get("pbs_pending")?;
+    let pbs_no_digest: i64 = row.try_get("pbs_no_digest")?;
     // fhe_hash stays NULL when the gate is closed OR the ct64 aggregate is
     // empty (e.g. every completed row lacks a ciphertext): both held back,
     // exactly as the combined recipe behaved (sha256(NULL) was NULL).
@@ -509,6 +532,20 @@ async fn compute_gcs_hash(
                 "all ct128 digests ready; binding them into the block's state_hash"
             );
         }
+    } else if fhe_done == Some(true) && pbs_no_digest > 0 {
+        // Not a transient state: the sns-worker writes `is_completed` and the
+        // digest in one transaction, and never picks a completed row again. It
+        // means the squash finished but its digest was skipped or deleted, so
+        // this block will never be hashed. Fail-safe (the block cannot anchor,
+        // the attempt times out), but say so loudly.
+        warn!(
+            chain_id,
+            block_number,
+            pbs_no_digest,
+            pbs_total,
+            "state_hash held back: completed squash has no ct128 digest; \
+             this block will not be hashed"
+        );
     } else if fhe_done == Some(true) && pbs_pending > 0 {
         debug!(
             chain_id,
@@ -941,16 +978,17 @@ async fn upload_pending_state_hashes(
             ON b.chain_id = sh.chain_id AND b.block_number = sh.block_number
            AND b.block_status = 'finalized'
          WHERE sh.s3_uploaded_at IS NULL
-           -- Never publish the empty-block hash. This is the decisive gate:
-           -- empty blocks AND the synthetic block (whose hash is empty until its
-           -- FheAdd is computed, yet carries a non-trivial computation) both hash
-           -- to EMPTY_BLOCK_STATE_HASH, so consensus must not anchor on them.
+           -- Never publish the empty-block sentinel. The column holds two
+           -- shapes: empty blocks (fhe_event_count = 0) store the raw
+           -- EMPTY_BLOCK_STATE_HASH hex string, non-empty blocks store a JSON
+           -- StateHashRecord. This gate drops the first shape, so consensus
+           -- cannot anchor on an empty block.
            AND sh.state_hash <> '{empty}'
            -- Likewise never publish a record whose pbs is the empty-aggregate
            -- hash: no squash work means nothing proven about PBS determinism,
            -- and consensus rejects such votes anyway (StateHashRecord::validate).
            -- Filtered here so the row is not re-selected and re-refused forever.
-           AND sh.state_hash NOT LIKE '%"pbs":"{empty}"%'
+           AND sh.state_hash NOT LIKE '{empty_pbs}'
            -- Also exclude trivial-only blocks (non-empty but vacuous hash).
            AND EXISTS (
                SELECT 1 FROM computations c
@@ -962,6 +1000,7 @@ async fn upload_pending_state_hashes(
          LIMIT $1
         "#,
         empty = EMPTY_BLOCK_STATE_HASH,
+        empty_pbs = empty_pbs_like_pattern(),
         opcode = crate::FHE_TRIVIAL_ENCRYPT_OPCODE,
     );
     let started = upload_window(pool, cutoff).await?.0;
@@ -2153,6 +2192,22 @@ mod tests {
         assert_eq!(parsed, record);
     }
 
+    /// The upload and candidate SQL filters match the empty-pbs record as
+    /// text; a serialization change must fail here, not silently disable them.
+    #[test]
+    fn empty_pbs_like_pattern_matches_the_serialized_record() {
+        let json = StateHashRecord {
+            v: STATE_HASH_RECORD_VERSION,
+            fhe: "a".repeat(64),
+            pbs: EMPTY_BLOCK_STATE_HASH.into(),
+        }
+        .to_json();
+        let pattern = empty_pbs_like_pattern();
+        let needle = pattern.trim_matches('%');
+        assert_eq!(pattern, format!("%{needle}%"));
+        assert!(json.contains(needle), "{json} does not contain {needle}");
+    }
+
     #[test]
     fn evaluate_host_slots_counts_votes_on_parsed_components() {
         let hex = |c: char| c.to_string().repeat(64);
@@ -2239,6 +2294,18 @@ mod tests {
             evaluate_host_slots(&[slot.clone(), slot]),
             Some(HostSlotsVerdict::Invalid { .. })
         ));
+        // Same for the empty-aggregate fhe hash: it commits to no FHE output.
+        let err = rec(EMPTY_BLOCK_STATE_HASH, &a64).validate().unwrap_err();
+        assert!(err.contains("empty fhe"), "{err}");
+        let slot = Some(rec(EMPTY_BLOCK_STATE_HASH, &a64).to_json().into_bytes());
+        assert!(matches!(
+            evaluate_host_slots(&[slot.clone(), slot]),
+            Some(HostSlotsVerdict::Invalid { .. })
+        ));
+        // Hex case must not be a way around the check.
+        let upper = EMPTY_BLOCK_STATE_HASH.to_uppercase();
+        assert!(rec(&upper, &a64).validate().is_err());
+        assert!(rec(&a64, &upper).validate().is_err());
     }
 
     /// The slots hold peer-controlled bytes: every malformed shape must come
