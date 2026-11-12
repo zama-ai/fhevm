@@ -66,10 +66,17 @@ interface ICoprocessorConfigBase {
 
     /**
      * @notice Returns the current coprocessor context ID.
-     * @dev The previous context is the current ID minus one.
      * @return The current coprocessor context ID.
      */
     function getCurrentCoprocessorContextId() external view returns (uint256);
+
+    /**
+     * @notice Returns the coprocessor context ID that was current before the current one.
+     * @dev Returns 0 when the current context replaced none. Callers check it with
+     *      `isValidCoprocessorContext`, since it may have been destroyed.
+     * @return The previous coprocessor context ID, or 0 if none.
+     */
+    function getPreviousCoprocessorContextId() external view returns (uint256);
 
     /**
      * @notice Checks whether a coprocessor context is defined and not destroyed.
