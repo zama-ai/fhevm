@@ -196,7 +196,7 @@ pub struct Output {
     pub attestation: PrfOutputAttestation,
 }
 
-/// Claims up to `limit` complete rows that have no S3 copy and a stale claim.
+/// Claims up to `limit` complete rows that have no S3 copy and no live claim.
 pub async fn claim_uploads(
     pool: &PgPool,
     prf_instance: u16,
@@ -209,7 +209,7 @@ pub async fn claim_uploads(
                   SELECT prf_instance, label, pad_length
                     FROM pads
                    WHERE prf_instance = $1 AND signature IS NOT NULL AND s3_verified_at IS NULL
-                     AND claimed_at <= NOW() - make_interval(secs => $2)
+                     AND (claimed_at IS NULL OR claimed_at <= NOW() - make_interval(secs => $2))
                    ORDER BY created_at
                    LIMIT $3
                      FOR UPDATE SKIP LOCKED)
