@@ -10,7 +10,12 @@ use fhevm_engine_common::healthz_server::HttpServer;
 use rstest::rstest;
 use serde::Deserialize;
 use serde_json::Value;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    num::{NonZeroU32, NonZeroUsize},
+    sync::Arc,
+    time::Duration,
+};
 use tokio_util::sync::CancellationToken;
 
 /// The `/healthz` answer of the coprocessor health server.
@@ -128,6 +133,99 @@ async fn test_not_ready_before_the_first_read() -> anyhow::Result<()> {
     t.wait_until_accepted(&sender()).await;
     let (_, status) = fetch_status(&base_url).await?;
     assert_eq!(status.check("kms_tx_senders"), "ok");
+
+    cancel_token.cancel();
+    Ok(())
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(300))]
+#[tokio::test]
+async fn test_ready_while_the_replica_holds_its_connection_limit() -> anyhow::Result<()> {
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.max_connections = NonZeroUsize::new(1).unwrap();
+    })
+    .await;
+    let cancel_token = CancellationToken::new();
+    let base_url = serve_health(t.state.clone(), &cancel_token).await;
+
+    // The client keeps the connection of an authenticated request open: the replica is at its
+    // limit. The proxy counts the startup connections out only after it noticed their close.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match t.get(&prf_path(1)).await.send().await {
+            Ok(response) => {
+                assert_eq!(response.status(), StatusCode::OK);
+                response.bytes().await?;
+                break;
+            }
+            Err(e) => assert!(tokio::time::Instant::now() < deadline, "{e}"),
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(t.tls.try_connect(t.addr).await.is_err());
+
+    // Each self-check opens a connection and uses its pass: none is left for the next
+    // connection, which the limit still refuses.
+    for _ in 0..2 {
+        let (status_code, status) = fetch_status(&base_url).await?;
+        assert_eq!(status_code, StatusCode::OK, "{status:?}");
+        assert_eq!(status.check("tls_listener"), "ok", "{status:?}");
+    }
+    assert!(t.tls.try_connect(t.addr).await.is_err());
+
+    cancel_token.cancel();
+    Ok(())
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(300))]
+#[tokio::test]
+async fn test_ready_while_the_connections_waiting_for_their_first_head_are_at_their_cap()
+-> anyhow::Result<()> {
+    use tokio::io::AsyncReadExt;
+
+    // 5 new connections per second and 2 s for the first head: at most 10 wait at once.
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.max_new_connections_per_second = NonZeroU32::new(5).unwrap();
+        config.request_head_timeout = Duration::from_secs(2);
+    })
+    .await;
+    let cancel_token = CancellationToken::new();
+    let base_url = serve_health(t.state.clone(), &cancel_token).await;
+    // The startup connections leave the rate's 1 s window.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let refused = || {
+        prometheus::gather()
+            .iter()
+            .filter(|family| family.name() == "coprocessor_proxy_connections_refused_counter")
+            .flat_map(|family| family.get_metric())
+            .filter(|metric| metric.get_label()[0].value() == "first_heads")
+            .map(|metric| metric.get_counter().value())
+            .sum::<f64>()
+    };
+    let refused_before = refused();
+
+    // Ten connections accepted within the rate, whose handshakes then complete together: they
+    // take every place for 2 s.
+    let mut tcp = Vec::new();
+    for _ in 0..10 {
+        tcp.push(tokio::net::TcpStream::connect(t.addr).await?);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    let handshakes = tcp.into_iter().map(|tcp| t.tls.handshake(tcp));
+    let _waiting = futures_util::future::try_join_all(handshakes).await?;
+
+    let (status_code, status) = fetch_status(&base_url).await?;
+    assert_eq!(status_code, StatusCode::OK, "{status:?}");
+    assert_eq!(status.check("tls_listener"), "ok", "{status:?}");
+
+    // The self-check used its pass: the next connection finds no place and is closed.
+    let mut stream = t.tls.try_connect(t.addr).await?;
+    let mut byte = [0u8; 1];
+    let read = tokio::time::timeout(Duration::from_millis(500), stream.read(&mut byte)).await;
+    assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
+    assert_eq!(refused() - refused_before, 1.0);
 
     cancel_token.cancel();
     Ok(())

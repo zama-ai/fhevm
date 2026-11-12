@@ -1,5 +1,8 @@
 use crate::{
-    core::{Config, SIGNER_RATE_INTERVAL},
+    core::{
+        Config, SIGNER_RATE_INTERVAL,
+        client_connections::{ClientConnections, ClientConnectionsApp, FirstHeadCallback},
+    },
     kms_tx_senders::Follower,
     monitoring::health,
 };
@@ -8,14 +11,19 @@ use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners};
 use pingora::{
+    apps::HttpServerOptions,
     listeners::tls::TlsSettings,
     prelude::Server,
-    proxy::http_proxy_service_with_name,
+    proxy::http_proxy,
     server::{
         RunArgs, ShutdownSignal, ShutdownSignalWatch, ShutdownWatch, UnixShutdownSignalWatch,
         configuration::ServerConf,
     },
-    services::background::{BackgroundService, GenBackgroundService},
+    services::{
+        background::{BackgroundService, GenBackgroundService},
+        listening::Service,
+    },
+    tls::ssl::SslFiletype,
 };
 use pingora_limits::rate::Rate;
 use prometheus::{IntGauge, register_int_gauge};
@@ -49,6 +57,7 @@ pub struct Proxy {
     pub(super) signer_requests: Rate,
     /// Set during the shutdown delay: each client connection closes after its next response.
     pub(super) draining: Arc<AtomicBool>,
+    client_connections: Arc<ClientConnections>,
 }
 
 /// Watches the Unix signals like [`UnixShutdownSignalWatch`], but holds `SIGTERM` back for
@@ -91,6 +100,11 @@ impl<P: Provider> BackgroundService for Follower<P> {
 /// (coprocessor-proxy-deployment.yaml) includes it.
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 
+/// The requests a client connection serves before the proxy closes it. A front layer keeps its
+/// connections open, so closing them now and then spreads them again over the replicas, new ones
+/// included, and frees their memory.
+pub const KEEPALIVE_REQUEST_LIMIT: u32 = 1000;
+
 impl Proxy {
     /// Creates the `Proxy` from its configuration, and the `health::State` used to monitor it.
     pub fn from_config(config: Config) -> anyhow::Result<(Self, health::State)> {
@@ -111,10 +125,16 @@ impl Proxy {
             signers.clone(),
             config.kms_registry_refresh_interval,
         );
+        let client_connections = Arc::new(ClientConnections::new(
+            config.max_connections.get(),
+            config.max_new_connections_per_second.get(),
+            config.request_head_timeout,
+        ));
         let state = health::State::new(
             config.bind_address,
             follower.loaded(),
             config.healthcheck_timeout,
+            Arc::clone(&client_connections),
         )?;
         let domain =
             fhevm_sig_auth::domain(config.ethereum_chain_id, config.protocol_config_address);
@@ -126,6 +146,7 @@ impl Proxy {
             kms_tx_senders: Arc::new(follower),
             signer_requests: Rate::new(SIGNER_RATE_INTERVAL),
             draining: Arc::default(),
+            client_connections,
         };
         Ok((proxy, state))
     }
@@ -165,7 +186,11 @@ impl Proxy {
         let listen_addr = self.config.bind_address.to_string();
         let cert_path = path_to_str(&self.config.tls_cert_path)?;
         let key_path = path_to_str(&self.config.tls_key_path)?;
-        let tls = TlsSettings::intermediate(cert_path, key_path)
+        let mut tls = TlsSettings::with_callbacks(Box::new(FirstHeadCallback))
+            .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
+        // The key, then the chain, as `TlsSettings::intermediate` loads them.
+        tls.set_private_key_file(key_path, SslFiletype::PEM)
+            .and_then(|()| tls.set_certificate_chain_file(cert_path))
             .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
         // OpenSSL silently drops a private key that does not match the certificate loaded after
         // it, so check their consistency explicitly to fail fast.
@@ -179,8 +204,17 @@ impl Proxy {
         ));
 
         let service_name = self.config.service_name.clone();
-        let mut proxy_service =
-            http_proxy_service_with_name(&server.configuration, self, &service_name);
+        let connections = Arc::clone(&self.client_connections);
+        let mut proxy = http_proxy(&server.configuration, self);
+        let mut options = HttpServerOptions::default();
+        // Pingora counts the requests after a connection's first.
+        options.keepalive_request_limit = Some(KEEPALIVE_REQUEST_LIMIT - 1);
+        proxy.server_options = Some(options);
+        let mut proxy_service = Service::new(
+            service_name,
+            ClientConnectionsApp::new(proxy, Arc::clone(&connections)),
+        );
+        proxy_service.set_connection_filter(connections);
         proxy_service.add_tls_with_settings(&listen_addr, None, tls);
         server.add_service(proxy_service);
         info!("Proxy will listen at: https://{listen_addr}");

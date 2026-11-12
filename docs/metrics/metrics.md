@@ -225,6 +225,26 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
  - **Alarm**: Sustained prf-service failures. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
     - **Recommendation**: `sum(increase(coprocessor_proxy_requests_counter{status=~"502|504"}[5m])) > 5`.
 
+#### Metric Name: `coprocessor_proxy_client_connections`
+ - **Type**: Gauge
+ - **Description**: Client connections open past their TLS handshake on this replica. At `COPROCESSOR_PROXY_MAX_CONNECTIONS` (4096 by default) the replica refuses new connections. Connections still in their handshake are not counted; `COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND` bounds them.
+ - **Alarm**: If one replica stays near its limit. Alert per pod, not on the sum: the limit is per replica. 3600 is above the most requests prf-service holds at once and below the default limit, both derived in the [chart README](../../charts/coprocessor/README.md); scale it with `COPROCESSOR_PROXY_MAX_CONNECTIONS`.
+    - **Recommendation**: more than 3600 on one replica over 2 minutes, i.e. `min_over_time(coprocessor_proxy_client_connections[2m]) > 3600`.
+
+#### Metric Name: `coprocessor_proxy_connections_refused_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `reason`: before the TLS handshake, `max_connections` when the replica held `COPROCESSOR_PROXY_MAX_CONNECTIONS` connections, or `new_connections_rate` when it had accepted `COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND` in the current second. After the handshake, `first_heads` when `COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND` × `COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT` connections were already waiting for their first request head: a client that held its handshakes back and completed them together.
+ - **Description**: Client connections refused by the proxy's connection limits. The client sees its connection closed, and a connector retries. The readiness check passes these limits, so the replica still shows as ready.
+ - **Alarm**: Sustained refusals: a flood of connections, or limits too low for the honest traffic. Starting threshold: refusals in every 5 minutes for 15 minutes.
+    - **Recommendation**: `min_over_time(sum by (reason) (increase(coprocessor_proxy_connections_refused_counter[5m]))[15m:5m]) > 0`.
+
+#### Metric Name: `coprocessor_proxy_request_head_timeouts_counter`
+ - **Type**: Counter
+ - **Description**: Client connections closed because their first request head did not arrive within `COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT` of the TLS handshake. A connector sends each head at once, so honest traffic rarely counts here. A sustained rate means clients that connect and then send slowly or nothing: a slow-head flood, a client on a very slow link, or a front layer that opens connections ahead of its requests.
+ - **Alarm**: Sustained head timeouts. Starting threshold: more than 5 in every 5 minutes for 15 minutes; tune to traffic.
+    - **Recommendation**: `min_over_time(sum(increase(coprocessor_proxy_request_head_timeouts_counter[5m]))[15m:5m]) > 5`.
+
 ### prf-service
 
 #### Metric Name: `coprocessor_prf_service_requests_total`
