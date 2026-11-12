@@ -352,6 +352,8 @@ services:
       COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS: ${PROTOCOL_CONFIG_ADDRESS}
       COPROCESSOR_PROXY_TLS_CERT_PATH: /etc/coprocessor-proxy/tls/tls.crt
       COPROCESSOR_PROXY_TLS_KEY_PATH: /etc/coprocessor-proxy/tls/tls.key
+      # The e2e suite reaches the proxy directly, without a front layer.
+      COPROCESSOR_PROXY_FORWARDED_HOPS: "0"
     volumes:
       - ../static/config/coprocessor-proxy:/etc/coprocessor-proxy/tls:ro
     # The proxy resolves the prf-service hostname once, at startup.

@@ -11,6 +11,8 @@ coprocessorProxy:
   # Created by scripts/deploy/deploy-coprocessor.sh.
   tls:
     secretName: coprocessor-proxy-tls
+  # The e2e suite reaches the proxy directly, without a front layer.
+  forwardedHops: 0
   prfServiceNetworkPolicy:
     # The PRF port of prf-service.
     ports:

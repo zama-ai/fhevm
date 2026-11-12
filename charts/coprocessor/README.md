@@ -95,9 +95,11 @@ prf-service holds a request until its output is ready. The timeouts along the pa
 grow from the caller to the proxy: the KMS connector's `PRF_RETRIEVAL_DEADLINE` (see the
 [configuration of RFC-038](https://github.com/zama-ai/tech-spec/blob/main/rfcs/038-coprocessor-prf-output-endpoint.md#configuration);
 kms-connector does not implement it yet), then every timeout of the front layer, then
-`coprocessorProxy.prfServiceResponseTimeoutSeconds` (120 by default). Front-layer defaults are
-lower than 120 s: Cloudflare answers `524` when the origin has not responded within 100 s, and an
-AWS ALB closes a connection idle for 60 s. `prfServiceResponseTimeoutSeconds` is also the shutdown grace period.
+`coprocessorProxy.prfServiceResponseTimeoutSeconds` (120 by default). An AWS ALB closes a connection
+idle for 60 s, below the default. Cloudflare answers `524` when the origin has not responded within
+125 s by default: that is above the proxy's default, so the proxy would answer `504` first. Behind
+Cloudflare, set `prfServiceResponseTimeoutSeconds` above Cloudflare's timeout, for example 130. `prfServiceResponseTimeoutSeconds` is also the
+shutdown grace period.
 
 A request for an output prf-service has already stored still costs a signature check and a
 database read, so each replica limits how many requests per second one signer can send:
@@ -108,6 +110,12 @@ HTTP/1.1 connection per request in flight, and the Service balances connections,
 the replicas, so a signer's limit is up to about `replicas` × `maxRequestsPerSigner`. Adding
 replicas raises it. The `signer` label of `coprocessor_proxy_requests_counter` names the
 authenticated signer, so its `status="429"` series show which connector was limited.
+
+Before checking the signature, each replica also limits how many requests per second one client IP
+can send: `coprocessorProxy.maxRequestsPerIp` (200 by default). Requests above it get the same
+`429`, with the message `client IP rate limit`, and count with an empty `signer` label. The client
+IP comes from `X-Forwarded-For`, or from the connection without a front layer (see [Deployment](#deployment)). IPv6 clients are limited per
+/64, which one host usually holds whole.
 
 Kubernetes sends `SIGTERM` when it starts removing the pod from the Service, and each node keeps
 routing new connections to the pod until that removal reaches it. So on `SIGTERM` the proxy keeps
@@ -131,74 +139,109 @@ when the scheduler can. `coprocessorProxy.podDisruptionBudget.enabled` adds a bu
 `minAvailable: 1`, rendered only with 2 replicas or more, since over a single replica it would block
 every node drain.
 
-### Connection limits
+### Deployment
 
-Pingora 0.9 by itself accepts any number of client connections, and bounds only each read of a
-request head, not the whole head. Each replica therefore limits its client connections, so that
-their memory stays under the container's limit:
+The proxy runs in either of two setups. `coprocessorProxy.forwardedHops` tells it which: it is the
+number of entries the front layers append to `X-Forwarded-For`. Most front layers append one. A
+Google Cloud external Application Load Balancer appends two, the client's address and its own.
+
+| Setup | `forwardedHops` |
+| --- | --- |
+| Clients connect to the proxy directly, or through a TCP (layer 4) load balancer | 0 |
+| An AWS ALB alone, or Cloudflare alone | 1 (default) |
+| Cloudflare, then an AWS ALB | 2 |
+| A Google Cloud external Application Load Balancer alone | 2 |
+
+**Behind HTTP-aware front layers.** Each front layer terminates the client's TLS connection,
+forwards whole requests over its own connections to the next layer, and appends the address it
+received the request from to `X-Forwarded-For`. The proxy takes the client IP from the entry
+`forwardedHops` from the right, the first one the outermost front layer appended, and ignores the
+entries further left, which the client wrote. It forwards that IP to prf-service in its own
+`X-Forwarded-For` and logs it.
+
+- A request without that entry gets `503` with `"code": "unavailable"`: the front layers are not
+  the ones configured. The pods stay Ready.
+  [docs/metrics/metrics.md](../../docs/metrics/metrics.md) has an alarm for it.
+- A `forwardedHops` lower than the number of entries the front layers append takes a front
+  layer's address as the client's, so all clients behind it share one per-IP limit. A higher one
+  takes an address the client chose.
+- An ALB must keep its default `X-Forwarded-For` mode, `append`, and client port preservation
+  (`routing.http.xff_client_port.enabled`) off: with it, each entry is `ip:port`, and every request
+  gets `503`.
+- Each inner front layer, and the proxy, must accept connections only from the layer outside it,
+  for example an ALB whose security group admits only Cloudflare's ranges. A client that reaches an
+  inner layer directly can write the entry the outer layer would have appended. One that reaches
+  the proxy's port 8443 directly writes the whole `X-Forwarded-For`: it picks a new client IP for
+  each request, so the per-IP limit does not hold it, and it keeps its connections after refused
+  requests.
+- Point the front layer's health check at the proxy's healthcheck port (8080, `/healthz`), not at
+  port 8443: a replica at a connection limit refuses new connections on 8443 while it is still
+  ready.
+- The front layer's idle timeout towards the proxy must be shorter than
+  `coprocessorProxy.clientIdleTimeoutSeconds` (65 s by default). Otherwise the front layer can send
+  a request on a connection the proxy is closing, and answers the client with an error (`502` from
+  an ALB, `520` from Cloudflare). An ALB's default is 60 s. Cloudflare keeps idle connections to
+  the origin for 900 s, so with Cloudflare alone set `clientIdleTimeoutSeconds` above 900.
+
+**Without a front layer** (`forwardedHops: 0`). The client IP is the connection's peer address, so
+a load balancer in between must preserve it. A refused request also closes its connection: only an
+authenticated client keeps one open. A client that pools connections should close its idle ones
+before `clientIdleTimeoutSeconds` (65 s by default), or a request it sends as the proxy closes the
+connection fails.
+
+**Connection limits, in both setups.** They protect the replica's memory: Pingora 0.9 by itself
+accepts any number of connections.
 
 - `coprocessorProxy.maxConnections` (4096 by default): the connections a replica holds past their
   TLS handshake. At the limit it refuses new ones before their handshake. A held request takes one
-  connection, so the default allows the most requests prf-service holds at once: 13 connectors ×
-  `maxInFlightPerConnector` (256) = 3328.
+  connection today, so the default allows the most requests prf-service holds at once: 13
+  connectors × `maxInFlightPerConnector` (256) = 3328.
 - `coprocessorProxy.maxNewConnectionsPerSecond` (50 by default): the new connections a replica
-  accepts each second; more are refused before their handshake. Pingora gives a handshake up to
-  60 s, so this bounds the connections still in their handshake to 60 times the value.
+  accepts each second. A handshake can take 60 s, so this bounds the connections still in their
+  handshake to 60 times the value.
+- `coprocessorProxy.maxNewConnectionsPerIp` (10 by default), with `forwardedHops: 0` only: the new
+  connections a replica accepts each second from one client IP (IPv6: one /64). The connections it
+  refuses do not count in `maxNewConnectionsPerSecond`. A connector that opens more in one second
+  sees the excess closed and retries. Behind front layers the only peers are the front layers,
+  so this limit is off.
 - `coprocessorProxy.requestHeadTimeoutSeconds` (2 by default): the time a client has, after its
-  TLS handshake, to send its whole first request head. Pingora buffers up to 1 MiB of a head that
-  is not complete. A connector sends its head at once.
-- The proxy closes the connection after any answer it gives before authentication, so only an
-  authenticated client keeps one past its first head. A connection also closes after
-  `coprocessorProxy.clientIdleTimeoutSeconds` (65 by default) without a request, and after 1000
-  requests, so that long-lived connections spread again over the replicas.
+  TLS handshake, to send its whole first request head. Pingora only bounds each read, and buffers
+  up to 1 MiB of a head that is not complete. A connector sends its head at once.
+- Memory for connections is at most the sum of three terms, about 446 MB with the defaults, under
+  the 512Mi limit (537 MB). Raise the limits and the memory together.
 
-Memory for connections is at most the sum of three terms, about 446 MB with the defaults, under the
-512Mi limit (537 MB). Raise the limits and the memory together.
+  | Connections | Count, at most | Each | With the defaults |
+  | --- | --- | --- | --- |
+  | Held past their handshake | `maxConnections` | 48 KB | 197 MB |
+  | In their handshake | 60 × `maxNewConnectionsPerSecond` | 48 KB | 144 MB |
+  | Sending their first head | `maxNewConnectionsPerSecond` × `requestHeadTimeoutSeconds` | 1 MiB | 105 MB |
 
-| Connections | Count, at most | Each | With the defaults |
-| --- | --- | --- | --- |
-| Held past their handshake | `maxConnections` | 48 KB | 197 MB |
-| In their handshake | 60 × `maxNewConnectionsPerSecond` | 48 KB | 144 MB |
-| Sending their first head | `maxNewConnectionsPerSecond` × `requestHeadTimeoutSeconds` | 1 MiB | 105 MB |
+  The proxy enforces the last term itself: a client can hold its handshakes back and complete them
+  together, so past their handshake, the connections beyond that many waiting for their first head
+  are closed. The 48 KB was measured on connections in their handshake
+  (https://github.com/zama-ai/fhevm-internal/issues/2271). The cost of a held request, with its
+  prf-service connection, was not measured and is assumed equal.
+- A connection closes after `clientIdleTimeoutSeconds` without a request, and after 1000 requests,
+  so that a front layer's long-lived connections spread again over the replicas.
 
-The proxy enforces the last term itself: a client can hold its handshakes back and complete them
-together, so past their handshake, the connections beyond that many waiting for their first head
-are closed. The 48 KB was measured on connections in their handshake
-(https://github.com/zama-ai/fhevm-internal/issues/2271). The cost of a held request, with its
-prf-service connection, was not measured and is assumed equal.
+`maxConnections` and `maxNewConnectionsPerSecond` are shared by all clients. Once new connections
+arrive faster than `maxNewConnectionsPerSecond`, honest clients are refused with the others, while
+the connections already open keep being served. That takes fewer connections than it took to
+exhaust the memory before; in exchange the replica stays up.
 
-These limits are shared by all clients. Once new connections arrive faster than
-`maxNewConnectionsPerSecond`, honest clients are refused with the others, while the connections
-already open keep being served: the replica stays up. The readiness self-check passes the limits,
-so a replica at one of them still shows as ready.
+- With `forwardedHops: 0`, one host cannot do it: `maxNewConnectionsPerIp` stops it first. A flood
+  from many hosts can, and needs network rules or a front layer.
+- Behind front layers, the proxy cannot tell the clients' connections apart. Limiting each client
+  is the front layer's job, and its per-client connection limit must allow a connector's
+  concurrent PRF requests.
+
+The readiness self-check passes these limits, so a replica at one of them still shows as ready.
+
 `coprocessor_proxy_connections_refused_counter`, `coprocessor_proxy_client_connections` and
 `coprocessor_proxy_request_head_timeouts_counter` follow these limits;
-[docs/metrics/metrics.md](../../docs/metrics/metrics.md) gives their alarms.
-
-### Deployment requirement
-
-The proxy authenticates every request before forwarding it and bounds the memory of its
-connections, but it does not limit each client: one client can use up the connection limits that
-all clients share. The proxy must therefore not be reachable directly from the internet. Put it
-behind one of:
-
-- an HTTP-aware layer that terminates the client's TLS connection, receives each request in full
-  before forwarding it, limits connections per client IP, and connects to the proxy over TLS, such
-  as Cloudflare or an HTTP(S) load balancer configured this way;
-- a network allowlist that admits only the callers' addresses (the KMS connectors'), for example a
-  firewall rule in front of a TLS-passthrough exposure.
-
-The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open takes one
-connection: a per-client connection limit must allow the connector's concurrent PRF requests.
-
-A connector's pool, and a front layer, must close their idle connections to the proxy sooner than
-`clientIdleTimeoutSeconds`, for example after 10 s; an AWS ALB's default is 60 s. Otherwise a
-request sent as the proxy closes the connection fails with a connection error, which the client
-then has to retry.
-
-A TCP (layer 4) load balancer without an allowlist is not enough: it forwards every client's
-connections to the proxy unchanged. Every timeout of the front layer must sit between the
-connector's `PRF_RETRIEVAL_DEADLINE` and `prfServiceResponseTimeoutSeconds`, as described above.
+[docs/metrics/metrics.md](../../docs/metrics/metrics.md) gives their alarms. Every timeout of a
+front layer must sit between the connector's `PRF_RETRIEVAL_DEADLINE` and
+`prfServiceResponseTimeoutSeconds`, as described above.
 
 ## PRF service
 

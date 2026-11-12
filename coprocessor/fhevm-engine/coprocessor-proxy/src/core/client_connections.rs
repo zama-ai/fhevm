@@ -8,6 +8,7 @@
 //! head is late. It finds out that the head arrived through the connection's [`FirstHead`], which
 //! [`FirstHeadCallback`] stores in the TLS digest.
 
+use crate::core::http_proxy::rate_key;
 use async_trait::async_trait;
 use pingora::{
     apps::ServerApp,
@@ -63,6 +64,8 @@ static HEAD_TIMEOUTS: LazyLock<IntCounter> = LazyLock::new(|| {
 pub struct ClientConnections {
     max_connections: usize,
     max_new_connections_per_second: isize,
+    /// `None` behind front layers, whose addresses are the only peers.
+    max_new_connections_per_ip: Option<isize>,
     first_head_timeout: Duration,
     /// The connections past their TLS handshake. Those still in it are not counted: Pingora does
     /// not tell when one fails. `max_new_connections_per_second` bounds them instead, since
@@ -70,6 +73,8 @@ pub struct ClientConnections {
     /// the gauge is one per process and the tests run several proxies in one process.
     open: AtomicUsize,
     new_connections: Rate,
+    /// The new connections of each peer IP, so that one host cannot use up `new_connections`.
+    ip_new_connections: Rate,
     /// A permit for each connection past its handshake that waits for its first head:
     /// `max_new_connections_per_second` × `first_head_timeout` of them. The rate alone does not
     /// bound these connections: a client can hold its handshakes back, up to Pingora's 60 s, and
@@ -87,6 +92,7 @@ impl ClientConnections {
     pub fn new(
         max_connections: usize,
         max_new_connections_per_second: u32,
+        max_new_connections_per_ip: Option<u32>,
         first_head_timeout: Duration,
     ) -> Self {
         let first_heads =
@@ -94,9 +100,11 @@ impl ClientConnections {
         Self {
             max_connections,
             max_new_connections_per_second: max_new_connections_per_second as isize,
+            max_new_connections_per_ip: max_new_connections_per_ip.map(|max| max as isize),
             first_head_timeout,
             open: AtomicUsize::new(0),
             new_connections: Rate::new(Duration::from_secs(1)),
+            ip_new_connections: Rate::new(Duration::from_secs(1)),
             first_heads: Semaphore::new((first_heads as usize).max(1)),
             self_check: AtomicBool::new(false),
             self_check_first_head: AtomicBool::new(false),
@@ -136,8 +144,16 @@ impl ConnectionFilter for ClientConnections {
             self.self_check_first_head.store(true, Ordering::Relaxed);
             return true;
         }
+        // A connection its peer's rate refuses does not count in the shared rate: a flood from
+        // one host leaves the other clients their new connections.
+        let over_ip_rate = || {
+            let key = rate_key(peer?.ip().to_canonical());
+            Some(self.ip_new_connections.observe(&key, 1) > self.max_new_connections_per_ip?)
+        };
         let reason = if self.open.load(Ordering::Relaxed) >= self.max_connections {
             "max_connections"
+        } else if over_ip_rate() == Some(true) {
+            "ip_new_connections_rate"
         } else if self.new_connections.observe(&(), 1) > self.max_new_connections_per_second {
             "new_connections_rate"
         } else {
@@ -190,8 +206,8 @@ impl TlsAccept for FirstHeadCallback {
 /// Pingora 0.9 bounds each read of a request head (60 s), not the whole head, so a client can
 /// hold a connection for days by sending a byte a minute. Remove [`FirstHead`],
 /// [`FirstHeadCallback`] and the timer here once Pingora can bound the whole head by itself.
-/// Later heads on a connection are not bounded: only an authenticated client keeps its
-/// connection, and it can hold one with cheap requests anyway.
+/// Later heads on a connection are not bounded: without a front layer only an authenticated
+/// client keeps its connection, and it can hold one with cheap requests anyway.
 pub struct ClientConnectionsApp<A> {
     inner: Arc<A>,
     connections: Arc<ClientConnections>,
@@ -274,7 +290,67 @@ mod tests {
     use super::*;
 
     fn connections(max_connections: usize, max_new_per_second: u32) -> ClientConnections {
-        ClientConnections::new(max_connections, max_new_per_second, Duration::from_secs(10))
+        connections_per_ip(max_connections, max_new_per_second, None)
+    }
+
+    fn connections_per_ip(
+        max_connections: usize,
+        max_new_per_second: u32,
+        max_new_per_ip: Option<u32>,
+    ) -> ClientConnections {
+        let head_timeout = Duration::from_secs(10);
+        ClientConnections::new(
+            max_connections,
+            max_new_per_second,
+            max_new_per_ip,
+            head_timeout,
+        )
+    }
+
+    async fn accepts(connections: &ClientConnections, peer: &str) -> bool {
+        let peer: SocketAddr = peer.parse().unwrap();
+        connections.should_accept(Some(&peer)).await
+    }
+
+    // These tests assume they run within one 1 s window of the rates.
+
+    #[tokio::test]
+    async fn refuses_one_ip_above_its_rate_and_still_admits_another() {
+        let connections = connections_per_ip(1000, 1000, Some(2));
+        assert!(accepts(&connections, "192.0.2.1:1").await);
+        assert!(accepts(&connections, "192.0.2.1:2").await);
+        assert!(!accepts(&connections, "192.0.2.1:3").await);
+        assert!(accepts(&connections, "192.0.2.2:1").await);
+        // An IPv4 client of a dual-stack listener is the same client.
+        assert!(!accepts(&connections, "[::ffff:192.0.2.1]:4").await);
+    }
+
+    #[tokio::test]
+    async fn counts_the_new_connections_of_an_ipv6_64_together() {
+        let connections = connections_per_ip(1000, 1000, Some(1));
+        assert!(accepts(&connections, "[2001:db8:0:1::1]:1").await);
+        assert!(!accepts(&connections, "[2001:db8:0:1::2]:1").await);
+        assert!(accepts(&connections, "[2001:db8:0:2::1]:1").await);
+    }
+
+    #[tokio::test]
+    async fn connections_refused_for_their_ip_leave_the_shared_rate_to_others() {
+        let connections = connections_per_ip(1000, 3, Some(1));
+        for port in 1..=20 {
+            let accepted = accepts(&connections, &format!("192.0.2.1:{port}")).await;
+            assert_eq!(accepted, port == 1);
+        }
+        assert!(accepts(&connections, "192.0.2.2:1").await);
+        assert!(accepts(&connections, "192.0.2.3:1").await);
+        assert!(!accepts(&connections, "192.0.2.4:1").await);
+    }
+
+    #[tokio::test]
+    async fn does_not_limit_ips_behind_front_layers() {
+        let connections = connections_per_ip(1000, 1000, None);
+        for port in 1..=20 {
+            assert!(accepts(&connections, &format!("192.0.2.1:{port}")).await);
+        }
     }
 
     #[tokio::test]
@@ -331,7 +407,7 @@ mod tests {
     #[test]
     fn lets_rate_times_head_timeout_connections_wait_for_their_first_head() {
         let first_heads = |per_second, timeout| {
-            ClientConnections::new(1000, per_second, timeout)
+            ClientConnections::new(1000, per_second, None, timeout)
                 .first_heads
                 .available_permits()
         };

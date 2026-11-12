@@ -519,6 +519,8 @@ instances:
       });
       expect(proxy?.env_file).toEqual([envPath("coprocessor-proxy.1")]);
       expect(proxy?.environment?.COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS).toBe("0x00000000000000000000000000000000000000c1");
+      // No front layer in the stack: without this, every PRF request gets 503.
+      expect(proxy?.environment?.COPROCESSOR_PROXY_FORWARDED_HOPS).toBe("0");
       expect(proxy?.volumes?.[0]).toMatch(/\/static\/config\/coprocessor-proxy:\/etc\/coprocessor-proxy\/tls:ro$/);
       // The seeder writes into instance 1's database, after its migration.
       expect(seed?.env_file).toEqual([envPath("coprocessor.1")]);

@@ -70,6 +70,21 @@ pub struct Config {
         default_value = "200"
     )]
     pub max_requests_per_signer: NonZeroU32,
+    /// How many requests one client IP can send to this proxy replica per second; more are
+    /// answered `429` before their signature is checked.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_MAX_REQUESTS_PER_IP",
+        default_value = "200"
+    )]
+    pub max_requests_per_ip: NonZeroU32,
+    /// How many entries the HTTP-aware front layers append to `X-Forwarded-For`: usually one
+    /// each, the address the layer received the request from. The client's IP is the entry this
+    /// many from the right, the first one the outermost front layer appended; a request without
+    /// it is answered `503`. 0: clients connect directly or through a TCP load balancer, and the
+    /// client's IP is the connection's peer address.
+    #[arg(long, env = "COPROCESSOR_PROXY_FORWARDED_HOPS", default_value_t = 1)]
+    pub forwarded_hops: usize,
     /// How many client connections this replica holds past their TLS handshake; while it holds
     /// that many, it refuses new ones before their handshake. A held request takes one
     /// connection. The chart README derives the default.
@@ -89,6 +104,16 @@ pub struct Config {
         default_value = "50"
     )]
     pub max_new_connections_per_second: NonZeroU32,
+    /// How many new connections this replica accepts per second from one client IP when
+    /// `forwarded_hops` is 0; more are refused before their TLS handshake, and do not count in
+    /// `max_new_connections_per_second`. Behind front layers the peers are the front layers, and
+    /// this limit is off.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_IP",
+        default_value = "10"
+    )]
+    pub max_new_connections_per_ip: NonZeroU32,
 
     /// The `host:port` address of prf-service, resolved once at startup: its Kubernetes Service,
     /// which routes to the ready pods.
@@ -145,8 +170,9 @@ pub struct Config {
     )]
     pub request_head_timeout: Duration,
     /// How long a client connection can stay idle between two requests before the proxy closes
-    /// it. A client or front layer must close its idle connections to the proxy sooner: otherwise
-    /// a request it sends as the proxy closes the connection fails. AWS ALB's default is 60 s.
+    /// it. A front layer must close its idle connections to the proxy sooner: otherwise a request
+    /// it sends as the proxy closes the connection fails. AWS ALB's default is 60 s; Cloudflare's
+    /// is 900 s.
     #[arg(
         long,
         env = "COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT",
@@ -273,8 +299,11 @@ mod tests {
         assert_eq!(config.client_idle_timeout, Duration::from_secs(65));
         assert_eq!(config.threads.get(), 2);
         assert_eq!(config.max_requests_per_signer.get(), 200);
+        assert_eq!(config.max_requests_per_ip.get(), 200);
+        assert_eq!(config.forwarded_hops, 1);
         assert_eq!(config.max_connections.get(), 4096);
         assert_eq!(config.max_new_connections_per_second.get(), 50);
+        assert_eq!(config.max_new_connections_per_ip.get(), 10);
         assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());
     }
 
@@ -300,8 +329,11 @@ mod tests {
                 "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
             ),
             ("COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER", "50"),
+            ("COPROCESSOR_PROXY_MAX_REQUESTS_PER_IP", "60"),
+            ("COPROCESSOR_PROXY_FORWARDED_HOPS", "2"),
             ("COPROCESSOR_PROXY_MAX_CONNECTIONS", "1000"),
             ("COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND", "20"),
+            ("COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_IP", "4"),
             (
                 "COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS",
                 "prf-service-1:8090",
@@ -346,8 +378,11 @@ mod tests {
             Address::repeat_byte(0xa1)
         );
         assert_eq!(config.max_requests_per_signer.get(), 50);
+        assert_eq!(config.max_requests_per_ip.get(), 60);
+        assert_eq!(config.forwarded_hops, 2);
         assert_eq!(config.max_connections.get(), 1000);
         assert_eq!(config.max_new_connections_per_second.get(), 20);
+        assert_eq!(config.max_new_connections_per_ip.get(), 4);
         assert_eq!(config.prf_service_address, "prf-service-1:8090");
         assert_eq!(config.prf_service_connect_timeout, Duration::from_secs(1));
         assert_eq!(config.prf_service_response_timeout, Duration::from_secs(45));

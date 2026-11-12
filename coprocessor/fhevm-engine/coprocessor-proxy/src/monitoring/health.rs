@@ -31,8 +31,11 @@ impl State {
     ) -> anyhow::Result<Self> {
         // The proxy's certificate is issued for its public hostname, not for the loopback
         // address used here, so its verification is disabled for this client only.
+        // Each check opens its own connection: a reused one would leave the pass of
+        // `admit_self_check` to another loopback connection.
         let loopback_client = reqwest::Client::builder()
             .tls_danger_accept_invalid_certs(true)
+            .pool_max_idle_per_host(0)
             .build()
             .context("Failed to build the healthcheck HTTP client")?;
 
@@ -52,8 +55,7 @@ impl State {
     /// TLS connections and answers HTTP requests, not the routing.
     async fn tls_listener_healthcheck(&self) -> Result<(), String> {
         let url = &self.self_check_url;
-        // A replica at one of its connection limits must still show as ready. The proxy closes
-        // the connection after its `404`, so each check opens a new one and uses the pass itself.
+        // A replica at one of its connection limits must still show as ready.
         self.client_connections.admit_self_check();
         let request = self.loopback_client.get(url.clone()).send();
         match tokio::time::timeout(self.healthcheck_timeout, request).await {

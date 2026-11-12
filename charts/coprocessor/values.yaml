@@ -2020,6 +2020,16 @@ coprocessorProxy:
   # The Service balances connections, not requests, and a connector opens one per in-flight
   # request, so a signer's limit is up to about `replicas` times this: adding replicas raises it.
   maxRequestsPerSigner: 200
+  # Requests per second each client IP (IPv6: each /64) can send to one replica; more get `429`
+  # before their signature is checked. At least 1.
+  maxRequestsPerIp: 200
+  # Number of entries the HTTP-aware front layers in front of the proxy append to
+  # X-Forwarded-For: 1 for an AWS ALB or Cloudflare alone, 2 for Cloudflare in front of an ALB,
+  # 2 for a Google Cloud external Application Load Balancer, which appends two. The client IP is
+  # the entry this many from the right; a request without it gets `503`. With 1 or more, only
+  # the front layer may reach the proxy's port. 0 when clients connect directly or through a
+  # TCP load balancer: the client IP is then the connection's peer address.
+  forwardedHops: 1
   # Client connections one replica holds past their TLS handshake; at that many, it refuses new
   # ones before their handshake. At least 1. A held request takes one connection; the README
   # derives the default.
@@ -2029,15 +2039,20 @@ coprocessorProxy:
   # handshake at once. With maxConnections and requestHeadTimeoutSeconds, it bounds the memory
   # the connections take; the README gives the bound. Raise them and the memory limit together.
   maxNewConnectionsPerSecond: 50
+  # With forwardedHops 0: new connections one replica accepts per second from one client IP
+  # (IPv6: one /64); more are refused before their TLS handshake and do not count in
+  # maxNewConnectionsPerSecond, so one host cannot keep the others out. At least 1. Not applied
+  # behind front layers, whose addresses are the only peers.
+  maxNewConnectionsPerIp: 10
   # Time a client has, once its TLS handshake completes, to send its first request head; the
   # connection is closed after. At least 1. Pingora buffers up to 1 MiB of an unfinished head,
   # so at most maxNewConnectionsPerSecond times this many connections wait for their first head
   # at once; more are closed.
   requestHeadTimeoutSeconds: 2
   # Time a client connection can stay idle between two requests before the proxy closes it. At
-  # least 1. A client's pool, and a front layer, must close its idle connections to the proxy
-  # sooner (AWS ALB: 60 s by default), or a request it sends as the proxy closes the connection
-  # fails.
+  # least 1. The front layer's idle timeout towards the proxy must be shorter (AWS ALB: 60 s by
+  # default; Cloudflare: 900 s, so above 900 with Cloudflare alone), or a request it sends as the
+  # proxy closes the connection fails.
   clientIdleTimeoutSeconds: 65
 
   # Ingress allowed from this release's proxy pods to prf-service.

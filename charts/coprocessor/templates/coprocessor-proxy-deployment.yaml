@@ -30,11 +30,20 @@
 {{- if lt (int $proxy.requestHeadTimeoutSeconds) 1 }}
 {{- fail "coprocessorProxy.requestHeadTimeoutSeconds must be a whole number of seconds, at least 1: the head deadline cannot be disabled" }}
 {{- end }}
+{{- if lt (int $proxy.maxRequestsPerIp) 1 }}
+{{- fail "coprocessorProxy.maxRequestsPerIp must be at least 1" }}
+{{- end }}
 {{- if lt (int $proxy.maxConnections) 1 }}
 {{- fail "coprocessorProxy.maxConnections must be at least 1" }}
 {{- end }}
 {{- if lt (int $proxy.maxNewConnectionsPerSecond) 1 }}
 {{- fail "coprocessorProxy.maxNewConnectionsPerSecond must be at least 1" }}
+{{- end }}
+{{- if lt (int $proxy.maxNewConnectionsPerIp) 1 }}
+{{- fail "coprocessorProxy.maxNewConnectionsPerIp must be at least 1" }}
+{{- end }}
+{{- if lt (int $proxy.forwardedHops) 0 }}
+{{- fail "coprocessorProxy.forwardedHops must be the number of front layers, 0 or more" }}
 {{- end }}
 {{- if lt (int $proxy.clientIdleTimeoutSeconds) 1 }}
 {{- fail "coprocessorProxy.clientIdleTimeoutSeconds must be a whole number of seconds, at least 1" }}
@@ -173,10 +182,16 @@ spec:
               value: "{{ int $proxy.prfServiceResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER
               value: {{ int $proxy.maxRequestsPerSigner | quote }}
+            - name: COPROCESSOR_PROXY_MAX_REQUESTS_PER_IP
+              value: {{ int $proxy.maxRequestsPerIp | quote }}
+            - name: COPROCESSOR_PROXY_FORWARDED_HOPS
+              value: {{ int $proxy.forwardedHops | quote }}
             - name: COPROCESSOR_PROXY_MAX_CONNECTIONS
               value: {{ int $proxy.maxConnections | quote }}
             - name: COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND
               value: {{ int $proxy.maxNewConnectionsPerSecond | quote }}
+            - name: COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_IP
+              value: {{ int $proxy.maxNewConnectionsPerIp | quote }}
             - name: COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT
               value: "{{ int $proxy.requestHeadTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT
