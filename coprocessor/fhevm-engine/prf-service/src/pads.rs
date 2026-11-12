@@ -85,20 +85,20 @@ impl Admissions {
         path: &PrfOutputRef,
         connector: Address,
     ) -> anyhow::Result<Admission> {
-        if let Some(state) = read(&self.pool, path).await? {
-            if state != PadState::Pending {
-                return Ok(Admission::Existing(state));
-            }
-            if is_expired(&self.pool, path, self.pending_max_age).await? {
-                return Ok(Admission::Expired);
-            }
-            if !lane_is_live(&self.pool, path.prf_id, self.lane_heartbeat_max_age).await? {
-                return Ok(Admission::NoLane);
-            }
-            return Ok(Admission::Existing(state));
-        }
-        if !lane_is_live(&self.pool, path.prf_id, self.lane_heartbeat_max_age).await? {
-            return Ok(Admission::NoLane);
+        let row = read_for_admission(
+            &self.pool,
+            path,
+            self.pending_max_age,
+            self.lane_heartbeat_max_age,
+        )
+        .await?;
+        match row.state {
+            // A complete or failed row is served also when the lane is down.
+            Some(PadState::Pending) if row.expired => return Ok(Admission::Expired),
+            Some(PadState::Pending) if !row.lane_live => return Ok(Admission::NoLane),
+            Some(state) => return Ok(Admission::Existing(state)),
+            None if !row.lane_live => return Ok(Admission::NoLane),
+            None => {}
         }
         // Wait in memory: a request that waits for the lock in Postgres holds a connection.
         let slot = self.add_slot(connector).await;
@@ -209,40 +209,64 @@ async fn add(
     })
 }
 
-/// Whether the lane of `prf_id` passed its start check and has a heartbeat newer than `max_age`.
-async fn lane_is_live(pool: &PgPool, prf_id: u16, max_age: Duration) -> anyhow::Result<bool> {
-    let live = sqlx::query_scalar!(
-        r#"SELECT EXISTS (
-               SELECT 1 FROM prf_lanes
-                WHERE prf_instance = $1 AND ready_at IS NOT NULL
-                  AND heartbeat_at > NOW() - make_interval(secs => $2)
-           ) AS "live!""#,
-        i32::from(prf_id),
-        max_age.as_secs_f64(),
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok(live)
+/// The row of a request, and the lane of its instance.
+struct AdmissionRow {
+    state: Option<PadState>,
+    /// The row is older than `pending_max_age`.
+    expired: bool,
+    /// The lane passed its start check and has a heartbeat newer than `lane_heartbeat_max_age`.
+    lane_live: bool,
 }
 
-/// Whether the row of `path` is older than `pending_max_age`. False if there is no row.
-async fn is_expired(
+/// Reads the row of `path`, its age and the lane of its instance, in one query.
+async fn read_for_admission(
     pool: &PgPool,
     path: &PrfOutputRef,
     pending_max_age: Duration,
-) -> anyhow::Result<bool> {
-    let expired = sqlx::query_scalar!(
-        r#"SELECT created_at <= NOW() - make_interval(secs => $4) AS "expired!"
-             FROM pads
-            WHERE prf_instance = $1 AND label = $2 AND pad_length = $3"#,
+    lane_heartbeat_max_age: Duration,
+) -> anyhow::Result<AdmissionRow> {
+    let row = sqlx::query!(
+        r#"SELECT p.is_error AS "is_error?", OCTET_LENGTH(p.ciphertext128) AS body_length,
+                  p.attestation_version AS "attestation_version?",
+                  p.ciphertext_digest AS "ciphertext_digest?",
+                  p.ciphertext128_digest AS "ciphertext128_digest?", p.signer AS "signer?",
+                  p.signature AS "signature?",
+                  COALESCE(p.created_at <= NOW() - make_interval(secs => $4), FALSE) AS "expired!",
+                  EXISTS (
+                      SELECT 1 FROM prf_lanes
+                       WHERE prf_instance = $1 AND ready_at IS NOT NULL
+                         AND heartbeat_at > NOW() - make_interval(secs => $5)
+                  ) AS "lane_live!"
+             FROM (VALUES (1)) AS one
+             LEFT JOIN pads p
+               ON p.prf_instance = $1 AND p.label = $2 AND p.pad_length = $3"#,
         i32::from(path.prf_id),
         path.label.as_slice(),
         i32::from(path.pad_length),
         pending_max_age.as_secs_f64(),
+        lane_heartbeat_max_age.as_secs_f64(),
     )
-    .fetch_optional(pool)
+    .fetch_one(pool)
     .await?;
-    Ok(expired.unwrap_or(false))
+    let state = match row.is_error {
+        None => None,
+        Some(is_error) => Some(pad_state(
+            is_error,
+            row.body_length,
+            attestation(
+                row.attestation_version,
+                row.ciphertext_digest,
+                row.ciphertext128_digest,
+                row.signer,
+                row.signature,
+            )?,
+        )?),
+    };
+    Ok(AdmissionRow {
+        state,
+        expired: row.expired,
+        lane_live: row.lane_live,
+    })
 }
 
 /// Reads the row of `path`, if it exists, without its body.
@@ -262,9 +286,6 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
         return Ok(None);
     };
 
-    if row.is_error {
-        return Ok(Some(PadState::Failed));
-    }
     let attestation = attestation(
         row.attestation_version,
         row.ciphertext_digest,
@@ -272,13 +293,24 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
         row.signer,
         row.signature,
     )?;
-    let (Some(body_length), Some(attestation)) = (row.body_length, attestation) else {
-        return Ok(Some(PadState::Pending));
+    pad_state(row.is_error, row.body_length, attestation).map(Some)
+}
+
+fn pad_state(
+    is_error: bool,
+    body_length: Option<i32>,
+    attestation: Option<PrfOutputAttestation>,
+) -> anyhow::Result<PadState> {
+    if is_error {
+        return Ok(PadState::Failed);
+    }
+    let (Some(body_length), Some(attestation)) = (body_length, attestation) else {
+        return Ok(PadState::Pending);
     };
-    Ok(Some(PadState::Complete(PadOutput {
+    Ok(PadState::Complete(PadOutput {
         body_length: u64::try_from(body_length).context("body_length")?,
         attestation,
-    })))
+    }))
 }
 
 /// Reads the attestation and the body of the row of `path` in one SELECT, so they match.
