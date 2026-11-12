@@ -13,15 +13,16 @@ source "${script_dir}/../lib.sh"
 
 ######################################################################
 # coprocessor-proxy and prf-service, except on blue-green stacks: one of each
-# per party, in its coprocessor-<i> release (values-coprocessor-proxy-e2e.yaml). The pad-worker lane of PRF instance 0
-# runs in the pad release coprocessor-<i>-pads (values-coprocessor-pads-e2e.yaml).
+# per party, in its coprocessor-<i> release (values-coprocessor-proxy-e2e.yaml).
+# The pad-worker of PRF instance 0 runs in the pad release coprocessor-<i>-pads
+# (values-coprocessor-pads-e2e.yaml).
 # What the e2e suite needs (test-suite/e2e/test/coprocessorProxy) goes in
 # the coprocessor-proxy ConfigMap:
 #   urls                      COPROCESSOR_PROXY_URLS, one https proxy URL per party
 #   signer-addresses          COPROCESSOR_SIGNER_ADDRESSES, the audience of each proxy and the
 #                             signer the suite expects on each PRF output attestation
 #   prf-service-metrics-urls  PRF_SERVICE_METRICS_URLS, each prf-service's request metric
-#   pad-worker-metrics-urls   PAD_WORKER_METRICS_URLS, each pad-worker lane's metrics
+#   pad-worker-metrics-urls   PAD_WORKER_METRICS_URLS, each pad-worker's metrics
 #   metrics-urls              COPROCESSOR_PROXY_METRICS_URLS
 #   ca.crt                    the proxies' certificate
 ######################################################################
@@ -70,18 +71,14 @@ SELECT format('ALTER ROLE %I PASSWORD %L', :'user', :'password') \gexec
 SQL
 }
 
-# Waits until the lane of PRF instance 0 of party i is ready.
-wait_pad_lane() {
-  local i="$1"
-  for _ in $(seq 1 60); do
-    if [[ "$(psql_owner "${i}" -c 'SELECT heartbeat_at IS NOT NULL FROM prf_lanes WHERE prf_instance = 0')" == "t" ]]; then
-      return
-    fi
-    sleep 5
-  done
-  kubectl logs "deploy/coprocessor-${i}-pads-pad-worker-0" -n "${NAMESPACE}" --tail=50 || true
-  echo "::error::the pad-worker lane of party ${i} is not ready after 5 min"
-  exit 1
+# Waits until the pad-worker of PRF instance 0 of party i is ready.
+wait_pad_worker() {
+  local i="$1" deploy="deploy/coprocessor-${1}-pads-pad-worker-0"
+  if ! kubectl rollout status "${deploy}" -n "${NAMESPACE}" --timeout=5m; then
+    kubectl logs "${deploy}" -n "${NAMESPACE}" --tail=50 || true
+    echo "::error::the pad-worker of party ${i} is not ready after 5 min"
+    exit 1
+  fi
 }
 
 # One self-signed certificate for every party's proxy, as for the kms-connector proxies.
@@ -276,7 +273,7 @@ if [[ "${with_proxy}" == "true" ]]; then
       --set-string "padWorkerShared.wallet.secret.value=$(coproc_key "${i}")"
   done
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
-    wait_pad_lane "${i}"
+    wait_pad_worker "${i}"
   done
   urls="" signers="" prf_metrics_urls="" pad_metrics_urls="" metrics_urls=""
   for i in $(seq 1 "${NB_COPROCESSOR}"); do

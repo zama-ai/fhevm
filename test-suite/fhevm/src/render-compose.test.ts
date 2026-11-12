@@ -444,7 +444,7 @@ describe("render-compose", () => {
     expect(modernServices).toContain("coprocessor-upgrade-controller");
   });
 
-  test("requests a coprocessor-proxy and its pad-worker lane per coprocessor only when the bundle pins the proxy, prf-service and pad-worker", () => {
+  test("requests a coprocessor-proxy and its pad-worker per coprocessor only when the bundle pins the proxy, prf-service and pad-worker", () => {
     const without = (key: string): State => ({
       ...state,
       versions: {
@@ -468,7 +468,7 @@ describe("render-compose", () => {
     }
   });
 
-  test("gives each coprocessor its own proxy, prf-service and pad-worker lane, on the bundle's images", async () => {
+  test("gives each coprocessor its own proxy, prf-service and pad-worker, on the bundle's images", async () => {
     // Instance 1 runs a coprocessor release by tag, which may predate the proxy.
     const pinned: State = {
       ...state,
@@ -506,20 +506,20 @@ instances:
         >;
       };
       const proxy = doc.services["coprocessor1-proxy"];
-      const lane = doc.services["coprocessor1-pad-worker"];
+      const padWorker = doc.services["coprocessor1-pad-worker"];
       expect(doc.services["coprocessor1-tfhe-worker"]?.image).toMatch(/:v0\.15\.0$/);
       expect(proxy?.image).toBe("ghcr.io/zama-ai/fhevm/coprocessor/coprocessor-proxy:${COPROCESSOR_PROXY_VERSION}");
       expect(doc.services["coprocessor1-prf-service"]?.image).toBe(
         "ghcr.io/zama-ai/fhevm/coprocessor/prf-service:${COPROCESSOR_PRF_SERVICE_VERSION}",
       );
-      expect(lane?.image).toBe("ghcr.io/zama-ai/fhevm/coprocessor/pad-worker:${COPROCESSOR_PAD_WORKER_VERSION}");
+      expect(padWorker?.image).toBe("ghcr.io/zama-ai/fhevm/coprocessor/pad-worker:${COPROCESSOR_PAD_WORKER_VERSION}");
       expect(proxy?.depends_on).toEqual({ "coprocessor1-prf-service": { condition: "service_started" } });
       expect(proxy?.env_file).toEqual([envPath("coprocessor-proxy.1")]);
       expect(proxy?.environment?.COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS).toBe("0x00000000000000000000000000000000000000c1");
       expect(proxy?.volumes?.[0]).toMatch(/\/static\/config\/coprocessor-proxy:\/etc\/coprocessor-proxy\/tls:ro$/);
-      // The lane computes into instance 1's database, after its migration, as the pad_worker role.
-      expect(lane?.env_file).toEqual([envPath("coprocessor-pad-worker.1")]);
-      expect(lane?.depends_on).toEqual({ "coprocessor1-db-migration": { condition: "service_completed_successfully" } });
+      // The pad-worker computes into instance 1's database, after its migration, as the pad_worker role.
+      expect(padWorker?.env_file).toEqual([envPath("coprocessor-pad-worker.1")]);
+      expect(padWorker?.depends_on).toEqual({ "coprocessor1-db-migration": { condition: "service_completed_successfully" } });
       // prf-service logs in as the prf_service role, without the coprocessor's env.
       expect(doc.services["coprocessor1-prf-service"]?.env_file).toEqual([envPath("coprocessor-prf-service.1")]);
     });

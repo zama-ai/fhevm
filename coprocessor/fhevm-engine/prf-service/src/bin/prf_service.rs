@@ -68,10 +68,6 @@ struct Args {
     #[arg(long, env = "PAD_PENDING_MAX_AGE", default_value = "10m", value_parser = humantime::parse_duration)]
     pad_pending_max_age: Duration,
 
-    /// A lane with an older heartbeat is down: new requests for it get 503.
-    #[arg(long, env = "PAD_LANE_HEARTBEAT_MAX_AGE", default_value = "30s", value_parser = humantime::parse_duration)]
-    lane_heartbeat_max_age: Duration,
-
     /// Time to serve after SIGTERM, closing each connection after its response, before the stop.
     #[arg(long, env = "PRF_SHUTDOWN_DELAY", default_value = "0s", value_parser = humantime::parse_duration)]
     shutdown_delay: Duration,
@@ -135,7 +131,6 @@ async fn main() -> anyhow::Result<()> {
         max_concurrent_per_connector = args.max_concurrent_per_connector,
         max_in_flight_per_connector = args.max_in_flight_per_connector,
         pad_pending_max_age = ?args.pad_pending_max_age,
-        lane_heartbeat_max_age = ?args.lane_heartbeat_max_age,
         max_adds_per_connector = MAX_ADDS_PER_CONNECTOR,
         pad_poll_interval = ?PAD_POLL_INTERVAL,
         shutdown_delay = ?args.shutdown_delay,
@@ -166,7 +161,6 @@ async fn main() -> anyhow::Result<()> {
             max_body_bytes: args.max_body_bytes,
             max_body_bytes_per_connector: args.max_body_bytes_per_connector,
             pad_pending_max_age: args.pad_pending_max_age,
-            lane_heartbeat_max_age: args.lane_heartbeat_max_age,
         },
         pool,
         cancel_token.clone(),

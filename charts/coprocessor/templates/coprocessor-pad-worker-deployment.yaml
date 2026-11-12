@@ -1,7 +1,7 @@
-{{- /* One lane for each PRF instance. Only the pad release of an operator sets `padLanes`. */}}
+{{- /* One pad-worker for each PRF instance. Only the pad release of an operator sets `padWorkers`. */}}
 {{- $component := .Values.padWorkerShared -}}
-{{- if .Values.padLanes }}
-{{- /* The commonConfig user owns every table: the lanes must use their own role. */}}
+{{- if .Values.padWorkers }}
+{{- /* The commonConfig user owns every table: the pad-workers must use their own role. */}}
 {{- if not (or $component.databaseUser.value $component.databaseUser.valueFrom) }}
 {{- fail "padWorkerShared.databaseUser must name the pad_worker role" }}
 {{- end }}
@@ -13,23 +13,23 @@
 {{- end }}
 {{- end }}
 {{- $seen := dict }}
-{{- range $index, $lane := .Values.padLanes }}
-{{- if or (not (regexMatch "^[0-9]+$" (toString $lane.prfId))) (gt (int $lane.prfId) 65535) }}
-{{- fail (printf "padLanes[%d].prfId must be a number from 0 to 65535" $index) }}
+{{- range $index, $worker := .Values.padWorkers }}
+{{- if or (not (regexMatch "^[0-9]+$" (toString $worker.prfId))) (gt (int $worker.prfId) 65535) }}
+{{- fail (printf "padWorkers[%d].prfId must be a number from 0 to 65535" $index) }}
 {{- end }}
-{{- if hasKey $seen (toString $lane.prfId) }}
-{{- fail (printf "padLanes[%d].prfId %v has another lane" $index $lane.prfId) }}
+{{- if hasKey $seen (toString $worker.prfId) }}
+{{- fail (printf "padWorkers[%d].prfId %v has another pad-worker" $index $worker.prfId) }}
 {{- end }}
-{{- $_ := set $seen (toString $lane.prfId) true }}
-{{- if not $lane.keyId }}
-{{- fail (printf "padLanes[%d].keyId is required" $index) }}
+{{- $_ := set $seen (toString $worker.prfId) true }}
+{{- if not $worker.keyId }}
+{{- fail (printf "padWorkers[%d].keyId is required" $index) }}
 {{- end }}
 {{- /* Quoted: YAML reads a large unquoted ID as a float, and loses digits. */}}
-{{- if not (and (kindIs "string" $lane.keyId) (regexMatch "^(0x[0-9a-fA-F]{1,64}|[0-9]{1,78})$" $lane.keyId)) }}
-{{- fail (printf "padLanes[%d].keyId must be a quoted decimal or 0x hex key ID" $index) }}
+{{- if not (and (kindIs "string" $worker.keyId) (regexMatch "^(0x[0-9a-fA-F]{1,64}|[0-9]{1,78})$" $worker.keyId)) }}
+{{- fail (printf "padWorkers[%d].keyId must be a quoted decimal or 0x hex key ID" $index) }}
 {{- end }}
-{{- $name := printf "%s-pad-worker-%d" $.Release.Name (int $lane.prfId) | trunc 63 | trimSuffix "-" }}
-{{- $image := mergeOverwrite (deepCopy $component.image) ($lane.image | default dict) }}
+{{- $name := printf "%s-pad-worker-%d" $.Release.Name (int $worker.prfId) | trunc 63 | trimSuffix "-" }}
+{{- $image := mergeOverwrite (deepCopy $component.image) ($worker.image | default dict) }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -37,7 +37,7 @@ metadata:
   labels:
     app: coprocessor-pad-worker
     app.kubernetes.io/name: {{ $name }}
-    prf-instance: {{ int $lane.prfId | quote }}
+    prf-instance: {{ int $worker.prfId | quote }}
   name: {{ $name }}
 spec:
   replicas: {{ $component.replicas }}
@@ -45,7 +45,7 @@ spec:
     matchLabels:
       app: coprocessor-pad-worker
       app.kubernetes.io/name: {{ $name }}
-      prf-instance: {{ int $lane.prfId | quote }}
+      prf-instance: {{ int $worker.prfId | quote }}
       {{- include "coprocessor.extraSelectorLabels" $ | nindent 6 }}
   {{- with $component.updateStrategy }}
   strategy:
@@ -56,7 +56,7 @@ spec:
       labels:
         app: coprocessor-pad-worker
         app.kubernetes.io/name: {{ $name }}
-        prf-instance: {{ int $lane.prfId | quote }}
+        prf-instance: {{ int $worker.prfId | quote }}
         {{- include "coprocessor.extraSelectorLabels" $ | nindent 8 }}
         {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -72,7 +72,7 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- /* Above the 20 s drain of the lane on a stop. */}}
+      {{- /* Above the 20 s drain of the pad-worker on a stop. */}}
       terminationGracePeriodSeconds: 30
       {{- with $component.nodeSelector }}
       nodeSelector:
@@ -94,8 +94,8 @@ spec:
           image: {{ $image.name }}:{{ $image.tag }}
           command: ["pad-worker"]
           args:
-            - --prf-instance={{ int $lane.prfId }}
-            - --prf-key-id={{ $lane.keyId }}
+            - --prf-instance={{ int $worker.prfId }}
+            - --prf-key-id={{ $worker.keyId }}
             - --database-url=$(DATABASE_URL)
             - --s3-bucket=$(S3_BUCKET_NAME)
             {{- if $component.wallet.awsKms.enabled }}
@@ -116,10 +116,10 @@ spec:
           env:
             - name: PAD_DATABASE_POOL_SIZE
               value: {{ $component.databasePoolSize | quote }}
-            {{- /* Env, not a flag: a lane keeps an older image, which ignores an unknown env var. */}}
+            {{- /* Env, not a flag: a pad-worker keeps an older image, which ignores an unknown env var. */}}
             - name: PAD_CT64_MAX_AGE
               value: {{ printf "%ds" (int $component.config.ct64MaxAgeSeconds) | quote }}
-            {{- /* The pad_worker role: it writes only the outputs and the lane state. */}}
+            {{- /* The pad_worker role: it writes only the outputs. */}}
             {{- with $component.databaseUser }}
             - name: DATABASE_USER
               {{- if .value }}
@@ -206,7 +206,7 @@ spec:
           {{- with $component.env }}
             {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
           {{- end }}
-          {{- /* Only the health and metrics ports: nothing calls a lane. */}}
+          {{- /* Only the health and metrics ports: nothing calls a pad-worker. */}}
           ports:
             - name: healthcheck
               containerPort: {{ $component.ports.healthcheck }}
@@ -245,7 +245,7 @@ spec:
   selector:
     app: coprocessor-pad-worker
     app.kubernetes.io/name: {{ $name }}
-    prf-instance: {{ int $lane.prfId | quote }}
+    prf-instance: {{ int $worker.prfId | quote }}
     {{- include "coprocessor.extraSelectorLabels" $ | nindent 4 }}
   type: ClusterIP
 {{- if $component.serviceMonitor.enabled }}

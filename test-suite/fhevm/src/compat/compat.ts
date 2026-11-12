@@ -489,8 +489,9 @@ export const supportsCoprocessorProxy = (state: Pick<CompatState, "versions" | "
   );
 
 /**
- * Whether a stack runs coprocessor-proxy: the bundle has the proxy, prf-service and the pad-worker that
- * computes the outputs, and the stack is not blue-green (one proxy per fleet comes later). Takes a state (`scenario`) or a stack spec (`blueGreen`).
+ * Whether a stack runs coprocessor-proxy: the bundle has the proxy, prf-service and pad-worker, and
+ * the stack is not blue-green (one proxy per fleet comes later). Takes a state (`scenario`) or a
+ * stack spec (`blueGreen`).
  */
 export const runsCoprocessorProxy = (
   state: Pick<CompatState, "versions" | "overrides"> & { scenario?: { kind: string }; blueGreen?: unknown },

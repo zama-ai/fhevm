@@ -46,8 +46,8 @@ const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
 
 /** The object store container: it has curl, which the coprocessor images do not have. */
 const OBJECT_STORE_CONTAINER = "fhevm-object-store";
-/** The pad-worker log line once the lane claims rows. */
-const PAD_WORKER_READY = /Lane ready/;
+/** The pad-worker log line once it listens for rows. */
+const PAD_WORKER_READY = /Pad-worker ready/;
 
 /** The default `/healthz` port of coprocessor-proxy and prf-service. */
 const COPROCESSOR_PROXY_HEALTHCHECK_PORT = 8080;
