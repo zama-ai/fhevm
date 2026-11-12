@@ -50,8 +50,12 @@ needs in `coprocessorProxy.env`.
 A NetworkPolicy selects the prf-service pods with `prfServiceNetworkPolicy.podSelector` and allows
 only two kinds of ingress: this release's proxy pods to `prfService.ports.http` (the PRF port), and
 the peers in `prfServiceNetworkPolicy.metricsFrom`, such as Prometheus, to `prfService.ports.metrics`.
-No chart value adds another source to the PRF port. If prf-service runs in another release, set
-`prfService.ports` in this release to that release's pod ports. Isolation requires a CNI that
+No chart value adds another source to the PRF port of the pods that serve on these ports. If
+prf-service runs in another release, set `prfService.ports` in this release to that release's pod
+ports. If several prf-service releases with different ports share a namespace, add
+`app.kubernetes.io/name: <release>-prf-service` to `podSelector`: the default selects every
+prf-service pod in the namespace, and the metrics rule would reach a pod whose PRF port is this
+release's metrics port. Isolation requires a CNI that
 enforces NetworkPolicy and no other policy granting broader access: Kubernetes policies are
 additive. A `podSelector` that matches no prf-service pod, for example after a typo or a label
 change, renders without error and leaves prf-service open. After each deployment, check from a pod
@@ -175,4 +179,5 @@ Before you enable it:
 - Leave `coprocessorProxy.prfServiceAddress` empty: the chart uses this release's prf-service. The
   render fails if the address does not match `prfService.ports.http`.
 - With `prfService.serviceMonitor.enabled`, list Prometheus in
-  `coprocessorProxy.prfServiceNetworkPolicy.metricsFrom`, or the NetworkPolicy blocks the scrape.
+  `coprocessorProxy.prfServiceNetworkPolicy.metricsFrom`: the NetworkPolicy blocks every other
+  peer, so the chart does not render without it.

@@ -3,6 +3,11 @@
 {{- if not $policy.podSelector }}
 {{- fail "coprocessorProxy.prfServiceNetworkPolicy.podSelector must select the prf-service pods" }}
 {{- end }}
+{{- /* A rule port without a number admits every port, the PRF port included. */}}
+{{- $prfPort := int (required "prfService.ports.http must be set" .Values.prfService.ports.http) }}
+{{- if and .Values.prfService.enabled .Values.prfService.serviceMonitor.enabled (not $policy.metricsFrom) }}
+{{- fail "coprocessorProxy.prfServiceNetworkPolicy.metricsFrom must list Prometheus when prfService.serviceMonitor is enabled: the policy blocks every other peer" }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -24,13 +29,17 @@ spec:
               app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
               {{- include "coprocessor.extraSelectorLabels" . | nindent 14 }}
       ports:
-        - port: {{ .Values.prfService.ports.http }}
+        - port: {{ $prfPort }}
           protocol: TCP
     {{- with $policy.metricsFrom }}
+    {{- $metricsPort := int (required "prfService.ports.metrics must be set when metricsFrom is set" $.Values.prfService.ports.metrics) }}
+    {{- if eq $metricsPort $prfPort }}
+    {{- fail "prfService.ports.metrics must differ from prfService.ports.http: metricsFrom peers would reach the PRF port" }}
+    {{- end }}
     - from:
         {{- toYaml . | nindent 8 }}
       ports:
-        - port: {{ $.Values.prfService.ports.metrics }}
+        - port: {{ $metricsPort }}
           protocol: TCP
     {{- end }}
 {{- end -}}
