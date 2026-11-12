@@ -42,6 +42,7 @@ interface ICoprocessorConfig {
     function getCoprocessorMajorityThresholdForContext(uint256 coprocessorContextId) external view returns (uint256);
     function getCoprocessorsForContext(uint256 coprocessorContextId) external view returns (Coprocessor[] memory);
     function getCurrentCoprocessorContextId() external view returns (uint256);
+    function getPreviousCoprocessorContextId() external view returns (uint256);
     function getVersion() external pure returns (string memory);
     function isCoprocessorSignerForContext(uint256 coprocessorContextId, address signer) external view returns (bool);
     function isCoprocessorTxSenderForContext(uint256 coprocessorContextId, address txSender) external view returns (bool);
@@ -169,6 +170,19 @@ interface ICoprocessorConfig {
   {
     "type": "function",
     "name": "getCurrentCoprocessorContextId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPreviousCoprocessorContextId",
     "inputs": [],
     "outputs": [
       {
@@ -3694,6 +3708,157 @@ function getCurrentCoprocessorContextId() external view returns (uint256);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getPreviousCoprocessorContextId()` and selector `0x89090a44`.
+```solidity
+function getPreviousCoprocessorContextId() external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPreviousCoprocessorContextIdCall;
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getPreviousCoprocessorContextId()`](getPreviousCoprocessorContextIdCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getPreviousCoprocessorContextIdReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPreviousCoprocessorContextIdCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getPreviousCoprocessorContextIdCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPreviousCoprocessorContextIdCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getPreviousCoprocessorContextIdReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getPreviousCoprocessorContextIdReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getPreviousCoprocessorContextIdReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getPreviousCoprocessorContextIdCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::primitives::aliases::U256;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getPreviousCoprocessorContextId()";
+            const SELECTOR: [u8; 4] = [137u8, 9u8, 10u8, 68u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getPreviousCoprocessorContextIdReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getPreviousCoprocessorContextIdReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
 function getVersion() external pure returns (string memory);
@@ -4555,6 +4720,8 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         getCurrentCoprocessorContextId(getCurrentCoprocessorContextIdCall),
         #[allow(missing_docs)]
+        getPreviousCoprocessorContextId(getPreviousCoprocessorContextIdCall),
+        #[allow(missing_docs)]
         getVersion(getVersionCall),
         #[allow(missing_docs)]
         isCoprocessorSignerForContext(isCoprocessorSignerForContextCall),
@@ -4578,6 +4745,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [23u8, 10u8, 41u8, 129u8],
             [48u8, 198u8, 106u8, 128u8],
             [96u8, 154u8, 219u8, 114u8],
+            [137u8, 9u8, 10u8, 68u8],
             [204u8, 191u8, 129u8, 153u8],
             [215u8, 64u8, 228u8, 2u8],
             [232u8, 246u8, 139u8, 131u8],
@@ -4591,6 +4759,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(getCurrentCoprocessorContextId),
             ::core::stringify!(getCoprocessorsForContext),
             ::core::stringify!(isCoprocessorSignerForContext),
+            ::core::stringify!(getPreviousCoprocessorContextId),
             ::core::stringify!(proposeCoprocessorUpgrade),
             ::core::stringify!(destroyCoprocessorContext),
             ::core::stringify!(defineNewCoprocessorContext),
@@ -4604,6 +4773,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCoprocessorsForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isCoprocessorSignerForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getPreviousCoprocessorContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::SIGNATURE,
             <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <defineNewCoprocessorContextCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -4635,7 +4805,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for ICoprocessorConfigCalls {
         const NAME: &'static str = "ICoprocessorConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 10usize;
+        const COUNT: usize = 11usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -4653,6 +4823,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::getCurrentCoprocessorContextId(_) => {
                     <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getPreviousCoprocessorContextId(_) => {
+                    <getPreviousCoprocessorContextIdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
@@ -4742,6 +4915,19 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(ICoprocessorConfigCalls::isCoprocessorSignerForContext)
                     }
                     isCoprocessorSignerForContext
+                },
+                {
+                    fn getPreviousCoprocessorContextId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorConfigCalls> {
+                        <getPreviousCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                ICoprocessorConfigCalls::getPreviousCoprocessorContextId,
+                            )
+                    }
+                    getPreviousCoprocessorContextId
                 },
                 {
                     fn proposeCoprocessorUpgrade(
@@ -4878,6 +5064,19 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     isCoprocessorSignerForContext
                 },
                 {
+                    fn getPreviousCoprocessorContextId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorConfigCalls> {
+                        <getPreviousCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                ICoprocessorConfigCalls::getPreviousCoprocessorContextId,
+                            )
+                    }
+                    getPreviousCoprocessorContextId
+                },
+                {
                     fn proposeCoprocessorUpgrade(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICoprocessorConfigCalls> {
@@ -4975,6 +5174,11 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
+                Self::getPreviousCoprocessorContextId(inner) => {
+                    <getPreviousCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -5029,6 +5233,12 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::getCurrentCoprocessorContextId(inner) => {
                     <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getPreviousCoprocessorContextId(inner) => {
+                    <getPreviousCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6254,6 +6464,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, getCurrentCoprocessorContextIdCall, N> {
             self.call_builder(&getCurrentCoprocessorContextIdCall)
+        }
+        ///Creates a new call builder for the [`getPreviousCoprocessorContextId`] function.
+        pub fn getPreviousCoprocessorContextId(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getPreviousCoprocessorContextIdCall, N> {
+            self.call_builder(&getPreviousCoprocessorContextIdCall)
         }
         ///Creates a new call builder for the [`getVersion`] function.
         pub fn getVersion(
