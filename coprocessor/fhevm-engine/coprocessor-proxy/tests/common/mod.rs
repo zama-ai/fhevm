@@ -30,6 +30,7 @@ use serde_json::{Value, json};
 use std::{
     collections::HashSet,
     net::{SocketAddr, TcpListener},
+    num::NonZeroU32,
     path::PathBuf,
     sync::{
         Arc, Mutex,
@@ -496,7 +497,20 @@ impl TestProxy {
             "--healthcheck-timeout=2s".to_string(),
         ]);
         config.kms_registry_refresh_interval = POLL_INTERVAL;
+        // Each refused request closes its connection, and the tests send many of them from one
+        // client.
+        config.max_new_connections_per_second = NonZeroU32::new(10_000).unwrap();
         config
+    }
+
+    /// The head of a raw `GET` of `path` signed by [`sender`], with `extra_headers`, each ending
+    /// in `\r\n`.
+    pub async fn signed_get_head(&self, path: &str, extra_headers: &str) -> String {
+        let auth = auth_header(&sender(), path, b"").await;
+        let addr = self.addr;
+        format!(
+            "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n{extra_headers}\r\n"
+        )
     }
 
     pub fn url(&self, route: &str) -> String {
@@ -585,6 +599,24 @@ impl TestTls {
         &self,
         addr: SocketAddr,
     ) -> tokio_rustls::client::TlsStream<tokio::net::TcpStream> {
+        self.try_connect(addr).await.unwrap()
+    }
+
+    /// [`Self::connect`], or the error of a TLS handshake the server did not complete.
+    pub async fn try_connect(
+        &self,
+        addr: SocketAddr,
+    ) -> std::io::Result<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
+        let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        self.handshake(tcp).await
+    }
+
+    /// Runs the TLS handshake on a TCP connection to the proxy.
+    pub async fn handshake(
+        &self,
+        tcp: tokio::net::TcpStream,
+    ) -> std::io::Result<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
+        let addr = tcp.peer_addr()?;
         let mut roots = rustls::RootCertStore::empty();
         roots.add(self.cert_der.clone()).unwrap();
         let config = rustls::ClientConfig::builder_with_provider(Arc::new(
@@ -595,11 +627,9 @@ impl TestTls {
         .with_root_certificates(roots)
         .with_no_client_auth();
         let server_name = rustls::pki_types::ServerName::from(addr.ip());
-        let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
         tokio_rustls::TlsConnector::from(Arc::new(config))
             .connect(server_name, tcp)
             .await
-            .unwrap()
     }
 }
 
@@ -624,4 +654,33 @@ pub async fn wait_for_listener(addr: SocketAddr) {
         assert!(Instant::now() < deadline, "{addr} did not come up");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+/// Reads one response with a `Content-Length` body, leaving the connection open.
+pub async fn read_one_response(
+    stream: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+) -> String {
+    use tokio::io::AsyncReadExt;
+
+    let mut response = Vec::new();
+    let mut byte = [0u8; 1];
+    while !response.ends_with(b"\r\n\r\n") {
+        assert_eq!(
+            stream.read(&mut byte).await.unwrap(),
+            1,
+            "connection closed"
+        );
+        response.push(byte[0]);
+    }
+    let head = String::from_utf8_lossy(&response).to_ascii_lowercase();
+    let length: usize = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .expect("content-length")
+        .trim()
+        .parse()
+        .unwrap();
+    let mut body = vec![0u8; length];
+    stream.read_exact(&mut body).await.unwrap();
+    String::from_utf8_lossy(&response).into_owned()
 }

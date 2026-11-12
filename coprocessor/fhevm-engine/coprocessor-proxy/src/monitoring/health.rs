@@ -1,9 +1,10 @@
-use crate::kms_tx_senders::Loaded;
+use crate::{core::ClientConnections, kms_tx_senders::Loaded};
 use alloy::transports::http::reqwest::{self, Url};
 use anyhow::Context;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    sync::Arc,
     time::Duration,
 };
 
@@ -18,6 +19,7 @@ pub struct State {
     healthcheck_timeout: Duration,
     /// The client used to reach the proxy's own TLS listener through the loopback interface.
     loopback_client: reqwest::Client,
+    client_connections: Arc<ClientConnections>,
 }
 
 impl State {
@@ -25,6 +27,7 @@ impl State {
         bind_address: SocketAddr,
         kms_tx_senders_loaded: Loaded,
         healthcheck_timeout: Duration,
+        client_connections: Arc<ClientConnections>,
     ) -> anyhow::Result<Self> {
         // The proxy's certificate is issued for its public hostname, not for the loopback
         // address used here, so its verification is disabled for this client only.
@@ -38,6 +41,7 @@ impl State {
             kms_tx_senders_loaded,
             healthcheck_timeout,
             loopback_client,
+            client_connections,
         })
     }
 
@@ -48,6 +52,9 @@ impl State {
     /// TLS connections and answers HTTP requests, not the routing.
     async fn tls_listener_healthcheck(&self) -> Result<(), String> {
         let url = &self.self_check_url;
+        // A replica at one of its connection limits must still show as ready. The proxy closes
+        // the connection after its `404`, so each check opens a new one and uses the pass itself.
+        self.client_connections.admit_self_check();
         let request = self.loopback_client.get(url.clone()).send();
         match tokio::time::timeout(self.healthcheck_timeout, request).await {
             Ok(Ok(response)) if response.status() == reqwest::StatusCode::NOT_FOUND => Ok(()),

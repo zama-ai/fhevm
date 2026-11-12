@@ -37,6 +37,7 @@ async-trait = "0.1.88"
 axum = "0.7"
 bytes = "1.10"
 pingora = { version = "=0.9.0", default-features = false, features = [
+    "connection_filter",
     "openssl",
     "proxy",
 ] }
