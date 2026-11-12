@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.is_error AS \"is_error?\", OCTET_LENGTH(p.ciphertext128) AS body_length,\n                  p.attestation_version AS \"attestation_version?\",\n                  p.ciphertext_digest AS \"ciphertext_digest?\",\n                  p.ciphertext128_digest AS \"ciphertext128_digest?\", p.signer AS \"signer?\",\n                  p.signature AS \"signature?\",\n                  COALESCE(p.created_at <= NOW() - make_interval(secs => $4), FALSE) AS \"expired!\",\n                  EXISTS (\n                      SELECT 1 FROM prf_lanes\n                       WHERE prf_instance = $1 AND ready_at IS NOT NULL\n                         AND heartbeat_at > NOW() - make_interval(secs => $5)\n                  ) AS \"lane_live!\"\n             FROM (VALUES (1)) AS one\n             LEFT JOIN pads p\n               ON p.prf_instance = $1 AND p.label = $2 AND p.pad_length = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_error?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "body_length",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "attestation_version?",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext_digest?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ciphertext128_digest?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "signer?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "signature?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "expired!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "lane_live!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "1b3f2072fb8314dd7e95a9f712fc70ddd8d007474ecf7f082fc3798ee2be01af"
+}
