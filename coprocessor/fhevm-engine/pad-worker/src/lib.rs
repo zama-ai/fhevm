@@ -21,10 +21,11 @@ use fhevm_engine_common::{
 use rows::{Claim, Output};
 use sqlx::{postgres::PgListener, PgPool};
 use std::{
+    collections::HashSet,
     num::NonZeroUsize,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -41,8 +42,6 @@ use upload::{s3_key, Uploader};
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 /// Maximum rows for each resubmit read.
 const RESUBMIT_BATCH: i64 = 16;
-/// On a stop, the time for the claimed rows to complete. Below the 30 s grace period.
-const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
 /// Channel of the `pads_work_available` trigger.
 pub const PAD_WORK_AVAILABLE: &str = "pad_work_available";
 
@@ -66,6 +65,8 @@ pub struct Config {
     pub gc_interval: Duration,
     /// The GC clears the ct64 of rows older than this (`PAD_CT64_MAX_AGE`).
     pub ct64_max_age: Duration,
+    /// On a stop, the time for the claimed rows to complete.
+    pub drain_timeout: Duration,
 }
 
 /// Why a claim has no output.
@@ -85,6 +86,24 @@ pub struct PadWorker {
     cancel_token: CancellationToken,
     /// Set once the pad-worker listens for rows: until then, a rollout keeps the old pod.
     ready: Arc<AtomicBool>,
+    /// The claims of this pod whose evaluation runs.
+    running: Mutex<HashSet<Claim>>,
+}
+
+/// Adds a claim to `running` until its evaluation ends.
+struct Running<'a>(&'a Mutex<HashSet<Claim>>, Claim);
+
+impl<'a> Running<'a> {
+    fn new(running: &'a Mutex<HashSet<Claim>>, claim: Claim) -> Self {
+        running.lock().expect("running claims").insert(claim);
+        Self(running, claim)
+    }
+}
+
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        self.0.lock().expect("running claims").remove(&self.1);
+    }
 }
 
 impl PadWorker {
@@ -103,6 +122,7 @@ impl PadWorker {
             uploader: None,
             cancel_token,
             ready: Arc::default(),
+            running: Mutex::default(),
         }
     }
 
@@ -162,8 +182,8 @@ impl PadWorker {
                 Some(done) = tasks.join_next() => done??,
             }
         }
-        // Let the claimed rows complete. A row still running after the limit keeps its claim.
-        let drained = timeout(DRAIN_TIMEOUT, async {
+        // Let the claimed rows complete. A row still running after the limit is released below.
+        let drained = timeout(worker.config.drain_timeout, async {
             while let Some(done) = tasks.join_next().await {
                 match done {
                     Ok(Ok(())) => {}
@@ -176,7 +196,23 @@ impl PadWorker {
         if drained.is_err() {
             warn!("claimed rows did not complete before the stop");
         }
+        let running: Vec<Claim> = worker
+            .running
+            .lock()
+            .expect("running claims")
+            .iter()
+            .copied()
+            .collect();
         tasks.shutdown().await;
+        // So that the next pod claims them at once, not after `claim_timeout`.
+        if !running.is_empty() {
+            match rows::release(&worker.pool, worker.config.prf_instance, &running).await {
+                Ok(released) => info!(released, "Released the claims of the aborted evaluations"),
+                Err(e) => {
+                    warn!(error = %e, "Claims not released: they expire after the claim timeout")
+                }
+            }
+        }
         info!("pad-worker stopped");
         Ok(())
     }
@@ -230,7 +266,10 @@ impl PadWorker {
                 .or_else(non_fatal);
         }
         metrics::count_evaluation(claim.prf_instance);
-        let (output, ct64) = match self.compute(claim).await {
+        let running = Running::new(&self.running, claim);
+        let computed = self.compute(claim).await;
+        drop(running);
+        let (output, ct64) = match computed {
             Ok(computed) => computed,
             Err(OutputError::Evaluation(message)) => {
                 warn!(?claim, message, "PRF evaluation failed");
