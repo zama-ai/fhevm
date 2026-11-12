@@ -48,7 +48,7 @@ Then deploy all host contracts on Sepolia with (make sure to replace `<YOUR_SEPO
 
 ```bash
 export SEPOLIA_RPC_URL=<YOUR_SEPOLIA_RPC_URL>
-RPC_URL="$SEPOLIA_RPC_URL" npx hardhat --network sepolia task:deployAllHostContracts --with-kms-generation true
+RPC_URL="$SEPOLIA_RPC_URL" npx hardhat --network sepolia task:deployAllHostContracts --host-role canonical
 ```
 
 Then verify all Sepolia contracts on Etherscan via:
@@ -68,11 +68,13 @@ The `cp` is **critical** — the next chain's deploy overwrites `addresses/`.
 
 ## Step 2 — Deploy host stack on Polygon Amoy
 
+A replica is seeded from Ethereum, so first export the canonical `ProtocolConfig` and `CoprocessorConfig` snapshots and load their `export` maps into the environment (see the README sections _Initializing a ProtocolConfigReplica from the canonical chain_ and _CoprocessorConfig_).
+
 Deploy all host contracts on Polygon Amoy with (make sure to replace `<YOUR_POLYGON_AMOY_RPC_URL>` by your own Polygon Amoy RPC url):
 
 ```bash
 export POLYGON_AMOY_RPC_URL=<YOUR_POLYGON_AMOY_RPC_URL>
-RPC_URL="$POLYGON_AMOY_RPC_URL" npx hardhat --network polygonAmoy task:deployAllHostContracts --with-kms-generation false
+RPC_URL="$POLYGON_AMOY_RPC_URL" npx hardhat --network polygonAmoy task:deployAllHostContracts --host-role replica
 ```
 
 Then verify all Polygon Amoy contracts on Etherscan via:

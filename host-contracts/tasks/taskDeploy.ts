@@ -20,14 +20,19 @@ import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredCountEnvVar, getRequiredEnvVar } from './utils/loadVariables';
 import { buildCanonicalSnapshotEnv, readCanonicalSnapshotFromEnv } from './utils/protocolConfigCanonicalEnv';
-import { executeUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
+import {
+  buildUpgradeProposal,
+  executeUpgradeProposal,
+  printUpgradeProposal,
+  verifyProposalImplementation,
+} from './utils/upgradeProposal';
 
 const ADDRESSES_DIR = path.join(__dirname, '../addresses');
 const HOST_ENV_FILE = path.join(ADDRESSES_DIR, '.env.host');
 const HOST_ADDRESSES_FILE = path.join(ADDRESSES_DIR, 'FHEVMHostAddresses.sol');
 const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContracts is deprecated and will be removed after the v0.13 rollout.
 It deploys KMSGeneration and is valid only for canonical-host deployments.
-Use task:deployAllHostContracts --with-kms-generation true instead.`;
+Use task:deployAllHostContracts --host-role canonical instead.`;
 
 export function ensureAddressesDirectoryExists() {
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
@@ -76,46 +81,28 @@ export { assertContractMatchesVersionPrefix };
 // All Host Contracts
 ////////////////////////////////////////////////////////////////////////////////
 
-const PROTOCOL_CONFIG_SOURCES = ['fresh', 'canonical'] as const;
-type ProtocolConfigSource = (typeof PROTOCOL_CONFIG_SOURCES)[number];
+// The canonical host (Ethereum) runs KMSGeneration, ProtocolConfig and CoprocessorConfig,
+// initialized from the env variables. Every other host is a replica: no KMSGeneration, and
+// ProtocolConfigReplica and CoprocessorConfigReplica seeded from the canonical chain's snapshots.
+const HOST_ROLES = ['canonical', 'replica'] as const;
+type HostRole = (typeof HOST_ROLES)[number];
+
+function parseHostRole(hostRole: string): HostRole {
+  if (!HOST_ROLES.includes(hostRole as HostRole)) {
+    throw new Error(`Invalid --host-role "${hostRole}". Allowed values: ${HOST_ROLES.join(', ')}.`);
+  }
+  return hostRole as HostRole;
+}
+
+const HOST_ROLE_PARAM_DESCRIPTION =
+  "The host's role. 'canonical' (Ethereum) deploys KMSGeneration, ProtocolConfig and CoprocessorConfig from the env variables. 'replica' deploys ProtocolConfigReplica and CoprocessorConfigReplica seeded from the CANONICAL_* and CANONICAL_COPROCESSOR_* snapshot env variables, and no KMSGeneration.";
 
 task('task:deployAllHostContracts')
-  .addParam(
-    'withKmsGeneration',
-    'Whether to deploy canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
-    undefined,
-    types.boolean,
-  )
-  .addOptionalParam(
-    'protocolConfigSource',
-    "How to deploy the ProtocolConfig proxy: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'canonical' deploys ProtocolConfigReplica and CoprocessorConfigReplica seeded from the canonical chain via task:deployProtocolConfigFromCanonical and task:deployCoprocessorConfigFromCanonical (non-canonical hosts only), configured through the CANONICAL_* and CANONICAL_COPROCESSOR_* snapshot env variables.",
-    'fresh',
-    types.string,
-  )
-  .setAction(async function (
-    {
-      withKmsGeneration,
-      protocolConfigSource,
-    }: {
-      withKmsGeneration: boolean;
-      protocolConfigSource: string;
-    },
-    hre,
-  ) {
-    if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
-      throw new Error(
-        `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(
-          ', ',
-        )}.`,
-      );
-    }
-    if (protocolConfigSource === 'canonical') {
-      if (withKmsGeneration) {
-        throw new Error(
-          '--protocol-config-source canonical seeds a non-canonical replica; it cannot be combined with --with-kms-generation true.',
-        );
-      }
-      // Fail before the clean/compile sequence rather than at the mirror steps, which run last.
+  .addParam('hostRole', HOST_ROLE_PARAM_DESCRIPTION, undefined, types.string)
+  .setAction(async function ({ hostRole: rawHostRole }: { hostRole: string }, hre) {
+    const hostRole = parseHostRole(rawHostRole);
+    if (hostRole === 'replica') {
+      // Fail before the clean/compile sequence rather than at the mirror steps, which run later.
       readCanonicalSnapshotFromEnv();
       readCanonicalCoprocessorConfigSnapshotFromEnv();
     }
@@ -124,7 +111,7 @@ task('task:deployAllHostContracts')
       await hre.run('clean');
     }
 
-    await hre.run('task:deployEmptyUUPSProxies', { withKmsGeneration });
+    await hre.run('task:deployEmptyUUPSProxies', { hostRole });
     await hre.run('compile:specific', { contract: 'contracts/immutable' });
     await hre.run('task:deployPauserSet');
 
@@ -135,15 +122,13 @@ task('task:deployAllHostContracts')
 
     await hre.run('task:deployACL');
     await hre.run('task:deployFHEVMExecutor');
-    if (protocolConfigSource === 'canonical') {
-      await hre.run('task:deployProtocolConfigFromCanonical');
-      await hre.run('task:deployCoprocessorConfigFromCanonical');
-    } else {
+    if (hostRole === 'canonical') {
       await hre.run('task:deployProtocolConfig');
       await hre.run('task:deployCoprocessorConfig');
-    }
-    if (withKmsGeneration) {
       await hre.run('task:deployKMSGeneration');
+    } else {
+      await hre.run('task:deployProtocolConfigFromCanonical');
+      await hre.run('task:deployCoprocessorConfigFromCanonical');
     }
     await hre.run('task:deployKMSVerifier');
     await hre.run('task:deployInputVerifier');
@@ -156,7 +141,7 @@ task('task:deployAllHostContracts')
 
 task('task:deployLegacyAllHostContracts').setAction(async function (_, hre) {
   console.warn(LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING);
-  await hre.run('task:deployAllHostContracts', { withKmsGeneration: true });
+  await hre.run('task:deployAllHostContracts', { hostRole: 'canonical' });
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -190,16 +175,9 @@ export async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: Ha
 }
 
 task('task:deployEmptyUUPSProxies')
-  .addParam(
-    'withKmsGeneration',
-    'Whether to deploy the canonical-host-only KMSGeneration proxy. Required: true for canonical host, false for non-canonical host.',
-    undefined,
-    types.boolean,
-  )
-  .setAction(async function (
-    { withKmsGeneration }: { withKmsGeneration: boolean },
-    { ethers, upgrades, run, network },
-  ) {
+  .addParam('hostRole', HOST_ROLE_PARAM_DESCRIPTION, undefined, types.string)
+  .setAction(async function ({ hostRole: rawHostRole }: { hostRole: string }, { ethers, upgrades, run, network }) {
+    const hostRole = parseHostRole(rawHostRole);
     // Compile the EmptyUUPS proxy contract for ACL
     await run('compile:specific', { contract: 'contracts/emptyProxyACL' });
 
@@ -236,7 +214,7 @@ task('task:deployEmptyUUPSProxies')
     const protocolConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setProtocolConfigAddress', { address: protocolConfigAddress });
 
-    if (withKmsGeneration) {
+    if (hostRole === 'canonical') {
       // Set KMSGeneration Address
       const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
@@ -280,10 +258,8 @@ task('task:deployEmptyUUPSProxies')
       await run('task:setBridgeAddress', { address: ethers.ZeroAddress });
     }
 
-    // Set CoprocessorConfig Address. Deployed last, so the addresses of the proxies above do not
-    // change.
-    const coprocessorConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-    await run('task:setCoprocessorConfigAddress', { address: coprocessorConfigAddress });
+    // Deployed last, so the addresses of the proxies above do not change.
+    await run('task:deployEmptyProxyForCoprocessorConfig');
   });
 
 task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, { ethers, upgrades, run }) {
@@ -302,6 +278,26 @@ task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, 
   const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setBridgeAddress', { address: proxyAddress });
   process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS = proxyAddress;
+});
+
+// Adds the CoprocessorConfig empty proxy to a host stack deployed before CoprocessorConfig existed.
+// task:deployCoprocessorConfig (or its DAO path) then initializes it.
+task('task:deployEmptyProxyForCoprocessorConfig').setAction(async function (_, { ethers, upgrades, run }) {
+  ensureAddressesDirectoryExists();
+
+  if (readExistingHostEnv().COPROCESSOR_CONFIG_CONTRACT_ADDRESS) {
+    console.warn(
+      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains COPROCESSOR_CONFIG_CONTRACT_ADDRESS.',
+    );
+    return;
+  }
+
+  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+
+  const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setCoprocessorConfigAddress', { address: proxyAddress });
+  process.env.COPROCESSOR_CONFIG_CONTRACT_ADDRESS = proxyAddress;
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -931,25 +927,49 @@ task(
 // CoprocessorConfig
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployCoprocessorConfig').setAction(async function (_, hre) {
-  const { ethers, upgrades } = hre;
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+// Builds the upgradeToAndCall(initializeFromEmptyProxy(...)) payload that defines the first
+// coprocessor context from the COPROCESSOR_* env variables, after deploying the implementation.
+async function buildCoprocessorConfigInitProposal(hre: HardhatRuntimeEnvironment) {
   const initArgs = buildCoprocessorContextArgs();
-  const newImplem = await ethers.getContractFactory('CoprocessorConfig', deployer);
-  const proxyAddress = readHostEnv().COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-
-  await upgrades.upgradeProxy(proxy, newImplem, {
-    call: {
-      fn: 'initializeFromEmptyProxy',
-      args: initArgs,
-    },
+  // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild.
+  await hre.run('compile:specific', { contract: 'contracts' });
+  return buildUpgradeProposal(hre, {
+    proxyAddress: readHostEnv().COPROCESSOR_CONFIG_CONTRACT_ADDRESS,
+    contractName: 'contracts/CoprocessorConfig.sol:CoprocessorConfig',
+    innerFunctionName: 'initializeFromEmptyProxy',
+    decodedArgs: initArgs,
   });
-  // On interval-mining networks, upgradeProxy can return before the tx is mined.
+}
+
+// DAO path for initializing the canonical CoprocessorConfig on a chain whose ACL owner is the DAO.
+// Devnet equivalent: task:deployCoprocessorConfig.
+task(
+  'task:prepareDeployCoprocessorConfig',
+  'Deploys a CoprocessorConfig implementation and prints DAO upgrade calldata that defines the first coprocessor context from the COPROCESSOR_* env variables',
+)
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function ({ verifyContract }, hre) {
+    const preparedUpgrade = await buildCoprocessorConfigInitProposal(hre);
+    printUpgradeProposal(preparedUpgrade);
+    if (verifyContract) {
+      await verifyProposalImplementation(hre, preparedUpgrade);
+    }
+    return preparedUpgrade;
+  });
+
+// Initializes the CoprocessorConfig empty proxy with the deployer key: the same payload the DAO
+// path prints, so what runs on devnet is byte-identical to what the DAO signs.
+task('task:deployCoprocessorConfig').setAction(async function (_, hre) {
+  const prepared = await buildCoprocessorConfigInitProposal(hre);
+  await executeUpgradeProposal(hre, prepared);
+  // On interval-mining networks, the upgrade can return before the tx is mined.
   await waitForTaskReady(hre, 'task:assertCoprocessorConfigReady');
-  console.log('CoprocessorConfig code set successfully at address:', proxyAddress);
+  console.log('CoprocessorConfig code set successfully at address:', prepared.proxyAddress);
 });
 
 // DAO path for initializing a CoprocessorConfigReplica from the canonical chain (Ethereum). Reads the
