@@ -73,7 +73,7 @@ jobs:
     steps:
       # ------------------------------------------------------------------------
       # 1. Check branch
-      #    Real publishes run only from release/0.14.x: the workflow must be
+      #    Real publishes run only from release/0.15.x: the workflow must be
       #    dispatched on that branch. Dry-runs are allowed from any branch, for
       #    testing. This guards against mistakes only: the check lives in this
       #    file, so a branch could remove it (see the protected-environment
@@ -85,8 +85,8 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
           REF: ${{ github.ref }}
         run: |
-          if [ "$DRY_RUN" != "true" ] && [ "$REF" != "refs/heads/release/0.14.x" ]; then
-            echo "::error::Real publishes run only from release/0.14.x (got $REF). Use dry-run=true to test from another branch."
+          if [ "$DRY_RUN" != "true" ] && [ "$REF" != "refs/heads/release/0.15.x" ]; then
+            echo "::error::Real publishes run only from release/0.15.x (got $REF). Use dry-run=true to test from another branch."
             exit 1
           fi
 
