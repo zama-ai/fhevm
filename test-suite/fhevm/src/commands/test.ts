@@ -175,6 +175,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
   "hcu-block-cap": "Run HCU block cap scenarios.",
+  "hcu-allowlist": "Run HCU computation allowlist scenarios.",
   erc20: "Run ERC20 transfer coverage.",
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
