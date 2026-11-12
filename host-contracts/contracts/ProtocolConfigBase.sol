@@ -35,6 +35,32 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
     // -----------------------------------------------------------------------------------------
+    // EIP-712 type hashes
+    //
+    // Used by the struct hash helpers of the four KMS lifecycle confirmations.
+    // -----------------------------------------------------------------------------------------
+
+    /// @dev Hash of the ContextCreationConfirmation type.
+    bytes32 private constant EIP712_CONTEXT_CREATION_TYPE_HASH =
+        keccak256(
+            "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)"
+        );
+
+    /// @dev Hash of the EpochActivationConfirmation type.
+    bytes32 private constant EIP712_EPOCH_ACTIVATION_TYPE_HASH =
+        keccak256(
+            "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
+        );
+
+    /// @dev Hash of the ContextDestructionConfirmation type.
+    bytes32 private constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
+        keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
+
+    /// @dev Hash of the EpochDestructionConfirmation type.
+    bytes32 private constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
+        keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
+
+    // -----------------------------------------------------------------------------------------
     // ERC-7201 namespaced storage
     // -----------------------------------------------------------------------------------------
 
@@ -377,5 +403,101 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         $.epochState[epochId] = EpochState.Active;
         $.contextForEpoch[epochId] = contextId;
         $.latestActiveEpochId = epochId;
+    }
+
+    /**
+     * @dev Returns the `n - t` quorum of the committee of `contextId`. The committee has `n` nodes.
+     *      At most `t` of them (its MPC threshold) can be faulty, which means crashed, offline, or
+     *      malicious. The quorum must be:
+     *        - more than `t`, so faulty nodes can never reach it on their own.
+     *        - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
+     *          arrive. Anything higher lets the silent nodes block the quorum forever.
+     *      `n - t` satisfies `n - t >= t + 1` under the `n >= 3t + 1` topology the KMS core
+     *      requires. The contract itself does not enforce the topology.
+     *      The function returns at least 1, so the degenerate `t = n` config cannot make the
+     *      quorum zero.
+     */
+    function _faultTolerantQuorum(uint256 contextId) internal view virtual returns (uint256) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        uint256 quorum = _kmsCommitteeSize(contextId) - $.mpcThresholdForContext[contextId];
+        return quorum > 0 ? quorum : 1;
+    }
+
+    /**
+     * @dev Returns the number of nodes in the committee of `contextId`.
+     */
+    function _kmsCommitteeSize(uint256 contextId) internal view virtual returns (uint256) {
+        return _getProtocolConfigStorage().kmsNodesForContext[contextId].length;
+    }
+
+    /**
+     * @dev Hash of a context's node set and thresholds.
+     */
+    function _nodeConfigHash(KmsNode[] memory nodes, KmsThresholds memory thresholds) internal pure returns (bytes32) {
+        return keccak256(abi.encode(nodes, thresholds));
+    }
+
+    /**
+     * @dev Struct hash of a ContextCreationConfirmation.
+     */
+    function _contextCreationStructHash(
+        uint256 previousContextId,
+        uint256 newContextId,
+        bytes32 nodeConfigHash,
+        bytes calldata extraData
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    EIP712_CONTEXT_CREATION_TYPE_HASH,
+                    previousContextId,
+                    newContextId,
+                    nodeConfigHash,
+                    keccak256(extraData)
+                )
+            );
+    }
+
+    /**
+     * @dev Struct hash of an EpochActivationConfirmation.
+     */
+    function _epochActivationStructHash(
+        uint256 contextId,
+        uint256 previousEpochId,
+        uint256 epochId,
+        bytes32 epochMaterialHash,
+        bytes calldata extraData
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    EIP712_EPOCH_ACTIVATION_TYPE_HASH,
+                    contextId,
+                    previousEpochId,
+                    epochId,
+                    epochMaterialHash,
+                    keccak256(extraData)
+                )
+            );
+    }
+
+    /**
+     * @dev Struct hash of a ContextDestructionConfirmation.
+     */
+    function _contextDestructionStructHash(
+        uint256 destroyedContextId,
+        bytes calldata extraData
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encode(EIP712_CONTEXT_DESTRUCTION_TYPE_HASH, destroyedContextId, keccak256(extraData)));
+    }
+
+    /**
+     * @dev Struct hash of an EpochDestructionConfirmation.
+     */
+    function _epochDestructionStructHash(
+        uint256 destroyedEpochId,
+        bytes calldata extraData
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData)));
     }
 }
