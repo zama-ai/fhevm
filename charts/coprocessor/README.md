@@ -131,17 +131,56 @@ when the scheduler can. `coprocessorProxy.podDisruptionBudget.enabled` adds a bu
 `minAvailable: 1`, rendered only with 2 replicas or more, since over a single replica it would block
 every node drain.
 
+### Connection limits
+
+Pingora 0.9 by itself accepts any number of client connections, and bounds only each read of a
+request head, not the whole head. Each replica therefore limits its client connections, so that
+their memory stays under the container's limit:
+
+- `coprocessorProxy.maxConnections` (4096 by default): the connections a replica holds past their
+  TLS handshake. At the limit it refuses new ones before their handshake. A held request takes one
+  connection, so the default allows the most requests prf-service holds at once: 13 connectors ×
+  `maxInFlightPerConnector` (256) = 3328.
+- `coprocessorProxy.maxNewConnectionsPerSecond` (50 by default): the new connections a replica
+  accepts each second; more are refused before their handshake. Pingora gives a handshake up to
+  60 s, so this bounds the connections still in their handshake to 60 times the value.
+- `coprocessorProxy.requestHeadTimeoutSeconds` (2 by default): the time a client has, after its
+  TLS handshake, to send its whole first request head. Pingora buffers up to 1 MiB of a head that
+  is not complete. A connector sends its head at once.
+- The proxy closes the connection after any answer it gives before authentication, so only an
+  authenticated client keeps one past its first head. A connection also closes after
+  `coprocessorProxy.clientIdleTimeoutSeconds` (65 by default) without a request, and after 1000
+  requests, so that long-lived connections spread again over the replicas.
+
+Memory for connections is at most the sum of three terms, about 446 MB with the defaults, under the
+512Mi limit (537 MB). Raise the limits and the memory together.
+
+| Connections | Count, at most | Each | With the defaults |
+| --- | --- | --- | --- |
+| Held past their handshake | `maxConnections` | 48 KB | 197 MB |
+| In their handshake | 60 × `maxNewConnectionsPerSecond` | 48 KB | 144 MB |
+| Sending their first head | `maxNewConnectionsPerSecond` × `requestHeadTimeoutSeconds` | 1 MiB | 105 MB |
+
+The proxy enforces the last term itself: a client can hold its handshakes back and complete them
+together, so past their handshake, the connections beyond that many waiting for their first head
+are closed. The 48 KB was measured on connections in their handshake
+(https://github.com/zama-ai/fhevm-internal/issues/2271). The cost of a held request, with its
+prf-service connection, was not measured and is assumed equal.
+
+These limits are shared by all clients. Once new connections arrive faster than
+`maxNewConnectionsPerSecond`, honest clients are refused with the others, while the connections
+already open keep being served: the replica stays up. The readiness self-check passes the limits,
+so a replica at one of them still shows as ready.
+`coprocessor_proxy_connections_refused_counter`, `coprocessor_proxy_client_connections` and
+`coprocessor_proxy_request_head_timeouts_counter` follow these limits;
+[docs/metrics/metrics.md](../../docs/metrics/metrics.md) gives their alarms.
+
 ### Deployment requirement
 
-The proxy authenticates every request before forwarding it, but it does not protect its own
-connections from a client that holds them open. It closes a client connection that stays idle 15 s
-between two requests. Pingora 0.9 caps neither the number of connections nor the total time a
-client takes to send a request head: each read of it waits up to 60 s on a new connection and 15 s
-on a reused one, so a client that sends a byte at a time holds the connection. Pingora accepts
-request heads of up to 1 MiB, and waits up to 60 s for a TLS handshake. Each pending connection
-holds about 48 KB, so about 10,000 slow connections fill the 512Mi memory limit and the replica is
-OOM-killed, at any thread count. The proxy must therefore not be reachable directly from the
-internet. Put it behind one of:
+The proxy authenticates every request before forwarding it and bounds the memory of its
+connections, but it does not limit each client: one client can use up the connection limits that
+all clients share. The proxy must therefore not be reachable directly from the internet. Put it
+behind one of:
 
 - an HTTP-aware layer that terminates the client's TLS connection, receives each request in full
   before forwarding it, limits connections per client IP, and connects to the proxy over TLS, such
@@ -150,14 +189,14 @@ internet. Put it behind one of:
   firewall rule in front of a TLS-passthrough exposure.
 
 The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open takes one
-connection: a per-client connection limit must allow the connector's concurrent PRF requests, and
-the limits across all clients must stay well below the connections that fill a replica's memory.
+connection: a per-client connection limit must allow the connector's concurrent PRF requests.
 
-A connector's pool must close its idle connections to the proxy sooner than the proxy does, for
-example after 10 s. Otherwise a request sent as the proxy closes the connection fails with a
-connection error, which the connector then has to retry.
+A connector's pool, and a front layer, must close their idle connections to the proxy sooner than
+`clientIdleTimeoutSeconds`, for example after 10 s; an AWS ALB's default is 60 s. Otherwise a
+request sent as the proxy closes the connection fails with a connection error, which the client
+then has to retry.
 
-A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle
+A TCP (layer 4) load balancer without an allowlist is not enough: it forwards every client's
 connections to the proxy unchanged. Every timeout of the front layer must sit between the
 connector's `PRF_RETRIEVAL_DEADLINE` and `prfServiceResponseTimeoutSeconds`, as described above.
 
