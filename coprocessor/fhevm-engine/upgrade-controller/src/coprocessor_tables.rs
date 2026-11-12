@@ -446,12 +446,6 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
-    // Both stacks share the pad-worker lanes, which run outside blue/green.
-    CoprocessorTable {
-        name: "prf_lanes",
-        duplicated: false,
-        conflict_cols: &[],
-    },
     // Deprecated: only test/migration code writes input_blobs, no live service
     // does, so it needs no gcs.* duplicate. Remove together with the table.
     CoprocessorTable {

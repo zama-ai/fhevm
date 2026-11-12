@@ -198,8 +198,8 @@ land and replace it. It signs `FhevmSig` requests with KMS party 1's
 `KMS_CONNECTOR_PRIVATE_KEY`, a tx-sender of the active KMS context in the host
 ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
 Behind each proxy runs prf-service, logged in as the `prf_service` database
-role, and a pad-worker lane for PRF instance 0, logged in as `pad_worker`, which
-computes the output the suite requests with the mock evaluator. The lane signs
+role, and a pad-worker for PRF instance 0, logged in as `pad_worker`, which
+computes the output the suite requests with the mock evaluator. The pad-worker signs
 it with the coprocessor's `TX_SENDER_PRIVATE_KEY`, as its sns-worker signs. The
 suite reads how many PRF requests prf-service answered from its metric
 `coprocessor_prf_service_requests_total`, at `PRF_SERVICE_METRICS_URLS`. It
@@ -244,7 +244,7 @@ dropped node with `401 auth_unknown_signer`. Without the key they skip.
   the request rate of each signer.
 
 The suite reads the e2e limits of the compose file: 2,048 pending bits and 8 requests
-in progress for each connector, 20 requests per second for each signer, a lane that
+in progress for each connector, 20 requests per second for each signer, a pad-worker that
 computes 4 rows at once, and a mock evaluation of at least 2 s. It skips when
 `COPROCESSOR_PROXY_URLS` is empty.
 
