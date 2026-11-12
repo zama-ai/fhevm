@@ -13,6 +13,7 @@ use ciphertext_attestation::{
 use coprocessor_api::MAX_PAD_LENGTH;
 use evaluator::PadEvaluator;
 use fhevm_engine_common::{
+    db_keys::DbKeyId,
     healthz_server::{HealthCheckService, HealthStatus, Version},
     pg_pool::is_fatal_connection_error,
     prf_reference::{reference_digest, reference_outputs},
@@ -50,8 +51,8 @@ pub const PAD_WORK_AVAILABLE: &str = "pad_work_available";
 pub struct Config {
     /// The PRF instance of this lane.
     pub prf_instance: u16,
-    /// KMSGeneration key ID of the instance, as in `keys.key_id_gw`.
-    pub key_id: Vec<u8>,
+    /// KMSGeneration key ID of the instance, in 32 big-endian bytes as in `keys.key_id`.
+    pub key_id: DbKeyId,
     /// Evaluations at the same time (`PRF_MAX_CONCURRENT`).
     pub max_concurrent: NonZeroUsize,
     /// A claim older than this is taken again (`PAD_CLAIM_TIMEOUT`).
