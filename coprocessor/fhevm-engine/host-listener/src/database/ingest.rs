@@ -2548,9 +2548,10 @@ where
     }
     // Best-effort maintenance: drop old finalized block rows nothing
     // references anymore, so ancestry probes and the table itself stop
-    // growing with chain history. Failures only delay pruning.
+    // growing with chain history. Failures only delay pruning; spaced so its
+    // scan does not run after every pass.
     match db
-        .prune_finalized_block_history(last_finalized_block as i64)
+        .prune_finalized_block_history_spaced(last_finalized_block as i64)
         .await
     {
         Ok(0) => {}

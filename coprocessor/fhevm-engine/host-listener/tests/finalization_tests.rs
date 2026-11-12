@@ -273,3 +273,59 @@ async fn finalization_accepts_linked_chain_and_orphans_sibling() {
         "fork sibling of a finalized block is orphaned"
     );
 }
+
+/// The spaced prune runs once, then skips calls until its window elapses,
+/// even when rows became prunable meanwhile; the unspaced prune still runs.
+#[tokio::test]
+#[serial(db)]
+async fn spaced_prune_skips_calls_within_its_window() {
+    let (db, _inst) = fresh_db(CHAIN_ID).await;
+    let pool = db.pool().await;
+    let age = |hash: Vec<u8>| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "UPDATE host_chain_blocks_valid
+                    SET created_at = NOW() - INTERVAL '8 days'
+                  WHERE block_hash = $1",
+            )
+            .bind(hash)
+            .execute(&pool)
+            .await
+            .expect("age seeded block");
+        }
+    };
+    let (first, second) = (b32(0x11), b32(0x12));
+    seed_block(&db, 100, &first, &b32(0), "finalized").await;
+    age(first.clone()).await;
+
+    assert_eq!(
+        db.prune_finalized_block_history_spaced(20_000)
+            .await
+            .expect("first spaced prune"),
+        1
+    );
+
+    // A row becomes prunable right after: the next spaced call is skipped.
+    seed_block(&db, 101, &second, &b32(0), "finalized").await;
+    age(second.clone()).await;
+    assert_eq!(
+        db.prune_finalized_block_history_spaced(20_000)
+            .await
+            .expect("spaced prune within its window"),
+        0
+    );
+    assert_eq!(
+        block_status(&db, &second).await.as_deref(),
+        Some("finalized")
+    );
+
+    // Callers that need it now still prune unspaced.
+    assert_eq!(
+        db.prune_finalized_block_history(20_000)
+            .await
+            .expect("unspaced prune"),
+        1
+    );
+    assert_eq!(block_status(&db, &second).await, None);
+}
