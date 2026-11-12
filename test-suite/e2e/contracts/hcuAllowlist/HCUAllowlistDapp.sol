@@ -12,6 +12,7 @@ contract HCUAllowlistDapp is E2ECoprocessorConfig {
     euint32 public result32;
     ebool public resultBool;
     euint64 public stored;
+    ebool public storedCondition;
 
     function _publish(euint64 value) private {
         result = value;
@@ -29,10 +30,26 @@ contract HCUAllowlistDapp is E2ECoprocessorConfig {
         _publish(FHE.add(FHE.asEuint64(a), FHE.asEuint64(b)));
     }
 
-    function addToInput(externalEuint64 inputHandle, bytes calldata inputProof, uint64 value) external {
-        euint64 sum = FHE.add(FHE.fromExternal(inputHandle, inputProof), FHE.asEuint64(value));
+    function trivialEncryptTwice(uint64 a, uint64 b) external {
+        FHE.allowThis(FHE.asEuint64(a));
+        _publish(FHE.asEuint64(b));
+    }
+
+    // The functions below compute on stored handles only, so the named operation is the first one charged.
+
+    function addStoredToStored() external {
+        _publish(FHE.add(stored, stored));
+    }
+
+    function addInputToStored(externalEuint64 inputHandle, bytes calldata inputProof) external {
+        euint64 sum = FHE.add(FHE.fromExternal(inputHandle, inputProof), stored);
         FHE.allow(sum, msg.sender);
         _publish(sum);
+    }
+
+    function compareStored() external {
+        storedCondition = FHE.eq(stored, stored);
+        FHE.allowThis(storedCondition);
     }
 
     function addScalarToStored(uint64 value) external {
@@ -48,8 +65,9 @@ contract HCUAllowlistDapp is E2ECoprocessorConfig {
         FHE.allowThis(result32);
     }
 
+    /// @dev Needs `compareStored` first.
     function selectStored() external {
-        _publish(FHE.select(FHE.asEbool(true), stored, stored));
+        _publish(FHE.select(storedCondition, stored, stored));
     }
 
     function random() external {

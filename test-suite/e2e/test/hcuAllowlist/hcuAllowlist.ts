@@ -9,12 +9,12 @@
 //   - computation gate
 //       . inactive by default, so computation is unrestricted
 //       . every operation family is rejected for a dapp absent from the allowlist (trivial
-//         encryption, binary, scalar, unary, cast, ternary, random, bounded random, sum, isIn,
-//         mulDiv), and a rejected transaction consumes no block HCU
+//         encryption, binary, comparison, scalar, unary, cast, ternary, random, bounded random,
+//         sum, isIn, mulDiv), and a rejected transaction consumes no block HCU
 //       . the same operations succeed for an allowlisted dapp and their results decrypt
 //       . input verification, ACL permissions and decryption stay outside the gate
 //       . removal, deactivation and reactivation, with membership preserved across them
-//       . an allowlisted dapp stays subject to the HCU limits
+//       . an allowlisted dapp stays subject to the depth, block and transaction HCU limits
 //       . only the FHEVMExecutor may report a computation to HCULimit
 //   - block HCU whitelist interaction
 //       . all six combinations of activation, allowlist membership and block HCU whitelist membership
@@ -29,15 +29,15 @@
 //       . additions skip existing members, removals are strict, invalid entries revert the batch
 //       . empty batches are rejected while the allowlist is active
 //   - factories and constructors
-//       . a dapp deployed by an allowlisted factory needs its own admission
-//       . a dapp computing in its constructor needs its CREATE2 address admitted before deployment
+//       . a dapp deployed by an allowlisted factory must be allowlisted itself
+//       . a dapp computing in its constructor needs its CREATE2 address allowlisted before deployment
 //
 // Not covered here: ACL ownership transfer (it would change the owner of the shared stack) and the
 // upgrade path (covered by the host-contracts tests).
 //
 // Shared state: HCULimit is shared by every suite on the stack, and an active allowlist blocks all
 // other dapps. Each test starts with the allowlist inactive, and afterEach restores activation, the
-// depth limit, allowlister grants and block HCU whitelist entries, even when a test fails.
+// HCU limits, allowlister grants and block HCU whitelist entries, even when a test fails.
 //
 // Expiration tests wait on real block time (about 20 seconds each) instead of moving the chain clock.
 import { assert, expect } from 'chai';
@@ -53,7 +53,11 @@ import { waitForTransactionReceipt } from '../utils';
 // HCULimit is deployed by the host-sc stack but not compiled in the E2E test suite.
 const HCU_LIMIT_ABI = [
   'function getBlockMeter() view returns (uint48, uint48)',
+  'function getGlobalHCUCapPerBlock() view returns (uint48)',
+  'function getMaxHCUPerTx() view returns (uint48)',
   'function getMaxHCUDepthPerTx() view returns (uint48)',
+  'function setHCUPerBlock(uint48)',
+  'function setMaxHCUPerTx(uint48)',
   'function setMaxHCUDepthPerTx(uint48)',
   'function addToBlockHCUWhitelist(address)',
   'function removeFromBlockHCUWhitelist(address)',
@@ -83,6 +87,8 @@ const HCU_LIMIT_ABI = [
   'error InvalidAllowlisterDeadline(uint256)',
   'error NotAllowlister(address)',
   'error InvalidZeroAddress()',
+  'error HCUBlockLimitExceeded()',
+  'error HCUTransactionLimitExceeded()',
   'error HCUTransactionDepthLimitExceeded()',
   'error CallerMustBeFHEVMExecutorContract()',
 ];
@@ -96,6 +102,8 @@ const ALLOWLISTER_TTL_SECONDS = 20;
 const ONE_DAY_SECONDS = 24 * 3600;
 // Below the cost of a non-scalar euint64 addition.
 const TIGHT_DEPTH_PER_TX = 100_000;
+// Fits one trivial encryption (32 HCU), not two.
+const ONE_TRIVIAL_ENCRYPTION_HCU = 40;
 // FheType.Uint64 in the host contracts.
 const FHE_TYPE_UINT64 = 5;
 
@@ -174,6 +182,8 @@ describe('HCU allowlist', function () {
   let allowlister: Account;
   let outsider: Account;
   let initialActivation: boolean;
+  let initialHCUPerBlock: bigint;
+  let initialHCUPerTx: bigint;
   let initialDepthPerTx: bigint;
   let blockWhitelisted: string[];
 
@@ -242,6 +252,8 @@ describe('HCU allowlist', function () {
     } catch {
       this.skip();
     }
+    initialHCUPerBlock = await hcuLimit.getGlobalHCUCapPerBlock();
+    initialHCUPerTx = await hcuLimit.getMaxHCUPerTx();
     initialDepthPerTx = await hcuLimit.getMaxHCUDepthPerTx();
 
     await initSigners(3);
@@ -266,6 +278,13 @@ describe('HCU allowlist', function () {
     }
     if ((await hcuLimit.isAllowlistActivated()) !== initialActivation) {
       await mined(hcuLimit.setAllowlistActivated(initialActivation));
+    }
+    // Raised in this order: block limit >= transaction limit >= depth limit must always hold.
+    if ((await hcuLimit.getGlobalHCUCapPerBlock()) !== initialHCUPerBlock) {
+      await mined(hcuLimit.setHCUPerBlock(initialHCUPerBlock));
+    }
+    if ((await hcuLimit.getMaxHCUPerTx()) !== initialHCUPerTx) {
+      await mined(hcuLimit.setMaxHCUPerTx(initialHCUPerTx));
     }
     if ((await hcuLimit.getMaxHCUDepthPerTx()) !== initialDepthPerTx) {
       await mined(hcuLimit.setMaxHCUDepthPerTx(initialDepthPerTx));
@@ -298,7 +317,9 @@ describe('HCU allowlist', function () {
     it('should reject every HCU-charged operation from a dapp absent from the active allowlist', async function () {
       const dapp = await deployDapp();
       const dappAddress = await dapp.getAddress();
+      // Handles created before activation, so each call below is rejected on the operation it names.
       await storeInput(this, dapp, 7n);
+      await mined(dapp.compareStored());
       const input = await this.instances.alice.encryptUint64({
         value: 7n,
         contractAddress: dappAddress,
@@ -309,8 +330,9 @@ describe('HCU allowlist', function () {
 
       const rejected: [string, () => Promise<unknown>][] = [
         ['trivial encryption', () => dapp.trivialEncrypt.staticCall(1)],
-        ['binary operation', () => dapp.addTrivialValues.staticCall(1, 2)],
-        ['binary operation on an input', () => dapp.addToInput.staticCall(input.handles[0], input.inputProof, 1)],
+        ['binary operation', () => dapp.addStoredToStored.staticCall()],
+        ['binary operation on an input', () => dapp.addInputToStored.staticCall(input.handles[0], input.inputProof)],
+        ['comparison', () => dapp.compareStored.staticCall()],
         ['scalar binary operation', () => dapp.addScalarToStored.staticCall(1)],
         ['unary operation', () => dapp.notStored.staticCall()],
         ['cast', () => dapp.castStored.staticCall()],
@@ -328,7 +350,7 @@ describe('HCU allowlist', function () {
       await expectMinedRejection(dapp);
     });
 
-    // Same operation families succeed once the dapp is admitted, and the results decrypt.
+    // Same operation families succeed once the dapp is allowlisted, and the results decrypt.
     it('should let an allowlisted dapp use every HCU-charged operation', async function () {
       const dapp = await deployDapp();
       const dappAddress = await dapp.getAddress();
@@ -359,16 +381,20 @@ describe('HCU allowlist', function () {
       // The remaining operations only need to be accepted on the host chain.
       await mined(dapp.notStored());
       await mined(dapp.castStored());
+      await mined(dapp.compareStored());
       await mined(dapp.selectStored());
       await mined(dapp.random());
       await mined(dapp.isInStored());
 
       const input = await this.instances.alice.encryptUint64({
-        value: 7n,
+        value: 42n,
         contractAddress: dappAddress,
         userAddress: alice.address,
       });
-      await mined(dapp.addToInput(input.handles[0], input.inputProof, 42));
+      await mined(dapp.addStoredToStored());
+      expect(await publicDecrypt(this, await dapp.result())).to.eq(14n);
+
+      await mined(dapp.addInputToStored(input.handles[0], input.inputProof));
       const handle = await dapp.result();
       const decrypted = await this.instances.alice.userDecryptSingleHandle({
         handle,
@@ -450,14 +476,29 @@ describe('HCU allowlist', function () {
       await expectHcuLimitRevert(stranger.trivialEncrypt.staticCall(1), 'CallerNotAllowlisted', [strangerAddress]);
     });
 
-    // Admission is not an exemption from the HCU limits.
+    // Being allowlisted is not an exemption from the depth, block and transaction HCU limits.
     it('should keep an allowlisted dapp subject to the HCU limits', async function () {
       const dapp = await deployDapp();
-      await mined(hcuLimit.addToAllowlist([await dapp.getAddress()]));
+      const dappAddress = await dapp.getAddress();
+      await mined(hcuLimit.addToAllowlist([dappAddress]));
       await mined(hcuLimit.setAllowlistActivated(true));
-      await mined(hcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX));
 
+      // Depth limit: the two trivial encryptions fit, the addition on top of them does not.
+      await mined(hcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX));
       await expectHcuLimitRevert(dapp.addTrivialValues.staticCall(1, 2), 'HCUTransactionDepthLimitExceeded');
+      await mined(dapp.trivialEncrypt(1));
+
+      // All three limits now fit one trivial encryption. The block limit is checked first.
+      await mined(hcuLimit.setMaxHCUDepthPerTx(ONE_TRIVIAL_ENCRYPTION_HCU));
+      await mined(hcuLimit.setMaxHCUPerTx(ONE_TRIVIAL_ENCRYPTION_HCU));
+      await mined(hcuLimit.setHCUPerBlock(ONE_TRIVIAL_ENCRYPTION_HCU));
+      await expectHcuLimitRevert(dapp.trivialEncryptTwice.staticCall(1, 2), 'HCUBlockLimitExceeded');
+      await mined(dapp.trivialEncrypt(1));
+
+      // Transaction limit: seen once the block HCU whitelist exempts the dapp from the block limit.
+      blockWhitelisted.push(dappAddress);
+      await mined(hcuLimit.addToBlockHCUWhitelist(dappAddress));
+      await expectHcuLimitRevert(dapp.trivialEncryptTwice.staticCall(1, 2), 'HCUTransactionLimitExceeded');
       await mined(dapp.trivialEncrypt(1));
     });
 
@@ -536,7 +577,7 @@ describe('HCU allowlist', function () {
 
   describe('allowlisters', function () {
     // Delegated role: additions only, attributed to the allowlister in the event.
-    it('should let an active allowlister admit dapps and nothing else', async function () {
+    it('should let an active allowlister add dapps and nothing else', async function () {
       const dapp = await deployDapp();
       const dappAddress = await dapp.getAddress();
       const asAllowlister = hcuLimitAs(allowlister);
@@ -556,8 +597,8 @@ describe('HCU allowlist', function () {
       await mined(hcuLimit.setAllowlistActivated(true));
       await expectHcuLimitRevert(dapp.trivialEncrypt.staticCall(1), 'CallerNotAllowlisted', [dappAddress]);
 
-      const admission = await mined(asAllowlister.addToAllowlist([dappAddress]));
-      assert.deepEqual(eventsOf(admission, 'AllowlistAdded'), [[dappAddress, allowlister.address]]);
+      const addition = await mined(asAllowlister.addToAllowlist([dappAddress]));
+      assert.deepEqual(eventsOf(addition, 'AllowlistAdded'), [[dappAddress, allowlister.address]]);
       await mined(dapp.addTrivialValues(30, 12));
       expect(await publicDecrypt(this, await dapp.result())).to.eq(42n);
 
@@ -582,19 +623,19 @@ describe('HCU allowlist', function () {
       );
     });
 
-    // Expiration needs no transaction, is not paused by deactivation and keeps admitted dapps.
+    // Expiration needs no transaction, is not paused by deactivation and keeps the dapps it added.
     it('should expire an allowlister at its deadline, even while the allowlist is inactive', async function () {
-      const admitted = await deployDapp();
+      const added = await deployDapp();
       const late = await deployDapp();
-      const admittedAddress = await admitted.getAddress();
+      const addedAddress = await added.getAddress();
       const lateAddress = await late.getAddress();
       const asAllowlister = hcuLimitAs(allowlister);
 
       const deadline = (await latestTimestamp()) + ALLOWLISTER_TTL_SECONDS;
       await mined(hcuLimit.addAllowlister(allowlister.address, deadline));
-      const admission = await mined(asAllowlister.addToAllowlist([admittedAddress]));
-      const admissionBlock = await ethers.provider.getBlock(admission.blockNumber);
-      expect(admissionBlock!.timestamp).to.be.lessThan(deadline);
+      const addition = await mined(asAllowlister.addToAllowlist([addedAddress]));
+      const additionBlock = await ethers.provider.getBlock(addition.blockNumber);
+      expect(additionBlock!.timestamp).to.be.lessThan(deadline);
 
       // The allowlist stays inactive while the grant expires.
       await waitForTimestamp(deadline);
@@ -606,10 +647,10 @@ describe('HCU allowlist', function () {
         [allowlister.address],
       );
 
-      // Expiration does not remove the dapps admitted before it.
+      // Expiration does not remove the dapps added before it.
       await mined(hcuLimit.setAllowlistActivated(true));
-      expect(await hcuLimit.isAllowlisted(admittedAddress)).to.eq(true);
-      await mined(admitted.trivialEncrypt(1));
+      expect(await hcuLimit.isAllowlisted(addedAddress)).to.eq(true);
+      await mined(added.trivialEncrypt(1));
       await expectHcuLimitRevert(
         asAllowlister.addToAllowlist.staticCall([lateAddress]),
         'CallerNotACLOwnerOrAllowlister',
@@ -645,7 +686,7 @@ describe('HCU allowlist', function () {
     });
 
     // Both ways of ending a role early, including the idempotent revocation.
-    it('should end an allowlister role on revocation or renunciation and keep its admitted dapps', async function () {
+    it('should end an allowlister role on revocation or renunciation and keep the dapps it added', async function () {
       const first = await deployDapp();
       const second = await deployDapp();
       const firstAddress = await first.getAddress();
@@ -696,7 +737,7 @@ describe('HCU allowlist', function () {
     });
 
     // An active allowlister can undo a removal, so the role must be revoked before the dapp is removed.
-    it('should let an active allowlister re-admit a removed dapp until its role is revoked', async function () {
+    it('should let an active allowlister re-add a removed dapp until its role is revoked', async function () {
       const dapp = await deployDapp();
       const dappAddress = await dapp.getAddress();
       const asAllowlister = hcuLimitAs(allowlister);
@@ -708,8 +749,8 @@ describe('HCU allowlist', function () {
       // Removal alone does not hold.
       await mined(hcuLimit.removeFromAllowlist([dappAddress]));
       await expectHcuLimitRevert(dapp.trivialEncrypt.staticCall(1), 'CallerNotAllowlisted', [dappAddress]);
-      const readmission = await mined(asAllowlister.addToAllowlist([dappAddress]));
-      assert.deepEqual(eventsOf(readmission, 'AllowlistAdded'), [[dappAddress, allowlister.address]]);
+      const secondAddition = await mined(asAllowlister.addToAllowlist([dappAddress]));
+      assert.deepEqual(eventsOf(secondAddition, 'AllowlistAdded'), [[dappAddress, allowlister.address]]);
       await mined(dapp.trivialEncrypt(1));
 
       // Revocation first, then removal.
@@ -884,7 +925,7 @@ describe('HCU allowlist', function () {
       await mined(hcuLimit.setAllowlistActivated(true));
     });
 
-    // Each deployed dapp needs its own admission.
+    // Each deployed dapp must be allowlisted itself.
     it('should not extend the allowlisting of a factory to the dapps it deploys', async function () {
       await mined(factory.compute(9));
       expect(await publicDecrypt(this, await factory.result())).to.eq(9n);
@@ -899,7 +940,7 @@ describe('HCU allowlist', function () {
       expect(await publicDecrypt(this, await dapp.result())).to.eq(17n);
     });
 
-    // Constructor computation needs the CREATE2 address admitted before deployment.
+    // Constructor computation needs the CREATE2 address allowlisted before deployment.
     it('should deploy a dapp computing in its constructor only once its address is allowlisted', async function () {
       const salt = ethers.hexlify(ethers.randomBytes(32));
       const predicted = await factory.predictConstructorDapp(salt, 77);
@@ -911,9 +952,9 @@ describe('HCU allowlist', function () {
       expect((await waitForTransactionReceipt(tx.hash)).status).to.eq(0);
       expect(await ethers.provider.getCode(predicted)).to.eq('0x');
 
-      // The predicted address is admitted before any code exists at it.
-      const admission = await mined(hcuLimitAs(allowlister).addToAllowlist([predicted]));
-      assert.deepEqual(eventsOf(admission, 'AllowlistAdded'), [[predicted, allowlister.address]]);
+      // The predicted address is allowlisted before any code exists at it.
+      const addition = await mined(hcuLimitAs(allowlister).addToAllowlist([predicted]));
+      assert.deepEqual(eventsOf(addition, 'AllowlistAdded'), [[predicted, allowlister.address]]);
 
       expect(deployedDapp(await mined(factory.deployConstructorDapp(salt, 77)))).to.eq(predicted);
       const dapp = await ethers.getContractAt('HCUAllowlistConstructorDapp', predicted);
