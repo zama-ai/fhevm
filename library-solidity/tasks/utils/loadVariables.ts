@@ -1,7 +1,8 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
 import path from 'path';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types';
+import type { PauserSet } from '../../typechain-types';
 
 const ADDRESSES_DIR = path.resolve(__dirname, '../../fhevmTemp/addresses');
 const HOST_ADDRESSES_ENV_FILE_NAME = '.env.host';
@@ -44,7 +45,10 @@ export function loadHostAddresses(): void {
   loadAddressEnvVarsFromFile(HOST_ADDRESSES_ENV_FILE_NAME);
 }
 
-export async function getPauserSetContract(useInternalProxyAddress: boolean, hre: HardhatRuntimeEnvironment) {
+export async function getPauserSetContract(
+  useInternalProxyAddress: boolean,
+  hre: HardhatRuntimeEnvironment,
+): Promise<PauserSet> {
   await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/contracts/immutable' });
 
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
