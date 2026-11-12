@@ -429,6 +429,7 @@ describe("cli", () => {
       "no coprocessor-proxy test passed",
     );
     expect(() => assertProfileRanTests("coprocessor-proxy", ran, "test coprocessor-proxy")).not.toThrow();
+    expect(() => assertProfileRanTests("prf-endpoint", skipped, "test prf-endpoint")).toThrow("no prf-endpoint test passed");
     // Other profiles keep reading pending tests as a matched grep.
     expect(() => assertProfileRanTests("erc20", skipped, "test erc20")).not.toThrow();
     expect(() => assertProfileRanTests("erc20", "  0 passing (1ms)\n", "test erc20")).toThrow("matched zero tests");
