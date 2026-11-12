@@ -24,6 +24,8 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
     struct CoprocessorConfigStorage {
         /// @notice The current coprocessor context ID, the latest defined or mirrored one.
         uint256 currentCoprocessorContextId;
+        /// @notice The coprocessor context that was current before the current one, 0 if none.
+        uint256 previousCoprocessorContextId;
         /// @notice Number of coprocessors per context. Zero means the context was never defined.
         mapping(uint256 contextId => uint256) coprocessorCountForContext;
         /// @notice Coprocessors per context, by position in definition order.
@@ -56,6 +58,11 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
     /// @inheritdoc ICoprocessorConfigBase
     function getCurrentCoprocessorContextId() external view virtual returns (uint256) {
         return _getCoprocessorConfigStorage().currentCoprocessorContextId;
+    }
+
+    /// @inheritdoc ICoprocessorConfigBase
+    function getPreviousCoprocessorContextId() external view virtual returns (uint256) {
+        return _getCoprocessorConfigStorage().previousCoprocessorContextId;
     }
 
     /// @inheritdoc ICoprocessorConfigBase
@@ -161,6 +168,7 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
         }
         $.coprocessorCountForContext[contextId] = coprocessorCount;
         $.coprocessorMajorityThresholdForContext[contextId] = majorityThreshold;
+        $.previousCoprocessorContextId = $.currentCoprocessorContextId;
         $.currentCoprocessorContextId = contextId;
     }
 

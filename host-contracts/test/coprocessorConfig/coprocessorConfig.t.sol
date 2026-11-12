@@ -116,6 +116,7 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         coprocessorConfig = CoprocessorConfig(proxy);
 
         assertEq(coprocessorConfig.getCurrentCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID);
+        assertEq(coprocessorConfig.getPreviousCoprocessorContextId(), 0);
         assertTrue(coprocessorConfig.isValidCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID));
         _assertCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID, coprocessors, 2);
     }
@@ -408,6 +409,7 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         _defineCoprocessorContext(coprocessors, 3);
 
         assertEq(coprocessorConfig.getCurrentCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID + 1);
+        assertEq(coprocessorConfig.getPreviousCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID);
         _assertCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID + 1, coprocessors, 3);
         // The previous context stays valid and unchanged.
         assertTrue(coprocessorConfig.isValidCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID));
@@ -616,6 +618,8 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         assertFalse(coprocessorConfig.isValidCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID));
         assertTrue(coprocessorConfig.isValidCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID + 1));
         assertEq(coprocessorConfig.getCurrentCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID + 1);
+        // The previous context ID stays, but the context is no longer valid.
+        assertEq(coprocessorConfig.getPreviousCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID);
         _assertCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID, _makeCoprocessors(3), 2);
     }
 

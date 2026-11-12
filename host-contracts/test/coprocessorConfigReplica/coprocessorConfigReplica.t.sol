@@ -92,8 +92,9 @@ contract CoprocessorConfigReplicaTest is CoprocessorConfigTestUtils {
         assertEq(replica.getCurrentCoprocessorContextId(), CANONICAL_COPROCESSOR_CONTEXT_ID);
         assertTrue(replica.isValidCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID));
         _assertCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID, coprocessors, 2);
-        // Earlier canonical contexts were never mirrored.
+        // Earlier canonical contexts were never mirrored, so the seeded context replaced none here.
         assertFalse(replica.isValidCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID - 1));
+        assertEq(replica.getPreviousCoprocessorContextId(), 0);
     }
 
     function test_revertInitializeFromCanonicalInvalidCoprocessorContextId() public {
@@ -157,6 +158,8 @@ contract CoprocessorConfigReplicaTest is CoprocessorConfigTestUtils {
         _assertCoprocessorContext(contextId, coprocessors, 3);
         assertTrue(replica.isValidCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID));
         assertFalse(replica.isValidCoprocessorContext(contextId - 1));
+        // The previous context is the one mirrored before, not the skipped ID.
+        assertEq(replica.getPreviousCoprocessorContextId(), CANONICAL_COPROCESSOR_CONTEXT_ID);
     }
 
     function test_revertMirrorCoprocessorContextNonIncreasing() public {
@@ -211,6 +214,7 @@ contract CoprocessorConfigReplicaTest is CoprocessorConfigTestUtils {
         replica.mirrorCoprocessorContextDestruction(CANONICAL_COPROCESSOR_CONTEXT_ID);
 
         assertFalse(replica.isValidCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID));
+        assertEq(replica.getPreviousCoprocessorContextId(), CANONICAL_COPROCESSOR_CONTEXT_ID);
         _assertCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID, _makeCoprocessors(3), 2);
     }
 
