@@ -130,7 +130,8 @@ where
         response: KmsResponse,
         cancel_token: CancellationToken,
     ) {
-        tracing::Span::current().set_parent(response.otlp_context.extract());
+        // Only fails if the span is filtered out or no OTel layer is set (tests): no span is exported then.
+        let _ = tracing::Span::current().set_parent(response.otlp_context.extract());
 
         let result = match &response.kind {
             KmsResponseKind::PublicDecryption(_) | KmsResponseKind::UserDecryption(_) => {

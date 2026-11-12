@@ -111,7 +111,8 @@ async fn trace_request<B: MessageBody>(
     next: Next<B>,
     observation: RequestObservation,
 ) -> Result<ServiceResponse<B>, actix_web::Error> {
-    Span::current().set_parent(telemetry::extract_context(|name| {
+    // Only fails if the span is filtered out or no OTel layer is set (tests): no span is exported then.
+    let _ = Span::current().set_parent(telemetry::extract_context(|name| {
         req.headers().get(name).and_then(|v| v.to_str().ok())
     }));
     record_response(next.call(req).await, observation, &Span::current())
