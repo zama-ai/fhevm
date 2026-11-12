@@ -84,7 +84,7 @@ struct Args {
     #[arg(long, env = "PAD_S3_MAX_CONCURRENT_UPLOADS", default_value = "16")]
     s3_max_concurrent_uploads: NonZeroUsize,
 
-    /// Interval of the read that finds failed uploads.
+    /// Interval of the read that finds failed uploads claimed before `PAD_CLAIM_TIMEOUT`.
     #[arg(long, env = "PAD_S3_RESUBMIT_INTERVAL", default_value = "30s", value_parser = humantime::parse_duration)]
     s3_resubmit_interval: Duration,
 
