@@ -841,3 +841,25 @@ async fn uploads_without_a_checksum_for_s3_servers_without_support() {
     cancel.cancel();
     run.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn uploads_a_complete_row_without_a_claim() {
+    let (_instance, pool) = db().await;
+    let (_localstack, client, uploader) = s3().await;
+    add_row(&pool, LANE, 1, 1, 0.0).await;
+    let (_signer, cancel, run) =
+        start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
+
+    // No bucket: the upload fails. Without a claim, resubmit does not wait for the claim timeout.
+    until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
+    sleep(Duration::from_millis(300)).await;
+    client.create_bucket().bucket(BUCKET).send().await.unwrap();
+    sqlx::query("UPDATE pads SET claimed_at = NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+}
