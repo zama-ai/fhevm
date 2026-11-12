@@ -238,6 +238,11 @@ describe("env", () => {
     expect(pair.componentEnvs["kms-connector"].KMS_CONNECTOR_TX_SENDER_ADDRESS).toBe(
       pair.componentEnvs["host-sc"].KMS_TX_SENDER_ADDRESS_0,
     );
+    // Each committee party's connector key, party 1 first.
+    const connectorKeys = suite.KMS_CONNECTOR_PRIVATE_KEYS.split(",");
+    expect(connectorKeys).toHaveLength(Number(pair.componentEnvs["gateway-sc"].NUM_KMS_NODES));
+    expect(connectorKeys[0]).toBe(suite.KMS_CONNECTOR_PRIVATE_KEY);
+    expect(connectorKeys[1]).toBe(pair.instanceEnvs["kms-connector.2"].KMS_CONNECTOR_PRIVATE_KEY);
 
     // Bundles without the proxy image, and blue-green stacks, run no proxy.
     const blueGreen: State = {
@@ -256,6 +261,7 @@ describe("env", () => {
         "PAD_WORKER_METRICS_URLS",
         "COPROCESSOR_PROXY_METRICS_URLS",
         "KMS_CONNECTOR_PRIVATE_KEY",
+        "KMS_CONNECTOR_PRIVATE_KEYS",
       ]) {
         expect(gated.componentEnvs["test-suite"][key]).toBe("");
       }

@@ -358,6 +358,7 @@ export const TEST_GREP: Record<string, string> = {
   // All three connector HTTP suites in one mocha run; this is the profile included in the standard test set.
   "connector-http": "Connector HTTP",
   "coprocessor-proxy": "Coprocessor proxy",
+  "prf-endpoint": "PRF endpoint",
   "random": "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt",
   "random-subset":
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
@@ -409,6 +410,7 @@ export const STANDARD_TEST_PROFILES = [
   "public-decrypt-http-mixed",
   "connector-http",
   "coprocessor-proxy",
+  "prf-endpoint",
   "negative-acl",
   "random-subset",
   "multi-chain-isolation",
@@ -449,6 +451,7 @@ export const STANDARD_SHARD_DECRYPTION_TEST_PROFILES = [
   "public-decrypt-http-mixed",
   "connector-http",
   "coprocessor-proxy",
+  "prf-endpoint",
 ] as const;
 
 export const STANDARD_SHARD_COMPUTE_TEST_PROFILES = [

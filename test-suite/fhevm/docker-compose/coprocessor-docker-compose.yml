@@ -333,6 +333,8 @@ services:
       - --output-max-age=300s
       - --ct64-max-age=30s
       - --gc-interval=5s
+      # 4 rows at once, fewer than the 8 requests in progress: the fairness test needs this.
+      - --max-concurrent=4
       # Keeps a row pending for 2 s, so the suite can test the budgets.
       - --mock-extra-latency=2s
     depends_on:
@@ -355,6 +357,8 @@ services:
       COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS: ${PROTOCOL_CONFIG_ADDRESS}
       COPROCESSOR_PROXY_TLS_CERT_PATH: /etc/coprocessor-proxy/tls/tls.crt
       COPROCESSOR_PROXY_TLS_KEY_PATH: /etc/coprocessor-proxy/tls/tls.key
+      # e2e limit, low so the "PRF endpoint" suite reaches it.
+      COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER: "20"
     volumes:
       - ../static/config/coprocessor-proxy:/etc/coprocessor-proxy/tls:ro
     # The proxy resolves the prf-service hostname once, at startup.
