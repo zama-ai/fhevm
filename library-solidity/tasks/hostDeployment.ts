@@ -19,7 +19,7 @@ import path from 'node:path';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 import type { NetworkConnection } from 'hardhat/types/network';
 
-import { getIntegerEnvVar, getRequiredEnvVar } from './env.js';
+import { getIntegerEnvVar, getRequiredCountEnvVar, getRequiredEnvVar } from './env.js';
 import { FHEVM_HOST_ADDRESSES_SOL, FHEVM_TEMP_CONTRACTS_DIR, copyHostContracts } from './hostContracts.js';
 import { assertHostAddressesMatchZamaConfig } from './zamaConfigAddresses.js';
 
@@ -195,7 +195,7 @@ type KmsNodeParams = {
 
 function buildKmsNodeParams(): KmsNodeParams[] {
   const nodes: KmsNodeParams[] = [];
-  for (let idx = 0; idx < getIntegerEnvVar('NUM_KMS_NODES'); idx++) {
+  for (let idx = 0; idx < getRequiredCountEnvVar('NUM_KMS_NODES'); idx++) {
     nodes.push({
       txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
@@ -221,7 +221,7 @@ function buildKmsThresholds(): { publicDecryption: number; userDecryption: numbe
 
 function buildCoprocessorSigners(): string[] {
   const signers: string[] = [];
-  for (let idx = 0; idx < getIntegerEnvVar('NUM_COPROCESSORS'); idx++) {
+  for (let idx = 0; idx < getRequiredCountEnvVar('NUM_COPROCESSORS'); idx++) {
     signers.push(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
   }
   return signers;
@@ -296,7 +296,7 @@ export async function addHostPausers(connection: NetworkConnection): Promise<voi
     readHostAddress('PAUSER_SET_CONTRACT_ADDRESS'),
     deployer,
   );
-  for (let idx = 0; idx < getIntegerEnvVar('NUM_PAUSERS'); idx++) {
+  for (let idx = 0; idx < getRequiredCountEnvVar('NUM_PAUSERS'); idx++) {
     await (await pauserSet.addPauser(getRequiredEnvVar(`PAUSER_ADDRESS_${idx}`))).wait();
   }
 }

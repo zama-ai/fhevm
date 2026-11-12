@@ -34,3 +34,16 @@ export function getIntegerEnvVar(name: string, defaultValue?: number): number {
   }
   return integer;
 }
+
+/**
+ * Returns the `name` env variable as a strictly positive integer. Throws if it is missing, empty, non-integer or not
+ * strictly positive, so a malformed count fails loudly instead of silently deploying or registering nothing.
+ */
+export function getRequiredCountEnvVar(name: string): number {
+  const value = getRequiredEnvVar(name);
+  const count = Number(value);
+  if (!Number.isInteger(count) || count <= 0) {
+    throw new Error(`"${name}" env variable must be a positive integer, got "${value}"`);
+  }
+  return count;
+}
