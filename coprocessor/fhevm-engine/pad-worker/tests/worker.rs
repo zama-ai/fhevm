@@ -53,6 +53,7 @@ fn config() -> Config {
         output_max_age: None,
         gc_interval: Duration::from_secs(3600),
         ct64_max_age: Duration::from_secs(3600),
+        drain_timeout: Duration::from_secs(20),
     }
 }
 
@@ -670,6 +671,31 @@ async fn a_stop_lets_the_claimed_rows_complete() {
     cancel.cancel();
     run.await.unwrap().unwrap();
     assert!(!pending(&pool, INSTANCE, 1).await);
+}
+
+#[tokio::test]
+async fn a_stop_releases_the_claims_still_running_after_the_drain() {
+    let (_instance, pool) = db().await;
+    let config = Config {
+        drain_timeout: Duration::from_millis(100),
+        ..config()
+    };
+    let (_signer, cancel, run) = start(&pool, config, Arc::new(Slow(Duration::from_secs(5))));
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    until(&pool, "SELECT claimed_at IS NOT NULL FROM pads").await;
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+    // The next pod claims the row at once, not after `claim_timeout`.
+    let claimed = rows::claim(
+        &pool,
+        INSTANCE,
+        Duration::from_secs(600),
+        Duration::from_secs(60),
+    )
+    .await
+    .unwrap();
+    assert_eq!(claimed.map(|c| c.label), Some(B256::repeat_byte(1)));
 }
 
 #[tokio::test]

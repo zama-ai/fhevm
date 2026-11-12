@@ -23,6 +23,9 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn, Level};
 
+/// On a stop, the time for the claimed rows to complete. Below the 30 s grace period.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
+
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -245,6 +248,7 @@ async fn main() -> anyhow::Result<()> {
             output_max_age: args.output_max_age,
             gc_interval: args.gc_interval,
             ct64_max_age: args.ct64_max_age,
+            drain_timeout: DRAIN_TIMEOUT,
         },
         pool,
         Arc::new(TimedMockEvaluator {

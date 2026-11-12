@@ -10,7 +10,7 @@ pub const RETRY_BACKOFF_STEP_SECS: i32 = 5;
 pub const RETRY_BACKOFF_MAX_SECS: i32 = 60;
 
 /// A claimed row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Claim {
     pub prf_instance: u16,
     pub label: B256,
@@ -142,6 +142,24 @@ pub async fn retry(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Releases the claims of evaluations that a stop aborted. Returns the rows released.
+pub async fn release(pool: &PgPool, prf_instance: u16, claims: &[Claim]) -> sqlx::Result<u64> {
+    let labels: Vec<Vec<u8>> = claims.iter().map(|c| c.label.to_vec()).collect();
+    let lengths: Vec<i32> = claims.iter().map(|c| i32::from(c.pad_length)).collect();
+    let result = sqlx::query!(
+        "UPDATE pads SET claimed_at = NULL
+          WHERE prf_instance = $1
+            AND (label, pad_length) IN (SELECT * FROM UNNEST($2::BYTEA[], $3::INTEGER[]))
+            AND signature IS NULL AND NOT is_error",
+        i32::from(prf_instance),
+        &labels,
+        &lengths,
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 /// A complete row to upload to S3.
