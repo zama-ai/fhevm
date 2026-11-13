@@ -208,8 +208,10 @@ impl EvmListener {
     /// * `block_number` - The block number to fetch
     /// * `cancel_token` - Cancellation token for this operation (share across batch for batch cancellation)
     /// * `compute_block` - Whether to verify block integrity (transaction root, receipt root, block hash)
-    /// * `verify_receipt_block_hash` - Reject receipts whose `blockHash` is not this block's hash.
-    ///   Only the live cursor enables it; catch-up, finality and startup fetches keep it off.
+    /// * `verify_receipt_block_hash` - Reject receipts whose `blockHash` is not this block's hash,
+    ///   and cap `NotFound` on per-tx receipt calls at `reorg_not_found_max_retries` (a tx
+    ///   dropped by a reorg is never found again). Only the live cursor enables it; catch-up,
+    ///   finality and startup fetches keep it off.
     ///
     /// # Cancellation
     /// When `cancel_token.cancel()` is called, this operation will return `BlockFetchError::Cancelled`.
@@ -221,9 +223,17 @@ impl EvmListener {
         compute_block: bool,
         verify_receipt_block_hash: bool,
     ) -> Result<FetchedBlock, EvmListenerError> {
-        let fetcher = self
+        let mut fetcher = self
             .create_fetcher(cancel_token, compute_block)
             .with_verify_receipt_block_hash(verify_receipt_block_hash);
+        if verify_receipt_block_hash {
+            // Live cursor: a tx of this block may have been dropped by a reorg, so its
+            // receipt stays null forever. Give up like the reorg walk does; the
+            // `NotFoundAfterRetries` error re-arms the cursor (`CursorResult::Rearm`).
+            // Block calls and `eth_getBlockReceipts` stay uncapped.
+            fetcher =
+                fetcher.with_receipt_not_found_max_retries(Some(self.reorg_not_found_max_retries));
+        }
 
         let result = match self.fetcher_strategy {
             BlockFetcherStrategy::BlockReceipts => {
@@ -701,7 +711,8 @@ impl EvmListener {
 
             // === RE-ARM PATH ===
             // The fetcher saw a block whose receipts do not match it (count, tx hashes
-            // or `blockHash`): the chain moved between the RPC calls. The integrity
+            // or `blockHash`), or a per-tx receipt still null after the cap (tx dropped
+            // by a reorg): the chain moved between the RPC calls. The integrity
             // check runs before publish, so nothing of this block was sent. Retrying
             // the same block cannot help, so return Ok and let the handler re-arm the
             // cursor with fresh chain data (no transient error, no circuit breaker).
@@ -718,7 +729,7 @@ impl EvmListener {
                     error = %fetcher_err,
                     range_start = range_start,
                     range_end = range_end,
-                    "Cursor: block and receipts inconsistent (chain moved between RPC calls), re-arming cursor"
+                    "Cursor: block and receipts inconsistent or a receipt no longer available (chain moved between RPC calls), re-arming cursor"
                 );
                 self.record_rearm("live");
                 tokio::time::sleep(Duration::from_millis(self.loop_delay_ms)).await;

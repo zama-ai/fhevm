@@ -51,7 +51,8 @@ test-e2e-consumer: clean-e2e-containers
 
 # ── listener_core e2e (Postgres via DATABASE_URL + Redis container) ───────────
 test-e2e-listener: clean-e2e-containers
-	cargo test -p listener_core --lib -- --ignored reorg_abandon; \
+	@test -n "$$DATABASE_URL" || { echo "test-e2e-listener: set DATABASE_URL to a reachable Postgres (sqlx::test)"; exit 1; }
+	cargo test -p listener_core --lib -- --ignored rearm_tests; \
 	status=$$?; \
 	$(MAKE) clean-e2e-containers; \
 	exit $$status
