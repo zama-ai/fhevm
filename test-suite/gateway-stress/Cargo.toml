@@ -7,6 +7,7 @@ edition = "2024"
 fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false }
 user-decryption-signature = { path = "../../shared/user-decryption-signature" }
 kms-connector-api = { path = "../../kms-connector/crates/api", default-features = false }
+fhevm-sig-auth = { path = "../../shared/fhevm-sig-auth" }
 
 alloy = { version = "2.2.0", default-features = false, features = [
     "essentials",
