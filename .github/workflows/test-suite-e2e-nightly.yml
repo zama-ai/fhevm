@@ -9,15 +9,16 @@ name: test-suite-e2e-nightly
 
 on:
   schedule:
-    # TEMPORARY test slot: 14:30 UTC (16:30 EET). Move to midnight once validated.
-    - cron: "30 14 * * *"
+    # Every night at 00:00 UTC.
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 permissions: {}
 
-# One nightly at a time; never cancel a run that is already in flight.
+# One scheduled nightly at a time, never cancelled once in flight. Each manual dispatch
+# gets its own group, so it is never replaced while it waits behind another run.
 concurrency:
-  group: test-suite-e2e-nightly
+  group: test-suite-e2e-nightly-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'schedule' }}
   cancel-in-progress: false
 
 jobs:
@@ -38,27 +39,38 @@ jobs:
       scenario: blue-green-two-of-three-multi-chain
       test-profile: blue-green
 
-  # Scheduled runs fail silently for most people, so open (or update) a tracking issue.
-  # The assignee gets a GitHub notification and an email for the issue and each comment.
+  # Scheduled runs fail silently for most people, so post failures to the #ci-alerts
+  # Slack channel. Only runs on main alert: a dispatch from a work-in-progress branch
+  # or a run cancelled by hand stays quiet.
   notify-failure:
     needs: [blue-green]
-    if: ${{ failure() || cancelled() }}
+    if: ${{ failure() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    permissions:
-      issues: 'write' # Required to open or comment on the tracking issue
+    permissions: {}
     env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      TITLE: "Nightly e2e failed"
-      ASSIGNEE: goshawk-3
+      SLACK_CI_ALERTS_WEBHOOK: ${{ secrets.SLACK_CI_ALERTS_WEBHOOK }}
+      # Keep in sync with the legs above.
+      SCENARIO_DESC: >-
+        blue-green-two-of-three-multi-chain - Blue-Green upgrade from v0.14.2 (Blue) to main
+        (Green), 3 operators with threshold 2, two host chains, failed-then-successful cutover.
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
-      - name: Open or update the tracking issue
+      - name: Post to the ci-alerts Slack channel
         run: |
-          body="Nightly e2e run failed on \`${GITHUB_SHA}\` (trigger: ${GITHUB_EVENT_NAME}): ${RUN_URL}"
-          existing="$(gh issue list --state open --search "in:title \"${TITLE}\"" --json number --jq '.[0].number // empty')"
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-          else
-            gh issue create --title "$TITLE" --assignee "$ASSIGNEE" --body "$body"
+          set -euo pipefail
+          # GITHUB_SHA is the head of main at run time, not always the tested revision: Green
+          # is built from it, but the other images come from the latest-main bundle, which
+          # can lag main. Say so in the alert, so triage does not blame the wrong commit.
+          text="@coprocessor-team Nightly e2e failed (${GITHUB_EVENT_NAME}): ${RUN_URL}
+          Scenario: ${SCENARIO_DESC}
+          main head (Green is built from it): ${GITHUB_SHA:0:9}
+          Other images: latest-main bundle, see the 'Resolve stack plan' step in the run log."
+          echo "${text}" >> "${GITHUB_STEP_SUMMARY}"
+          if [[ -z "${SLACK_CI_ALERTS_WEBHOOK}" ]]; then
+            echo "::error::SLACK_CI_ALERTS_WEBHOOK is unset; the failure was not reported"
+            exit 1
           fi
+          # link_names asks Slack to turn "@coprocessor-team" into a real group mention.
+          payload=$(jq -n --arg text "${text}" '{text:$text, link_names:1}')
+          curl -fsS -X POST -H 'Content-type: application/json' --data "${payload}" \
+            "${SLACK_CI_ALERTS_WEBHOOK}"
