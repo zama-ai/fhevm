@@ -82,6 +82,7 @@ centres = "centres"
 analyse = "analyse"
 analysed = "analysed"
 analysing = "analysing"
+incentivising = "incentivising"
 apologise = "apologise"
 apologised = "apologised"
 apologising = "apologising"
@@ -175,5 +176,7 @@ BA = "BA"                 # used in test variable names (e.g., wrongOrderBAInste
 PN = "PN"                 # abbreviation P1, ..., PN
 
 [default.extend-identifiers]
+# Error name quoted verbatim from a LayerZero executor log in protocol-contracts/docs/governance/manual-execution-remote.md
+CouldNotPaseError = "CouldNotPaseError"
 # A Solana public key (base58) that typos splits into "9thq..." and reads as "the"
 "9thqPdbR27A1yLWw2spwJLySemiGMXxPnEvfmXVk4KuK" = "9thqPdbR27A1yLWw2spwJLySemiGMXxPnEvfmXVk4KuK"
