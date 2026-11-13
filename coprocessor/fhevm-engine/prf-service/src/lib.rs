@@ -1,4 +1,4 @@
-pub mod bodies;
+mod bodies;
 mod error;
 mod http;
 pub mod in_flight;
