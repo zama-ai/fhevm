@@ -56,6 +56,84 @@ worker_image_tag() {
   jq -r ".${key}" <<<"${TAGS_JSON}"
 }
 
+# Chart 0.7.x stores tolerations as {enabled, items} and bakes the gateway URL
+# into args. A list tolerations value overwrites that table and the template
+# then crashes on .tolerations.enabled. The same chart never reads
+# commonConfig.gatewayUrl, extraArgs, or txSender.wallet.
+coprocessor_chart_is_legacy() {
+  yq -e '.tfheWorker.tolerations | has("enabled")' "${COPROCESSOR_CHART}/values.yaml" >/dev/null 2>&1
+}
+
+ensure_legacy_secret() {
+  local name="$1" key="$2" value="$3"
+  if kubectl get secret "${name}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+    return 0
+  fi
+  kubectl create secret generic "${name}" -n "${NAMESPACE}" \
+    --from-literal="${key}=${value}" >/dev/null
+}
+
+# Rewrites the overlay for a 0.7.x chart. Sets values_files.
+prepare_legacy_coprocessor_values() {
+  local party="$1" privkey="$2"
+  local adapted legacy chart db_url host_tag
+  adapted="$(mktemp)"
+  legacy="$(mktemp)"
+  chart="${COPROCESSOR_CHART}/values.yaml"
+  db_url="postgresql://zama:zama@postgres-coprocessor-${party}:5432/fhevm_e2e"
+  cp ci/preview-env/coprocessor/values-coprocessor-e2e.yaml "${adapted}"
+  yq -i '
+    (.. | select(type == "!!map" and has("tolerations") and (.tolerations | type == "!!seq"))).tolerations |= {"enabled": true, "items": .} |
+    (.. | select(type == "!!map" and has("affinity") and (.affinity | type == "!!map") and (.affinity | has("nodeAffinity")) and ((.affinity | has("enabled")) | not))).affinity.enabled = true
+  ' "${adapted}"
+  # The chart's config job would pull ghcr.io kube-utils and write a minio URL.
+  # Create the secrets it owns, then leave the job off.
+  ensure_legacy_secret "coprocessor-db-url" "coprocessor-db-url" "${db_url}"
+  ensure_legacy_secret "coprocessor-api-key" "coprocessor-api-key" "$(openssl rand -hex 16)"
+  ensure_legacy_secret "coprocessor-key" "coprocessor.hex" "0x$(openssl rand -hex 32)"
+  # db url must follow this party; the other two secrets stay once created.
+  kubectl create secret generic coprocessor-db-url -n "${NAMESPACE}" \
+    --from-literal="coprocessor-db-url=${db_url}" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  CHART="${chart}" PRIV="${privkey}" CM="coprocessor-${party}" yq -n '
+    .config.enabled = false |
+    .hostListener.enabled = true |
+    .hostListener.serviceAccountName = strenv(CM) |
+    .hostListener.env = [
+      {"name": "DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": "coprocessor-db-url", "key": "coprocessor-db-url"}}},
+      {"name": "TENANT_API_KEY", "valueFrom": {"secretKeyRef": {"name": "coprocessor-api-key", "key": "coprocessor-api-key"}}},
+      {"name": "ETHEREUM_RPC_URL", "value": "ws://anvil-host-anvil-node:8545"},
+      {"name": "ACL_CONTRACT_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "host-sc-addresses", "key": "acl.address"}}},
+      {"name": "FHEVM_EXECUTOR_CONTRACT_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "host-sc-addresses", "key": "fhevm_executor.address"}}}
+    ] |
+    .gwListener.env = [
+      {"name": "DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": "coprocessor-db-url", "key": "coprocessor-db-url"}}},
+      {"name": "INPUT_VERIFICATION_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "gw-sc-addresses", "key": "input_verification.address"}}},
+      {"name": "KMS_GENERATION_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "gw-sc-addresses", "key": "kms_generation.address"}}}
+    ] |
+    .gwListener.args = load(strenv(CHART)).gwListener.args |
+    .txSender.args = load(strenv(CHART)).txSender.args |
+    .txSender.env = load(strenv(CHART)).txSender.env |
+    .snsWorker.env = load(strenv(CHART)).snsWorker.env + [
+      {"name": "S3_BUCKET_NAME", "valueFrom": {"configMapKeyRef": {"name": strenv(CM), "key": "S3_BUCKET_NAME"}}}
+    ]
+  ' > "${legacy}"
+  PRIV="${privkey}" yq -i '
+    (.. | select(type == "!!str")) |= sub("ws://gateway-rpc-node:8548"; "ws://anvil-gateway-anvil-node:8546") |
+    (.. | select(type == "!!str")) |= sub("gateway-sc-addresses"; "gw-sc-addresses") |
+    (.txSender.env[] | select(.name == "TX_SENDER_PRIVATE_KEY").value) = strenv(PRIV)
+  ' "${legacy}"
+  host_tag="$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
+  if [[ "${BLUE_GREEN:-false}" == "true" ]]; then
+    host_tag="${BCS_IMAGE_TAG}"
+  fi
+  HOST_TAG="${host_tag}" yq -i '
+    .hostListener.image.name = "hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener" |
+    .hostListener.image.tag = strenv(HOST_TAG)
+  ' "${legacy}"
+  values_files=(-f "${adapted}" -f "${legacy}")
+}
+
 party_common() {
   local i="$1" privkey="$2" suffix="${3:-}"
   common_args=(
@@ -108,6 +186,7 @@ image_tags() {
   )
 }
 
+values_files=(-f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml)
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
   privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
   if [[ -z "${privkey}" || "${privkey}" == "null" ]]; then
@@ -131,12 +210,16 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     )
   fi
   party_common "${i}" "${privkey}"
+  if coprocessor_chart_is_legacy; then
+    echo "coprocessor chart 0.7.x: adapting tolerations, gateway URL, and host listener"
+    prepare_legacy_coprocessor_values "${i}" "${privkey}"
+  fi
   fleet_json=()
   if [[ "${BLUE_GREEN}" == "true" ]]; then
     fleet_json=(--set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"${i}-bcs\"}")
   fi
   helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \
-    -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
+    -n "${NAMESPACE}" "${values_files[@]}" \
     "${polygon_args[@]}" \
     "${bcs_overlay[@]}" \
     ${coproc_gpu_overlay[@]+"${coproc_gpu_overlay[@]}"} \
