@@ -12,37 +12,37 @@
 //                                 PUBLISH_TARBALL=<path.tgz> node --test 'publish/*.test.mjs'
 //
 // Node built-ins only, never node_modules. Lifecycle scripts are disabled while packing.
-import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
-import { after, before, test } from "node:test";
-import { fileURLToPath } from "node:url";
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative, resolve } from 'node:path';
+import { after, before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Entries removed from the published package.json.
 // `type` only tells Node how to load the Hardhat tooling (ESM); the published package ships Solidity files only.
-const CLEANED_UP = ["scripts", "devDependencies", "optionalDependencies", "engines", "main", "type"];
+const CLEANED_UP = ['scripts', 'devDependencies', 'optionalDependencies', 'engines', 'main', 'type'];
 // Files both tarballs must contain.
-const REQUIRED_FILES = ["package.json", "README.md", "LICENSE"];
+const REQUIRED_FILES = ['package.json', 'README.md', 'LICENSE'];
 // Entries that only exist in the published package.json.
-const PUBLISH_ONLY = ["files", "keywords"];
+const PUBLISH_ONLY = ['files', 'keywords'];
 // The only entries accepted in the published package.json. Anything else (scripts,
 // *Dependencies other than `dependencies`, bin, exports, ...) fails the test.
 const ALLOWED = [
-  "name",
-  "description",
-  "version",
-  "files",
-  "repository",
-  "keywords",
-  "author",
-  "license",
-  "bugs",
-  "homepage",
-  "dependencies",
+  'name',
+  'description',
+  'version',
+  'files',
+  'repository',
+  'keywords',
+  'author',
+  'license',
+  'bugs',
+  'homepage',
+  'dependencies',
 ];
 
 let work;
@@ -53,8 +53,8 @@ let template;
 function extract(tarball, name) {
   const extracted = join(work, name);
   mkdirSync(extracted);
-  execFileSync("tar", ["-xzf", tarball, "-C", extracted]);
-  return join(extracted, "package");
+  execFileSync('tar', ['-xzf', tarball, '-C', extracted]);
+  return join(extracted, 'package');
 }
 
 // Runs `npm pack` in `cwd` and extracts the tarball in `<work>/<name>`. Returns the extracted
@@ -62,25 +62,25 @@ function extract(tarball, name) {
 function packAndExtract(cwd, name) {
   const dest = join(work, `${name}-tgz`);
   mkdirSync(dest);
-  const out = execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", dest], {
+  const out = execFileSync('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', dest], {
     cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   return extract(join(dest, JSON.parse(out)[0].filename), name);
 }
 
 // Mirrors the "Stage package" step of library-solidity-publish.yml.
 function stageFromTemplate() {
-  const stage = join(work, "stage");
+  const stage = join(work, 'stage');
   mkdirSync(stage);
-  for (const source of ["lib", "config", "README.md", "LICENSE"]) {
+  for (const source of ['lib', 'config', 'README.md', 'LICENSE']) {
     cpSync(join(ROOT, source), join(stage, source), { recursive: true });
   }
-  const { version } = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
-  const manifest = JSON.parse(readFileSync(join(ROOT, "package.json.publish.template"), "utf8"));
+  const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json.publish.template'), 'utf8'));
   manifest.version = version;
-  writeFileSync(join(stage, "package.json"), JSON.stringify(manifest, null, 2) + "\n");
+  writeFileSync(join(stage, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
   return stage;
 }
 
@@ -100,7 +100,7 @@ function listFiles(dir) {
 }
 
 function readManifest(dir) {
-  return JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+  return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
 }
 
 function omit(object, keys) {
@@ -108,36 +108,36 @@ function omit(object, keys) {
 }
 
 before(() => {
-  work = mkdtempSync(join(tmpdir(), "fhevm-solidity-pack-"));
-  standard = packAndExtract(ROOT, "standard");
+  work = mkdtempSync(join(tmpdir(), 'fhevm-solidity-pack-'));
+  standard = packAndExtract(ROOT, 'standard');
   const tarball = process.env.PUBLISH_TARBALL;
-  template = tarball ? extract(resolve(tarball), "template") : packAndExtract(stageFromTemplate(), "template");
+  template = tarball ? extract(resolve(tarball), 'template') : packAndExtract(stageFromTemplate(), 'template');
 });
 
 after(() => {
   if (work) rmSync(work, { recursive: true, force: true });
 });
 
-test("both tarballs contain the same files", () => {
+test('both tarballs contain the same files', () => {
   const standardFiles = listFiles(standard);
   const templateFiles = listFiles(template);
   assert.ok(
-    standardFiles.some((file) => file.endsWith(".sol")),
-    "no Solidity file in the standard tarball"
+    standardFiles.some((file) => file.endsWith('.sol')),
+    'no Solidity file in the standard tarball',
   );
   assert.deepEqual(
     templateFiles,
     standardFiles,
-    `only in standard: ${standardFiles.filter((f) => !templateFiles.includes(f)).join(", ") || "-"}; ` +
-      `only in template: ${templateFiles.filter((f) => !standardFiles.includes(f)).join(", ") || "-"}`
+    `only in standard: ${standardFiles.filter((f) => !templateFiles.includes(f)).join(', ') || '-'}; ` +
+      `only in template: ${templateFiles.filter((f) => !standardFiles.includes(f)).join(', ') || '-'}`,
   );
 });
 
-test("every file except package.json is byte-identical", () => {
+test('every file except package.json is byte-identical', () => {
   // Files present in only one tarball are reported by the previous test.
   const templateFiles = listFiles(template);
   for (const file of listFiles(standard)) {
-    if (file === "package.json" || !templateFiles.includes(file)) continue;
+    if (file === 'package.json' || !templateFiles.includes(file)) continue;
     const a = join(standard, file);
     const b = join(template, file);
     assert.ok(readFileSync(a).equals(readFileSync(b)), `content differs: ${file}`);
@@ -145,7 +145,7 @@ test("every file except package.json is byte-identical", () => {
   }
 });
 
-test("both tarballs contain package.json, README.md and LICENSE", () => {
+test('both tarballs contain package.json, README.md and LICENSE', () => {
   for (const dir of [standard, template]) {
     const files = listFiles(dir);
     for (const file of REQUIRED_FILES) {
@@ -154,19 +154,67 @@ test("both tarballs contain package.json, README.md and LICENSE", () => {
   }
 });
 
-test("no bridge contract is published", () => {
+test('no bridge contract is published', () => {
   for (const dir of [standard, template]) {
-    const bridge = listFiles(dir).filter((file) => file.startsWith("lib/bridge/"));
+    const bridge = listFiles(dir).filter((file) => file.startsWith('lib/bridge/'));
     assert.deepEqual(bridge, [], `bridge contracts in ${relative(work, dir)}`);
   }
 });
 
-test("published package.json only contains accepted entries", () => {
+// True if Foundry (`forge`) is installed: the Soldeer test is skipped otherwise.
+function hasForge() {
+  try {
+    execFileSync('forge', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Mirrors the "Publish to Soldeer" step of library-solidity-publish.yml, in dry-run mode: copies the
+// git-tracked files (a clean checkout) to `<work>/soldeer/library-solidity`, runs
+// `forge soldeer push --dry-run` there and returns the paths in the zip it creates, sorted.
+function soldeerDryRunFiles() {
+  const checkout = join(work, 'soldeer', 'library-solidity');
+  const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean);
+  for (const file of tracked) {
+    mkdirSync(dirname(join(checkout, file)), { recursive: true });
+    cpSync(join(ROOT, file), join(checkout, file));
+  }
+  execFileSync('forge', ['soldeer', 'push', '@fhevm-solidity~0.0.0', '.', '--skip-warnings', '--dry-run'], {
+    cwd: checkout,
+    stdio: 'ignore',
+  });
+  return execFileSync('unzip', ['-Z1', join(checkout, 'library-solidity.zip')], { encoding: 'utf8' })
+    .split('\n')
+    .filter((entry) => entry && !entry.endsWith('/'))
+    .sort();
+}
+
+// Skipped locally without Foundry, never on CI (GitHub Actions sets CI=true): the CI jobs that run
+// this test install Foundry, and a missing forge must fail there instead of passing silently.
+test(
+  'the Soldeer package contains the npm package files, except package.json',
+  { skip: hasForge() || process.env.CI ? false : 'forge not found (install Foundry)' },
+  () => {
+    const soldeerFiles = soldeerDryRunFiles();
+    const npmFiles = listFiles(standard).filter((file) => file !== 'package.json');
+    assert.deepEqual(
+      soldeerFiles,
+      npmFiles,
+      `only in Soldeer: ${soldeerFiles.filter((f) => !npmFiles.includes(f)).join(', ') || '-'}; ` +
+        `only in npm: ${npmFiles.filter((f) => !soldeerFiles.includes(f)).join(', ') || '-'} ` +
+        '(check .soldeerignore)',
+    );
+  },
+);
+
+test('published package.json only contains accepted entries', () => {
   const unexpected = Object.keys(readManifest(template)).filter((key) => !ALLOWED.includes(key));
-  assert.deepEqual(unexpected, [], `entries not accepted in the published package.json: ${unexpected.join(", ")}`);
+  assert.deepEqual(unexpected, [], `entries not accepted in the published package.json: ${unexpected.join(', ')}`);
 });
 
-test("package.json files are equivalent, except the cleaned-up entries", () => {
+test('package.json files are equivalent, except the cleaned-up entries', () => {
   const standardManifest = readManifest(standard);
   const templateManifest = readManifest(template);
 
