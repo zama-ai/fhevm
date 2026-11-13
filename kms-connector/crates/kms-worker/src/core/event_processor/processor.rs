@@ -63,8 +63,8 @@ where
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
         let poll_target = KmsPollTarget::from(&event.kind);
 
-        // Requests answered synchronously are idempotent on the KMS Core side: they are always
-        // re-sent on retry, as there is no result to poll.
+        // Requests answered synchronously are always re-sent on retry, as there is no result to
+        // poll. This relies on the requests being idempotent on the KMS Core side.
         let send_response =
             if matches!(poll_target, KmsPollTarget::ResultOnSend) || !event.already_sent {
                 // We optimistically prepare the request while running the checks.
