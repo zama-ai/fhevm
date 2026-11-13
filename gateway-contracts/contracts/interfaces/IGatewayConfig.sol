@@ -408,10 +408,11 @@ interface IGatewayConfig {
 
     /**
      * @notice Update the coprocessor context: coprocessors and majority threshold for a given context ID.
-     * @dev The context is copied from `CoprocessorConfig` and becomes the current one. Earlier contexts stay
-     *      readable. New input verification requests use this context, and requests in progress complete
-     *      under the context they recorded.
-     * @param newContextId The new context ID to associate with the coprocessors, as assigned by `CoprocessorConfig`.
+     * @dev Applies a context defined on `CoprocessorConfig` under the same ID, with each coprocessor's
+     *      Gateway transaction sender. It becomes the current one, and earlier contexts stay readable.
+     *      New input verification requests use this context, and requests in progress complete under the
+     *      context they recorded.
+     * @param newContextId The coprocessor context ID, as assigned by `CoprocessorConfig`.
      * @param newCoprocessors The new coprocessors.
      * @param newCoprocessorThreshold The new majority threshold.
      */

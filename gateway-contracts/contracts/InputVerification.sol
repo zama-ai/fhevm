@@ -63,6 +63,9 @@ contract InputVerification is
      */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
+    /// @dev Coprocessor context ID held by requests created before coprocessor contexts.
+    uint256 private constant LEGACY_PLACEHOLDER_CONTEXT_ID = 1;
+
     /**
      * @notice The definition of the CiphertextVerification structure typed data.
      */
@@ -135,7 +138,8 @@ contract InputVerification is
         // Context state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The coprocessor context ID of the input verification request.
-        /// @dev Requests created before coprocessor contexts hold the placeholder `1`, see {_getRequestContextId}.
+        /// @dev Requests created before coprocessor contexts hold `LEGACY_PLACEHOLDER_CONTEXT_ID`,
+        ///      see {_getRequestContextId}.
         mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
         /// @notice The priority coprocessor transaction sender that finalized proof verification.
         /// @dev Deprecated. Never written again, but still read by {getVerifyProofConsensusTxSenders}
@@ -477,14 +481,14 @@ contract InputVerification is
 
     /**
      * @notice Returns the coprocessor context ID of an input verification request.
-     * @dev Requests created before the upgrade hold the placeholder `1`, read as the current context.
+     * @dev Requests created before the upgrade hold `LEGACY_PLACEHOLDER_CONTEXT_ID`, read as the current context.
      *      If one is still open at the next `updateCoprocessors`, it moves to the new context. This is not a
      *      concern: the next switch comes long after the upgrade, leaving these requests time to complete.
      * @param zkProofId The ID of the input verification request.
      */
     function _getRequestContextId(uint256 zkProofId) internal view virtual returns (uint256) {
         uint256 contextId = _getInputVerificationStorage().inputVerificationContextId[zkProofId];
-        return contextId == 1 ? GATEWAY_CONFIG.getCurrentCoprocessorContextId() : contextId;
+        return contextId == LEGACY_PLACEHOLDER_CONTEXT_ID ? GATEWAY_CONFIG.getCurrentCoprocessorContextId() : contextId;
     }
 
     /**

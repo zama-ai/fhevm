@@ -278,13 +278,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice Re-initializes the contract from V8.
      * @dev Clears the deprecated priority coprocessor slot, so the upgrade itself makes coprocessor
      *      consensus threshold-based without depending on a prior ops call.
-     * @dev UPGRADE ORDER: batch the `upgradeToAndCall` calls of `GatewayConfig`, `CiphertextCommits` and
-     *      `InputVerification` in one proposal. This implementation drops `getPriorityCoprocessorTxSender()`,
-     *      which the deployed `CiphertextCommits` and `InputVerification` call on every response, and the new
-     *      `InputVerification` reads coprocessor contexts, which only this implementation serves.
-     * @dev Every host-chain `InputVerifier` must already accept the full gateway coprocessor signer set
-     *      at the gateway threshold. Under priority mode the gateway emitted a single signature, so a
-     *      host still pinned to one signer would reject the bundles this upgrade makes unconditional.
      * @dev Requests the former priority sender already responded to, without reaching consensus, become
      *      finalizable again: their count resumes against the coprocessor threshold.
      * @dev Stores the registered coprocessor set and threshold as the first coprocessor context.
@@ -301,19 +294,19 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         delete $.priorityCoprocessorTxSender;
 
-        uint256 contextId = initialCoprocessorContextId;
         address[] storage txSenderAddresses = $.coprocessorTxSenderAddresses;
         uint256 coprocessorCount = txSenderAddresses.length;
         for (uint256 i = 0; i < coprocessorCount; i++) {
-            Coprocessor storage coprocessor = $.coprocessors[txSenderAddresses[i]];
-            $.isCoprocessorTxSenderForContext[contextId][coprocessor.txSenderAddress] = true;
-            $.isCoprocessorSignerForContext[contextId][coprocessor.signerAddress] = true;
-            $.coprocessorsForContext[contextId][coprocessor.txSenderAddress] = coprocessor;
-            $.coprocessorTxSenderAddressesForContext[contextId].push(coprocessor.txSenderAddress);
-            $.coprocessorSignerAddressesForContext[contextId].push(coprocessor.signerAddress);
+            address txSenderAddress = txSenderAddresses[i];
+            Coprocessor storage coprocessor = $.coprocessors[txSenderAddress];
+            $.isCoprocessorTxSenderForContext[initialCoprocessorContextId][txSenderAddress] = true;
+            $.isCoprocessorSignerForContext[initialCoprocessorContextId][coprocessor.signerAddress] = true;
+            $.coprocessorsForContext[initialCoprocessorContextId][txSenderAddress] = coprocessor;
+            $.coprocessorTxSenderAddressesForContext[initialCoprocessorContextId].push(txSenderAddress);
+            $.coprocessorSignerAddressesForContext[initialCoprocessorContextId].push(coprocessor.signerAddress);
         }
-        $.coprocessorThresholdForContext[contextId] = $.coprocessorThreshold;
-        $.currentCoprocessorContextId = contextId;
+        $.coprocessorThresholdForContext[initialCoprocessorContextId] = $.coprocessorThreshold;
+        $.currentCoprocessorContextId = initialCoprocessorContextId;
     }
 
     /**
