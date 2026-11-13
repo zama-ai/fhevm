@@ -1883,27 +1883,39 @@ impl Database {
         tx: &mut Transaction<'_>,
         last_block_max: i64,
         chain_id: ChainId,
+        finalized_tip: Option<i64>,
     ) -> Result<HashSet<i64>, SqlxError> {
         // Most of the time there is only 1 block pending. Under a backlog,
         // take the OLDEST pending blocks: finalization must progress
         // oldest-first so each block's parent-linkage check anchors on a
         // finalized predecessor instead of passing vacuously.
-        let blocks_number = sqlx::query!(
+        // Below the finalized tip, only rows with retained history: a pending
+        // row with no finalized row at its height or next to it is an old
+        // block redelivered after its neighbours were pruned. It has nothing
+        // left to be checked against and would otherwise head every batch,
+        // stopping it at its missing link. Rows next to retained history
+        // still go through the neighbour checks that contain contradictions.
+        let blocks_number = sqlx::query_scalar!(
             r#"
-            SELECT block_number FROM host_chain_blocks_valid
-            WHERE block_status = 'pending' AND block_number <= $1 AND chain_id = $2
-            ORDER BY block_number ASC
+            SELECT p.block_number FROM host_chain_blocks_valid p
+            WHERE p.block_status = 'pending' AND p.block_number <= $1
+              AND p.chain_id = $2
+              AND ($3::BIGINT IS NULL OR p.block_number >= $3 OR EXISTS (
+                  SELECT 1 FROM host_chain_blocks_valid n
+                   WHERE n.chain_id = p.chain_id
+                     AND n.block_status = 'finalized'
+                     AND n.block_number BETWEEN p.block_number - 1
+                                            AND p.block_number + 1))
+            ORDER BY p.block_number ASC
             LIMIT 10
             "#,
             last_block_max,
             chain_id.as_i64(),
+            finalized_tip,
         )
         .fetch_all(tx.deref_mut())
         .await?;
-        Ok(blocks_number
-            .into_iter()
-            .map(|record| record.block_number)
-            .collect())
+        Ok(blocks_number.into_iter().collect())
     }
 
     /// Prunes old, unreferenced, finalized `host_chain_blocks_valid` rows.

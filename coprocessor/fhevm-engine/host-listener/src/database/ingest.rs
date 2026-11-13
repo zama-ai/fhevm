@@ -557,6 +557,44 @@ pub async fn ingest_block_logs(
         .await?;
         return Err(sqlx::Error::Protocol(conflict.reason.into()));
     }
+    if !block_logs.finalized {
+        // Final is final: below the finalized tip, a height with no
+        // finalized row at it or next to it lies in pruned history. A broker
+        // replaying its cursor can redeliver such an old block; admitted as
+        // pending, it could never be linked or finalized. Next to retained
+        // history a redelivery still goes through, to repair or contain
+        // derived state.
+        let block_number = i64::try_from(block_logs.summary.number)
+            .map_err(|err| sqlx::Error::Protocol(err.to_string()))?;
+        let in_pruned_history = sqlx::query_scalar!(
+            r#"
+            SELECT (
+                EXISTS (
+                    SELECT 1 FROM host_chain_blocks_valid
+                     WHERE chain_id = $1 AND block_status = 'finalized'
+                       AND block_number > $2
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM host_chain_blocks_valid
+                     WHERE chain_id = $1 AND block_status = 'finalized'
+                       AND block_number BETWEEN $2 - 1 AND $2 + 1
+                )
+            ) AS "in_pruned_history!"
+            "#,
+            chain_id.as_i64(),
+            block_number,
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if in_pruned_history {
+            tx.rollback().await?;
+            warn!(
+                block_number = block_logs.summary.number,
+                block_hash = ?block_logs.summary.hash,
+                "Ignoring non-finalized block in pruned finalized history"
+            );
+            return Ok(IngestResult::Complete);
+        }
+    }
     if block_logs.finalized {
         if let Some(block_number) =
             super::history_verification::missing_finalized_link(
@@ -2271,18 +2309,19 @@ where
             }
         };
         let candidates = async {
-            let numbers = Database::get_finalized_blocks_number(
-                &mut tx,
-                last_finalized_block as i64,
-                db.chain_id,
-            )
-            .await?;
             let tip: Option<i64> = sqlx::query_scalar(
                 "SELECT MAX(block_number) FROM host_chain_blocks_valid
                  WHERE chain_id = $1 AND block_status = 'finalized'",
             )
             .bind(db.chain_id.as_i64())
             .fetch_one(&mut *tx)
+            .await?;
+            let numbers = Database::get_finalized_blocks_number(
+                &mut tx,
+                last_finalized_block as i64,
+                db.chain_id,
+                tip,
+            )
             .await?;
             Ok::<_, sqlx::Error>((numbers, tip))
         }
