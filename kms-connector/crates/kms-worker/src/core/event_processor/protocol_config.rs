@@ -79,10 +79,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         event: &NewKmsContext,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let new = self.build_new_mpc_context_request(event)?;
-        let previous_context_event = self
-            .fetch_previous_context_creation_event(event)
-            .await
-            .map_err(ProcessingError::transient)?;
+        let previous_context_event = self.fetch_previous_context_creation_event(event).await?;
         let old = self.build_new_mpc_context_request(&previous_context_event)?;
         Ok(KmsGrpcRequest::NewMpcContext {
             new: Box::new(new),
@@ -131,7 +128,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         event: &NewKmsEpoch,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let previous_epoch = self
-            .fetch_epoch_material(event.materialBlockNumber.saturating_to())
+            .fetch_epoch_material(to_block_number(event.materialBlockNumber)?)
             .await?
             .previous_epoch_info(event)?;
 
@@ -153,7 +150,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         event: &NewKmsEpoch,
     ) -> Result<(Vec<u8>, Vec<u8>), ProcessingError> {
         let material = self
-            .fetch_epoch_material(event.materialBlockNumber.saturating_to())
+            .fetch_epoch_material(to_block_number(event.materialBlockNumber)?)
             .await?;
         Ok(material.abi_encode())
     }
@@ -165,15 +162,15 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
     async fn fetch_previous_context_creation_event(
         &self,
         new_context_event: &NewKmsContext,
-    ) -> anyhow::Result<NewKmsContext> {
+    ) -> Result<NewKmsContext, ProcessingError> {
         let previous_context_anchor = self
             .protocol_config_contract
             .getKmsContextAnchor(new_context_event.previousContextId)
             .block(BlockId::finalized())
             .call()
-            .await?;
-        let previous_context_block: u64 =
-            previous_context_anchor.emissionBlockNumber.saturating_to();
+            .await
+            .map_err(ProcessingError::transient)?;
+        let previous_context_block = to_block_number(previous_context_anchor.emissionBlockNumber)?;
 
         let filter = Filter::new()
             .address(*self.protocol_config_contract.address())
@@ -184,29 +181,32 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             .protocol_config_contract
             .provider()
             .get_logs(&filter)
-            .await?;
+            .await
+            .map_err(ProcessingError::transient)?;
 
         match anchor_logs.as_slice() {
-            [] => Err(anyhow!(
+            [] => Err(ProcessingError::transient(anyhow!(
                 "No event found at anchor {} for previous context {:#066x}",
                 previous_context_anchor.emissionBlockNumber,
                 new_context_event.previousContextId
-            )),
+            ))),
             [anchor_log] => {
-                let previous_context_event = NewKmsContext::decode_log(&anchor_log.inner)?.data;
+                let previous_context_event = NewKmsContext::decode_log(&anchor_log.inner)
+                    .map_err(ProcessingError::transient)?
+                    .data;
                 let event_hash = compute_anchor_event_hash(&previous_context_event);
                 if event_hash != previous_context_anchor.contextInfoHash {
-                    return Err(anyhow!(
+                    return Err(ProcessingError::transient(anyhow!(
                         "Previous context hash verification failed: computed={:?}, on-chain={:?}",
                         event_hash,
                         previous_context_anchor.contextInfoHash,
-                    ));
+                    )));
                 }
                 Ok(previous_context_event)
             }
-            logs => Err(anyhow!(
+            logs => Err(ProcessingError::transient(anyhow!(
                 "Too many events found at anchor {previous_context_anchor:?}: {logs:?}"
-            )),
+            ))),
         }
     }
 
@@ -443,6 +443,16 @@ pub fn compute_node_config_hash(event: &NewKmsContext) -> FixedBytes<32> {
         })
         .collect();
     keccak256((nodes, event.thresholds.clone()).abi_encode_sequence())
+}
+
+/// Converts an on-chain `uint256` block number, failing the event if it does not fit in a `u64`.
+fn to_block_number(block_number: U256) -> Result<u64, ProcessingError> {
+    block_number.try_into().map_err(|e| {
+        ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!("Invalid block number {block_number}: {e}"),
+        )
+    })
 }
 
 /// Computes the hash of a `NewKmsContext` event.
