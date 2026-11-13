@@ -2,9 +2,9 @@ use crate::{
     monitoring::otlp::PropagationContext,
     tests::rand::{rand_digest, rand_signature, rand_u256},
     types::{
-        CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind,
-        NewKmsContextResponse, PrepKeygenResponse, PublicDecryptionResponse,
-        UserDecryptionResponse,
+        ContextDestructionResponse, CrsgenResponse, EpochDestructionResponse, EpochResultResponse,
+        KeygenResponse, KmsResponseKind, NewKmsContextResponse, PrepKeygenResponse,
+        PublicDecryptionResponse, UserDecryptionResponse,
         db::{KeyDigestDbItem, KeyType, OperationStatus, RequestSource},
     },
 };
@@ -23,6 +23,8 @@ pub enum TestResponseType {
     Crsgen,
     NewKmsContext,
     EpochResult,
+    ContextDestruction,
+    EpochDestruction,
 }
 
 impl Display for TestResponseType {
@@ -35,6 +37,8 @@ impl Display for TestResponseType {
             Self::Crsgen => "CrsgenResponse",
             Self::NewKmsContext => "NewKmsContextResponse",
             Self::EpochResult => "EpochResultResponse",
+            Self::ContextDestruction => "ContextDestructionResponse",
+            Self::EpochDestruction => "EpochDestructionResponse",
         };
         f.write_str(s)
     }
@@ -69,6 +73,12 @@ pub async fn insert_rand_response(
         TestResponseType::EpochResult => {
             KmsResponseKind::EpochResult(insert_rand_epoch_result_response(db, id, status).await?)
         }
+        TestResponseType::ContextDestruction => KmsResponseKind::ContextDestruction(
+            insert_rand_context_destruction_response(db, id, status).await?,
+        ),
+        TestResponseType::EpochDestruction => KmsResponseKind::EpochDestruction(
+            insert_rand_epoch_destruction_response(db, id, status).await?,
+        ),
     };
     Ok(inserted_response)
 }
@@ -243,12 +253,17 @@ pub async fn insert_rand_new_kms_context_response(
     status: Option<OperationStatus>,
 ) -> anyhow::Result<NewKmsContextResponse> {
     let context_id = id.unwrap_or_else(rand_u256);
+    let signature = rand_signature();
     let status = status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
-        "INSERT INTO new_kms_context_responses(context_id, created_at, otlp_context, status)
-        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        "INSERT INTO new_kms_context_responses(
+            context_id, signature, extra_data, created_at, otlp_context, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
+        signature,
+        Vec::<u8>::new(),
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
         status as OperationStatus,
@@ -256,7 +271,73 @@ pub async fn insert_rand_new_kms_context_response(
     .execute(db)
     .await?;
 
-    Ok(NewKmsContextResponse { context_id })
+    Ok(NewKmsContextResponse {
+        context_id,
+        signature,
+        extra_data: vec![],
+    })
+}
+
+pub async fn insert_rand_context_destruction_response(
+    db: &Pool<Postgres>,
+    id: Option<U256>,
+    status: Option<OperationStatus>,
+) -> anyhow::Result<ContextDestructionResponse> {
+    let context_id = id.unwrap_or_else(rand_u256);
+    let signature = rand_signature();
+    let status = status.unwrap_or(OperationStatus::Pending);
+
+    sqlx::query!(
+        "INSERT INTO kms_context_destruction_responses(
+            context_id, signature, extra_data, created_at, otlp_context, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        context_id.as_le_slice(),
+        signature,
+        Vec::<u8>::new(),
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(ContextDestructionResponse {
+        context_id,
+        signature,
+        extra_data: vec![],
+    })
+}
+
+pub async fn insert_rand_epoch_destruction_response(
+    db: &Pool<Postgres>,
+    id: Option<U256>,
+    status: Option<OperationStatus>,
+) -> anyhow::Result<EpochDestructionResponse> {
+    let epoch_id = id.unwrap_or_else(rand_u256);
+    let signature = rand_signature();
+    let status = status.unwrap_or(OperationStatus::Pending);
+
+    sqlx::query!(
+        "INSERT INTO kms_epoch_destruction_responses(
+            epoch_id, signature, extra_data, created_at, otlp_context, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        epoch_id.as_le_slice(),
+        signature,
+        Vec::<u8>::new(),
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(EpochDestructionResponse {
+        epoch_id,
+        signature,
+        extra_data: vec![],
+    })
 }
 
 pub async fn insert_rand_epoch_result_response(
@@ -267,18 +348,27 @@ pub async fn insert_rand_epoch_result_response(
     let epoch_id = id.unwrap_or_else(rand_u256);
     let context_id = rand_u256();
     let keys = Vec::<EpochKeyResult>::new().abi_encode();
-    let crs_list = Vec::<EpochCrsResult>::new().abi_encode();
+    let crs_list = vec![EpochCrsResult {
+        crsId: rand_u256(),
+        maxBitLength: U256::from(2048),
+        crsDigest: rand_digest().into(),
+    }]
+    .abi_encode();
+    let signature = rand_signature();
     let status = status.unwrap_or(OperationStatus::Pending);
 
     sqlx::query!(
         "INSERT INTO epoch_result_responses(
-            context_id, epoch_id, keys, crs_list, created_at, otlp_context, status
+            context_id, epoch_id, keys, crs_list, signature, extra_data, created_at,
+            otlp_context, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
         epoch_id.as_le_slice(),
         keys.clone(),
         crs_list.clone(),
+        signature,
+        Vec::<u8>::new(),
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
         status as OperationStatus,
@@ -291,6 +381,8 @@ pub async fn insert_rand_epoch_result_response(
         epoch_id,
         keys,
         crs_list,
+        signature,
+        extra_data: vec![],
     })
 }
 

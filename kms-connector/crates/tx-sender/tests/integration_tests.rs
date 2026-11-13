@@ -5,7 +5,8 @@ use connector_utils::{
     conn::connect_to_rpc_node_with_wallet,
     tests::{
         db::responses::{
-            insert_rand_crsgen_response, insert_rand_epoch_result_response,
+            insert_rand_context_destruction_response, insert_rand_crsgen_response,
+            insert_rand_epoch_destruction_response, insert_rand_epoch_result_response,
             insert_rand_keygen_response, insert_rand_new_kms_context_response,
             insert_rand_prep_keygen_response, insert_rand_public_decrypt_response,
             insert_rand_user_decrypt_response,
@@ -320,6 +321,7 @@ async fn test_process_new_kms_context_response() -> anyhow::Result<()> {
         .await
         .ok_or_else(|| anyhow!("Failed to capture KmsContextCreationConfirmation"))??;
     assert_eq!(event.kmsContextId, inserted_response.context_id);
+    assert_eq!(event.signature.to_vec(), inserted_response.signature);
     info!("Response successfully sent to Anvil!");
 
     test_instance
@@ -382,6 +384,112 @@ async fn test_process_epoch_result_response() -> anyhow::Result<()> {
     let status: OperationStatus =
         sqlx::query("SELECT status FROM epoch_result_responses WHERE epoch_id = $1")
             .bind(event.epochId.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?
+            .try_get("status")?;
+    assert_eq!(status, OperationStatus::Completed);
+    info!("Response successfully completed in DB! Stopping TransactionSender...");
+
+    cancel_token.cancel();
+    Ok(tx_sender_task.await?)
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_process_context_destruction_response() -> anyhow::Result<()> {
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
+    let mut confirmation_filter = test_instance
+        .protocol_config_contract()
+        .KmsContextDestructionConfirmation_filter()
+        .watch()
+        .await?;
+    confirmation_filter.poller = confirmation_filter
+        .poller
+        .with_poll_interval(Duration::from_millis(500));
+    let mut confirmation_stream = confirmation_filter.into_stream();
+
+    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
+
+    let cancel_token = CancellationToken::new();
+    let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
+
+    info!("Mocking ContextDestructionResponse in Postgres...");
+    let inserted_response =
+        insert_rand_context_destruction_response(test_instance.db(), None, None).await?;
+    info!("ContextDestructionResponse successfully stored!");
+
+    info!("Checking response has been sent to Anvil...");
+    let (event, _) = confirmation_stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow!("Failed to capture KmsContextDestructionConfirmation"))??;
+    assert_eq!(event.destroyedContextId, inserted_response.context_id);
+    assert_eq!(event.signature.to_vec(), inserted_response.signature);
+    info!("Response successfully sent to Anvil!");
+
+    test_instance
+        .wait_for_log("Successfully updated response in DB!")
+        .await;
+
+    info!("Checking response was completed in DB...");
+    let status: OperationStatus =
+        sqlx::query("SELECT status FROM kms_context_destruction_responses WHERE context_id = $1")
+            .bind(event.destroyedContextId.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?
+            .try_get("status")?;
+    assert_eq!(status, OperationStatus::Completed);
+    info!("Response successfully completed in DB! Stopping TransactionSender...");
+
+    cancel_token.cancel();
+    Ok(tx_sender_task.await?)
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_process_epoch_destruction_response() -> anyhow::Result<()> {
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
+    let mut confirmation_filter = test_instance
+        .protocol_config_contract()
+        .KmsEpochDestructionConfirmation_filter()
+        .watch()
+        .await?;
+    confirmation_filter.poller = confirmation_filter
+        .poller
+        .with_poll_interval(Duration::from_millis(500));
+    let mut confirmation_stream = confirmation_filter.into_stream();
+
+    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
+
+    let cancel_token = CancellationToken::new();
+    let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
+
+    info!("Mocking EpochDestructionResponse in Postgres...");
+    let inserted_response =
+        insert_rand_epoch_destruction_response(test_instance.db(), None, None).await?;
+    info!("EpochDestructionResponse successfully stored!");
+
+    info!("Checking response has been sent to Anvil...");
+    let (event, _) = confirmation_stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow!("Failed to capture KmsEpochDestructionConfirmation"))??;
+    assert_eq!(event.destroyedEpochId, inserted_response.epoch_id);
+    assert_eq!(event.signature.to_vec(), inserted_response.signature);
+    info!("Response successfully sent to Anvil!");
+
+    test_instance
+        .wait_for_log("Successfully updated response in DB!")
+        .await;
+
+    info!("Checking response was completed in DB...");
+    let status: OperationStatus =
+        sqlx::query("SELECT status FROM kms_epoch_destruction_responses WHERE epoch_id = $1")
+            .bind(event.destroyedEpochId.as_le_slice())
             .fetch_one(test_instance.db())
             .await?
             .try_get("status")?;
