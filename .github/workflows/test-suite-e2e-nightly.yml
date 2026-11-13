@@ -1,0 +1,64 @@
+name: test-suite-e2e-nightly
+
+# Nightly run of the long-running e2e scenarios that are too slow to gate the merge
+# queue. Each leg calls the reusable e2e workflow against the newest published main
+# bundle (`latest-main`), so a run validates whatever main shipped last.
+#
+# Scheduled workflows only fire from the default branch. Use the manual dispatch to
+# run it on demand.
+
+on:
+  schedule:
+    # TEMPORARY test slot: 14:30 UTC (16:30 EET). Move to midnight once validated.
+    - cron: "30 14 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+# One nightly at a time; never cancel a run that is already in flight.
+concurrency:
+  group: test-suite-e2e-nightly
+  cancel-in-progress: false
+
+jobs:
+  # RFC-021 blue-green upgrade (2-of-3 operators, two host chains).
+  blue-green:
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'read' # Required to read GitHub packages/container registry
+    secrets:
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    with:
+      orchestrated: false
+      build: false
+      scenario: blue-green-two-of-three-multi-chain
+      test-profile: blue-green
+
+  # Scheduled runs fail silently for most people, so open (or update) a tracking issue.
+  # The assignee gets a GitHub notification and an email for the issue and each comment.
+  notify-failure:
+    needs: [blue-green]
+    if: ${{ failure() || cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: 'write' # Required to open or comment on the tracking issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: "Nightly e2e failed"
+      ASSIGNEE: goshawk-3
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open or update the tracking issue
+        run: |
+          body="Nightly e2e run failed on \`${GITHUB_SHA}\` (trigger: ${GITHUB_EVENT_NAME}): ${RUN_URL}"
+          existing="$(gh issue list --state open --search "in:title \"${TITLE}\"" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$TITLE" --assignee "$ASSIGNEE" --body "$body"
+          fi
