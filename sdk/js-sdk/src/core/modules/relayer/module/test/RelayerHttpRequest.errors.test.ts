@@ -9,7 +9,7 @@ import { RelayerHttpUnexpectedResponseError } from '../../../../errors/RelayerHt
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/user-decrypt';
-const VALID_REQUEST_ID = '018f4d2e-7c3a-7b1e-8c2d-abcdef123456';
+const VALID_REQUEST_ID = '9b2c1f4e-3a5d-4e6f-8a7b-1c2d3e4f5a6b';
 
 describe('RelayerHttpRequest error responses', () => {
   const originalFetch = global.fetch;
@@ -44,10 +44,10 @@ describe('RelayerHttpRequest error responses', () => {
     ['message missing', { code: 'acl_denied', requestId: VALID_REQUEST_ID }],
     ['message blank (whitespace only)', { code: 'acl_denied', message: '\t\n ', requestId: VALID_REQUEST_ID }],
     ['requestId missing', { code: 'acl_denied', message: 'not allowed' }],
-    ['requestId not a UUIDv7', { code: 'acl_denied', message: 'not allowed', requestId: 'req-123' }],
+    ['requestId not a UUIDv4', { code: 'acl_denied', message: 'not allowed', requestId: 'req-123' }],
     [
-      'requestId a UUIDv4',
-      { code: 'acl_denied', message: 'not allowed', requestId: '9b2c1f4e-3a5d-4e6f-8a7b-1c2d3e4f5a6b' },
+      'requestId a UUIDv7',
+      { code: 'acl_denied', message: 'not allowed', requestId: '018f4d2e-7c3a-7b1e-8c2d-abcdef123456' },
     ],
   ])('throws RelayerHttpUnexpectedResponseError for an error body with %s', async (_label, body) => {
     const text = JSON.stringify(body);

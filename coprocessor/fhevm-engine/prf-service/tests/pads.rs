@@ -1,8 +1,9 @@
 mod common;
 
 use alloy::primitives::{Address, B256};
-use ciphertext_attestation::{prf::consensus::MAX_PAD_LENGTH, PrfOutputRef};
+use ciphertext_attestation::PrfOutputRef;
 use common::{attestation, set_error, set_output, CONNECTOR, DEADLINE, GRANTS};
+use coprocessor_api::MAX_PAD_LENGTH;
 use fhevm_engine_common::healthz_server::HealthCheckService;
 use prf_service::{
     pads::{read, read_output, Admission, Admissions, PadOutput, PadState, CONNECTOR_LOCK},

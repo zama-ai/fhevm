@@ -17,7 +17,8 @@ source "${script_dir}/../lib.sh"
 # What the e2e suite needs (test-suite/e2e/test/coprocessorProxy) goes in
 # the coprocessor-proxy ConfigMap:
 #   urls                      COPROCESSOR_PROXY_URLS, one https proxy URL per party
-#   signer-addresses          COPROCESSOR_SIGNER_ADDRESSES, the audience of each
+#   signer-addresses          COPROCESSOR_SIGNER_ADDRESSES, the audience of each proxy and the
+#                             signer the suite expects on each PRF output attestation
 #   prf-service-metrics-urls  PRF_SERVICE_METRICS_URLS, each prf-service's request metric
 #   metrics-urls              COPROCESSOR_PROXY_METRICS_URLS
 #   ca.crt                    the proxies' certificate
@@ -30,6 +31,7 @@ coprocessor_values=ci/preview-env/coprocessor/values-coprocessor-e2e.yaml
 proxy_values=ci/preview-env/coprocessor/values-coprocessor-proxy-e2e.yaml
 proxy_tls_secret=coprocessor-proxy-tls  # tls.secretName in values-coprocessor-proxy-e2e.yaml
 coproc_signer() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}"; }
+coproc_key() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}"; }
 with_proxy="false"
 # A pinned release can predate pads, which prf-service and the seed need.
 if [[ "${BLUE_GREEN}" != "true" && -z "${COPROCESSOR_VERSION_PIN:-}" ]]; then
@@ -60,8 +62,9 @@ SELECT format('ALTER ROLE %I PASSWORD %L', :'user', :'password') \gexec
 SQL
 }
 
-# Writes the suite's PRF output into party i's database after the migration. The script comes from
-# this checkout, so an older test-suite image can also run it.
+# Writes the suite's PRF output into party i's database after the migration, signed with the party's
+# key as its sns-worker signs. The script and its module come from this checkout, so an older
+# test-suite image can also run them.
 seed_prf_output() {
   local i="$1" pod="coprocessor-${1}-seed-prf-output" revision
   revision=$(helm status "coprocessor-${i}" -n "${NAMESPACE}" -o json | jq -r .version)
@@ -69,6 +72,7 @@ seed_prf_output() {
   kubectl delete pod "${pod}" -n "${NAMESPACE}" --ignore-not-found --wait=true
   POD="${pod}" IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:$(jq -r .test_suite <<<"${TAGS_JSON}")" \
     DATABASE_URL="postgresql://$(yq -r '.commonConfig.databaseUser.value' "${coprocessor_values}"):$(yq -r '.commonConfig.databasePassword.value' "${coprocessor_values}")@postgres-coprocessor-${i}:5432/fhevm_e2e" \
+    TX_SENDER_PRIVATE_KEY="$(coproc_key "${i}")" \
     yq -n '{
       "apiVersion": "v1",
       "kind": "Pod",
@@ -80,14 +84,25 @@ seed_prf_output() {
           "name": "seed",
           "image": strenv(IMAGE),
           "workingDir": "/app/test-suite/e2e",
-          "command": ["node", "scripts/seed-prf-output.ts"],
-          "env": [{"name": "DATABASE_URL", "value": strenv(DATABASE_URL)}],
-          "volumeMounts": [{
-            "name": "seed",
-            "mountPath": "/app/test-suite/e2e/scripts/seed-prf-output.ts",
-            "subPath": "seed-prf-output.ts",
-            "readOnly": true
-          }]
+          "command": ["npx", "ts-node", "--transpile-only", "scripts/seed-prf-output.ts"],
+          "env": [
+            {"name": "DATABASE_URL", "value": strenv(DATABASE_URL)},
+            {"name": "TX_SENDER_PRIVATE_KEY", "value": strenv(TX_SENDER_PRIVATE_KEY)}
+          ],
+          "volumeMounts": [
+            {
+              "name": "seed",
+              "mountPath": "/app/test-suite/e2e/scripts/seed-prf-output.ts",
+              "subPath": "seed-prf-output.ts",
+              "readOnly": true
+            },
+            {
+              "name": "seed",
+              "mountPath": "/app/test-suite/e2e/test/coprocessorProxy/prfOutput.ts",
+              "subPath": "prfOutput.ts",
+              "readOnly": true
+            }
+          ]
         }],
         "volumes": [{"name": "seed", "configMap": {"name": "prf-output-seed"}}]
       }
@@ -224,7 +239,7 @@ image_tags() {
 }
 
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
-  privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
+  privkey=$(coproc_key "${i}")
   if [[ -z "${privkey}" || "${privkey}" == "null" ]]; then
     echo "::error::no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"
     exit 1
@@ -283,6 +298,7 @@ done
 if [[ "${with_proxy}" == "true" ]]; then
   kubectl create configmap prf-output-seed -n "${NAMESPACE}" \
     --from-file=seed-prf-output.ts=test-suite/e2e/scripts/seed-prf-output.ts \
+    --from-file=prfOutput.ts=test-suite/e2e/test/coprocessorProxy/prfOutput.ts \
     --dry-run=client -o yaml | kubectl apply -f -
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
     seed_prf_output "${i}"
@@ -329,7 +345,7 @@ if [[ "${BLUE_GREEN}" == "true" ]]; then
     echo "Blue/Green manual mode: GCS release not installed (start it with ci/preview-env/scripts/bg/bg-green.sh)"
   else
     for i in $(seq 1 "${NB_COPROCESSOR}"); do
-      privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
+      privkey=$(coproc_key "${i}")
       party_common "${i}" "${privkey}" "-gcs"
       gcs_images=(
         # HEAD migrator on the database the BCS release created. Runs as a Helm

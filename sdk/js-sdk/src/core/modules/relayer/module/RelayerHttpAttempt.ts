@@ -7,7 +7,7 @@ import type {
 } from '../../../types/relayer.js';
 import { fetchWithRetry } from '../../../base/fetch.js';
 import { isNonBlankString, isRecordStringProperty, assertRecordStringProperty } from '../../../base/string.js';
-import { isUuidV7 } from '../../../base/uuidv7.js';
+import { isUuidV4 } from '../../../base/uuidv4.js';
 import {
   assertRecordBytesHexNo0xArrayProperty,
   assertRecordBytesHexNo0xProperty,
@@ -50,7 +50,7 @@ import { RelayerHttpResultError } from '../../../errors/RelayerHttpResultError.j
 
 // relayer-http nests user-decrypt shares like the existing relayer (`result.result`),
 // but `RelayerUserDecryptSucceeded` tolerates v11's missing extraData and skips the
-// UUIDv7/65-byte/non-empty checks — so only its lower-level field assertions are reused.
+// UUIDv4/65-byte/non-empty checks — so only its lower-level field assertions are reused.
 
 // The relayer-http routes this client targets.
 export type RelayerHttpOperation = Extract<RelayerPostOperation, 'USER_DECRYPT' | 'PUBLIC_DECRYPT'>;
@@ -231,7 +231,7 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
 
     // relayer-http's own ErrorBody always carries all three fields:
     //
-    //   { "code": "acl_denied", "message": "...", "requestId": "<uuidv7>" }
+    //   { "code": "acl_denied", "message": "...", "requestId": "<uuidv4>" }
     //
     // Thrown unlogged: the retry loop logs either the retry or the final error.
     if (_isRelayerHttpErrorBody(bodyJson)) {
@@ -342,7 +342,7 @@ function _bodyExcerpt(bodyText: string): string {
  * Whether `value` matches relayer-http's own error body:
  *
  * ```json
- * { "code": "acl_denied", "message": "...", "requestId": "<uuidv7>" }
+ * { "code": "acl_denied", "message": "...", "requestId": "<uuidv4>" }
  * ```
  *
  * relayer-http always sets all three fields, so a body missing any of them (or
@@ -350,7 +350,7 @@ function _bodyExcerpt(bodyText: string): string {
  *
  * @param value - The parsed response body; may be any JSON value.
  * @returns `true` when `code` and `message` are non-empty strings and
- * `requestId` is a UUIDv7.
+ * `requestId` is a UUIDv4.
  *
  * @example
  * ```typescript
@@ -366,18 +366,18 @@ function _isRelayerHttpErrorBody(value: unknown): value is { code: string; messa
     isRecordStringProperty(value, 'message') &&
     isNonBlankString(value.message) &&
     isRecordStringProperty(value, 'requestId') &&
-    isUuidV7(value.requestId)
+    isUuidV4(value.requestId)
   );
 }
 
 /**
  * Asserts that `value` carries relayer-http's success envelope, shared by every
- * route: `status` is `"succeeded"` and `requestId` is a UUIDv7.
+ * route: `status` is `"succeeded"` and `requestId` is a UUIDv4.
  *
  * @param value - The parsed response body to validate.
  * @param name - The subject name used in a thrown error, e.g. `'body'`.
  * @returns Nothing; narrows `value`'s type on success.
- * @throws If `status` isn't `"succeeded"` or `requestId` isn't a UUIDv7.
+ * @throws If `status` isn't `"succeeded"` or `requestId` isn't a UUIDv4.
  *
  * @example
  * ```typescript
@@ -392,12 +392,12 @@ function _assertIsRelayerHttpSucceeded(
   assertRecordStringProperty(value, 'status', name, { expectedValue: 'succeeded' });
   assertRecordStringProperty(value, 'requestId', name, {});
 
-  if (!isUuidV7(value.requestId)) {
+  if (!isUuidV4(value.requestId)) {
     throw new InvalidPropertyError(
       {
         subject: name,
         property: 'requestId',
-        expectedType: 'UUIDv7',
+        expectedType: 'UUIDv4',
         type: 'string',
         value: value.requestId,
       },
@@ -412,7 +412,7 @@ function _assertIsRelayerHttpSucceeded(
  * ```json
  * {
  *   "status": "succeeded",
- *   "requestId": "<uuidv7>",
+ *   "requestId": "<uuidv4>",
  *   "result": {
  *     "result": [
  *       {
@@ -432,7 +432,7 @@ function _assertIsRelayerHttpSucceeded(
  * @param value - The parsed response body to validate.
  * @param name - The subject name used in a thrown error, e.g. `'body'`.
  * @returns Nothing; narrows `value`'s type on success.
- * @throws If `status` isn't `"succeeded"`, `requestId` isn't a UUIDv7, `value.result`
+ * @throws If `status` isn't `"succeeded"`, `requestId` isn't a UUIDv4, `value.result`
  * is missing or null, `value.result.result` is missing, not an array, empty, or any
  * item's `payload`, `signature`, or `extraData` does not match the expected hex shape.
  *
@@ -490,7 +490,7 @@ function _assertIsRelayerHttpUserDecryptResult(
  * ```json
  * {
  *   "status": "succeeded",
- *   "requestId": "<uuidv7>",
+ *   "requestId": "<uuidv4>",
  *   "result": {
  *     "decryptedValue": "<hex, no 0x>",
  *     "signatures": ["<65-byte hex, no 0x>", ...],

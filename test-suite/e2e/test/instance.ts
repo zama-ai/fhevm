@@ -86,7 +86,8 @@ if (!relayerUrl) throw new Error('RELAYER_URL is required');
 
 // API key is a secret - support hardhat vars for secure storage
 // Auth is optional since internal smoke tests don't go through Kong
-const apiKey = process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '');
+// Trimmed: a Secret created with a trailing newline would otherwise be rejected as a header value.
+const apiKey = (process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '')).trim();
 const auth = apiKey ? { __type: 'ApiKeyHeader' as const, value: apiKey } : undefined;
 
 // Host-chain KMSGeneration: the SDK reads FHE key / CRS digests from it.

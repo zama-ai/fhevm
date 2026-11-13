@@ -7,7 +7,7 @@ import { RelayerHttpResultError } from '../../../../errors/RelayerHttpResultErro
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/public-decrypt';
-const VALID_REQUEST_ID = '018f4d2e-7c3a-7b1e-8c2d-abcdef123456';
+const VALID_REQUEST_ID = '9b2c1f4e-3a5d-4e6f-8a7b-1c2d3e4f5a6b';
 const SIGNATURE = 'ab'.repeat(65);
 
 const VALID_RESULT = {
@@ -48,7 +48,7 @@ describe('RelayerHttpRequest public-decrypt success body', () => {
   // A malformed success body (status, requestId, result shape or field format): RelayerHttpResultError with the url.
   it.each([
     ['status is not succeeded', { ..._successBody(VALID_RESULT), status: 'failed' }],
-    ['requestId is not a UUIDv7', { ..._successBody(VALID_RESULT), requestId: 'abc' }],
+    ['requestId is not a UUIDv4', { ..._successBody(VALID_RESULT), requestId: 'abc' }],
     ['result is missing', { status: 'succeeded', requestId: VALID_REQUEST_ID }],
     ['result is null', _successBody(null)],
     [
