@@ -180,7 +180,7 @@ abstract contract ProtocolConfigReplicaTestBase is ProtocolConfigTestBase {
     /// @dev Applies a fully signed switch from the active pair to committee `seed`.
     function _switch(uint256 previousSeed, uint256 contextId, uint256 epochId, uint256 seed) internal {
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(activeContextId, contextId, seed, previousSeed, QUORUM),
             _epochSubmission(contextId, activeEpochId, epochId, seed, N)
         );
@@ -278,7 +278,7 @@ abstract contract ProtocolConfigReplicaTestBase is ProtocolConfigTestBase {
         KmsEpochSubmission memory epoch,
         uint256 contextId
     ) internal {
-        try protocolConfigReplica.submitKmsContextSwitch(context, epoch) {
+        try protocolConfigReplica.submitKmsContextAndEpoch(context, epoch) {
             fail();
         } catch (bytes memory err) {
             assertEq(bytes4(err), IProtocolConfigReplica.KmsSignerNotInCommittee.selector);

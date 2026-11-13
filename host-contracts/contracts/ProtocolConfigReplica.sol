@@ -104,7 +104,7 @@ contract ProtocolConfigReplica is
     // -----------------------------------------------------------------------------------------
 
     /// @inheritdoc IProtocolConfigReplica
-    function submitKmsContextSwitch(
+    function submitKmsContextAndEpoch(
         KmsContextSubmission calldata context,
         KmsEpochSubmission calldata epoch
     ) external virtual {
@@ -128,7 +128,7 @@ contract ProtocolConfigReplica is
         );
         _storeKmsNodesAndThresholds(context.contextId, context.nodes, context.thresholds);
         _applyKmsEpoch(context.contextId, epoch);
-        emit KmsContextSwitchApplied(context.contextId, epoch.epochId);
+        emit SubmitKmsContextAndEpoch(context.contextId, epoch.epochId);
     }
 
     /// @inheritdoc IProtocolConfigReplica
@@ -140,7 +140,7 @@ contract ProtocolConfigReplica is
 
         uint256 contextId = $.latestActiveKmsContextId;
         _applyKmsEpoch(contextId, epoch);
-        emit KmsEpochApplied(contextId, epoch.epochId);
+        emit SubmitKmsEpoch(contextId, epoch.epochId);
     }
 
     /// @inheritdoc IProtocolConfigReplica

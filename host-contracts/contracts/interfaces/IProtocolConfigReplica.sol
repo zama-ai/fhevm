@@ -5,12 +5,11 @@ import {KmsNode, KmsThresholds} from "../shared/Structs.sol";
 import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
 
 /**
- * @notice A canonical context switch, with the ContextCreationConfirmation signatures of the
- *         previous committee. The previous context is the active one.
- * @param contextId The new canonical context ID.
- * @param nodes The new committee, in the canonical's storage order.
+ * @notice A canonical context switch from the active context.
+ * @param contextId The new context ID.
+ * @param nodes The new committee, in canonical storage order.
  * @param thresholds The thresholds of the new committee.
- * @param signatures The previous committee's signatures over one ContextCreationConfirmation.
+ * @param signatures The active committee's ContextCreationConfirmation signatures.
  * @param extraData The extra data that every signature commits to.
  */
 struct KmsContextSubmission {
@@ -22,11 +21,10 @@ struct KmsContextSubmission {
 }
 
 /**
- * @notice A canonical epoch activation, with the EpochActivationConfirmation signatures of the
- *         epoch's committee. The previous epoch is the active one.
- * @param epochId The new canonical epoch ID.
+ * @notice A canonical epoch activation after the active epoch.
+ * @param epochId The new epoch ID.
  * @param epochMaterialHash The hash of the epoch's key and CRS results.
- * @param signatures The signatures of every signer of the committee over one EpochActivationConfirmation.
+ * @param signatures The EpochActivationConfirmation signatures of every committee signer.
  * @param extraData The extra data that every signature commits to.
  */
 struct KmsEpochSubmission {
@@ -38,7 +36,7 @@ struct KmsEpochSubmission {
 
 /**
  * @title Interface for the ProtocolConfigReplica contract.
- * @notice Read-replica of the canonical ProtocolConfig on non-canonical host chains.
+ * @notice Replica of the canonical ProtocolConfig on non-canonical host chains.
  */
 interface IProtocolConfigReplica is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
@@ -46,11 +44,11 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @notice Emitted when the owner mirrors and activates a canonical KMS context.
-     * @param contextId The mirrored canonical context ID.
-     * @param epochId The mirrored canonical epoch ID activated for the context.
-     * @param nodes The KMS nodes mirrored from the canonical context.
-     * @param thresholds The thresholds mirrored from the canonical context.
+     * @notice Emitted by `mirrorKmsContextAndEpoch`.
+     * @param contextId The activated context ID.
+     * @param epochId The activated epoch ID.
+     * @param nodes The stored committee.
+     * @param thresholds The stored thresholds.
      */
     event MirrorKmsContextAndEpoch(
         uint256 indexed contextId,
@@ -60,35 +58,35 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     );
 
     /**
-     * @notice Emitted when a canonical KMS epoch is mirrored and activated.
-     * @param contextId The active mirrored context ID.
-     * @param epochId The mirrored canonical epoch ID.
+     * @notice Emitted by `mirrorKmsEpoch`.
+     * @param contextId The active context ID.
+     * @param epochId The activated epoch ID.
      */
     event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
 
     /**
-     * @notice Emitted when a signed context switch is applied.
+     * @notice Emitted by `submitKmsContextAndEpoch`.
      * @param contextId The activated context ID.
      * @param epochId The activated epoch ID.
      */
-    event KmsContextSwitchApplied(uint256 indexed contextId, uint256 indexed epochId);
+    event SubmitKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId);
 
     /**
-     * @notice Emitted when a signed same-set resharing is applied.
+     * @notice Emitted by `submitKmsEpoch`.
      * @param contextId The active context ID.
      * @param epochId The activated epoch ID.
      */
-    event KmsEpochApplied(uint256 indexed contextId, uint256 indexed epochId);
+    event SubmitKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
 
     // -----------------------------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------------------------
 
-    /// @notice The context switch is already applied or superseded: the ID is not above the active one.
+    /// @notice The context ID is not above the active one.
     /// @param contextId The submitted context ID.
     error StaleKmsContextSwitch(uint256 contextId);
 
-    /// @notice The epoch is already applied or superseded: the ID is not above the active one.
+    /// @notice The epoch ID is not above the active one.
     /// @param epochId The submitted epoch ID.
     error StaleKmsEpoch(uint256 epochId);
 
@@ -100,30 +98,28 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     /// @param epochId The destroyed epoch ID.
     error KmsEpochAlreadyDestroyed(uint256 epochId);
 
-    /// @notice The destroyed context ID is above the active one. Retry after the replica activates a
-    ///         higher context.
-    /// @param contextId The destroyed context ID.
+    /// @notice The context ID is above the active one. Retry after the replica passes it.
+    /// @param contextId The context ID to destroy.
     error KmsContextDestructionAheadOfReplica(uint256 contextId);
 
-    /// @notice The destroyed epoch ID is above the active one. Retry after the replica activates a
-    ///         higher epoch.
-    /// @param epochId The destroyed epoch ID.
+    /// @notice The epoch ID is above the active one. Retry after the replica passes it.
+    /// @param epochId The epoch ID to destroy.
     error KmsEpochDestructionAheadOfReplica(uint256 epochId);
 
-    /// @notice The submitted context ID was destroyed. It cannot be activated through a submission.
+    /// @notice A submission cannot activate a destroyed context.
     /// @param contextId The destroyed context ID.
     error DestroyedKmsContextCannotBeActivated(uint256 contextId);
 
-    /// @notice The submitted epoch ID was destroyed. It cannot be activated through a submission.
+    /// @notice A submission cannot activate a destroyed epoch.
     /// @param epochId The destroyed epoch ID.
     error DestroyedKmsEpochCannotBeActivated(uint256 epochId);
 
-    /// @notice Fewer signatures than the quorum.
-    /// @param signatureCount The number of submitted signatures.
+    /// @notice There are fewer signatures than the quorum.
+    /// @param signatureCount The number of signatures.
     /// @param quorum The required number of signatures.
     error KmsSignatureQuorumNotReached(uint256 signatureCount, uint256 quorum);
 
-    /// @notice A signature recovers to an address outside the committee that must sign it.
+    /// @notice A signer is not in the committee that must sign.
     /// @param signer The recovered signer.
     /// @param contextId The context of the committee.
     error KmsSignerNotInCommittee(address signer, uint256 contextId);
@@ -135,57 +131,36 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
     // Submit functions
     //
-    // Anyone may submit the canonical's confirmation signatures. The replica verifies them under the
-    // canonical's EIP-712 domain, against its own stored committees. Submissions apply in canonical
-    // order only. A stale submission reverts with a dedicated error, which the submitter treats as
-    // success. Only the mirror path can activate a destroyed ID.
+    // Anyone can submit canonical confirmation signatures. The replica verifies them under the
+    // canonical EIP-712 domain against its stored committees, in canonical order only. The
+    // submitter treats a stale revert as success.
     // -----------------------------------------------------------------------------------------
 
     /**
      * @notice Applies a canonical context switch and the first epoch of the new context.
-     * @dev Verifies `n - t` ContextCreationConfirmation signatures of the active committee, then
-     *      stores the new committee under `context.contextId`. Then verifies the
-     *      EpochActivationConfirmation signatures of every new signer.
-     *      Leave out the context signatures of signers that are only in the new committee.
-     *      `context.contextId` must have no stored committee. After an owner rollback, a replay of a
-     *      stored successor reverts with `KmsTxSenderAlreadyRegistered` and needs the mirror path.
-     *      Reverts with:
-     *      - `StaleKmsContextSwitch` if the context ID is not above the active one.
-     *      - `DestroyedKmsContextCannotBeActivated` or `DestroyedKmsEpochCannotBeActivated` if either
-     *        ID was destroyed.
-     *      - `KmsSignatureQuorumNotReached` if a committee has too few signatures.
-     *      - `KmsSignerNotInCommittee` if a signer is not in the committee that must sign.
-     *      - `DuplicateKmsSigner` if two signatures recover to the same signer.
-     * @param context The context switch and its signatures.
+     * @dev Needs `n - t` context signatures from the active committee and epoch signatures from
+     *      every new signer. `context.contextId` must have no stored committee. After an owner
+     *      rollback, a replay reverts with `KmsTxSenderAlreadyRegistered` and needs the mirror path.
+     * @param context The new context and its signatures.
      * @param epoch The first epoch of the new context and its signatures.
      */
-    function submitKmsContextSwitch(KmsContextSubmission calldata context, KmsEpochSubmission calldata epoch) external;
+    function submitKmsContextAndEpoch(
+        KmsContextSubmission calldata context,
+        KmsEpochSubmission calldata epoch
+    ) external;
 
     /**
-     * @notice Applies a canonical same-set resharing.
-     * @dev The resharing builds on the active context and epoch. Verifies the
-     *      EpochActivationConfirmation signatures of every signer of the active committee. Reverts with:
-     *      - `StaleKmsEpoch` if the epoch ID is not above the active one.
-     *      - `DestroyedKmsEpochCannotBeActivated` if the epoch ID was destroyed.
-     *      - `KmsSignatureQuorumNotReached` if there are fewer signatures than active-committee signers.
-     *      - `KmsSignerNotInCommittee` if a signer is not in the active committee.
-     *      - `DuplicateKmsSigner` if two signatures recover to the same signer.
+     * @notice Applies a canonical resharing on the active context.
+     * @dev Needs epoch signatures from every signer of the active committee.
      * @param epoch The new epoch and its signatures.
      */
     function submitKmsEpoch(KmsEpochSubmission calldata epoch) external;
 
     /**
      * @notice Applies a canonical context destruction.
-     * @dev Verifies `n - t` ContextDestructionConfirmation signatures of the active committee.
-     *      Accepts an ID that was never stored. Reverts with:
-     *      - `KmsContextAlreadyDestroyed` if the ID is already destroyed.
-     *      - `LatestActiveKmsContextCannotBeDestroyed` if the ID is the active context.
-     *      - `KmsContextDestructionAheadOfReplica` if the ID is above the active context.
-     *      - `KmsSignatureQuorumNotReached` if there are fewer than `n - t` signatures.
-     *      - `KmsSignerNotInCommittee` if a signer is not in the active committee.
-     *      - `DuplicateKmsSigner` if two signatures recover to the same signer.
-     * @param destroyedContextId The destroyed context ID.
-     * @param signatures The signatures over one ContextDestructionConfirmation.
+     * @dev Needs `n - t` signatures from the active committee. Accepts an ID that was never stored.
+     * @param destroyedContextId The context ID to destroy.
+     * @param signatures The ContextDestructionConfirmation signatures.
      * @param extraData The extra data that every signature commits to.
      */
     function submitKmsContextDestruction(
@@ -196,11 +171,9 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /**
      * @notice Applies a canonical epoch destruction.
-     * @dev Verifies `n - t` EpochDestructionConfirmation signatures of the active committee. Same
-     *      reverts as `submitKmsContextDestruction`, with `KmsEpochAlreadyDestroyed`,
-     *      `LatestActiveKmsEpochCannotBeDestroyed` and `KmsEpochDestructionAheadOfReplica`.
-     * @param destroyedEpochId The destroyed epoch ID.
-     * @param signatures The signatures over one EpochDestructionConfirmation.
+     * @dev Needs `n - t` signatures from the active committee. Accepts an ID that was never stored.
+     * @param destroyedEpochId The epoch ID to destroy.
+     * @param signatures The EpochDestructionConfirmation signatures.
      * @param extraData The extra data that every signature commits to.
      */
     function submitKmsEpochDestruction(
@@ -212,18 +185,17 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
     // Mirror functions
     //
-    // Owner only, with no signature check. The repo mirror tasks and recovery use it.
-    // `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` have no ordering check, so they can move the
-    // replica back. Activation clears the Destroyed state of the pair.
+    // Owner only, with no signature check and no ordering check. They can move the replica back.
+    // Activation clears the Destroyed state of the pair.
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @notice Mirror and immediately activate a canonical KMS context.
+     * @notice Activates a canonical context and epoch.
      * @dev Replaces any committee stored under `contextId`.
-     * @param contextId The canonical context ID to mirror.
-     * @param epochId The canonical epoch ID to activate for the mirrored context.
-     * @param nodes The KMS nodes of the canonical context.
-     * @param thresholds The thresholds of the canonical context.
+     * @param contextId The context ID to activate.
+     * @param epochId The epoch ID to activate.
+     * @param nodes The committee of the context.
+     * @param thresholds The thresholds of the context.
      */
     function mirrorKmsContextAndEpoch(
         uint256 contextId,
@@ -233,31 +205,23 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     ) external;
 
     /**
-     * @notice Mirror and immediately activate a canonical KMS epoch for the active context.
-     * @dev The context must already be the active mirrored context (mirror the context first with
-     *      `mirrorKmsContextAndEpoch`).
-     * @param contextId The active mirrored context the epoch belongs to.
-     * @param epochId The canonical epoch ID to mirror.
+     * @notice Activates a canonical epoch on the active context.
+     * @param contextId The active context ID.
+     * @param epochId The epoch ID to activate.
      */
     function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
 
     /**
-     * @notice Mirror a canonical context destruction.
-     * @dev Reverts with `KmsContextAlreadyDestroyed` if the ID is already destroyed, or with
-     *      `LatestActiveKmsContextCannotBeDestroyed` if it is the active context. Unlike the submit
-     *      path, it accepts an ID above the active one, so the owner can block an aborted switch
-     *      before the replica reaches it.
-     * @param destroyedContextId The destroyed context ID.
+     * @notice Destroys a context.
+     * @dev Unlike the submit path, the ID can be above the active one.
+     * @param destroyedContextId The context ID to destroy.
      */
     function mirrorKmsContextDestruction(uint256 destroyedContextId) external;
 
     /**
-     * @notice Mirror a canonical epoch destruction.
-     * @dev Reverts with `KmsEpochAlreadyDestroyed` if the ID is already destroyed, or with
-     *      `LatestActiveKmsEpochCannotBeDestroyed` if it is the active epoch. Unlike the submit
-     *      path, it accepts an ID above the active one, so the owner can block an aborted epoch
-     *      before the replica reaches it.
-     * @param destroyedEpochId The destroyed epoch ID.
+     * @notice Destroys an epoch.
+     * @dev Unlike the submit path, the ID can be above the active one.
+     * @param destroyedEpochId The epoch ID to destroy.
      */
     function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external;
 }

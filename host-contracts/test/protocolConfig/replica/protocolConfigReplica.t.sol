@@ -172,7 +172,7 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
 
         protocolConfigReplica.submitKmsEpoch(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, 2));
         _assertActive(CTX1, EPOCH1 + 1);
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 2, SEED1, SEED0, 2),
             _epochSubmission(CTX1 + 2, EPOCH1 + 1, EPOCH1 + 2, SEED1, N)
         );
@@ -330,7 +330,10 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
 
         // Apply the same signature bytes on the replica chain, with nodes and thresholds read from canonical.
         vm.chainId(REPLICA_CHAIN_ID);
-        protocolConfigReplica.submitKmsContextSwitch(_canonicalContextSubmission(CTX2, contextSignatures), switchEpoch);
+        protocolConfigReplica.submitKmsContextAndEpoch(
+            _canonicalContextSubmission(CTX2, contextSignatures),
+            switchEpoch
+        );
         protocolConfigReplica.submitKmsEpoch(reshareEpoch);
         protocolConfigReplica.submitKmsEpochDestruction(EPOCH2, epochDestructionSignatures, EXTRA);
         protocolConfigReplica.submitKmsContextDestruction(CTX1, contextDestructionSignatures, EXTRA);
@@ -424,7 +427,7 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         );
         protocolConfigReplica.submitKmsContextDestruction(CTX2, destructionSignatures, EXTRA);
 
-        protocolConfigReplica.submitKmsContextSwitch(_canonicalContextSubmission(CTX3, contextSignatures), epoch2);
+        protocolConfigReplica.submitKmsContextAndEpoch(_canonicalContextSubmission(CTX3, contextSignatures), epoch2);
         vm.expectEmit(true, false, false, false, address(protocolConfigReplica));
         emit IProtocolConfigBase.KmsContextDestroyed(CTX2);
         protocolConfigReplica.submitKmsContextDestruction(CTX2, destructionSignatures, EXTRA);
@@ -453,7 +456,7 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.KmsSignerNotInCommittee.selector, _signers(SEED1)[0], CTX1)
         );
-        protocolConfigReplica.submitKmsContextSwitch(context, switchEpoch);
+        protocolConfigReplica.submitKmsContextAndEpoch(context, switchEpoch);
     }
 }
 
@@ -573,16 +576,16 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
     }
 
     // -----------------------------------------------------------------------
-    // submitKmsContextSwitch
+    // submitKmsContextAndEpoch
     // -----------------------------------------------------------------------
 
-    function test_submitKmsContextSwitchActivates() public {
+    function test_submitKmsContextAndEpochActivates() public {
         uint256 contextId = CTX1 + 1;
         uint256 epochId = EPOCH1 + 1;
 
         vm.expectEmit(true, true, false, true, address(protocolConfigReplica));
-        emit IProtocolConfigReplica.KmsContextSwitchApplied(contextId, epochId);
-        protocolConfigReplica.submitKmsContextSwitch(
+        emit IProtocolConfigReplica.SubmitKmsContextAndEpoch(contextId, epochId);
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, contextId, SEED1, SEED0, QUORUM),
             _epochSubmission(contextId, EPOCH1, epochId, SEED1, N)
         );
@@ -596,8 +599,8 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1));
     }
 
-    function test_submitKmsContextSwitchAcceptsAllPreviousSigners() public {
-        protocolConfigReplica.submitKmsContextSwitch(
+    function test_submitKmsContextAndEpochAcceptsAllPreviousSigners() public {
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 1, SEED1, SEED0, N),
             _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N)
         );
@@ -614,16 +617,16 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
 
         // 4 nodes with t = 1 to 7 nodes: the quorums are 3 previous and 7 new signatures.
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, 2, 3));
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 1, bigNodes, bigThresholds, SEED0, 2),
             _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED2, bigN)
         );
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, 6, 7));
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 1, bigNodes, bigThresholds, SEED0, 3),
             _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED2, 6)
         );
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 1, bigNodes, bigThresholds, SEED0, 3),
             _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED2, bigN)
         );
@@ -635,16 +638,16 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
 
         // 7 nodes with t = 2 to 4 nodes: the quorums are 5 previous and 4 new signatures.
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, 4, 5));
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1 + 1, CTX1 + 2, SEED1, SEED2, 4),
             _epochSubmission(CTX1 + 2, EPOCH1 + 1, EPOCH1 + 2, SEED1, N)
         );
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, 3, 4));
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1 + 1, CTX1 + 2, SEED1, SEED2, 5),
             _epochSubmission(CTX1 + 2, EPOCH1 + 1, EPOCH1 + 2, SEED1, N - 1)
         );
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1 + 1, CTX1 + 2, SEED1, SEED2, 5),
             _epochSubmission(CTX1 + 2, EPOCH1 + 1, EPOCH1 + 2, SEED1, N)
         );
@@ -662,7 +665,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         context.signatures[2] = context.signatures[0];
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.DuplicateKmsSigner.selector, _signers(SEED0)[0]));
-        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
+        protocolConfigReplica.submitKmsContextAndEpoch(context, epoch);
     }
 
     function test_revertSwitchNonMemberSigner() public {
@@ -673,7 +676,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.KmsSignerNotInCommittee.selector, _signers(SEED1)[0], CTX1)
         );
-        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
+        protocolConfigReplica.submitKmsContextAndEpoch(context, epoch);
     }
 
     function test_revertSwitchTamperedNodes() public {
@@ -739,17 +742,17 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
 
     function test_revertSwitchReplayStale() public {
         (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
-        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
+        protocolConfigReplica.submitKmsContextAndEpoch(context, epoch);
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.StaleKmsContextSwitch.selector, CTX1 + 1));
-        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
+        protocolConfigReplica.submitKmsContextAndEpoch(context, epoch);
     }
 
     function test_revertSwitchOlderIdStale() public {
         _switch(SEED0, CTX1 + 5, EPOCH1 + 5, SEED1);
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.StaleKmsContextSwitch.selector, CTX1 + 3));
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 3, SEED2, SEED0, QUORUM),
             _epochSubmission(CTX1 + 3, EPOCH1, EPOCH1 + 3, SEED2, N)
         );
@@ -762,8 +765,8 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
 
         _assertSwitchRejected(contextC, epochC, CTX1);
 
-        protocolConfigReplica.submitKmsContextSwitch(contextB, epochB);
-        protocolConfigReplica.submitKmsContextSwitch(contextC, epochC);
+        protocolConfigReplica.submitKmsContextAndEpoch(contextB, epochB);
+        protocolConfigReplica.submitKmsContextAndEpoch(contextC, epochC);
 
         _assertActive(CTX1 + 2, EPOCH1 + 2);
         _assertMembers(CTX1 + 2, SEED2);
@@ -777,7 +780,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsContextCannotBeActivated.selector, destroyedId)
         );
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, destroyedId, SEED1, SEED0, QUORUM),
             _epochSubmission(destroyedId, EPOCH1, EPOCH1 + 1, SEED1, N)
         );
@@ -791,7 +794,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsEpochCannotBeActivated.selector, destroyedId)
         );
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM),
             _epochSubmission(CTX1 + 1, EPOCH1, destroyedId, SEED1, N)
         );
@@ -802,7 +805,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsContextDestruction(CTX1 + 1);
 
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 2, SEED2, SEED0, QUORUM),
             _epochSubmission(CTX1 + 2, EPOCH1, EPOCH1 + 2, SEED2, N)
         );
@@ -815,7 +818,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
 
     function test_submitKmsEpochActivates() public {
         vm.expectEmit(true, true, false, true, address(protocolConfigReplica));
-        emit IProtocolConfigReplica.KmsEpochApplied(CTX1, EPOCH1 + 1);
+        emit IProtocolConfigReplica.SubmitKmsEpoch(CTX1, EPOCH1 + 1);
         protocolConfigReplica.submitKmsEpoch(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N));
 
         _assertActive(CTX1, EPOCH1 + 1);
@@ -1141,11 +1144,11 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         );
         _submitContextDestruction(CTX1 + 1, SEED0, QUORUM);
 
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 1, nodes2, _thresholds(), SEED0, QUORUM),
             _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, keys2)
         );
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1 + 1, CTX1 + 2, nodes3, _thresholds(), SEED0, QUORUM),
             _epochSubmission(CTX1 + 2, EPOCH1 + 1, EPOCH1 + 2, keys3)
         );
@@ -1341,7 +1344,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsContextAlreadyDestroyed.selector, CTX1 + 1));
         _submitContextDestruction(CTX1 + 1, SEED0, QUORUM);
 
-        protocolConfigReplica.submitKmsContextSwitch(
+        protocolConfigReplica.submitKmsContextAndEpoch(
             _contextSubmission(CTX1, CTX1 + 2, SEED2, SEED0, QUORUM),
             _epochSubmission(CTX1 + 2, EPOCH1, EPOCH1 + 2, SEED2, N)
         );
@@ -1369,7 +1372,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
     function test_recoveryBlocksContextSwitchReplay() public {
         uint256 forgedId = CTX1 + 1;
         (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
-        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
+        protocolConfigReplica.submitKmsContextAndEpoch(context, epoch);
         _recoverToBootstrapPair();
 
         _assertActive(CTX1, EPOCH1);
@@ -1381,7 +1384,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsContextCannotBeActivated.selector, forgedId)
         );
-        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
+        protocolConfigReplica.submitKmsContextAndEpoch(context, epoch);
     }
 
     /// @dev A forged switch activates C2 with committee SEED1. The C2 committee then submits C3 and E3, and
@@ -1398,10 +1401,10 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
 
         KmsContextSubmission memory context2 = _contextSubmission(CTX1, c2, SEED1, SEED0, QUORUM);
         KmsEpochSubmission memory epoch2 = _epochSubmission(c2, EPOCH1, e2, SEED1, N);
-        protocolConfigReplica.submitKmsContextSwitch(context2, epoch2);
+        protocolConfigReplica.submitKmsContextAndEpoch(context2, epoch2);
         KmsContextSubmission memory context3 = _contextSubmission(c2, c3, SEED1, SEED1, QUORUM);
         KmsEpochSubmission memory epoch3 = _epochSubmission(c3, e2, e3, SEED1, N);
-        protocolConfigReplica.submitKmsContextSwitch(context3, epoch3);
+        protocolConfigReplica.submitKmsContextAndEpoch(context3, epoch3);
         KmsEpochSubmission memory epoch4 = _epochSubmission(c3, e3, e4, SEED1, N);
         protocolConfigReplica.submitKmsEpoch(epoch4);
 
@@ -1431,9 +1434,9 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         assertFalse(protocolConfigReplica.isValidEpochForContext(c3, e4));
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.StaleKmsContextSwitch.selector, c2));
-        protocolConfigReplica.submitKmsContextSwitch(context2, epoch2);
+        protocolConfigReplica.submitKmsContextAndEpoch(context2, epoch2);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.StaleKmsContextSwitch.selector, c3));
-        protocolConfigReplica.submitKmsContextSwitch(context3, epoch3);
+        protocolConfigReplica.submitKmsContextAndEpoch(context3, epoch3);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.StaleKmsEpoch.selector, e4));
         protocolConfigReplica.submitKmsEpoch(epoch4);
     }
@@ -1448,7 +1451,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         _switch(SEED0, c2, e2, SEED1);
         KmsContextSubmission memory context3 = _contextSubmission(c2, c3, SEED2, SEED1, QUORUM);
         KmsEpochSubmission memory epoch3 = _epochSubmission(c3, e2, e3, SEED2, N);
-        protocolConfigReplica.submitKmsContextSwitch(context3, epoch3);
+        protocolConfigReplica.submitKmsContextAndEpoch(context3, epoch3);
 
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsContextAndEpoch(c2, e2, _nodes(SEED1), _thresholds());
@@ -1459,7 +1462,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
                 _nodes(SEED2)[0].txSenderAddress
             )
         );
-        protocolConfigReplica.submitKmsContextSwitch(context3, epoch3);
+        protocolConfigReplica.submitKmsContextAndEpoch(context3, epoch3);
 
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsContextAndEpoch(c3, e3, _nodes(SEED2), _thresholds());

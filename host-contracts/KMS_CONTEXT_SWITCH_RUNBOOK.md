@@ -555,7 +555,7 @@ can repeat this for every new proposal.
    else. This replaces any committee the replica stored under C4. After it executes, only the C4
    committee can sign on the submit path, so the list in step 3 cannot change.
 3. After proposal 1 executes, make the list of IDs to destroy. Read the replica's
-   `KmsContextSwitchApplied` and `KmsEpochApplied` events. Find the first context that canonical
+   `SubmitKmsContextAndEpoch` and `SubmitKmsEpoch` events. Find the first context that canonical
    had not activated when the replica activated it. Take that context, every context the replica
    activated after it, and every epoch of those contexts. Keep an ID on the list even if canonical
    later activated the same number, because the replica still stores the committee it activated
@@ -570,7 +570,7 @@ proposal 2 with the same urgency as proposal 1.
 For a resharing epoch that canonical never activated under an honest active context, the owner
 calls `mirrorKmsEpoch` with canonical's active pair. Then the owner calls
 `mirrorKmsEpochDestruction` for every epoch ID of that context that canonical never activated,
-from the `KmsEpochApplied` events. Put all actions in one DAO proposal, in this order.
+from the `SubmitKmsEpoch` events. Put all actions in one DAO proposal, in this order.
 
 If canonical later uses a destroyed ID, mirror it with `mirrorKmsContextAndEpoch` or
 `mirrorKmsEpoch`. The activation replaces the Destroyed state. No task wraps the recovery, so the
@@ -679,7 +679,7 @@ Quorum cheat-sheet:
 - **Do not abort a canonical step after `n − 1` confirmations without a replica recovery plan.**
   A confirmation tx that lands after the abort reverts, but its signature is public calldata.
   With the earlier confirmations, anyone can then apply the aborted step on every replica
-  through `submitKmsContextSwitch` or `submitKmsEpoch`. The replica cannot tell a
+  through `submitKmsContextAndEpoch` or `submitKmsEpoch`. The replica cannot tell a
   finished step from an aborted one. Later canonical steps then fail on that replica until the
   owner recovers it (§5.7).
 - **`mpcIdentity` must equal the identity the core itself is configured with** (its

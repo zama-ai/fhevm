@@ -54,11 +54,11 @@ interface IProtocolConfigReplica {
     error StaleKmsEpoch(uint256 epochId);
 
     event KmsContextDestroyed(uint256 indexed kmsContextId);
-    event KmsContextSwitchApplied(uint256 indexed contextId, uint256 indexed epochId);
-    event KmsEpochApplied(uint256 indexed contextId, uint256 indexed epochId);
     event KmsEpochDestroyed(uint256 indexed epochId);
     event MirrorKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId, KmsNode[] nodes, KmsThresholds thresholds);
     event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
+    event SubmitKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId);
+    event SubmitKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
 
     function getCurrentKmsContextAndEpoch() external view returns (uint256 contextId, uint256 epochId);
     function getCurrentKmsContextId() external view returns (uint256);
@@ -85,8 +85,8 @@ interface IProtocolConfigReplica {
     function mirrorKmsContextDestruction(uint256 destroyedContextId) external;
     function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
     function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external;
+    function submitKmsContextAndEpoch(KmsContextSubmission memory context, KmsEpochSubmission memory epoch) external;
     function submitKmsContextDestruction(uint256 destroyedContextId, bytes[] memory signatures, bytes memory extraData) external;
-    function submitKmsContextSwitch(KmsContextSubmission memory context, KmsEpochSubmission memory epoch) external;
     function submitKmsEpoch(KmsEpochSubmission memory epoch) external;
     function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory signatures, bytes memory extraData) external;
 }
@@ -633,30 +633,7 @@ interface IProtocolConfigReplica {
   },
   {
     "type": "function",
-    "name": "submitKmsContextDestruction",
-    "inputs": [
-      {
-        "name": "destroyedContextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "signatures",
-        "type": "bytes[]",
-        "internalType": "bytes[]"
-      },
-      {
-        "name": "extraData",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "submitKmsContextSwitch",
+    "name": "submitKmsContextAndEpoch",
     "inputs": [
       {
         "name": "context",
@@ -767,6 +744,29 @@ interface IProtocolConfigReplica {
   },
   {
     "type": "function",
+    "name": "submitKmsContextDestruction",
+    "inputs": [
+      {
+        "name": "destroyedContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "signatures",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "submitKmsEpoch",
     "inputs": [
       {
@@ -829,44 +829,6 @@ interface IProtocolConfigReplica {
     "inputs": [
       {
         "name": "kmsContextId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "KmsContextSwitchApplied",
-    "inputs": [
-      {
-        "name": "contextId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "epochId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "KmsEpochApplied",
-    "inputs": [
-      {
-        "name": "contextId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "epochId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -965,6 +927,44 @@ interface IProtocolConfigReplica {
   {
     "type": "event",
     "name": "MirrorKmsEpoch",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "epochId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SubmitKmsContextAndEpoch",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "epochId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SubmitKmsEpoch",
     "inputs": [
       {
         "name": "contextId",
@@ -4461,248 +4461,6 @@ event KmsContextDestroyed(uint256 indexed kmsContextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `KmsContextSwitchApplied(uint256,uint256)` and selector `0xb7eb0db5c8d254d8df2e065f9b62585024c491f6051456d8b0109e55abb2ec74`.
-```solidity
-event KmsContextSwitchApplied(uint256 indexed contextId, uint256 indexed epochId);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct KmsContextSwitchApplied {
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for KmsContextSwitchApplied {
-            type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-            );
-            const SIGNATURE: &'static str = "KmsContextSwitchApplied(uint256,uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                183u8, 235u8, 13u8, 181u8, 200u8, 210u8, 84u8, 216u8, 223u8, 46u8, 6u8,
-                95u8, 155u8, 98u8, 88u8, 80u8, 36u8, 196u8, 145u8, 246u8, 5u8, 20u8,
-                86u8, 216u8, 176u8, 16u8, 158u8, 85u8, 171u8, 178u8, 236u8, 116u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    contextId: topics.1,
-                    epochId: topics.2,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                ()
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (
-                    Self::SIGNATURE_HASH.into(),
-                    self.contextId.clone(),
-                    self.epochId.clone(),
-                )
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
-                out[2usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.epochId);
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for KmsContextSwitchApplied {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&KmsContextSwitchApplied> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(
-                this: &KmsContextSwitchApplied,
-            ) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `KmsEpochApplied(uint256,uint256)` and selector `0x101e6d9ac80a3c4df97b368b3b5bc9659ee109d72746ebf1739836982bba12b4`.
-```solidity
-event KmsEpochApplied(uint256 indexed contextId, uint256 indexed epochId);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct KmsEpochApplied {
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for KmsEpochApplied {
-            type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-            );
-            const SIGNATURE: &'static str = "KmsEpochApplied(uint256,uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                16u8, 30u8, 109u8, 154u8, 200u8, 10u8, 60u8, 77u8, 249u8, 123u8, 54u8,
-                139u8, 59u8, 91u8, 201u8, 101u8, 158u8, 225u8, 9u8, 215u8, 39u8, 70u8,
-                235u8, 241u8, 115u8, 152u8, 54u8, 152u8, 43u8, 186u8, 18u8, 180u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    contextId: topics.1,
-                    epochId: topics.2,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                ()
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (
-                    Self::SIGNATURE_HASH.into(),
-                    self.contextId.clone(),
-                    self.epochId.clone(),
-                )
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
-                out[2usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.epochId);
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for KmsEpochApplied {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&KmsEpochApplied> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &KmsEpochApplied) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `KmsEpochDestroyed(uint256)` and selector `0x03436013075f8d1abb1781dbcaf418fc76fc797d1ab51c38664c1a51f3cd57f9`.
 ```solidity
 event KmsEpochDestroyed(uint256 indexed epochId);
@@ -5064,6 +4822,248 @@ event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
         impl From<&MirrorKmsEpoch> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &MirrorKmsEpoch) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `SubmitKmsContextAndEpoch(uint256,uint256)` and selector `0x4c9f1ed194b26069791a43cf91185102f5dc16229f38a4d4de2eddf86a4669c4`.
+```solidity
+event SubmitKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct SubmitKmsContextAndEpoch {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for SubmitKmsContextAndEpoch {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "SubmitKmsContextAndEpoch(uint256,uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                76u8, 159u8, 30u8, 209u8, 148u8, 178u8, 96u8, 105u8, 121u8, 26u8, 67u8,
+                207u8, 145u8, 24u8, 81u8, 2u8, 245u8, 220u8, 22u8, 34u8, 159u8, 56u8,
+                164u8, 212u8, 222u8, 46u8, 221u8, 248u8, 106u8, 70u8, 105u8, 196u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    contextId: topics.1,
+                    epochId: topics.2,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (
+                    Self::SIGNATURE_HASH.into(),
+                    self.contextId.clone(),
+                    self.epochId.clone(),
+                )
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
+                out[2usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.epochId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for SubmitKmsContextAndEpoch {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&SubmitKmsContextAndEpoch> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &SubmitKmsContextAndEpoch,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `SubmitKmsEpoch(uint256,uint256)` and selector `0xff60c1e750591e2a63fa9c003d4594562f1dab64fc6119c3e0954a7d9d633266`.
+```solidity
+event SubmitKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct SubmitKmsEpoch {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for SubmitKmsEpoch {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "SubmitKmsEpoch(uint256,uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                255u8, 96u8, 193u8, 231u8, 80u8, 89u8, 30u8, 42u8, 99u8, 250u8, 156u8,
+                0u8, 61u8, 69u8, 148u8, 86u8, 47u8, 29u8, 171u8, 100u8, 252u8, 97u8,
+                25u8, 195u8, 224u8, 149u8, 74u8, 125u8, 157u8, 99u8, 50u8, 102u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    contextId: topics.1,
+                    epochId: topics.2,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (
+                    Self::SIGNATURE_HASH.into(),
+                    self.contextId.clone(),
+                    self.epochId.clone(),
+                )
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
+                out[2usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.epochId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for SubmitKmsEpoch {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&SubmitKmsEpoch> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &SubmitKmsEpoch) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -9078,6 +9078,167 @@ function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `submitKmsContextAndEpoch((uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))` and selector `0xe949155d`.
+```solidity
+function submitKmsContextAndEpoch(KmsContextSubmission memory context, KmsEpochSubmission memory epoch) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct submitKmsContextAndEpochCall {
+        #[allow(missing_docs)]
+        pub context: <KmsContextSubmission as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub epoch: <KmsEpochSubmission as alloy::sol_types::SolType>::RustType,
+    }
+    ///Container type for the return parameters of the [`submitKmsContextAndEpoch((uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))`](submitKmsContextAndEpochCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct submitKmsContextAndEpochReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (KmsContextSubmission, KmsEpochSubmission);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                <KmsContextSubmission as alloy::sol_types::SolType>::RustType,
+                <KmsEpochSubmission as alloy::sol_types::SolType>::RustType,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<submitKmsContextAndEpochCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: submitKmsContextAndEpochCall) -> Self {
+                    (value.context, value.epoch)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for submitKmsContextAndEpochCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        context: tuple.0,
+                        epoch: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<submitKmsContextAndEpochReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: submitKmsContextAndEpochReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for submitKmsContextAndEpochReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl submitKmsContextAndEpochReturn {
+            fn _tokenize(
+                &self,
+            ) -> <submitKmsContextAndEpochCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for submitKmsContextAndEpochCall {
+            type Parameters<'a> = (KmsContextSubmission, KmsEpochSubmission);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = submitKmsContextAndEpochReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "submitKmsContextAndEpoch((uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))";
+            const SELECTOR: [u8; 4] = [233u8, 73u8, 21u8, 93u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <KmsContextSubmission as alloy_sol_types::SolType>::tokenize(
+                        &self.context,
+                    ),
+                    <KmsEpochSubmission as alloy_sol_types::SolType>::tokenize(
+                        &self.epoch,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                submitKmsContextAndEpochReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `submitKmsContextDestruction(uint256,bytes[],bytes)` and selector `0xa63712d9`.
 ```solidity
 function submitKmsContextDestruction(uint256 destroyedContextId, bytes[] memory signatures, bytes memory extraData) external;
@@ -9233,167 +9394,6 @@ function submitKmsContextDestruction(uint256 destroyedContextId, bytes[] memory 
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 submitKmsContextDestructionReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `submitKmsContextSwitch((uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))` and selector `0xa8795fd9`.
-```solidity
-function submitKmsContextSwitch(KmsContextSubmission memory context, KmsEpochSubmission memory epoch) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct submitKmsContextSwitchCall {
-        #[allow(missing_docs)]
-        pub context: <KmsContextSubmission as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub epoch: <KmsEpochSubmission as alloy::sol_types::SolType>::RustType,
-    }
-    ///Container type for the return parameters of the [`submitKmsContextSwitch((uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))`](submitKmsContextSwitchCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct submitKmsContextSwitchReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (KmsContextSubmission, KmsEpochSubmission);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                <KmsContextSubmission as alloy::sol_types::SolType>::RustType,
-                <KmsEpochSubmission as alloy::sol_types::SolType>::RustType,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<submitKmsContextSwitchCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: submitKmsContextSwitchCall) -> Self {
-                    (value.context, value.epoch)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for submitKmsContextSwitchCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        context: tuple.0,
-                        epoch: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<submitKmsContextSwitchReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: submitKmsContextSwitchReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for submitKmsContextSwitchReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl submitKmsContextSwitchReturn {
-            fn _tokenize(
-                &self,
-            ) -> <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for submitKmsContextSwitchCall {
-            type Parameters<'a> = (KmsContextSubmission, KmsEpochSubmission);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = submitKmsContextSwitchReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "submitKmsContextSwitch((uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))";
-            const SELECTOR: [u8; 4] = [168u8, 121u8, 95u8, 217u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <KmsContextSubmission as alloy_sol_types::SolType>::tokenize(
-                        &self.context,
-                    ),
-                    <KmsEpochSubmission as alloy_sol_types::SolType>::tokenize(
-                        &self.epoch,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                submitKmsContextSwitchReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -9795,9 +9795,9 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
         #[allow(missing_docs)]
         mirrorKmsEpochDestruction(mirrorKmsEpochDestructionCall),
         #[allow(missing_docs)]
-        submitKmsContextDestruction(submitKmsContextDestructionCall),
+        submitKmsContextAndEpoch(submitKmsContextAndEpochCall),
         #[allow(missing_docs)]
-        submitKmsContextSwitch(submitKmsContextSwitchCall),
+        submitKmsContextDestruction(submitKmsContextDestructionCall),
         #[allow(missing_docs)]
         submitKmsEpoch(submitKmsEpochCall),
         #[allow(missing_docs)]
@@ -9828,7 +9828,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
             [148u8, 71u8, 207u8, 212u8],
             [151u8, 111u8, 62u8, 185u8],
             [166u8, 55u8, 18u8, 217u8],
-            [168u8, 121u8, 95u8, 217u8],
             [180u8, 114u8, 43u8, 196u8],
             [191u8, 155u8, 22u8, 200u8],
             [194u8, 180u8, 41u8, 134u8],
@@ -9837,6 +9836,7 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
             [215u8, 73u8, 118u8, 12u8],
             [220u8, 63u8, 231u8, 141u8],
             [226u8, 229u8, 195u8, 222u8],
+            [233u8, 73u8, 21u8, 93u8],
             [238u8, 125u8, 82u8, 209u8],
             [249u8, 191u8, 203u8, 5u8],
             [249u8, 198u8, 112u8, 195u8],
@@ -9860,7 +9860,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
             ::core::stringify!(isKmsSignerForContext),
             ::core::stringify!(getCurrentKmsContextId),
             ::core::stringify!(submitKmsContextDestruction),
-            ::core::stringify!(submitKmsContextSwitch),
             ::core::stringify!(getKmsGenThreshold),
             ::core::stringify!(isValidKmsContext),
             ::core::stringify!(getUserDecryptionThreshold),
@@ -9869,6 +9868,7 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
             ::core::stringify!(submitKmsEpochDestruction),
             ::core::stringify!(mirrorKmsEpochDestruction),
             ::core::stringify!(submitKmsEpoch),
+            ::core::stringify!(submitKmsContextAndEpoch),
             ::core::stringify!(isLiveKmsContext),
             ::core::stringify!(mirrorKmsContextDestruction),
             ::core::stringify!(getKmsNodesForContext),
@@ -9892,7 +9892,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
             <isKmsSignerForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <submitKmsContextDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsGenThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isValidKmsContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getUserDecryptionThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -9901,6 +9900,7 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
             <submitKmsEpochDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
             <mirrorKmsEpochDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
             <submitKmsEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <submitKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isLiveKmsContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <mirrorKmsContextDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsNodesForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -10009,11 +10009,11 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                 Self::mirrorKmsEpochDestruction(_) => {
                     <mirrorKmsEpochDestructionCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::submitKmsContextAndEpoch(_) => {
+                    <submitKmsContextAndEpochCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::submitKmsContextDestruction(_) => {
                     <submitKmsContextDestructionCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::submitKmsContextSwitch(_) => {
-                    <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::submitKmsEpoch(_) => {
                     <submitKmsEpochCall as alloy_sol_types::SolCall>::SELECTOR
@@ -10238,17 +10238,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                     submitKmsContextDestruction
                 },
                 {
-                    fn submitKmsContextSwitch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
-                        <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigReplicaCalls::submitKmsContextSwitch)
-                    }
-                    submitKmsContextSwitch
-                },
-                {
                     fn getKmsGenThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
@@ -10337,6 +10326,17 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                             .map(IProtocolConfigReplicaCalls::submitKmsEpoch)
                     }
                     submitKmsEpoch
+                },
+                {
+                    fn submitKmsContextAndEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
+                        <submitKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigReplicaCalls::submitKmsContextAndEpoch)
+                    }
+                    submitKmsContextAndEpoch
                 },
                 {
                     fn isLiveKmsContext(
@@ -10591,17 +10591,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                     submitKmsContextDestruction
                 },
                 {
-                    fn submitKmsContextSwitch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
-                        <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigReplicaCalls::submitKmsContextSwitch)
-                    }
-                    submitKmsContextSwitch
-                },
-                {
                     fn getKmsGenThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
@@ -10690,6 +10679,17 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                             .map(IProtocolConfigReplicaCalls::submitKmsEpoch)
                     }
                     submitKmsEpoch
+                },
+                {
+                    fn submitKmsContextAndEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
+                        <submitKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigReplicaCalls::submitKmsContextAndEpoch)
+                    }
+                    submitKmsContextAndEpoch
                 },
                 {
                     fn isLiveKmsContext(
@@ -10863,13 +10863,13 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                         inner,
                     )
                 }
-                Self::submitKmsContextDestruction(inner) => {
-                    <submitKmsContextDestructionCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::submitKmsContextAndEpoch(inner) => {
+                    <submitKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
-                Self::submitKmsContextSwitch(inner) => {
-                    <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::submitKmsContextDestruction(inner) => {
+                    <submitKmsContextDestructionCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -11038,14 +11038,14 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                         out,
                     )
                 }
-                Self::submitKmsContextDestruction(inner) => {
-                    <submitKmsContextDestructionCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::submitKmsContextAndEpoch(inner) => {
+                    <submitKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
-                Self::submitKmsContextSwitch(inner) => {
-                    <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::submitKmsContextDestruction(inner) => {
+                    <submitKmsContextDestructionCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -12167,15 +12167,15 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
         #[allow(missing_docs)]
         KmsContextDestroyed(KmsContextDestroyed),
         #[allow(missing_docs)]
-        KmsContextSwitchApplied(KmsContextSwitchApplied),
-        #[allow(missing_docs)]
-        KmsEpochApplied(KmsEpochApplied),
-        #[allow(missing_docs)]
         KmsEpochDestroyed(KmsEpochDestroyed),
         #[allow(missing_docs)]
         MirrorKmsContextAndEpoch(MirrorKmsContextAndEpoch),
         #[allow(missing_docs)]
         MirrorKmsEpoch(MirrorKmsEpoch),
+        #[allow(missing_docs)]
+        SubmitKmsContextAndEpoch(SubmitKmsContextAndEpoch),
+        #[allow(missing_docs)]
+        SubmitKmsEpoch(SubmitKmsEpoch),
     }
     impl IProtocolConfigReplicaEvents {
         /// All the selectors of this enum.
@@ -12196,9 +12196,9 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                 36u8, 125u8, 172u8, 117u8, 116u8, 193u8, 15u8, 215u8, 53u8, 166u8,
             ],
             [
-                16u8, 30u8, 109u8, 154u8, 200u8, 10u8, 60u8, 77u8, 249u8, 123u8, 54u8,
-                139u8, 59u8, 91u8, 201u8, 101u8, 158u8, 225u8, 9u8, 215u8, 39u8, 70u8,
-                235u8, 241u8, 115u8, 152u8, 54u8, 152u8, 43u8, 186u8, 18u8, 180u8,
+                76u8, 159u8, 30u8, 209u8, 148u8, 178u8, 96u8, 105u8, 121u8, 26u8, 67u8,
+                207u8, 145u8, 24u8, 81u8, 2u8, 245u8, 220u8, 22u8, 34u8, 159u8, 56u8,
+                164u8, 212u8, 222u8, 46u8, 221u8, 248u8, 106u8, 70u8, 105u8, 196u8,
             ],
             [
                 182u8, 72u8, 82u8, 76u8, 225u8, 96u8, 181u8, 125u8, 222u8, 96u8, 233u8,
@@ -12206,33 +12206,33 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                 140u8, 181u8, 211u8, 206u8, 4u8, 157u8, 15u8, 132u8, 214u8, 66u8,
             ],
             [
-                183u8, 235u8, 13u8, 181u8, 200u8, 210u8, 84u8, 216u8, 223u8, 46u8, 6u8,
-                95u8, 155u8, 98u8, 88u8, 80u8, 36u8, 196u8, 145u8, 246u8, 5u8, 20u8,
-                86u8, 216u8, 176u8, 16u8, 158u8, 85u8, 171u8, 178u8, 236u8, 116u8,
-            ],
-            [
                 218u8, 7u8, 93u8, 9u8, 25u8, 141u8, 32u8, 126u8, 58u8, 145u8, 141u8,
                 75u8, 141u8, 252u8, 135u8, 223u8, 45u8, 96u8, 160u8, 11u8, 231u8, 3u8,
                 253u8, 57u8, 234u8, 172u8, 144u8, 150u8, 45u8, 160u8, 183u8, 240u8,
+            ],
+            [
+                255u8, 96u8, 193u8, 231u8, 80u8, 89u8, 30u8, 42u8, 99u8, 250u8, 156u8,
+                0u8, 61u8, 69u8, 148u8, 86u8, 47u8, 29u8, 171u8, 100u8, 252u8, 97u8,
+                25u8, 195u8, 224u8, 149u8, 74u8, 125u8, 157u8, 99u8, 50u8, 102u8,
             ],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(KmsEpochDestroyed),
             ::core::stringify!(MirrorKmsEpoch),
-            ::core::stringify!(KmsEpochApplied),
+            ::core::stringify!(SubmitKmsContextAndEpoch),
             ::core::stringify!(MirrorKmsContextAndEpoch),
-            ::core::stringify!(KmsContextSwitchApplied),
             ::core::stringify!(KmsContextDestroyed),
+            ::core::stringify!(SubmitKmsEpoch),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <KmsEpochDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,
             <MirrorKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
-            <KmsEpochApplied as alloy_sol_types::SolEvent>::SIGNATURE,
+            <SubmitKmsContextAndEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <MirrorKmsContextAndEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
-            <KmsContextSwitchApplied as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsContextDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,
+            <SubmitKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -12274,22 +12274,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                         .map(Self::KmsContextDestroyed)
                 }
                 Some(
-                    <KmsContextSwitchApplied as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <KmsContextSwitchApplied as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::KmsContextSwitchApplied)
-                }
-                Some(<KmsEpochApplied as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <KmsEpochApplied as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::KmsEpochApplied)
-                }
-                Some(
                     <KmsEpochDestroyed as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
                     <KmsEpochDestroyed as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -12314,6 +12298,22 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                         )
                         .map(Self::MirrorKmsEpoch)
                 }
+                Some(
+                    <SubmitKmsContextAndEpoch as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <SubmitKmsContextAndEpoch as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::SubmitKmsContextAndEpoch)
+                }
+                Some(<SubmitKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <SubmitKmsEpoch as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::SubmitKmsEpoch)
+                }
                 _ => {
                     alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
                         name: <Self as alloy_sol_types::SolEventInterface>::NAME,
@@ -12335,12 +12335,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                 Self::KmsContextDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::KmsContextSwitchApplied(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::KmsEpochApplied(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
                 Self::KmsEpochDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -12348,6 +12342,12 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::MirrorKmsEpoch(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::SubmitKmsContextAndEpoch(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::SubmitKmsEpoch(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
             }
@@ -12357,12 +12357,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                 Self::KmsContextDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::KmsContextSwitchApplied(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::KmsEpochApplied(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
                 Self::KmsEpochDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
@@ -12370,6 +12364,12 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::MirrorKmsEpoch(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::SubmitKmsContextAndEpoch(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::SubmitKmsEpoch(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
             }
@@ -12789,6 +12789,19 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`submitKmsContextAndEpoch`] function.
+        pub fn submitKmsContextAndEpoch(
+            &self,
+            context: <KmsContextSubmission as alloy::sol_types::SolType>::RustType,
+            epoch: <KmsEpochSubmission as alloy::sol_types::SolType>::RustType,
+        ) -> alloy_contract::SolCallBuilder<&P, submitKmsContextAndEpochCall, N> {
+            self.call_builder(
+                &submitKmsContextAndEpochCall {
+                    context,
+                    epoch,
+                },
+            )
+        }
         ///Creates a new call builder for the [`submitKmsContextDestruction`] function.
         pub fn submitKmsContextDestruction(
             &self,
@@ -12801,19 +12814,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     destroyedContextId,
                     signatures,
                     extraData,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`submitKmsContextSwitch`] function.
-        pub fn submitKmsContextSwitch(
-            &self,
-            context: <KmsContextSubmission as alloy::sol_types::SolType>::RustType,
-            epoch: <KmsEpochSubmission as alloy::sol_types::SolType>::RustType,
-        ) -> alloy_contract::SolCallBuilder<&P, submitKmsContextSwitchCall, N> {
-            self.call_builder(
-                &submitKmsContextSwitchCall {
-                    context,
-                    epoch,
                 },
             )
         }
@@ -12860,18 +12860,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, KmsContextDestroyed, N> {
             self.event_filter::<KmsContextDestroyed>()
         }
-        ///Creates a new event filter for the [`KmsContextSwitchApplied`] event.
-        pub fn KmsContextSwitchApplied_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, KmsContextSwitchApplied, N> {
-            self.event_filter::<KmsContextSwitchApplied>()
-        }
-        ///Creates a new event filter for the [`KmsEpochApplied`] event.
-        pub fn KmsEpochApplied_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, KmsEpochApplied, N> {
-            self.event_filter::<KmsEpochApplied>()
-        }
         ///Creates a new event filter for the [`KmsEpochDestroyed`] event.
         pub fn KmsEpochDestroyed_filter(
             &self,
@@ -12889,6 +12877,18 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, MirrorKmsEpoch, N> {
             self.event_filter::<MirrorKmsEpoch>()
+        }
+        ///Creates a new event filter for the [`SubmitKmsContextAndEpoch`] event.
+        pub fn SubmitKmsContextAndEpoch_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, SubmitKmsContextAndEpoch, N> {
+            self.event_filter::<SubmitKmsContextAndEpoch>()
+        }
+        ///Creates a new event filter for the [`SubmitKmsEpoch`] event.
+        pub fn SubmitKmsEpoch_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, SubmitKmsEpoch, N> {
+            self.event_filter::<SubmitKmsEpoch>()
         }
     }
 }
