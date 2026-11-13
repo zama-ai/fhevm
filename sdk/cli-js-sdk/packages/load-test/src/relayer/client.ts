@@ -383,13 +383,14 @@ export class RelayerClient {
     };
   }
 
-  // TODO: readiness path is hardcoded; some relayer implementations expose a
-  // different one. Support a future per-target { healthPath } override.
-  /** GET /health/readiness; returns true on HTTP 200. */
-  async isReady(): Promise<boolean> {
+  /**
+   * GET `healthPath`; returns true on HTTP 200. The gateway relayer serves
+   * `/health/readiness`, relayer-http serves `/healthz`.
+   */
+  async isReady(healthPath = "/health/readiness"): Promise<boolean> {
     try {
       const response = await this.pool.request({
-        path: "/health/readiness",
+        path: healthPath,
         method: "GET",
       });
       await response.body.text();

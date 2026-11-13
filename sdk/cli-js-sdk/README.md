@@ -24,7 +24,12 @@ This repository is a pnpm workspace:
 
 ## Quick Start
 
+`@fhevm/sdk` is the in-repo `sdk/js-sdk`, consumed from source
+(`file:../../../js-sdk/src`). Build it first; after any SDK change, rebuild it
+and run `pnpm install` again to refresh the copy pnpm installs.
+
 ```bash
+(cd ../js-sdk && npm ci && npm run build)
 pnpm install
 cp .env.example .env
 pnpm run build
@@ -293,7 +298,7 @@ returned `responseIdentity` field explicitly reports any identity dimension that
 the available artifact, response, and URL could not bind as `unbound`.
 
 Saved-response reconstruction uses an exact-version compatibility seam for
-`@fhevm/sdk@0.13.2` private branded objects. It is supported only in the
+`@fhevm/sdk@1.0.0-0` private branded objects. It is supported only in the
 repository's unbundled Node ESM execution model; bundling it or mixing CJS and
 ESM SDK instances is unsupported and may fail the brand checks.
 

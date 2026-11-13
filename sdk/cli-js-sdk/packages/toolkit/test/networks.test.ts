@@ -9,7 +9,7 @@ describe("custom FHEVM network definitions", () => {
     expect(
       resolveNetworkConfig("devnet").fhevmChain.fhevm.contracts.protocolConfig
         ?.address,
-    ).toBe("0x1aa1E8f03E6aC23EEd65305fF6C89A3Fc55f13a0");
+    ).toBe("0xf9759981BFFaAab05265a73e32136CEd6b1358dc");
   });
 
   it("configures the Polygon Amoy devnet protocol contract", () => {

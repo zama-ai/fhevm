@@ -244,7 +244,7 @@ export const registerScenarioRunCommand = (parent: CommandUnknownOpts): void => 
     .option("--out <dir>", "output directory override")
     .option("--max-connections <n>", "max sockets per relayer target (paired A/B uses up to 2×)", parseBoundedInt("--max-connections", MAX_CONNECTIONS))
     .option("--baseline <path>", "baseline report.json")
-    .option("--no-readiness-check", "skip GET /health/readiness")
+    .option("--no-readiness-check", "skip the readiness check (GET /health/readiness, or /healthz with --use-relayer-http)")
     .option(
       "--prepare",
       "explicitly create missing pools first (may use local CPU and send funded on-chain transactions)",
@@ -313,7 +313,7 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
     .option("--out <dir>", "preparation artifact directory override")
     .option("--lanes <n>", "funded wallet lanes for on-chain handle creation", parseBoundedInt("--lanes", MAX_LANES))
     .option("--max-connections <n>", "max sockets per relayer target for readiness (paired A/B uses up to 2×)", parseBoundedInt("--max-connections", MAX_CONNECTIONS))
-    .option("--no-readiness-check", "skip GET /health/readiness before preparation");
+    .option("--no-readiness-check", "skip the readiness check (GET /health/readiness, or /healthz with --use-relayer-http) before preparation");
   prepare.action(async (ref, options, command) => {
     const env = await envFromCommand(command);
     const [{ formatPoolPlan, inspectPoolRequirements, preparePoolRequirements }, { logger }] = await Promise.all([

@@ -104,10 +104,10 @@ describe("saved user-decrypt adapter", () => {
         .mockResolvedValue([{ type: "uint64", value: 42n }]),
       initPublicAction: vi
         .fn()
-        .mockResolvedValue({ tkmsVersion: "0.13.20-0" }),
+        .mockResolvedValue({ tkmsVersion: "0.15.0-0" }),
     };
     const decrypt = createSavedUserDecryptAdapter({
-      sdkVersion: "0.13.2",
+      sdkVersion: "1.0.0-0",
       loadInternals: vi.fn().mockResolvedValue(internals),
     });
 
@@ -125,7 +125,7 @@ describe("saved user-decrypt adapter", () => {
         kmsVerifierAddress: "0x0000000000000000000000000000000000000001",
         protocolConfigAddress: "0x0000000000000000000000000000000000000002",
         extraData: { parsed: true },
-        fhevmContext: { tkmsVersion: "0.13.20-0" },
+        fhevmContext: { tkmsVersion: "0.15.0-0" },
       }),
     );
     expect(internals.createKmsEip712Domain).toHaveBeenCalledWith({
@@ -138,7 +138,7 @@ describe("saved user-decrypt adapter", () => {
         metadata: expect.objectContaining({
           kmsSignersContext,
           // Locked to the resolved client's frozen context, not the saved key.
-          tkmsVersion: "0.13.20-0",
+          tkmsVersion: "0.15.0-0",
           eip712ExtraData: "0x00",
           eip712Domain: { domain: true },
           eip712Signature: `0x${"22".repeat(65)}`,
@@ -154,7 +154,7 @@ describe("saved user-decrypt adapter", () => {
       expect.objectContaining({
         kmsSigncryptedShares: { sealed: true },
         transportKeyPair: { parsed: "transport-key" },
-        fhevmContext: { tkmsVersion: "0.13.20-0" },
+        fhevmContext: { tkmsVersion: "0.15.0-0" },
       }),
     );
     expect(result).toEqual({
@@ -177,7 +177,7 @@ describe("saved user-decrypt adapter", () => {
     });
     const loadInternals = vi.fn().mockResolvedValue({});
     const decrypt = createSavedUserDecryptAdapter({
-      sdkVersion: "0.13.2",
+      sdkVersion: "1.0.0-0",
       loadInternals,
     });
 
@@ -198,7 +198,7 @@ describe("saved user-decrypt adapter", () => {
     });
 
     await expect(decrypt(parameters())).rejects.toThrow(
-      "supports @fhevm/sdk 0.13.2 only",
+      "supports @fhevm/sdk 1.0.0-0 only",
     );
     expect(loadInternals).not.toHaveBeenCalled();
   });
@@ -211,20 +211,20 @@ describe("saved user-decrypt adapter", () => {
     });
 
     await expect(decrypt(parameters())).rejects.toThrow(
-      "supports @fhevm/sdk 0.13.2 only",
+      "supports @fhevm/sdk 1.0.0-0 only",
     );
     expect(loadInternals).not.toHaveBeenCalled();
   });
 
-  it("fails closed for the 0.13.2-1 prerelease", async () => {
+  it("fails closed for the 1.0.0-1 prerelease", async () => {
     const loadInternals = vi.fn();
     const decrypt = createSavedUserDecryptAdapter({
-      sdkVersion: "0.13.2-1",
+      sdkVersion: "1.0.0-1",
       loadInternals,
     });
 
     await expect(decrypt(parameters())).rejects.toThrow(
-      "supports @fhevm/sdk 0.13.2 only",
+      "supports @fhevm/sdk 1.0.0-0 only",
     );
     expect(loadInternals).not.toHaveBeenCalled();
   });
@@ -232,7 +232,7 @@ describe("saved user-decrypt adapter", () => {
   it("rejects mismatched KMS shares before loading private modules", async () => {
     const loadInternals = vi.fn();
     const decrypt = createSavedUserDecryptAdapter({
-      sdkVersion: "0.13.2",
+      sdkVersion: "1.0.0-0",
       loadInternals,
     });
     const input = parameters();

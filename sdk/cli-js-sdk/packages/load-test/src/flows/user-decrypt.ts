@@ -21,6 +21,7 @@ import type { RelayerClient } from "../relayer/client";
 import { epochNowMs, monotonicNowMs } from "../shared/time";
 import { interruptedLeg } from "./interruption";
 import { assertSdkPreflight } from "./preflight";
+import { classifyRelayerHttpError } from "./relayer-http";
 import {
   captureInitialPostIdentity,
   sdkTerminalIdentityError,
@@ -37,13 +38,15 @@ type UserDecryptProgress =
   | RelayerUserDecryptProgressArgs
   | RelayerDelegatedUserDecryptProgressArgs;
 
+type ClearValues = readonly Readonly<{ type: string; value: unknown }>[];
+
 export type UserDecryptSdkClient = Readonly<{
   ready: Promise<void>;
   generateTransportKeyPair: () => Promise<unknown>;
   signLegacyDecryptionPermit: (parameters: Record<string, unknown>) => Promise<unknown>;
-  decryptValues: (parameters: Record<string, unknown>) => Promise<
-    readonly Readonly<{ type: string; value: unknown }>[]
-  >;
+  signUnifiedDecryptionPermit: (parameters: Record<string, unknown>) => Promise<unknown>;
+  decryptValues: (parameters: Record<string, unknown>) => Promise<ClearValues>;
+  decryptValuesNoGateway: (parameters: Record<string, unknown>) => Promise<ClearValues>;
 }>;
 
 export type UserDecryptExecutorDependencies = Readonly<{
@@ -206,8 +209,9 @@ export class UserDecryptExecutor implements FlowExecutor {
     if (clientB && new URL(client.baseUrl).origin === new URL(clientB.baseUrl).origin) {
       throw new Error("Primary and candidate relayer targets must be different origins.");
     }
+    // relayer-http routes are built by the SDK from the relayer origin (/v4/...).
     for (const [label, target] of [["A", client], ["B", clientB]] as const) {
-      if (target && target.apiPrefix !== "/v2") {
+      if (target && !env.useRelayerHttp && target.apiPrefix !== "/v2") {
         throw new Error(
           `SDK-native user-decrypt target ${label} requires API prefix /v2; configured ${target.apiPrefix || "<root>"}.`,
         );
@@ -320,6 +324,7 @@ export class UserDecryptExecutor implements FlowExecutor {
         durationSeconds: permitDurationSeconds(this.requestTimeoutMs),
         signer: probeSigner,
         ...(this.delegated ? { delegatorAddress: probeItem.ownerAddress } : {}),
+        permit: this.env.useRelayerHttp ? "unified" : "legacy",
       });
       signal?.throwIfAborted();
     }
@@ -448,6 +453,82 @@ export class UserDecryptExecutor implements FlowExecutor {
     }
   }
 
+  /**
+   * relayer-http answers in a single POST with no job and no progress events,
+   * so jobId, firstRetryAfterMs and submit latency stay unset and pollCount is 0.
+   */
+  private async executeRelayerHttpLeg(
+    target: UserDecryptSdkClient,
+    signer: Account,
+    item: FheHandlePoolItem,
+    requestId: string,
+    signal: AbortSignal,
+  ): Promise<RelayerLegRecord> {
+    const startedMono = monotonicNowMs();
+    let permitSigned = false;
+    try {
+      signal.throwIfAborted();
+      const transportKeyPair = await target.generateTransportKeyPair();
+      signal.throwIfAborted();
+      const signedPermit = await target.signUnifiedDecryptionPermit({
+        transportKeyPair,
+        contractAddresses: [this.meta!.contractAddress],
+        durationSeconds: permitDurationSeconds(this.requestTimeoutMs),
+        startTimestamp: Math.floor(Date.now() / 1000),
+        signerAddress: signer.address,
+        signer,
+      });
+      permitSigned = true;
+      signal.throwIfAborted();
+      const clearValues = await target.decryptValuesNoGateway({
+        encryptedValues: [item.handle],
+        contractAddress: this.meta!.contractAddress,
+        signedPermit,
+        transportKeyPair,
+        options: {
+          timeout: this.requestTimeoutMs,
+          signal,
+          headers: { "x-request-id": requestId },
+        },
+      });
+      const common = { pollCount: 0, e2eLatencyMs: monotonicNowMs() - startedMono };
+      if (!valuesMatch(clearValues, item)) {
+        return {
+          ...common,
+          outcome: "verify_failed",
+          errorLabel: "values_mismatch",
+          errorMessage: "SDK-verified clear values did not match the known pool value.",
+          verified: false,
+        };
+      }
+      return { ...common, outcome: "succeeded", verified: true };
+    } catch (error) {
+      const common = {
+        pollCount: 0,
+        e2eLatencyMs: monotonicNowMs() - startedMono,
+        verified: false,
+      };
+      const interruption = interruptedLeg(signal);
+      if (interruption) {
+        return {
+          ...common,
+          ...interruption,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        };
+      }
+      const httpFailure = classifyRelayerHttpError(error);
+      if (httpFailure) return { ...common, ...httpFailure };
+      // Not from the HTTP exchange: before the permit is signed nothing was sent;
+      // after it, the error is local ACL/handle checks or KMS share reconstruction.
+      return {
+        ...common,
+        outcome: permitSigned ? "failed" : "submit_failed",
+        errorLabel: "sdk_user_decrypt_error",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   async execute(index: number, signal: AbortSignal): Promise<RequestRecord> {
     if (!this.targetA || !this.meta) throw new Error("Executor not prepared.");
     const item = this.items[this.nextItem % this.items.length];
@@ -464,6 +545,17 @@ export class UserDecryptExecutor implements FlowExecutor {
       startedAtMs: epochNowMs(),
       sentRequestId,
     };
+
+    if (this.env.useRelayerHttp) {
+      const leg = await this.executeRelayerHttpLeg(
+        this.targetA,
+        signer,
+        item,
+        sentRequestId,
+        signal,
+      );
+      return { ...base, ...leg };
+    }
 
     const [primary, candidate] = await Promise.all([
       this.executeLeg(this.targetA, signer, item, sentRequestId, signal),

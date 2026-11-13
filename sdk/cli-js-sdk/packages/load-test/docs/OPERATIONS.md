@@ -35,6 +35,7 @@ Put credentials in the workspace-root `.env` (`sdk/cli-js-sdk/.env`):
 | `LOAD_TEST_RELAYER_URL` | everything | or pass `--relayer-url` |
 | `LOAD_TEST_RELAYER_CONFIG` | config snapshot | optional; path to the relayer YAML in effect |
 | `LOAD_TEST_DATA_DIR` | pools/runs root | default `.load-test` |
+| `LOAD_TEST_USE_RELAYER_HTTP` | decrypt without the gateway | `true` or pass `--use-relayer-http`; see §5 |
 
 Funding: each handle costs one FHETest setter transaction (plus one
 delegation transaction per lane for delegated pools). Lanes are checked for
@@ -352,6 +353,30 @@ the destination and refuses symlinked artifact path components; it does not
 trust suite-summary diff metadata to authorize replacement. Corrupt or
 incompatible existing baselines are never overwritten.
 
+**Decrypt load against relayer-http (no gateway):** relayer-http serves only
+`/v4/user-decrypt` and `/v4/public-decrypt`, so run single-flow scenarios, not
+suites. Pools are created through the gateway relayer (handle creation needs
+input-proof), then reused against relayer-http:
+
+```bash
+# 1. pools, through the gateway relayer
+node --import tsx index.ts pool add user-decrypt --count 4 --relayer-url <gateway-relayer>
+node --import tsx index.ts pool add public-decrypt --count 20 --relayer-url <gateway-relayer>
+# 2. load, against relayer-http (no --prepare)
+node --import tsx index.ts scenario run closed-steady --flow user-decrypt --vus 5 --duration 120 \
+  --relayer-url <relayer-http> --use-relayer-http
+node --import tsx index.ts scenario run open-steady --flow public-decrypt --rps 1 --duration 20 \
+  --relayer-url <relayer-http> --use-relayer-http
+```
+
+Public-decrypt handle combinations stay single-use: `--rps 1 --duration 20`
+consumes 20 of the pool's C(n, 1) combinations. Check with `scenario plan`
+first.
+
+Readiness is `GET /healthz`; the Prometheus collector is skipped. Requests have
+no job or polling, so the report has end-to-end latency only. See the README
+section "Decrypting without the gateway (relayer-http)" for outcome mapping.
+
 ## Migration: gentler defaults
 
 Built-in defaults were lowered to stay well under the protocol ceilings
@@ -375,7 +400,8 @@ like user-decrypt) and stays reachable via `--flow delegated-user-decrypt`.
 
 | Symptom | Cause / fix |
 | --- | --- |
-| `failed the readiness check` | target does not expose `GET /health/readiness` or is down; verify its health surface, then use `--no-readiness-check` only when another check proves it ready |
+| `failed the readiness check` | target does not expose `GET /health/readiness` (`GET /healthz` with `--use-relayer-http`) or is down; verify its health surface, then use `--no-readiness-check` only when another check proves it ready |
+| `--use-relayer-http supports only …` | the scenario includes input-proof or delegated-user-decrypt; pick a single-flow scenario and pass `--flow user-decrypt` or `--flow public-decrypt` |
 | `Pool preparation is required` | inspect `pool-plan.md`, then run `suite prepare`, `scenario prepare`, or rerun with explicit `--prepare` |
 | `Lane X holds 0 ETH` | fund the printed address; lanes are HD indices 0..lanes-1 of `MNEMONIC` |
 | many `client_poll_deadline_exceeded` | requests outlived `requestTimeoutSec` — relayer saturated or timeout too tight for the load |

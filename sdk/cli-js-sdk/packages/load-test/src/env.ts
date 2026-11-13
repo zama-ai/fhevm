@@ -32,6 +32,11 @@ export type LoadTestEnv = Readonly<{
   relayerConfigPath?: string;
   /** Optional path to the candidate relayer config file snapshotted into reports. */
   relayerBConfigPath?: string;
+  /**
+   * Decrypt without the gateway: `relayerUrl` points at relayer-http and the
+   * decrypt flows use its synchronous `/v4` routes.
+   */
+  useRelayerHttp?: boolean;
 }>;
 
 export type EnvOverrides = Readonly<{
@@ -45,6 +50,7 @@ export type EnvOverrides = Readonly<{
   dataDir?: string;
   relayerConfigPath?: string;
   relayerBConfigPath?: string;
+  useRelayerHttp?: boolean;
 }>;
 
 export const resolveEnv = (overrides: EnvOverrides = {}): LoadTestEnv => {
@@ -99,6 +105,15 @@ export const resolveEnv = (overrides: EnvOverrides = {}): LoadTestEnv => {
     }
   }
 
+  const useRelayerHttp =
+    overrides.useRelayerHttp ?? process.env.LOAD_TEST_USE_RELAYER_HTTP === "true";
+  if (useRelayerHttp && relayerBUrlRaw) {
+    throw new Error(
+      "--use-relayer-http (or LOAD_TEST_USE_RELAYER_HTTP) cannot be combined with --relayer-b-url " +
+        "(or LOAD_TEST_RELAYER_B_URL): paired dispatch is not supported against relayer-http.",
+    );
+  }
+
   const relayerBUrl = relayerBUrlRaw ? normalizeRelayerUrl(relayerBUrlRaw) : undefined;
   // Reject only when A and B are effectively the SAME target: identical
   // normalized URL AND identical effective API prefix (B falls back to A's
@@ -133,6 +148,7 @@ export const resolveEnv = (overrides: EnvOverrides = {}): LoadTestEnv => {
     relayerConfigPath:
       overrides.relayerConfigPath ?? process.env.LOAD_TEST_RELAYER_CONFIG,
     relayerBConfigPath: relayerBConfigPathRaw,
+    useRelayerHttp,
   };
 };
 

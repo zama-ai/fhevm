@@ -192,3 +192,118 @@ describe("publicValuesMatch", () => {
     expect(decryptPublicValuesWithSignatures).not.toHaveBeenCalled();
   });
 });
+
+describe("PublicDecryptExecutor over relayer-http", () => {
+  const prepared = async (
+    decryptPublicValuesWithSignaturesNoGateway: ReturnType<typeof vi.fn>,
+  ) => {
+    const fhevm = {
+      decryptPublicValuesWithSignatures: vi.fn(),
+      decryptPublicValuesWithSignaturesNoGateway,
+      generateTransportKeyPair: vi.fn().mockResolvedValue({ key: Symbol("key") }),
+      signLegacyDecryptionPermit: vi.fn().mockResolvedValue({ permit: Symbol("legacy") }),
+      signUnifiedDecryptionPermit: vi.fn().mockResolvedValue({ permit: Symbol("unified") }),
+    };
+    mocks.createClientContext.mockReturnValue({ fhevm });
+    mocks.openIfExists.mockResolvedValue({
+      meta: { contractAddress: `0x${"33".repeat(20)}` },
+      loadItems: vi.fn().mockResolvedValue([{
+        index: 0,
+        type: "uint64",
+        value: "42",
+        handle: `0x${"11".repeat(32)}`,
+        ownerIndex: 0,
+        ownerAddress: "0x0000000000000000000000000000000000000001",
+        isPublic: true,
+        transactionHash: `0x${"22".repeat(32)}`,
+      }]),
+      cursor: vi.fn().mockReturnValue({ position: 0n, claim: vi.fn().mockReturnValue(0n) }),
+    });
+    const executor = new PublicDecryptExecutor(
+      {
+        network: "devnet",
+        relayerUrl: "https://relayer.example",
+        contractChainId: 9_000,
+        dataDir: "/tmp/load-test-public-relayer-http",
+        useRelayerHttp: true,
+      },
+      {} as never,
+      undefined,
+      5_000,
+      1,
+    );
+    await executor.prepare(1);
+    return { executor, fhevm };
+  };
+
+  it("decrypts in one request, preflights a unified permit, and records no job telemetry", async () => {
+    const { executor, fhevm } = await prepared(
+      vi.fn().mockResolvedValue({ clearValues: [{ type: "uint64", value: 42n }] }),
+    );
+    const controller = new AbortController();
+
+    const result = await executor.execute(0, controller.signal);
+
+    expect(fhevm.signUnifiedDecryptionPermit).toHaveBeenCalledTimes(1);
+    expect(fhevm.signLegacyDecryptionPermit).not.toHaveBeenCalled();
+    expect(fhevm.decryptPublicValuesWithSignatures).not.toHaveBeenCalled();
+    expect(fhevm.decryptPublicValuesWithSignaturesNoGateway).toHaveBeenCalledWith({
+      encryptedValues: [`0x${"11".repeat(32)}`],
+      options: {
+        timeout: 5_000,
+        signal: controller.signal,
+        headers: { "x-request-id": result.sentRequestId },
+      },
+    });
+    expect(result).toMatchObject({ outcome: "succeeded", verified: true, pollCount: 0 });
+    expect(result.jobId).toBeUndefined();
+    expect(result.submitLatencyMs).toBeUndefined();
+  });
+
+  it.each([
+    {
+      label: "a relayer-http error response",
+      error: Object.assign(new Error("relayer-http request failed"), {
+        name: "RelayerHttpResponseError",
+        status: 404,
+        code: "ciphertext_not_found",
+        responseMessage: "unknown handle",
+        requestId: "server-request",
+      }),
+      expected: {
+        outcome: "failed",
+        errorLabel: "ciphertext_not_found",
+        submitHttpStatus: 404,
+        echoedRequestId: "server-request",
+      },
+    },
+    {
+      label: "an SDK request timeout",
+      error: Object.assign(new Error("timed out"), { name: "RelayerHttpTimeoutError" }),
+      expected: { outcome: "timed_out", errorLabel: "client_request_deadline_exceeded" },
+    },
+    {
+      label: "a KMS signature verification failure",
+      error: new Error("Invalid decrypted result."),
+      expected: { outcome: "failed", errorLabel: "sdk_public_decrypt_error" },
+    },
+  ])("classifies $label", async ({ error, expected }) => {
+    const { executor } = await prepared(vi.fn().mockRejectedValue(error));
+
+    await expect(executor.execute(0, new AbortController().signal)).resolves.toMatchObject({
+      ...expected,
+      verified: false,
+    });
+  });
+
+  it("flags wrong clear values as verify_failed", async () => {
+    const { executor } = await prepared(
+      vi.fn().mockResolvedValue({ clearValues: [{ type: "uint64", value: 41n }] }),
+    );
+
+    await expect(executor.execute(0, new AbortController().signal)).resolves.toMatchObject({
+      outcome: "verify_failed",
+      errorLabel: "values_mismatch",
+    });
+  });
+});

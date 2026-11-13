@@ -10,6 +10,7 @@ import { snapshotRelayerConfig } from "../collectors/relayer-config";
 import type { QueueDepthSource } from "../collectors/types";
 import { runsDir, type LoadTestEnv } from "../env";
 import { createFlowExecutor } from "../flows";
+import { RELAYER_HTTP_FLOWS } from "../flows/relayer-http";
 import type { FlowExecutor } from "../flows/types";
 import { RelayerClient } from "../relayer/client";
 import type { FlowKind } from "../relayer/types";
@@ -36,9 +37,9 @@ export type RunOptions = Readonly<{
   /** undici connection cap toward the relayer. */
   connections?: number;
   /**
-   * Skip the `GET /health/readiness` precheck. Needed for older relayer
-   * builds that expose health on a different path (e.g. `/liveness`,
-   * `/healthz`) or a separate port. The v2 job routes still work.
+   * Skip the readiness precheck (`GET /health/readiness`, or `GET /healthz`
+   * with relayer-http). Needed for older relayer builds that expose health on
+   * a different path (e.g. `/liveness`) or a separate port.
    */
   skipReadiness?: boolean;
   signal?: AbortSignal;
@@ -288,6 +289,18 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
   let primaryError: unknown;
   try {
     assertNotInterrupted();
+    if (env.useRelayerHttp) {
+      const unsupported = scenario.flows
+        .map((mix) => mix.flow)
+        .filter((flow) => !RELAYER_HTTP_FLOWS.includes(flow));
+      if (unsupported.length > 0) {
+        throw new Error(
+          `--use-relayer-http supports only ${RELAYER_HTTP_FLOWS.join(" and ")}; ` +
+            `scenario "${scenario.name}" includes ${unsupported.join(", ")}. ` +
+            `Run a single-flow scenario with --flow ${RELAYER_HTTP_FLOWS.join(" or --flow ")}.`,
+        );
+      }
+    }
     await mkdir(outputDir, { recursive: true });
     logger.info(
       `Run "${scenario.name}" against ${env.relayerUrl}` +
@@ -385,6 +398,12 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
     }
     for (const runtime of collectorRuntimes) {
       runtime.relayerConfig = await snapshotRelayerConfig(runtime.relayerConfigPath);
+      if (env.useRelayerHttp) {
+        logger.info(
+          `Skipping Prometheus collector ${runtime.target}: relayer-http serves /metrics on a separate listener.`,
+        );
+        continue;
+      }
       try {
         await runtime.prometheus.start();
       } catch (error) {
@@ -449,6 +468,7 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
       relayerApiPrefix: env.relayerApiPrefix,
       relayerBUrl: env.relayerBUrl,
       relayerBApiPrefix: env.relayerBApiPrefix ?? env.relayerApiPrefix,
+      useRelayerHttp: env.useRelayerHttp,
       startedAt,
       endedAt: isoNow(),
       records: recorder.records,
