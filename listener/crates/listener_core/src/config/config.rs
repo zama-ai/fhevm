@@ -192,7 +192,9 @@ pub struct StrategyConfig {
     /// Retries on a null (`NotFound`) result, per RPC call of a by-hash fetch
     /// (reorg walk; block and receipts alike), before abandoning the walk and
     /// re-arming the cursor. A reorged block can vanish from the RPC for good;
-    /// `0` gives up on the first null.
+    /// `0` gives up on the first null. Also caps null per-tx receipts
+    /// (`eth_getTransactionReceipt`, strategies 2-5) in the live cursor, where a
+    /// tx dropped by a reorg is never found again; the cursor then re-arms.
     #[serde(default = "default_reorg_not_found_max_retries")]
     pub reorg_not_found_max_retries: u32,
 

@@ -92,7 +92,8 @@ blockchain:
     # Maximum backoff in ms for rate-limit retries (exponential backoff cap, default: 20000)
     max_exponential_backoff_ms: 500
     # Null (NotFound) retries per RPC call of a by-hash (reorg walk) fetch, block and
-    # receipts alike, before abandoning the walk and re-arming the cursor (default: 5)
+    # receipts alike, before abandoning the walk and re-arming the cursor (default: 5).
+    # Also caps null per-tx receipts (strategies 2-5) in the live cursor before re-arming.
     # reorg_not_found_max_retries: 5
     publish:
       publish_retry_secs: 1
