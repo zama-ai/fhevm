@@ -93,7 +93,7 @@ async function reconstructPads(
   ethereum: EthereumModule,
   parameters: ReconstructPadsParameters,
 ): Promise<ReconstructedPads> {
-  const { responses, witnesses, mpcThreshold } = parameters;
+  const { responses, pads, mpcThreshold } = parameters;
   if (!Number.isInteger(mpcThreshold) || mpcThreshold < 0) {
     throw new Error(`Invalid MPC threshold ${mpcThreshold}.`);
   }
@@ -113,7 +113,7 @@ async function reconstructPads(
     signersByParty: parameters.kmsSigners.map((a) => a.toLowerCase()),
     kmsContextId: kmsExtraData.kmsContextId,
     kmsEpochId: kmsExtraData.kmsEpochId,
-    padLengthByLabel: new Map(witnesses.map((w) => [w.label.toLowerCase(), w.padLength])),
+    padLengthByLabel: new Map(pads.map((pad) => [pad.label.toLowerCase(), pad.padLength])),
   };
 
   // 1. Verify every response on its own. An invalid response is left out (one faulty node must not block the
@@ -131,21 +131,21 @@ async function reconstructPads(
 
   // 2. Per label: select at least 2t+1 shares agreeing on session and encoding, from distinct parties, then
   //    reconstruct the label's pad from them.
-  const pads = new Map<Bytes32Hex, Uint8Array>();
-  for (const w of witnesses) {
+  const reconstructed = new Map<Bytes32Hex, Uint8Array>();
+  for (const pad of pads) {
     // KMS: each party's share differs (a point of the sharing polynomial), so shares can only be grouped by session
     // and encoding; the threshold reconstruction then corrects faulty shares. Cleartext: every honest share is the
     // whole pad, so shares are grouped by their bytes too, which stands in for that error correction.
-    const selected = _selectShares(verified, w.label, mpcThreshold);
+    const selected = _selectShares(verified, pad.label, mpcThreshold);
     if (selected === undefined) {
       const rejectedDetails = rejected.length === 0 ? '' : ` Rejected responses: ${rejected.join('; ')}`;
       throw new Error(
-        `Not enough consistent pad decryption responses for label ${w.label}: got ${verified.length} valid of ${responses.length}, no (session, rawShares) reaches 2t+1 = ${2 * mpcThreshold + 1} distinct parties.${rejectedDetails}`,
+        `Not enough consistent pad decryption responses for label ${pad.label}: got ${verified.length} valid of ${responses.length}, no (session, rawShares) reaches 2t+1 = ${2 * mpcThreshold + 1} distinct parties.${rejectedDetails}`,
       );
     }
-    pads.set(w.label, _truncatePad(_reconstructCleartextPad(selected, w.label), w.padLength));
+    reconstructed.set(pad.label, _truncatePad(_reconstructCleartextPad(selected, pad.label), pad.padLength));
   }
-  return pads;
+  return reconstructed;
 }
 
 /**

@@ -16,23 +16,29 @@ import {LibKmsVerifier, UserDecryptPermitV2} from "./shared/LibKmsVerifier.sol";
 // `UserDecryptPermitV2` (LibKmsVerifier), the one `CleartextKMSVerifier.userDecryptV2` checks.
 // -----------------------------------------------------------------------------------------
 
-/// @notice One pad: its witness fields, its label (`hash(witness)`) and the number of bits to release.
+/// @notice The per-pad witness fields of a label; the shared ones are carried once by the request payload.
 struct PadWitness {
-    address submitter; // witness field
-    address consumer; // witness field
-    uint64 expirationTimestamp; // witness field; Unix seconds
-    address[] decryptors; // witness field
-    bytes16 nonce; // witness field
-    bytes32 label; // the pad's label, the hash of the witness
-    uint16 padLength; // bits of the pad stream to release; not a witness field
+    address submitter;
+    address consumer;
+    uint64 expirationTimestamp; // Unix seconds
+    address[] decryptors;
+    bytes16 nonce;
+}
+
+/// @notice One requested pad (`PadEntry` in RFC-030): its label, the witness that authenticates it, and the number
+///         of bits of its pad stream to release.
+struct PadEntry {
+    bytes32 label; // the pad's identity and the PRF input, carried verbatim
+    PadWitness witness; // per-pad witness fields except the shared fields of the payload
+    uint16 padLength; // bits of the pad stream to release
 }
 
 /// @notice Unsigned part of a pad decryption request.
 struct PadDecryptRequestPayload {
-    uint8 witnessVersion; // shared witness field, fixed for the whole request
-    uint16 prfId; // shared witness field, fixed for the whole request
-    uint64 chainId; // shared witness field, fixed for the whole request
-    PadWitness[] witnesses; // one entry per pad
+    uint8 witnessVersion; // shared witness field
+    uint16 prfId; // shared witness field
+    uint64 chainId; // shared witness field; also the signature's EIP-712 domain
+    PadEntry[] pads; // one entry per requested pad, at most PAD_DECRYPT_MAX_PADS
 }
 
 /// @notice Pad decryption request (`PadDecryptRequest` in RFC-030).
@@ -76,7 +82,7 @@ struct PadDecryptResponse {
  */
 struct CleartextPadSharesMaterial {
     bytes32 requestId; // mock-defined request id: keccak256(labels ‖ extraData ‖ signature)
-    PadShare[] shares; // one per witness, in request order; partyId 0 and no signature: set per node
+    PadShare[] shares; // one per pad, in request order; partyId 0 and no signature: set per node
     address[] signers; // KMS signers of the context named by the request's extraData
     uint32[] partyIds; // partyIds[i] is the 1-based party id of signers[i]
     bytes32[][] shareDigests; // shareDigests[i][j] is what signers[i] signs for shares[j]
@@ -136,14 +142,14 @@ contract CleartextPaddedInputter is PaddedInputter {
 
     // ---- RFC-030 pad decryption constants (the witness limits are PaddedInputter's own) ----
 
-    /// @notice Upper bound on the number of witnesses in one request (implementation-specific).
-    uint256 private constant PAD_DECRYPT_MAX_WITNESSES = 32;
+    /// @notice Upper bound on the number of pads in one request (`MAX_PADS`, implementation-specific).
+    uint256 private constant PAD_DECRYPT_MAX_PADS = 32;
 
     // ---- RFC-030 pad decryption errors (PaddedInputter's own where the meaning is the same) ----
 
     error PadDecryptInvalidExtraData(bytes extraData);
     error PadDecryptInvalidKmsContextOrEpoch(uint256 contextId, uint256 epochId);
-    error PadDecryptInvalidWitnessCount(uint256 count);
+    error PadDecryptInvalidPadCount(uint256 count);
     error PadDecryptDuplicateLabel(bytes32 label);
     error PadDecryptTooManyDecryptors(bytes32 label, uint256 count);
     error PadDecryptNullWitnessAddress(bytes32 label);
@@ -165,7 +171,7 @@ contract CleartextPaddedInputter is PaddedInputter {
      *      requested pad as a share keyed by label, and builds, for every signer of the context and every share, the
      *      EIP-712 digest of the `PadShareVerification` that node signs. The SDK then signs `shareDigests[i][j]` with
      *      the key of `signers[i]` [Flow.2], then passes those signatures to `getCleartextPadResponsesMaterial`
-     *      [Flow.3]. All-or-nothing: any failing witness reverts.
+     *      [Flow.3]. All-or-nothing: any failing pad reverts.
      *
      *      Deviations from the real KMS, all inherent to cleartext mode:
      *      - The pad comes from a keccak-based stand-in PRF (see `LibCleartextPad`), not from
@@ -254,7 +260,7 @@ contract CleartextPaddedInputter is PaddedInputter {
     // ---- RFC-030 internals ----
 
     /// @dev Steps 1 to 7 of the RFC: check and authenticate the permit, resolve the context, check and authorize
-    ///      every witness, then release each pad as a share. `partyId`, `degree` and `signature` are left unset.
+    ///      every pad, then release each pad as a share. `partyId`, `degree` and `signature` are left unset.
     function _releasePadShares(PadDecryptRequest calldata request)
         private
         view
@@ -278,22 +284,22 @@ contract CleartextPaddedInputter is PaddedInputter {
         // 4.-6. Witness structure, label authentication, pad authorization.
         // Production: KMS Connector; it verifies each label, the client (SDK) computed it.
         _checkPadPayload(payload);
-        for (uint256 i = 0; i < payload.witnesses.length; ++i) {
-            _authorizePadWitness(acl, auth, payload.witnesses[i]);
+        for (uint256 i = 0; i < payload.pads.length; ++i) {
+            _authorizePad(acl, auth, payload.pads[i]);
         }
 
         // 7. Release each pad as a share, keyed by its label.
-        shares = new PadShare[](payload.witnesses.length);
-        for (uint256 i = 0; i < payload.witnesses.length; ++i) {
-            PadWitness calldata w = payload.witnesses[i];
+        shares = new PadShare[](payload.pads.length);
+        for (uint256 i = 0; i < payload.pads.length; ++i) {
+            PadEntry calldata pad = payload.pads[i];
             shares[i] = PadShare({
-                label: w.label,
+                label: pad.label,
                 // Production: coprocessor computes FHE(r) = PRF_{FHE(k)}(label); KMS Core threshold-decrypts it.
-                rawShares: LibCleartextPad.cleartextRawShares(payload.prfId, w.label, w.padLength),
+                rawShares: LibCleartextPad.cleartextRawShares(payload.prfId, pad.label, pad.padLength),
                 partyId: 0,
                 degree: 0,
                 // Production: KMS Core, the MPC session that produced this node's share.
-                sessionId: LibCleartextPad.sessionId(payload.prfId, w.label),
+                sessionId: LibCleartextPad.sessionId(payload.prfId, pad.label),
                 signature: ""
             });
         }
@@ -368,10 +374,10 @@ contract CleartextPaddedInputter is PaddedInputter {
 
     /// @dev The mock request id over the request's labels, in request order.
     function _padRequestId(PadDecryptRequest calldata request) private pure returns (bytes32) {
-        PadWitness[] calldata witnesses = request.payload.witnesses;
-        bytes32[] memory labels = new bytes32[](witnesses.length);
-        for (uint256 i = 0; i < witnesses.length; ++i) {
-            labels[i] = witnesses[i].label;
+        PadEntry[] calldata pads = request.payload.pads;
+        bytes32[] memory labels = new bytes32[](pads.length);
+        for (uint256 i = 0; i < pads.length; ++i) {
+            labels[i] = pads[i].label;
         }
         return LibCleartextPad.cleartextPadRequestId(labels, request.auth.extraData, request.signature);
     }
@@ -435,35 +441,36 @@ contract CleartextPaddedInputter is PaddedInputter {
         }
     }
 
-    /// @dev Steps 4 and 5: request-wide fields, per-witness structure and freshness, label authentication.
+    /// @dev Steps 4 and 5: request-wide fields, per-pad structure and freshness, label authentication.
     function _checkPadPayload(PadDecryptRequestPayload calldata payload) private view {
         if (payload.witnessVersion != PAD_WITNESS_VERSION) revert PadUnsupportedWitnessVersion(payload.witnessVersion);
         // RFC-030: the KMS checks every request against this contract's registry, its single source of truth. A
         // retired instance is refused too: the coprocessor no longer evaluates it.
         if (!isSupportedPrfInstance(payload.prfId)) revert PadUnsupportedPrf(payload.prfId);
 
-        uint256 n = payload.witnesses.length;
-        if (n == 0 || n > PAD_DECRYPT_MAX_WITNESSES) revert PadDecryptInvalidWitnessCount(n);
+        uint256 n = payload.pads.length;
+        if (n == 0 || n > PAD_DECRYPT_MAX_PADS) revert PadDecryptInvalidPadCount(n);
 
         for (uint256 i = 0; i < n; ++i) {
-            PadWitness calldata w = payload.witnesses[i];
+            PadEntry calldata pad = payload.pads[i];
+            PadWitness calldata w = pad.witness;
 
             for (uint256 j = 0; j < i; ++j) {
-                if (payload.witnesses[j].label == w.label) revert PadDecryptDuplicateLabel(w.label);
+                if (payload.pads[j].label == pad.label) revert PadDecryptDuplicateLabel(pad.label);
             }
 
             if (w.decryptors.length > PAD_MAX_DECRYPTORS) {
-                revert PadDecryptTooManyDecryptors(w.label, w.decryptors.length);
+                revert PadDecryptTooManyDecryptors(pad.label, w.decryptors.length);
             }
-            if (w.submitter == address(0)) revert PadDecryptNullWitnessAddress(w.label);
+            if (w.submitter == address(0)) revert PadDecryptNullWitnessAddress(pad.label);
             for (uint256 j = 0; j < w.decryptors.length; ++j) {
-                if (w.decryptors[j] == address(0)) revert PadDecryptNullWitnessAddress(w.label);
+                if (w.decryptors[j] == address(0)) revert PadDecryptNullWitnessAddress(pad.label);
             }
-            if (w.padLength == 0 || w.padLength > PAD_MAX_PAD_LENGTH) {
-                revert PadDecryptInvalidPadLength(w.label, w.padLength);
+            if (pad.padLength == 0 || pad.padLength > PAD_MAX_PAD_LENGTH) {
+                revert PadDecryptInvalidPadLength(pad.label, pad.padLength);
             }
             if (w.expirationTimestamp <= block.timestamp) {
-                revert PadDecryptWitnessExpired(w.label, w.expirationTimestamp);
+                revert PadDecryptWitnessExpired(pad.label, w.expirationTimestamp);
             }
 
             // Production: the client (SDK) computes the label; the Connector, PaddedInputter and coprocessor verify it.
@@ -477,13 +484,14 @@ contract CleartextPaddedInputter is PaddedInputter {
                 w.decryptors,
                 w.nonce
             );
-            if (expectedLabel != w.label) revert PadLabelMismatch(w.label, expectedLabel);
+            if (expectedLabel != pad.label) revert PadLabelMismatch(pad.label, expectedLabel);
         }
     }
 
     /// @dev Step 6: the consumer must be in `allowedContracts` (unless empty), and the user must be
     ///      the submitter, a listed decryptor, or a live delegate of one of them for the consumer.
-    function _authorizePadWitness(ACL acl, UserDecryptPermitV2 calldata auth, PadWitness calldata w) private view {
+    function _authorizePad(ACL acl, UserDecryptPermitV2 calldata auth, PadEntry calldata pad) private view {
+        PadWitness calldata w = pad.witness;
         if (auth.allowedContracts.length != 0) {
             bool allowed;
             for (uint256 i = 0; i < auth.allowedContracts.length; ++i) {
@@ -492,7 +500,7 @@ contract CleartextPaddedInputter is PaddedInputter {
                     break;
                 }
             }
-            if (!allowed) revert PadDecryptConsumerNotAllowed(w.label, w.consumer);
+            if (!allowed) revert PadDecryptConsumerNotAllowed(pad.label, w.consumer);
         }
 
         address user = auth.userAddress;
@@ -506,6 +514,6 @@ contract CleartextPaddedInputter is PaddedInputter {
         for (uint256 i = 0; i < w.decryptors.length; ++i) {
             if (acl.isDelegatedForUserDecryption(w.decryptors[i], user, w.consumer)) return;
         }
-        revert PadDecryptUserNotAuthorized(w.label, user);
+        revert PadDecryptUserNotAuthorized(pad.label, user);
     }
 }

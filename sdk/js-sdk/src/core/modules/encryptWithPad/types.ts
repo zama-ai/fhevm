@@ -1,7 +1,7 @@
 import type { Prettify } from '../../types/utils.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { Bytes32Hex, BytesHex, ChecksummedAddress, Uint32Number, Uint64BigInt } from '../../types/primitives.js';
-import type { PadDecryptResponse, PadWitness } from '../relayer/types.js';
+import type { PadDecryptResponse, PadEntry } from '../relayer/types.js';
 import type {
   GenerateTkmsPrivateKeyModuleFunction,
   GetTkmsModuleInfoFunction,
@@ -58,8 +58,8 @@ export type PadDecryptResponsePayload = {
 
 export type ReconstructPadsParameters = {
   readonly responses: readonly PadDecryptResponse[];
-  /** The witnesses of the request, i.e. the client's own local record. */
-  readonly witnesses: readonly PadWitness[];
+  /** The pads of the request, i.e. the client's own local record. */
+  readonly pads: readonly PadEntry[];
   /** The request's signed `extraData`. */
   readonly extraData: BytesHex;
   /** The request's transport public key (`auth.publicKey`). */
@@ -89,7 +89,7 @@ export type ReconstructPadsModuleReturnType = ReconstructedPads;
 export type ReconstructPadsModuleFunction = {
   /**
    * Opens and verifies the pad decryption responses, then reconstructs one pad
-   * per witness label.
+   * per requested label.
    */
   reconstructPads(parameters: ReconstructPadsModuleParameters): Promise<ReconstructPadsModuleReturnType>;
 };
