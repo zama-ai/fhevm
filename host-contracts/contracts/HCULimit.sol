@@ -5,6 +5,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {aclAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {ACL} from "./ACL.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {HCULimitOperators} from "./HCULimitOperators.sol";
 
@@ -66,6 +67,20 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @dev Handle slot zero is reserved for the transaction HCU accumulator.
     error InvalidZeroHandle();
 
+    /// @notice Returned when the caller is not the ACL contract.
+    error CallerMustBeACLContract();
+
+    /// @notice Returned when only one of the cross-transaction depth limit and its decay is zero.
+    error InvalidCrossTxDepthLimit();
+
+    /// @notice Returned if a nonzero cross-transaction depth limit is below maxHCUDepthPerTx.
+    error CrossTxDepthBelowMaxDepthPerTx();
+
+    /// @notice Returned when an operation's depth carried across transactions exceeds the limit.
+    /// @param retryAfterBlocks Blocks of decay after which this operation fits, if nothing else extends its chain.
+    ///        Later operations of the same transaction can need more, so clients simulate again after waiting.
+    error HCUCrossTxDepthLimitExceeded(uint256 retryAfterBlocks);
+
     /// @notice Emitted when the global block HCU cap is updated.
     /// @param hcuPerBlock New global block HCU cap.
     event HCUPerBlockSet(uint48 hcuPerBlock);
@@ -101,6 +116,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @notice Emitted when a nonzero stored allowlister deadline is cleared.
     event AllowlisterRemoved(address indexed account);
 
+    /// @notice Emitted when the cross-transaction depth limit is updated.
+    event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
+
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "HCULimit";
 
@@ -108,13 +126,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 5;
+    uint256 private constant MINOR_VERSION = 6;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
+    /// @dev Per-handle transient word: bit 255 marks the depths as known, bits 128-254 hold the
+    ///      depth carried across transactions and bits 0-127 the depth within this transaction.
+    uint256 private constant DEPTH_KNOWN = 1 << 255;
+
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
-    /// @dev All five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
+    /// @dev The first five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
     struct HCULimitStorage {
         /// @notice Maximum homomorphic complexity units per block for callers outside the block HCU whitelist.
         uint48 globalHCUCapPerBlock;
@@ -136,11 +158,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         mapping(address account => uint256 deadline) allowlisters;
         /// @notice Whether only allowlisted dapps may request HCU-charged computation.
         bool isAllowlistActivated;
+        /// @notice Maximum depth carried across transactions; 0 disables the check.
+        uint48 maxCrossTxDepth;
+        /// @notice Carried depth the coprocessors are assumed to drain per block.
+        uint48 crossTxDepthDecayPerBlock;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCU_LIMIT_STORAGE_LOCATION =
@@ -175,11 +201,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Re-initializes the contract from V4, leaving the computation allowlist inactive.
+     * @notice Re-initializes the contract from V4 (the 0.14.x releases) or V5 (the computation allowlist), leaving the
+     *         cross-transaction depth limit disabled.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Sets the block-level HCU limit for callers outside the block HCU whitelist.
@@ -311,6 +338,37 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
+     * @notice Sets the cross-transaction depth limit and how much carried depth decays per block.
+     * @dev (0, 0) disables it. Decay must be nonzero when enabled, or a chain that reaches the limit stays
+     *      blocked forever. The limit must be at least maxHCUDepthPerTx, so a transaction whose inputs carry no
+     *      depth is never refused. Permissions granted while disabled carry no depth. A new decay rate also
+     *      applies to depths already stored.
+     */
+    function setCrossTxDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external onlyACLOwner {
+        if ((maxDepth == 0) != (decayPerBlock == 0)) revert InvalidCrossTxDepthLimit();
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if (maxDepth != 0) {
+            if (maxDepth < $.maxHCUDepthPerTx) revert CrossTxDepthBelowMaxDepthPerTx();
+            // Every operation on a stored handle reads ACL.getStoredDepth: refuse to enable before ACL has it.
+            ACL(aclAdd).getStoredDepth(bytes32(0), address(0));
+        }
+        $.maxCrossTxDepth = maxDepth;
+        $.crossTxDepthDecayPerBlock = decayPerBlock;
+        emit CrossTxDepthLimitSet(maxDepth, decayPerBlock);
+    }
+
+    /**
+     * @notice Caches `handle`'s carried depth for the rest of this transaction and returns it. If this
+     *         transaction has not seen the handle yet, the depth comes from `holder`'s permission.
+     *         Returns 0 when disabled.
+     */
+    function cacheDepth(bytes32 handle, address holder) external returns (uint48) {
+        if (msg.sender != aclAdd) revert CallerMustBeACLContract();
+        if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
+        return uint48(_cacheDepths(handle, holder) >> 128);
+    }
+
+    /**
      * @notice Checks the HCU depth for an operation with no ciphertext operands.
      */
     function _adjustAndCheckFheTransactionLimitZeroOp(
@@ -319,12 +377,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 result
     ) internal virtual override {
         _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-
-        if (_latency(opCost) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
-            revert HCUTransactionDepthLimitExceeded();
-        }
-
-        _setHCUForHandle(result, _latency(opCost));
+        _setResultDepths(result, _latency(opCost), 0);
     }
 
     /**
@@ -337,13 +390,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 result
     ) internal virtual override {
         _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-
-        uint256 totalHCU = _latency(opCost) + _getHCUForHandle(op1);
-        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
-            revert HCUTransactionDepthLimitExceeded();
-        }
-
-        _setHCUForHandle(result, totalHCU);
+        _setResultDepths(result, _latency(opCost), _cacheDepths(op1, caller));
     }
 
     /**
@@ -357,13 +404,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 result
     ) internal virtual override {
         _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-
-        uint256 totalHCU = _latency(opCost) + _max(_getHCUForHandle(op1), _getHCUForHandle(op2));
-        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
-            revert HCUTransactionDepthLimitExceeded();
-        }
-
-        _setHCUForHandle(result, totalHCU);
+        _setResultDepths(result, _latency(opCost), _maxDepths(_cacheDepths(op1, caller), _cacheDepths(op2, caller)));
     }
 
     /**
@@ -378,15 +419,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 result
     ) internal virtual override {
         _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-
-        uint256 totalHCU = _latency(opCost) +
-            _max(_getHCUForHandle(op1), _max(_getHCUForHandle(op2), _getHCUForHandle(op3)));
-
-        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
-            revert HCUTransactionDepthLimitExceeded();
-        }
-
-        _setHCUForHandle(result, totalHCU);
+        _setResultDepths(
+            result,
+            _latency(opCost),
+            _maxDepths(_cacheDepths(op1, caller), _maxDepths(_cacheDepths(op2, caller), _cacheDepths(op3, caller)))
+        );
     }
 
     /**
@@ -400,19 +437,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     ) internal virtual override {
         _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
-        uint256 maxInputDepth = 0;
+        uint256 inputDepths = 0;
         for (uint256 i = 0; i < values.length; i++) {
-            uint256 inputDepth = _getHCUForHandle(values[i]);
-            if (inputDepth > maxInputDepth) {
-                maxInputDepth = inputDepth;
-            }
+            inputDepths = _maxDepths(inputDepths, _cacheDepths(values[i], caller));
         }
 
-        uint256 totalHCU = _latency(opCost) + maxInputDepth;
-        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
-            revert HCUTransactionDepthLimitExceeded();
-        }
-        _setHCUForHandle(result, totalHCU);
+        _setResultDepths(result, _latency(opCost), inputDepths);
     }
 
     /**
@@ -427,19 +457,73 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     ) internal virtual override {
         _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
-        uint256 maxInputDepth = _getHCUForHandle(value);
+        uint256 inputDepths = _cacheDepths(value, caller);
         for (uint256 i = 0; i < values.length; i++) {
-            uint256 inputDepth = _getHCUForHandle(values[i]);
-            if (inputDepth > maxInputDepth) {
-                maxInputDepth = inputDepth;
-            }
+            inputDepths = _maxDepths(inputDepths, _cacheDepths(values[i], caller));
         }
 
-        uint256 totalHCU = _latency(opCost) + maxInputDepth;
-        if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
-            revert HCUTransactionDepthLimitExceeded();
+        _setResultDepths(result, _latency(opCost), inputDepths);
+    }
+
+    /// @dev Records `result`'s depths: the operation's latency added to both depths of its deepest input, checked
+    ///      against both limits.
+    function _setResultDepths(bytes32 result, uint256 opLatency, uint256 inputDepths) private {
+        uint256 depths = (opLatency | (opLatency << 128)) + inputDepths;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if (uint128(depths) > $.maxHCUDepthPerTx) revert HCUTransactionDepthLimitExceeded();
+        uint256 maxDepth = $.maxCrossTxDepth;
+        uint256 carried = depths >> 128;
+        if (maxDepth != 0 && carried > maxDepth) {
+            revert HCUCrossTxDepthLimitExceeded(_blocksToDecay(carried - maxDepth, $.crossTxDepthDecayPerBlock));
         }
-        _setHCUForHandle(result, totalHCU);
+        _storeDepths(result, depths);
+    }
+
+    /**
+     * @dev Returns both depths of `handle`. A handle first seen in this transaction has no depth within it;
+     *      its carried depth is the one stored with `holder`'s permission, or 0 without one: verified inputs,
+     *      bridged handles and permissions granted while disabled start new chains.
+     */
+    function _cacheDepths(bytes32 handle, address holder) private returns (uint256 depths) {
+        bool known;
+        (depths, known) = _loadDepths(handle);
+        if (known) return depths;
+        if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
+        (uint48 storedDepth, uint48 storedBlock) = ACL(aclAdd).getStoredDepth(handle, holder);
+        depths = _decayed(storedDepth, storedBlock, _getHCULimitStorage().crossTxDepthDecayPerBlock) << 128;
+        _storeDepths(handle, depths);
+    }
+
+    /// @dev Returns `handle`'s depths recorded in this transaction, and whether any were recorded.
+    function _loadDepths(bytes32 handle) internal view returns (uint256 depths, bool known) {
+        // Slot zero holds the transaction's HCU.
+        if (handle == bytes32(0)) revert InvalidZeroHandle();
+        uint256 word;
+        assembly {
+            word := tload(handle)
+        }
+        return (word & ~DEPTH_KNOWN, word & DEPTH_KNOWN != 0);
+    }
+
+    /// @dev Records `handle`'s depths for the rest of this transaction.
+    function _storeDepths(bytes32 handle, uint256 depths) internal {
+        // Slot zero holds the transaction's HCU.
+        if (handle == bytes32(0)) revert InvalidZeroHandle();
+        uint256 word = depths | DEPTH_KNOWN;
+        assembly {
+            tstore(handle, word)
+        }
+    }
+
+    /// @dev Returns `value` minus `decayPerBlock` for each block since `sinceBlock`, floored at 0.
+    function _decayed(uint48 value, uint48 sinceBlock, uint256 decayPerBlock) private view returns (uint256) {
+        uint256 decay = (block.number - sinceBlock) * decayPerBlock;
+        return decay >= value ? 0 : value - decay;
+    }
+
+    /// @dev Returns the blocks of decay needed to absorb `excess`, rounded up.
+    function _blocksToDecay(uint256 excess, uint256 decayPerBlock) private pure returns (uint256) {
+        return (excess + decayPerBlock - 1) / decayPerBlock;
     }
 
     /**
@@ -489,20 +573,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Gets the current HCU for the handle.
-     * @param handle The handle for which to get the HCU.
-     * @return handleHCU The current HCU for the handle.
-     * @dev This function uses inline assembly to load the HCU from a specific storage location.
-     */
-    function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
-        // Handle slot zero is reserved for _getHCUForTransaction.
-        if (handle == bytes32(0)) revert InvalidZeroHandle();
-        assembly {
-            handleHCU := tload(handle)
-        }
-    }
-
-    /**
      * @notice Gets the total HCU for the transaction.
      * @return transactionHCU The HCU for the transaction.
      * @dev This function uses inline assembly to store the HCU in a specific storage location.
@@ -514,27 +584,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Sets the HCU for a handle in the transient storage.
-     * @param handle The handle for which to set the HCU.
-     * @param handleHCU The HCU to set for the handle.
-     * @dev This function uses inline assembly to store the HCU in a specific transient storage slot.
-     */
-    function _setHCUForHandle(bytes32 handle, uint256 handleHCU) internal virtual {
-        // Handle slot zero is reserved for _setHCUForTransaction.
-        if (handle == bytes32(0)) revert InvalidZeroHandle();
-        assembly {
-            tstore(handle, handleHCU)
-        }
-    }
-
-    /**
      * @notice Updates the current HCU consumption for the transaction and stores it in the transient storage.
      * @param transactionHCU The total HCU for the transaction.
      * @dev This function uses inline assembly to store the HCU in a specific transient storage slot.
      */
     function _setHCUForTransaction(uint256 transactionHCU) internal virtual {
         assembly {
-            tstore(0, transactionHCU) // to avoid collisions with handles (see _setHCUForHandle)
+            tstore(0, transactionHCU) // to avoid collisions with handles (see _storeDepths)
         }
     }
 
@@ -553,10 +609,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /**
      * @notice Sets the per-transaction HCU depth limit.
      * @param maxHCUDepthPerTx New depth limit.
-     * @dev Not compared with maxHCUPerTx, which counts work while depth counts latency.
+     * @dev Enforces a nonzero maxCrossTxDepth >= maxHCUDepthPerTx. Not compared with maxHCUPerTx, which counts
+     *      work while depth counts latency.
      */
     function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) private {
-        _getHCULimitStorage().maxHCUDepthPerTx = maxHCUDepthPerTx;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.maxCrossTxDepth != 0 && $.maxCrossTxDepth < maxHCUDepthPerTx) revert CrossTxDepthBelowMaxDepthPerTx();
+        $.maxHCUDepthPerTx = maxHCUDepthPerTx;
         emit MaxHCUDepthPerTxSet(maxHCUDepthPerTx);
     }
 
@@ -577,14 +636,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      */
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 
-    /**
-     * @dev Returns the maximum of two numbers.
-     * @param a The first number.
-     * @param b The second number.
-     * @return The maximum of a and b.
-     */
-    function _max(uint256 a, uint256 b) private pure returns (uint256) {
-        return a >= b ? a : b;
+    /// @dev Takes the maximum of each depth separately: the deepest branch in this transaction may carry less.
+    function _maxDepths(uint256 a, uint256 b) private pure returns (uint256) {
+        uint256 txDepth = uint128(a) >= uint128(b) ? uint128(a) : uint128(b);
+        uint256 carried = a >> 128 >= b >> 128 ? a >> 128 : b >> 128;
+        return txDepth | (carried << 128);
     }
 
     /**
@@ -620,6 +676,14 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     function getGlobalHCUCapPerBlock() public view virtual returns (uint48) {
         HCULimitStorage storage $ = _getHCULimitStorage();
         return $.globalHCUCapPerBlock;
+    }
+
+    /**
+     * @notice Returns the cross-transaction depth limit and its decay per block; (0, 0) when disabled.
+     */
+    function getCrossTxDepthLimit() external view returns (uint48 maxDepth, uint48 decayPerBlock) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        return ($.maxCrossTxDepth, $.crossTxDepthDecayPerBlock);
     }
 
     /**

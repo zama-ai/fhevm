@@ -9,13 +9,15 @@ import {Vm} from "forge-std/Vm.sol";
 
 import {DeployableERC1967Proxy, HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {HCULimit} from "../../contracts/HCULimit.sol";
+import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ConfidentialBridge} from "../../contracts/bridge/ConfidentialBridge.sol";
 import {HandlesSender} from "../../contracts/bridge/HandlesSender.sol";
 import {HandlesReceiver} from "../../contracts/bridge/HandlesReceiver.sol";
 import {BridgeEvents} from "../../contracts/bridge/BridgeEvents.sol";
-import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd, hcuLimitAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 import {MockDstApp} from "./mocks/MockDstApp.sol";
 
@@ -57,6 +59,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         // Reconstruct the FHE host stack at canonical addresses.
         _deployACL(owner);
         _deployFHEVMExecutor(owner);
+        _deployHCULimit(owner);
         acl = ACL(aclAdd);
         fhevmExecutor = fhevmExecutorAdd;
 
@@ -875,6 +878,38 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         assertEq(lc.srcHandleList.length, 2);
         assertEq(lc.dstHandleList[0], dstH0);
         assertEq(lc.dstHandleList[1], dstH1);
+    }
+
+    /// @dev A bridged handle has no stored depth on this chain, so with the cross-transaction depth limit on
+    ///      it starts a new chain. Uses the canonical bridge address, which the ACL lets grant transiently.
+    function test_LzCompose_BridgedHandleStartsNewChain() public {
+        ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+        vm.prank(owner);
+        HCULimit(hcuLimitAdd).setCrossTxDepthLimit(5_000_000, 1);
+
+        bytes32 dstHandle = _makeHandle(100);
+        bytes32[] memory srcHandleList = new bytes32[](1);
+        bytes32[] memory dstHandleList = new bytes32[](1);
+        srcHandleList[0] = _makeHandle(0);
+        dstHandleList[0] = dstHandle;
+        bytes memory composeMsg = abi.encode(
+            SRC_EID,
+            _addressToBytes32(srcApp),
+            _addressToBytes32(address(dstApp)),
+            bytes(""),
+            srcHandleList,
+            dstHandleList
+        );
+        vm.prank(address(endpoints[DST_EID]));
+        bridge.lzCompose(address(bridge), keccak256("g"), composeMsg, address(0), "");
+
+        vm.startPrank(address(dstApp));
+        bytes32 result = FHEVMExecutor(fhevmExecutorAdd).fheAdd(dstHandle, bytes32(uint256(1)), 0x01);
+        acl.allow(result, address(dstApp));
+        vm.stopPrank();
+        // One scalar Uint64 addition (133,000 HCU) on a chain that starts at 0.
+        (uint48 depth, ) = acl.getStoredDepth(result, address(dstApp));
+        assertEq(depth, 133_000);
     }
 
     function test_LzCompose_RevertsWhenOnReceiveReverts() public {
