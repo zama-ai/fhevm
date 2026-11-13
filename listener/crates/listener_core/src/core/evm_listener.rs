@@ -800,6 +800,29 @@ impl EvmListener {
         tokio::time::sleep(Duration::from_millis(self.loop_delay_ms)).await;
     }
 
+    /// Fetch one reorg-walk block by hash. `Ok(None)` means the walk was abandoned
+    /// (see [`Self::abandon_reorg_walk`]): the caller returns `Ok(())` so the
+    /// handler re-arms the cursor. Other errors propagate unchanged.
+    async fn fetch_walk_block(
+        &self,
+        block_hash: B256,
+        block_number: u64,
+        blocks_collected: usize,
+    ) -> Result<Option<FetchedBlock>, EvmListenerError> {
+        match self
+            .get_block_by_hash(block_hash, CancellationToken::new(), self.compute_block)
+            .await
+        {
+            Ok(block) => Ok(Some(block)),
+            Err(e) if e.is_inconsistent_snapshot() => {
+                self.abandon_reorg_walk(block_number, block_hash, blocks_collected, &e)
+                    .await;
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Walks backwards from the reorg point to reconstruct the canonical chain.
     ///
     /// # Algorithm
@@ -867,18 +890,11 @@ impl EvmListener {
         // Comes from the live flow, marked as live block.
         // ══════════════════════════════════════════════════════════════
 
-        let cancel_token = CancellationToken::new();
-        let block_n = match self
-            .get_block_by_hash(event.block_hash, cancel_token, self.compute_block)
-            .await
-        {
-            Ok(block) => block,
-            Err(e) if e.is_inconsistent_snapshot() => {
-                self.abandon_reorg_walk(block_number, event.block_hash, 0, &e)
-                    .await;
-                return Ok(());
-            }
-            Err(e) => return Err(e),
+        let Some(block_n) = self
+            .fetch_walk_block(event.block_hash, block_number, 0)
+            .await?
+        else {
+            return Ok(());
         };
 
         publisher::publish_block_events(
@@ -984,20 +1000,14 @@ impl EvmListener {
             }
 
             // Fetch parent block by hash from RPC.
-            let cancel_token = CancellationToken::new();
             let parent_hash = current_block.block.header.parent_hash;
-            current_block = match self
-                .get_block_by_hash(parent_hash, cancel_token, self.compute_block)
-                .await
-            {
-                Ok(block) => block,
-                Err(e) if e.is_inconsistent_snapshot() => {
-                    self.abandon_reorg_walk(prev_height, parent_hash, collected_blocks.len(), &e)
-                        .await;
-                    return Ok(());
-                }
-                Err(e) => return Err(e),
+            let Some(parent_block) = self
+                .fetch_walk_block(parent_hash, prev_height, collected_blocks.len())
+                .await?
+            else {
+                return Ok(());
             };
+            current_block = parent_block;
             current_height = prev_height;
 
             // Publish events on-the-go. The FetchedBlock is dropped after this
