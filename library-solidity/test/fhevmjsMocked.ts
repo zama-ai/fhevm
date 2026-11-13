@@ -4,26 +4,23 @@ import dotenv from 'dotenv';
 import { type BigNumberish, type Signer, ethers } from 'ethers';
 import * as fs from 'fs';
 import hre from 'hardhat';
-import { Keccak } from 'sha3';
-import { isAddress } from 'web3-validator';
-
 import { getRequiredEnvVar } from '../tasks/utils/loadVariables';
-import { insertSQL } from './coprocessorUtils';
-import { awaitCoprocessor, getClearText } from './coprocessorUtils';
-import { checkIsHardhatSigner } from './utils';
-import type { HandleContractPair, UserDecryptResults } from './legacyRelayerSdk/types';
+import { coprocDbWriteCleartext } from './coprocessorUtils';
+import { awaitCoprocessor, coprocDbReadCleartext } from './coprocessorUtils';
+import {
+  checkIsHardhatSigner,
+  fromHexString,
+  HOST_ADDRESSES_ENV_PATH,
+  numberToHexNo0x,
+  sum,
+  toHexString,
+  uint8ArrayToHexStringNo0x,
+} from './utils';
 import { ENCRYPTION_TYPES } from './legacyRelayerSdk/types';
+import type { HandleContractPair, RelayerEncryptedInput, UserDecryptResults } from './legacyRelayerSdk/types';
+import type { ACL } from '../typechain-types';
 
-const toHexString = (bytes: Uint8Array, with0x = false) =>
-  `${with0x ? '0x' : ''}${bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '')}`;
-
-const fromHexString = (hexString: string): Uint8Array => {
-  const arr = hexString.replace(/^(0x)/, '').match(/.{1,2}/g);
-  if (!arr) return new Uint8Array();
-  return Uint8Array.from(arr.map((byte) => parseInt(byte, 16)));
-};
-
-async function getCoprocessorSigners() {
+async function getCoprocessorSigners(): Promise<Array<Signer & { address: string }>> {
   const coprocessorSigners = [];
   const numKMSSigners = getRequiredEnvVar('NUM_COPROCESSORS');
   for (let idx = 0; idx < +numKMSSigners; idx++) {
@@ -34,20 +31,26 @@ async function getCoprocessorSigners() {
   return coprocessorSigners;
 }
 
-const aclAdd = dotenv.parse(fs.readFileSync('./fhevmTemp/addresses/.env.host')).ACL_CONTRACT_ADDRESS;
+const aclAdd = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH)).ACL_CONTRACT_ADDRESS;
 
 enum Types {
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   ebool = 0,
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   euint8 = 2,
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   euint16 = 3,
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   euint32 = 4,
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   euint64 = 5,
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   euint128 = 6,
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   eaddress = 7,
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   euint256 = 8,
 }
-
-const sum = (arr: number[]) => arr.reduce((acc, val) => acc + val, 0);
 
 function createUintToUint8ArrayFunction(numBits: number) {
   const numBytes = Math.ceil(numBits / 8);
@@ -151,7 +154,7 @@ export const userDecryptRequestMocked = async (
 
   // ACL checking
   const aclFactory = await hre.ethers.getContractFactory('ACL');
-  const acl = aclFactory.attach(aclAdd);
+  const acl = aclFactory.attach(aclAdd) as unknown as ACL;
   const verifications = handles.map(async ({ handle, contractAddress }) => {
     const userAllowed = await acl.persistAllowed(handle, userAddress);
     const contractAllowed = await acl.persistAllowed(handle, contractAddress);
@@ -166,30 +169,77 @@ export const userDecryptRequestMocked = async (
     }
   });
 
-  await Promise.all(verifications).catch((e) => {
-    throw e;
-  });
+  await Promise.all(verifications);
   await awaitCoprocessor();
 
   return Object.fromEntries(
-    await Promise.all(handles.map(async ({ handle }) => [handle, BigInt(await getClearText(handle))] as const)),
+    await Promise.all(
+      handles.map(async ({ handle }) => [handle, BigInt(await coprocDbReadCleartext(handle))] as const),
+    ),
   );
 };
 
-export const createEncryptedInputMocked = (contractAddress: string, userAddress: string) => {
-  if (!isAddress(contractAddress)) {
+// Returns the 32-byte external handle of the `index`-th value of an encrypted input whose ciphertext hash is `inputHash`.
+function computeExternalHandle(
+  inputHash: Uint8Array,
+  index: number,
+  chainId: number | bigint,
+  fheTypeId: number,
+): Uint8Array {
+  // Append length to inputHash
+  const dataWithIndex = new Uint8Array(inputHash.length + 1);
+  dataWithIndex.set(inputHash, 0);
+  dataWithIndex.set([index], inputHash.length);
+
+  const finalHash = ethers.getBytes(ethers.keccak256(dataWithIndex));
+  const handle = new Uint8Array(32);
+  handle.set(finalHash, 0);
+  // Put the index at byte21
+  handle.set([index], 21);
+
+  // Split the chainId over 8 bytes
+  const chainIdBuffer = Buffer.alloc(8);
+  chainIdBuffer.writeBigUInt64BE(BigInt(chainId), 0);
+
+  // Add the chainId to bytes22-29
+  handle.set(chainIdBuffer, 22);
+
+  // Add encryption type and handle_version (which is 0) to bytes30-31
+  handle.set([fheTypeId, 0], 30);
+  return handle;
+}
+
+// Number of coprocessor signers, read from the NUM_COPROCESSORS env variable.
+function getNumCoprocessors(): number {
+  const raw = getRequiredEnvVar('NUM_COPROCESSORS');
+  const numCoprocessors = Number(raw);
+  if (!Number.isInteger(numCoprocessors) || numCoprocessors < 0) {
+    throw new Error(`"NUM_COPROCESSORS" env variable must be a non-negative integer, got "${raw}"`);
+  }
+  return numCoprocessors;
+}
+
+// Throws if `value` is null or undefined. Takes `unknown` so the check also guards untyped (JS or `any`) callers.
+function assertIsNotNullish(value: unknown): void {
+  if (value === null || value === undefined) {
+    throw new Error('Missing value');
+  }
+}
+
+export function createEncryptedInputMocked(contractAddress: string, userAddress: string): RelayerEncryptedInput {
+  if (!ethers.isAddress(contractAddress)) {
     throw new Error('Contract address is not a valid address.');
   }
 
-  if (!isAddress(userAddress)) {
+  if (!ethers.isAddress(userAddress)) {
     throw new Error('User address is not a valid address.');
   }
 
   const values: bigint[] = [];
-  const bits: (keyof typeof ENCRYPTION_TYPES)[] = [];
+  const bits: Array<keyof typeof ENCRYPTION_TYPES> = [];
   return {
     addBool(value: boolean | number | bigint) {
-      if (value == null) throw new Error('Missing value');
+      assertIsNotNullish(value);
       if (typeof value !== 'boolean' && typeof value !== 'number' && typeof value !== 'bigint')
         throw new Error('The value must be a boolean, a number or a bigint.');
       if ((typeof value !== 'bigint' || typeof value !== 'number') && Number(value) > 1)
@@ -241,7 +291,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       return this;
     },
     addAddress(value: string) {
-      if (!isAddress(value)) {
+      if (!ethers.isAddress(value)) {
         throw new Error('The value must be a valid address.');
       }
       values.push(BigInt(value));
@@ -258,16 +308,8 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
-    getValues() {
-      return values;
-    },
     getBits() {
       return bits;
-    },
-    resetValues() {
-      values.length = 0;
-      bits.length = 0;
-      return this;
     },
     async encrypt() {
       let encrypted = Buffer.alloc(0);
@@ -277,7 +319,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       });
 
       const encryptedArray = new Uint8Array(encrypted);
-      const hash = new Keccak(256).update(Buffer.from(encryptedArray)).digest();
+      const hash = ethers.getBytes(ethers.keccak256(encryptedArray));
       const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
 
       const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
@@ -285,33 +327,13 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         throw new Error('Chain ID is not defined');
       }
 
-      const handles = bits.map((v, i) => {
-        const dataWithIndex = new Uint8Array(hash.length + 1);
-        dataWithIndex.set(hash, 0);
-        dataWithIndex.set([i], hash.length);
-        const finalHash = new Keccak(256).update(Buffer.from(dataWithIndex)).digest();
-        const dataInput = new Uint8Array(32);
-        dataInput.set(finalHash, 0);
-        // Put the index at byte21
-        dataInput.set([i], 21);
+      const handles = bits.map((v, i) => computeExternalHandle(hash, i, chainId, ENCRYPTION_TYPES[v]));
 
-        // Split the chainId over 8 bytes
-        const chainIdBuffer = Buffer.alloc(8);
-        chainIdBuffer.writeBigUInt64BE(BigInt(chainId), 0);
+      let inputProofHex = '0x' + numberToHexNo0x(handles.length); // numHandles + numCoprocessorSigners + list_handles + signatureCoprocessorSigners (total len : 1+1+32+NUM_HANDLES*32+65*numSigners)
+      const numSigners = getNumCoprocessors();
+      inputProofHex += numberToHexNo0x(numSigners);
 
-        // Add the chainId to bytes22-29
-        dataInput.set(chainIdBuffer, 22);
-
-        // Add encryption type and handle_version (which is 0) to bytes30-31
-        dataInput.set([ENCRYPTION_TYPES[v], 0], 30);
-        return dataInput;
-      });
-
-      let inputProofHex = '0x' + numberToHex(handles.length); // numHandles + numCoprocessorSigners + list_handles + signatureCoprocessorSigners (total len : 1+1+32+NUM_HANDLES*32+65*numSigners)
-      const numSigners = +process.env.NUM_COPROCESSORS!;
-      inputProofHex += numberToHex(numSigners);
-
-      const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
+      const listHandlesStr = handles.map((i) => uint8ArrayToHexStringNo0x(i));
       listHandlesStr.map((handle) => (inputProofHex += handle));
       const listHandles = listHandlesStr.map((i) => BigInt('0x' + i));
       const signaturesCoproc = await computeInputSignaturesCopro(
@@ -321,7 +343,9 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         extraDataV0,
       );
       signaturesCoproc.map((sigCopro) => (inputProofHex += sigCopro.slice(2)));
-      listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
+      listHandlesStr.forEach((handle, i) => {
+        coprocDbWriteCleartext('0x' + handle, values[i]);
+      });
 
       // Append the extra data to the input proof
       inputProofHex = ethers.concat([inputProofHex, extraDataV0]);
@@ -332,21 +356,10 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       };
     },
   };
-};
-
-function uint8ArrayToHexString(uint8Array: Uint8Array) {
-  return Array.from(uint8Array)
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
 }
 
-function numberToHex(num: number) {
-  let hex = num.toString(16);
-  return hex.length % 2 ? '0' + hex : hex;
-}
-
-const checkEncryptedValue = (value: number | bigint, bits: number) => {
-  if (value == null) throw new Error('Missing value');
+function checkEncryptedValue(value: number | bigint, bits: number): void {
+  assertIsNotNullish(value);
   let limit;
   if (bits >= 8) {
     limit = BigInt(`0x${new Array(bits / 8).fill(null).reduce((v) => `${v}ff`, '')}`);
@@ -357,7 +370,7 @@ const checkEncryptedValue = (value: number | bigint, bits: number) => {
   if (value > limit) {
     throw new Error(`The value exceeds the limit for ${bits}bits integer (${limit.toString()}).`);
   }
-};
+}
 
 async function computeInputSignaturesCopro(
   handlesList: BigNumberish[],
@@ -366,8 +379,8 @@ async function computeInputSignaturesCopro(
   extraData: string,
 ): Promise<string[]> {
   const signatures: string[] = [];
-  const numSigners = +process.env.NUM_COPROCESSORS!;
-  let signers = await getCoprocessorSigners();
+  const numSigners = getNumCoprocessors();
+  const signers = await getCoprocessorSigners();
 
   for (let idx = 0; idx < numSigners; idx++) {
     const coprocSigner = signers[idx];

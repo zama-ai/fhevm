@@ -8,15 +8,16 @@
     "forceConsistentCasingInFileNames": true,
     "lib": ["es2020"],
     "module": "commonjs",
-    "moduleResolution": "node",
     "noImplicitAny": true,
     "removeComments": true,
     "resolveJsonModule": true,
+    "rootDir": ".",
+    "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
     "target": "es2020"
   },
   "exclude": ["node_modules", "codegen"],
   "files": ["./hardhat.config.ts"],
-  "include": ["src/**/*", "tasks/**/*", "test/**/*", "deploy/**/*", "types/"]
+  "include": ["tasks/**/*", "test/**/*", "typechain-types/**/*"]
 }

@@ -9,7 +9,7 @@ export function isDirectory(p: string): boolean {
   return stats.isDirectory();
 }
 
-export function assertDirectoryExists(p: string) {
+export function assertDirectoryExists(p: string): void {
   if (!existsSync(p)) {
     throw new Error(`Path '${p}' directory does not exist`);
   }
@@ -19,31 +19,28 @@ export function assertDirectoryExists(p: string) {
   }
 }
 
-export function assertRelative(p: string, name?: string) {
+// "<name> path" when a name is given, "path" otherwise: used in the error messages below.
+function pathLabel(name: string | undefined): string {
+  return name !== undefined && name !== '' ? `${name} path` : 'path';
+}
+
+export function assertRelative(p: string, name?: string): void {
   if (path.isAbsolute(p)) {
-    if (name) {
-      throw new Error(`Invalid ${name} path: ${p}. Expecting a relative path, got an absolute path instead.`);
-    } else {
-      throw new Error(`Invalid path: ${p}. Expecting a relative path, got an absolute path instead.`);
-    }
+    throw new Error(`Invalid ${pathLabel(name)}: ${p}. Expecting a relative path, got an absolute path instead.`);
   }
 }
 
-export function assertAbsolute(p: string, name?: string) {
+export function assertAbsolute(p: string, name?: string): void {
   if (!path.isAbsolute(p)) {
-    if (name) {
-      throw new Error(`Invalid ${name} path: ${p}. Expecting an absolute path, got a relative path instead.`);
-    } else {
-      throw new Error(`Invalid path: ${p}. Expecting an absolute path, got a relative path instead.`);
-    }
+    throw new Error(`Invalid ${pathLabel(name)}: ${p}. Expecting an absolute path, got a relative path instead.`);
   }
 }
 
-export function fromFileToFile(fromFile: string, toFile: string) {
+export function fromFileToFile(fromFile: string, toFile: string): string {
   return fromDirToFile(path.dirname(fromFile), toFile);
 }
 
-export function fromDirToFile(fromDir: string, toFile: string) {
+export function fromDirToFile(fromDir: string, toFile: string): string {
   let rel = path.relative(fromDir, path.dirname(toFile));
   if (rel.trim().length === 0) {
     rel = '.';
@@ -55,7 +52,7 @@ export function fromDirToFile(fromDir: string, toFile: string) {
   return relFile;
 }
 
-export function fromDirToDir(fromDir: string, toDir: string) {
+export function fromDirToDir(fromDir: string, toDir: string): string {
   let rel = path.relative(fromDir, toDir);
   if (rel.trim().length === 0) {
     rel = '.';

@@ -1,6 +1,7 @@
 // Copy of the host-contracts ProtocolConfig EIP-712 test helpers (host-contracts/test/utils/protocolConfigEip712.ts),
 // reduced to what OnchainPublicDecrypt.ts uses to define and activate a KMS context.
-import { AbiCoder, Signer, TypedDataDomain, TypedDataEncoder, TypedDataField, keccak256, solidityPacked } from 'ethers';
+import { AbiCoder, TypedDataEncoder, keccak256, solidityPacked } from 'ethers';
+import type { Signer, TypedDataDomain, TypedDataField } from 'ethers';
 
 import type { ProtocolConfig } from '../../typechain-types';
 import type {
@@ -53,7 +54,11 @@ const CRSGEN_TYPES: Record<string, TypedDataField[]> = {
 };
 
 async function protocolConfigDomain(pc: ProtocolConfig): Promise<TypedDataDomain> {
-  const { chainId } = await pc.runner!.provider!.getNetwork();
+  const provider = pc.runner?.provider;
+  if (provider === null || provider === undefined) {
+    throw new Error('ProtocolConfig runner has no provider');
+  }
+  const { chainId } = await provider.getNetwork();
   return { name: 'ProtocolConfig', version: '1', chainId, verifyingContract: await pc.getAddress() };
 }
 
@@ -116,7 +121,10 @@ async function confirmContextCreation(
       extraData: '0x',
     });
     const receipt = await (await pc.connect(signer).confirmKmsContextCreation(contextId, signature, '0x')).wait();
-    const newEpoch = receipt!.logs
+    if (receipt === null) {
+      throw new Error('confirmKmsContextCreation transaction receipt is null');
+    }
+    const newEpoch = receipt.logs
       .map((log) => pc.interface.parseLog(log))
       .find((event) => event?.name === 'NewKmsEpoch');
     epochId ??= newEpoch?.args.epochId;
@@ -172,7 +180,10 @@ export async function defineNewKmsContext(
   thresholds: KmsThresholdsStruct,
 ): Promise<DefinedKmsContext> {
   const receipt = await (await pc.defineNewKmsContextAndEpoch(nodes, thresholds, '', [])).wait();
-  const contextId = findEventArg(pc, receipt!.logs, 'NewKmsContext', 'contextId');
+  if (receipt === null) {
+    throw new Error('defineNewKmsContextAndEpoch transaction receipt is null');
+  }
+  const contextId = findEventArg(pc, receipt.logs, 'NewKmsContext', 'contextId');
   return { contextId, nodes, thresholds };
 }
 
@@ -192,7 +203,7 @@ export async function activateDefinedKmsContext(
 
 function findEventArg(
   contract: ProtocolConfig,
-  logs: readonly { topics: readonly string[]; data: string }[],
+  logs: ReadonlyArray<{ topics: readonly string[]; data: string }>,
   eventName: string,
   argName: string,
 ): bigint {

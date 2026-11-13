@@ -16,10 +16,10 @@ const parseUint = (value: unknown, name: string, max: bigint): bigint => {
   const isUint =
     (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) ||
     (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value));
-  if (!isUint || BigInt(value as number | string) > max) {
+  if (!isUint || BigInt(value) > max) {
     throw new Error(`${name} is not a valid unsigned integer, got ${String(value)}`);
   }
-  return BigInt(value as number | string);
+  return BigInt(value);
 };
 
 // publicKey: Uint8Array, or even-length hex string with or without 0x prefix.
