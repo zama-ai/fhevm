@@ -161,6 +161,54 @@ test("no bridge contract is published", () => {
   }
 });
 
+// True if Foundry (`forge`) is installed: the Soldeer test is skipped otherwise.
+function hasForge() {
+  try {
+    execFileSync("forge", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Mirrors the "Publish to Soldeer" step of library-solidity-publish.yml, in dry-run mode: copies the
+// git-tracked files (a clean checkout) to `<work>/soldeer/library-solidity`, runs
+// `forge soldeer push --dry-run` there and returns the paths in the zip it creates, sorted.
+function soldeerDryRunFiles() {
+  const checkout = join(work, "soldeer", "library-solidity");
+  const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: ROOT, encoding: "utf8" }).split("\0").filter(Boolean);
+  for (const file of tracked) {
+    mkdirSync(dirname(join(checkout, file)), { recursive: true });
+    cpSync(join(ROOT, file), join(checkout, file));
+  }
+  execFileSync("forge", ["soldeer", "push", "@fhevm-solidity~0.0.0", ".", "--skip-warnings", "--dry-run"], {
+    cwd: checkout,
+    stdio: "ignore",
+  });
+  return execFileSync("unzip", ["-Z1", join(checkout, "library-solidity.zip")], { encoding: "utf8" })
+    .split("\n")
+    .filter((entry) => entry && !entry.endsWith("/"))
+    .sort();
+}
+
+// Skipped locally without Foundry, never on CI (GitHub Actions sets CI=true): the CI jobs that run
+// this test install Foundry, and a missing forge must fail there instead of passing silently.
+test(
+  "the Soldeer package contains the npm package files, except package.json",
+  { skip: hasForge() || process.env.CI ? false : "forge not found (install Foundry)" },
+  () => {
+    const soldeerFiles = soldeerDryRunFiles();
+    const npmFiles = listFiles(standard).filter((file) => file !== "package.json");
+    assert.deepEqual(
+      soldeerFiles,
+      npmFiles,
+      `only in Soldeer: ${soldeerFiles.filter((f) => !npmFiles.includes(f)).join(", ") || "-"}; ` +
+        `only in npm: ${npmFiles.filter((f) => !soldeerFiles.includes(f)).join(", ") || "-"} ` +
+        "(check .soldeerignore)"
+    );
+  }
+);
+
 test("published package.json only contains accepted entries", () => {
   const unexpected = Object.keys(readManifest(template)).filter((key) => !ALLOWED.includes(key));
   assert.deepEqual(unexpected, [], `entries not accepted in the published package.json: ${unexpected.join(", ")}`);

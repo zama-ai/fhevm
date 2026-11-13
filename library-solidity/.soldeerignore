@@ -15,7 +15,7 @@ publish/
 # Config & tooling
 .env*
 .eslintignore
-.eslintrc.yml
+eslint.config.mjs
 .lintstagedrc.json
 .npmignore
 .prettierignore
