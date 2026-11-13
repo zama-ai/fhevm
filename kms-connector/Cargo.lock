@@ -165,6 +165,7 @@ dependencies = [
  "cipher",
  "cpubits",
  "cpufeatures 0.3.0",
+ "zeroize",
 ]
 
 [[package]]
@@ -1998,7 +1999,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=511ac7e0521a5277e231abe729b163dcd0940e83#511ac7e0521a5277e231abe729b163dcd0940e83"
+source = "git+https://github.com/zama-ai/kms.git?rev=f4caf6aa742b66eb57e023284363a324b8786205#f4caf6aa742b66eb57e023284363a324b8786205"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -2256,6 +2257,15 @@ checksum = "4e2e4afe60d7dd600fdd3de8d0f08c2b7ec039712e3b6137ff98b7004e82de4f"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
+]
+
+[[package]]
+name = "bs58"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
+dependencies = [
+ "tinyvec",
 ]
 
 [[package]]
@@ -3163,7 +3173,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3865,9 +3875,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.9.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6299f016b246a94207e63da54dbe807655bf9e00044f73ded42c3ac5305fbcca"
+checksum = "2c3e324da4c95177d6291d4c8730197c0d1822f8a9766814a4a44fa5ab797c9c"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -4354,17 +4364,17 @@ dependencies = [
 
 [[package]]
 name = "kms-grpc"
-version = "0.15.0-1"
-source = "git+https://github.com/zama-ai/kms.git?rev=511ac7e0521a5277e231abe729b163dcd0940e83#511ac7e0521a5277e231abe729b163dcd0940e83"
+version = "0.16.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=f4caf6aa742b66eb57e023284363a324b8786205#f4caf6aa742b66eb57e023284363a324b8786205"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
  "alloy-sol-types",
  "anyhow",
  "bc2wrap",
+ "bs58",
  "bytes",
  "cfg-if",
- "hex",
  "prost",
  "rand 0.8.6",
  "serde",
@@ -5814,16 +5824,16 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
-version = "0.5.14"
+version = "0.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "addec6a0dcad8a8d96a771f815f0eaf55f9d1805756410b39f5fa81332574cbd"
+checksum = "af66907df18639dcf4db56ca65490cabc4b27a97dbadd96f2926cca73298f016"
 dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6320,7 +6330,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6379,7 +6389,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7337,7 +7347,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7373,9 +7383,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.8.1"
+version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d60dcde24115624e62a9a8dc627daa8d3dad40e8de69975957d12ee9ab70a2b"
+checksum = "f7c68a185ef0d2287eeb9ae3123e6d0f927dc3a33cc9ff393e59987104dcb816"
 dependencies = [
  "aligned-vec",
  "bincode 1.3.3",
@@ -7554,8 +7564,8 @@ dependencies = [
 
 [[package]]
 name = "threshold-hashing"
-version = "0.15.0-1"
-source = "git+https://github.com/zama-ai/kms.git?rev=511ac7e0521a5277e231abe729b163dcd0940e83#511ac7e0521a5277e231abe729b163dcd0940e83"
+version = "0.16.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=f4caf6aa742b66eb57e023284363a324b8786205#f4caf6aa742b66eb57e023284363a324b8786205"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -7567,12 +7577,16 @@ dependencies = [
 
 [[package]]
 name = "threshold-types"
-version = "0.15.0-1"
-source = "git+https://github.com/zama-ai/kms.git?rev=511ac7e0521a5277e231abe729b163dcd0940e83#511ac7e0521a5277e231abe729b163dcd0940e83"
+version = "0.16.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=f4caf6aa742b66eb57e023284363a324b8786205#f4caf6aa742b66eb57e023284363a324b8786205"
 dependencies = [
+ "aes",
  "anyhow",
  "async-trait",
+ "bytes",
+ "rand 0.8.6",
  "serde",
+ "tfhe-csprng",
  "tfhe-versionable",
  "threshold-hashing",
  "zeroize",
@@ -7806,9 +7820,9 @@ checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
 
 [[package]]
 name = "tonic"
-version = "0.14.6"
+version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac2a5518c70fa84342385732db33fb3f44bc4cc748936eb5833d2df34d6445ef"
+checksum = "e2cdfc673aabd30fe8fee92e65837b644c37c5d47f0f97ae6d5e0f1237d15e1b"
 dependencies = [
  "async-trait",
  "axum",
@@ -7829,6 +7843,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-stream",
+ "tokio-util",
  "tower",
  "tower-layer",
  "tower-service",
@@ -7837,9 +7852,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.14.6"
+version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c68f61875ac5293cf72e6c8cf0158086428c82c37229e98c840878f1706b0322"
+checksum = "ac6d916d206ed7bdda1778ddff9bda43303789c258877e7bc22fb44ee5c984b4"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -7862,9 +7877,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-prost"
-version = "0.14.6"
+version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50849f68853be452acf590cde0b146665b8d507b3b8af17261df47e02c209ea0"
+checksum = "eba464054e2226f182a34489b8b079bf4c6e3e7ab5fd7fc30e024f24aa92a484"
 dependencies = [
  "bytes",
  "prost",
@@ -7873,9 +7888,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-prost-build"
-version = "0.14.6"
+version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "654e5643eff75d7f8c99197ce1440ed19a3474eada74c12bbac488b2cafdae27"
+checksum = "2ea216ddc448e08e7839ab09e20e60b06b6a1c32745ccb212c0ebd161c199f1b"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -8332,9 +8347,9 @@ dependencies = [
 
 [[package]]
 name = "want"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa7760aed19e106de2c7c0b581b509f2f25d3dacaf737cb82ac61bc6d760b0e"
+checksum = "ec4cdd0dd910afe868b7ef477227d8d538b46b3075031afee8a9f2acb0a2ed0b"
 dependencies = [
  "try-lock",
 ]
@@ -8553,7 +8568,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
