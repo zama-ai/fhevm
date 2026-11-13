@@ -1,4 +1,4 @@
-import type { FheTypeInfo } from '@fhevm/solidity/lib-js/common';
+import type { FheTypeInfo, NBucketedCost, Price } from '@fhevm/solidity/lib-js/common';
 import { ALL_FHE_TYPE_INFOS } from '@fhevm/solidity/lib-js/fheTypeInfos';
 import { ALL_OPERATORS_PRICES } from '@fhevm/solidity/lib-js/operatorsPrices';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
@@ -243,7 +243,7 @@ export function getTxHCUFromTxReceipt(
     let typeIndex: number;
     let handle: string;
     let handleResult: string;
-    let hcuConsumed: number;
+    let hcuConsumed: Price;
 
     switch (event.name) {
       case 'TrivialEncrypt':
@@ -253,10 +253,10 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        hcuConsumed = (ALL_OPERATORS_PRICES['trivialEncrypt'].types as Record<string, number>)[type];
-        totalHCUConsumed += hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES['trivialEncrypt'].types as Record<string, Price>)[type];
+        totalHCUConsumed += hcuConsumed.work;
         handleResult = ethers.toBeHex(event.args[3], 32);
-        hcuMap[handleResult] = hcuConsumed;
+        hcuMap[handleResult] = hcuConsumed.latency;
         handleSet.add(handleResult);
         break;
 
@@ -267,10 +267,10 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        hcuConsumed = (ALL_OPERATORS_PRICES['trivialEncrypt'].types as Record<string, number>)[type];
-        totalHCUConsumed += hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES['trivialEncrypt'].types as Record<string, Price>)[type];
+        totalHCUConsumed += hcuConsumed.work;
         handleResult = ethers.toBeHex(event.args[3], 32);
-        hcuMap[handleResult] = hcuConsumed;
+        hcuMap[handleResult] = hcuConsumed.latency;
         handleSet.add(handleResult);
         break;
 
@@ -284,12 +284,12 @@ export function getTxHCUFromTxReceipt(
         }
 
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheAdd'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheAdd'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheAdd'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheAdd'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
@@ -297,7 +297,7 @@ export function getTxHCUFromTxReceipt(
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheSub':
@@ -310,12 +310,12 @@ export function getTxHCUFromTxReceipt(
         }
 
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheSub'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheSub'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheSub'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheSub'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
@@ -323,7 +323,7 @@ export function getTxHCUFromTxReceipt(
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheMul':
@@ -336,12 +336,12 @@ export function getTxHCUFromTxReceipt(
         }
 
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMul'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMul'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMul'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMul'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
@@ -349,7 +349,7 @@ export function getTxHCUFromTxReceipt(
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheDiv':
@@ -360,14 +360,14 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheDiv'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheDiv'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
           throw new Error('Non-scalar div not implemented yet');
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheRem':
@@ -378,13 +378,13 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRem'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRem'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
           throw new Error('Non-scalar rem not implemented yet');
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheBitAnd':
@@ -395,19 +395,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitAnd'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitAnd'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitAnd'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitAnd'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheBitOr':
@@ -418,19 +418,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitOr'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitOr'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitOr'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitOr'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheBitXor':
@@ -441,19 +441,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitXor'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitXor'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitXor'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitXor'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheShl':
@@ -464,19 +464,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheShl'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheShl'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheShl'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheShl'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheShr':
@@ -487,19 +487,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheShr'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheShr'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheShr'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheShr'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheRotl':
@@ -510,19 +510,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotl'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotl'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotl'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotl'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheRotr':
@@ -533,19 +533,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotr'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotr'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotr'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotr'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheEq':
@@ -558,19 +558,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheEqBytes':
@@ -583,19 +583,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheNe':
@@ -608,19 +608,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheNeBytes':
@@ -633,19 +633,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheGe':
@@ -658,19 +658,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheGe'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheGe'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheGe'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheGe'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheGt':
@@ -682,19 +682,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheGt'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheGt'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheGt'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheGt'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheLe':
@@ -706,19 +706,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheLe'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheLe'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheLe'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheLe'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheLt':
@@ -730,19 +730,19 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheLt'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheLt'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheLt'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheLt'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheMax':
@@ -755,19 +755,19 @@ export function getTxHCUFromTxReceipt(
         }
 
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMax'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMax'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMax'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMax'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             );
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheMin':
@@ -780,12 +780,12 @@ export function getTxHCUFromTxReceipt(
         }
 
         if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMin'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMin'].scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMin'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES['fheMin'].nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(
               readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
               readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
@@ -793,7 +793,7 @@ export function getTxHCUFromTxReceipt(
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'Cast':
@@ -806,9 +806,9 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        hcuConsumed = (ALL_OPERATORS_PRICES['cast'].types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
-        totalHCUConsumed += hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES['cast'].types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(handle);
+        totalHCUConsumed += hcuConsumed.work;
         handleSet.add(handleResult);
         break;
 
@@ -820,9 +820,9 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        hcuConsumed = (ALL_OPERATORS_PRICES['fheNot'].types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
-        totalHCUConsumed += hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES['fheNot'].types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(handle);
+        totalHCUConsumed += hcuConsumed.work;
         handleSet.add(ethers.toBeHex(event.args[2], 32));
         break;
 
@@ -834,9 +834,9 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        hcuConsumed = (ALL_OPERATORS_PRICES['fheNeg'].types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
-        totalHCUConsumed += hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES['fheNeg'].types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(handle);
+        totalHCUConsumed += hcuConsumed.work;
         handleSet.add(ethers.toBeHex(event.args[2], 32));
         break;
 
@@ -849,16 +849,16 @@ export function getTxHCUFromTxReceipt(
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
 
-        hcuConsumed = (ALL_OPERATORS_PRICES['ifThenElse'].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES['ifThenElse'].types as Record<string, Price>)[type];
         hcuMap[handleResult] =
-          hcuConsumed +
+          hcuConsumed.latency +
           Math.max(
             readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
             readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
             readFromHCUMap(ethers.toBeHex(event.args[3], 32)),
           );
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheRand':
@@ -868,10 +868,10 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        hcuConsumed = (ALL_OPERATORS_PRICES['fheRand'].types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES['fheRand'].types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency;
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheRandBounded':
@@ -881,10 +881,10 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        hcuConsumed = (ALL_OPERATORS_PRICES['fheRandBounded'].types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES['fheRandBounded'].types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency;
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
 
       case 'FheSum': {
@@ -894,12 +894,7 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        const nBucketedPrices = (
-          ALL_OPERATORS_PRICES['fheSum'].nBucketed as Record<
-            string,
-            { le10: number; le30?: number; le60?: number; le100?: number }
-          >
-        )[type];
+        const nBucketedPrices = (ALL_OPERATORS_PRICES['fheSum'].nBucketed as Record<string, NBucketedCost>)[type];
         const n = (event.args[1] as string[]).length;
         if (n <= 10) hcuConsumed = nBucketedPrices.le10;
         else if (n <= 30) hcuConsumed = nBucketedPrices.le30 ?? nBucketedPrices.le10;
@@ -909,9 +904,9 @@ export function getTxHCUFromTxReceipt(
         const inputValues = event.args[1] as string[];
         const maxInputHCU =
           inputValues.length > 0 ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32)))) : 0;
-        hcuMap[handleResult] = hcuConsumed + maxInputHCU;
+        hcuMap[handleResult] = hcuConsumed.latency + maxInputHCU;
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -923,12 +918,7 @@ export function getTxHCUFromTxReceipt(
         if (!type) {
           throw new Error(`Invalid FheTypeInfo index: ${typeIndex}`);
         }
-        const nBucketedIsInPrices = (
-          ALL_OPERATORS_PRICES['fheIsIn'].nBucketed as Record<
-            string,
-            { le10: number; le30?: number; le60?: number; le100?: number }
-          >
-        )[type];
+        const nBucketedIsInPrices = (ALL_OPERATORS_PRICES['fheIsIn'].nBucketed as Record<string, NBucketedCost>)[type];
         const setHandles = event.args[2] as string[];
         const setSize = setHandles.length;
         if (setSize <= 10) hcuConsumed = nBucketedIsInPrices.le10;
@@ -944,9 +934,9 @@ export function getTxHCUFromTxReceipt(
         const valueHandle = ethers.toBeHex(event.args[1], 32);
         const allInputHandles = [valueHandle, ...setHandles.map((h) => ethers.toBeHex(h, 32))];
         const maxInputHCU = Math.max(...allInputHandles.map((h) => readFromHCUMap(h)));
-        hcuMap[handleResult] = hcuConsumed + maxInputHCU;
+        hcuMap[handleResult] = hcuConsumed.latency + maxInputHCU;
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
     }

@@ -124,12 +124,18 @@ export const FHE_OPERATOR_NAMES = [
 
 export type FheOperatorName = (typeof FHE_OPERATOR_NAMES)[number];
 
+/**
+ * The price of one operation in HCU. `latency` is the time to its result and is added to depths. `work` is the
+ * machine time it occupies (1/throughput) and is charged to the block meter and the transaction limit.
+ */
+export type Price = { work: number; latency: number };
+
 export type NBucketedCost = {
-  le10: number;
-  le30?: number;
-  le60?: number;
-  le100?: number;
-  le128?: number;
+  le10: Price;
+  le30?: Price;
+  le60?: Price;
+  le100?: Price;
+  le128?: Price;
 };
 
 export type PriceData = Record<
@@ -137,9 +143,9 @@ export type PriceData = Record<
   {
     supportScalar: boolean;
     numberInputs: number;
-    scalar?: Partial<Record<FheTypeName, number>>;
-    nonScalar?: Partial<Record<FheTypeName, number>>;
-    types?: Partial<Record<FheTypeName, number>>;
+    scalar?: Partial<Record<FheTypeName, Price>>;
+    nonScalar?: Partial<Record<FheTypeName, Price>>;
+    types?: Partial<Record<FheTypeName, Price>>;
     nBucketed?: Partial<Record<FheTypeName, NBucketedCost>>;
   }
 >;

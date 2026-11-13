@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import type { ethers as EthersT } from 'ethers';
 import * as fs from 'node:fs';
 
-import type { FheTypeInfo } from '../codegen/src/common.js';
+import type { FheTypeInfo, NBucketedCost, Price } from '../codegen/src/common.js';
 import { ALL_FHE_TYPE_INFOS } from '../codegen/src/fheTypeInfos.js';
 import { ALL_OPERATORS_PRICES } from '../codegen/src/operatorsPrices.js';
 import { ethers } from './hardhat.js';
@@ -904,7 +904,7 @@ export function getTxHCUFromTxReceipt(
     let typeIndex: number;
     let handle: string;
     let handleResult: string;
-    let hcuConsumed: number;
+    let hcuConsumed: Price;
 
     switch (event.eventName) {
       case 'TrivialEncrypt': {
@@ -914,10 +914,10 @@ export function getTxHCUFromTxReceipt(
         typeIndex = Number(toType);
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
-        hcuConsumed = (ALL_OPERATORS_PRICES.trivialEncrypt.types as Record<string, number>)[type];
-        totalHCUConsumed += hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES.trivialEncrypt.types as Record<string, Price>)[type];
+        totalHCUConsumed += hcuConsumed.work;
         handleResult = ethers.toBeHex(result, 32);
-        hcuMap[handleResult] = hcuConsumed;
+        hcuMap[handleResult] = hcuConsumed.latency;
         handleSet.add(handleResult);
         break;
       }
@@ -933,16 +933,16 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheAdd.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheAdd.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheAdd.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheAdd.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -957,16 +957,16 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheSub.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheSub.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheSub.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheSub.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -981,16 +981,16 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheMul.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMul.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheMul.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMul.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1003,14 +1003,14 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheDiv.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheDiv.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
           throw new Error('Non-scalar div not implemented yet');
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1023,13 +1023,13 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheRem.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRem.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
           throw new Error('Non-scalar rem not implemented yet');
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1043,15 +1043,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitAnd.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitAnd.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitAnd.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitAnd.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1065,15 +1065,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitOr.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitOr.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitOr.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitOr.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1087,15 +1087,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitXor.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitXor.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitXor.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitXor.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1109,15 +1109,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheShl.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheShl.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheShl.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheShl.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1131,15 +1131,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheShr.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheShr.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheShr.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheShr.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1153,15 +1153,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotl.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotl.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotl.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotl.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1175,15 +1175,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotr.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotr.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotr.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotr.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1199,15 +1199,15 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1223,15 +1223,15 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1247,15 +1247,15 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1271,15 +1271,15 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1295,15 +1295,15 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheGe.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheGe.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheGe.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheGe.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1318,15 +1318,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handle);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheGt.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheGt.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheGt.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheGt.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1341,15 +1341,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handle);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheLe.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheLe.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheLe.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheLe.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1364,15 +1364,15 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handle);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheLt.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheLt.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheLt.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheLt.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1387,15 +1387,15 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheMax.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMax.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheMax.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMax.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1410,16 +1410,16 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
         if (scalarByte === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheMin.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMin.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheMin.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMin.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1432,9 +1432,9 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
         handleResult = ethers.toBeHex(result, 32);
 
-        hcuConsumed = (ALL_OPERATORS_PRICES.cast.types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
-        totalHCUConsumed += hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES.cast.types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(handle);
+        totalHCUConsumed += hcuConsumed.work;
         handleSet.add(handleResult);
         break;
       }
@@ -1447,9 +1447,9 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handle);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         handleResult = ethers.toBeHex(result, 32);
-        hcuConsumed = (ALL_OPERATORS_PRICES.fheNot.types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
-        totalHCUConsumed += hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES.fheNot.types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(handle);
+        totalHCUConsumed += hcuConsumed.work;
         handleSet.add(ethers.toBeHex(result, 32));
         break;
       }
@@ -1462,9 +1462,9 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handle);
         type = getFheTypeName(fheTypeInfos, typeIndex);
         handleResult = ethers.toBeHex(result, 32);
-        hcuConsumed = (ALL_OPERATORS_PRICES.fheNeg.types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
-        totalHCUConsumed += hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES.fheNeg.types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(handle);
+        totalHCUConsumed += hcuConsumed.work;
         handleSet.add(ethers.toBeHex(result, 32));
         break;
       }
@@ -1479,16 +1479,16 @@ export function getTxHCUFromTxReceipt(
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
 
-        hcuConsumed = (ALL_OPERATORS_PRICES.ifThenElse.types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES.ifThenElse.types as Record<string, Price>)[type];
         hcuMap[handleResult] =
-          hcuConsumed +
+          hcuConsumed.latency +
           Math.max(
             readFromHCUMap(ethers.toBeHex(control, 32)),
             readFromHCUMap(ethers.toBeHex(ifTrue, 32)),
             readFromHCUMap(ethers.toBeHex(ifFalse, 32)),
           );
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1499,10 +1499,10 @@ export function getTxHCUFromTxReceipt(
         handleResult = ethers.toBeHex(result, 32);
         typeIndex = Number(randType);
         type = getFheTypeName(fheTypeInfos, typeIndex);
-        hcuConsumed = (ALL_OPERATORS_PRICES.fheRand.types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES.fheRand.types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency;
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1513,10 +1513,10 @@ export function getTxHCUFromTxReceipt(
         handleResult = ethers.toBeHex(result, 32);
         typeIndex = Number(randType);
         type = getFheTypeName(fheTypeInfos, typeIndex);
-        hcuConsumed = (ALL_OPERATORS_PRICES.fheRandBounded.types as Record<string, number>)[type];
-        hcuMap[handleResult] = hcuConsumed;
+        hcuConsumed = (ALL_OPERATORS_PRICES.fheRandBounded.types as Record<string, Price>)[type];
+        hcuMap[handleResult] = hcuConsumed.latency;
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1527,12 +1527,7 @@ export function getTxHCUFromTxReceipt(
         handleResult = ethers.toBeHex(result, 32);
         typeIndex = getHandleTypeIndex(handleResult);
         type = getFheTypeName(fheTypeInfos, typeIndex);
-        const nBucketedPrices = (
-          ALL_OPERATORS_PRICES.fheSum.nBucketed as Record<
-            string,
-            { le10: number; le30?: number; le60?: number; le100?: number }
-          >
-        )[type];
+        const nBucketedPrices = (ALL_OPERATORS_PRICES.fheSum.nBucketed as Record<string, NBucketedCost>)[type];
         const n = values.length;
         if (n <= 10) hcuConsumed = nBucketedPrices.le10;
         else if (n <= 30) hcuConsumed = nBucketedPrices.le30 ?? nBucketedPrices.le10;
@@ -1542,9 +1537,9 @@ export function getTxHCUFromTxReceipt(
         const inputValues = values;
         const maxInputHCU =
           inputValues.length > 0 ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32)))) : 0;
-        hcuMap[handleResult] = hcuConsumed + maxInputHCU;
+        hcuMap[handleResult] = hcuConsumed.latency + maxInputHCU;
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1557,12 +1552,7 @@ export function getTxHCUFromTxReceipt(
         const isInInputHandle = ethers.toBeHex(value, 32);
         typeIndex = getHandleTypeIndex(isInInputHandle);
         type = getFheTypeName(fheTypeInfos, typeIndex);
-        const nBucketedIsInPrices = (
-          ALL_OPERATORS_PRICES.fheIsIn.nBucketed as Record<
-            string,
-            { le10: number; le30?: number; le60?: number; le100?: number }
-          >
-        )[type];
+        const nBucketedIsInPrices = (ALL_OPERATORS_PRICES.fheIsIn.nBucketed as Record<string, NBucketedCost>)[type];
         const setHandles = values;
         const setSize = setHandles.length;
         if (setSize <= 10) hcuConsumed = nBucketedIsInPrices.le10;
@@ -1578,9 +1568,9 @@ export function getTxHCUFromTxReceipt(
         const valueHandle = ethers.toBeHex(value, 32);
         const allInputHandles = [valueHandle, ...setHandles.map((h) => ethers.toBeHex(h, 32))];
         const maxInputHCU = Math.max(...allInputHandles.map((h) => readFromHCUMap(h)));
-        hcuMap[handleResult] = hcuConsumed + maxInputHCU;
+        hcuMap[handleResult] = hcuConsumed.latency + maxInputHCU;
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
 
@@ -1595,16 +1585,16 @@ export function getTxHCUFromTxReceipt(
         type = getFheTypeName(fheTypeInfos, typeIndex);
         const rhsIsScalar = (BigInt(scalarByte) & 0x02n) !== 0n;
         if (rhsIsScalar) {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheMulDiv.scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(factor1, 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMulDiv.scalar as Record<string, Price>)[type];
+          hcuMap[handleResult] = hcuConsumed.latency + readFromHCUMap(ethers.toBeHex(factor1, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES.fheMulDiv.nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMulDiv.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
+            hcuConsumed.latency +
             Math.max(readFromHCUMap(ethers.toBeHex(factor1, 32)), readFromHCUMap(ethers.toBeHex(factor2, 32)));
         }
         handleSet.add(handleResult);
-        totalHCUConsumed += hcuConsumed;
+        totalHCUConsumed += hcuConsumed.work;
         break;
       }
     }
