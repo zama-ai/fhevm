@@ -61,7 +61,7 @@ struct Args {
     #[arg(
         long,
         env = "PRF_MAX_BODY_BYTES_PER_CONNECTOR",
-        default_value = "16777216"
+        default_value = "8388608"
     )]
     max_body_bytes_per_connector: NonZeroU32,
 
