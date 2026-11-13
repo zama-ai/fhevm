@@ -2020,6 +2020,25 @@ coprocessorProxy:
   # The Service balances connections, not requests, and a connector opens one per in-flight
   # request, so a signer's limit is up to about `replicas` times this: adding replicas raises it.
   maxRequestsPerSigner: 200
+  # Client connections one replica holds past their TLS handshake; at that many, it refuses new
+  # ones before their handshake. At least 1. A held request takes one connection; the README
+  # derives the default.
+  maxConnections: 4096
+  # New client connections one replica accepts per second; more are refused before their TLS
+  # handshake. At least 1. A handshake can take 60 s, so up to 60 times this many are in their
+  # handshake at once. With maxConnections and requestHeadTimeoutSeconds, it bounds the memory
+  # the connections take; the README gives the bound. Raise them and the memory limit together.
+  maxNewConnectionsPerSecond: 50
+  # Time a client has, once its TLS handshake completes, to send its first request head; the
+  # connection is closed after. At least 1. Pingora buffers up to 1 MiB of an unfinished head,
+  # so at most maxNewConnectionsPerSecond times this many connections wait for their first head
+  # at once; more are closed.
+  requestHeadTimeoutSeconds: 2
+  # Time a client connection can stay idle between two requests before the proxy closes it. At
+  # least 1. A client's pool, and a front layer, must close its idle connections to the proxy
+  # sooner (AWS ALB: 60 s by default), or a request it sends as the proxy closes the connection
+  # fails.
+  clientIdleTimeoutSeconds: 65
 
   # Ingress allowed from this release's proxy pods to prf-service.
   prfServiceNetworkPolicy:

@@ -1,6 +1,6 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
-use crate::core::{Proxy, Route, RouteError, match_route};
+use crate::core::{Proxy, Route, RouteError, client_connections::first_head_received, match_route};
 use alloy::primitives::Address;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -52,10 +52,6 @@ const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection")
 // Set on every answer the proxy writes. Pingora answers a few requests before any hook runs, and
 // those lack it: an unparsable request head (`400`) and `CONNECT` (`405`).
 const NO_STORE: &str = "no-store";
-
-/// How long a client connection can stay idle between two requests. Pingora otherwise waits for the
-/// next request on a reused connection without a limit.
-pub const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How long a request signed by an unknown signer waits for a poll of the KMS tx-senders that
 /// started after it, before it is checked again.
@@ -128,12 +124,11 @@ impl ProxyHttp for Proxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
-        // The client's next connection goes through the Service, to a replica that is not stopping.
-        if self.draining.load(Ordering::Relaxed) {
-            session.set_keepalive(None);
-        } else {
-            session.set_keepalive(Some(CLIENT_IDLE_TIMEOUT.as_secs()));
-        }
+        first_head_received(session);
+        // A client keeps its connection only once a request is authenticated (see
+        // `request_filter`): otherwise an unsigned request would free it from the first head's
+        // deadline.
+        session.set_keepalive(None);
         Ok(())
     }
 
@@ -204,6 +199,10 @@ impl ProxyHttp for Proxy {
             }
         };
         ctx.sender = Some(sender);
+        // While draining, the client's next connection goes through the Service, to a replica that
+        // is not stopping.
+        let draining = self.draining.load(Ordering::Relaxed);
+        session.set_keepalive((!draining).then_some(self.config.client_idle_timeout.as_secs()));
 
         // A request for an output already stored still costs a signature check and a database
         // read, so each signer's request rate is limited too (RFC-038).

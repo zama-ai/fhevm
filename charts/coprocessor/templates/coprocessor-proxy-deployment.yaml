@@ -27,6 +27,18 @@
 {{- if not $prfServiceAddress }}
 {{- fail "coprocessorProxy.prfServiceAddress must be prf-service's host:port" }}
 {{- end }}
+{{- if lt (int $proxy.requestHeadTimeoutSeconds) 1 }}
+{{- fail "coprocessorProxy.requestHeadTimeoutSeconds must be a whole number of seconds, at least 1: the head deadline cannot be disabled" }}
+{{- end }}
+{{- if lt (int $proxy.maxConnections) 1 }}
+{{- fail "coprocessorProxy.maxConnections must be at least 1" }}
+{{- end }}
+{{- if lt (int $proxy.maxNewConnectionsPerSecond) 1 }}
+{{- fail "coprocessorProxy.maxNewConnectionsPerSecond must be at least 1" }}
+{{- end }}
+{{- if lt (int $proxy.clientIdleTimeoutSeconds) 1 }}
+{{- fail "coprocessorProxy.clientIdleTimeoutSeconds must be a whole number of seconds, at least 1" }}
+{{- end }}
 {{- if not (or $protocolConfigChain.httpUrl $protocolConfigChain.httpUrlValueFrom) }}
 {{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with httpUrl or httpUrlValueFrom" $canonicalChainId) }}
 {{- end }}
@@ -161,6 +173,14 @@ spec:
               value: "{{ int $proxy.prfServiceResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER
               value: {{ int $proxy.maxRequestsPerSigner | quote }}
+            - name: COPROCESSOR_PROXY_MAX_CONNECTIONS
+              value: {{ int $proxy.maxConnections | quote }}
+            - name: COPROCESSOR_PROXY_MAX_NEW_CONNECTIONS_PER_SECOND
+              value: {{ int $proxy.maxNewConnectionsPerSecond | quote }}
+            - name: COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT
+              value: "{{ int $proxy.requestHeadTimeoutSeconds }}s"
+            - name: COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT
+              value: "{{ int $proxy.clientIdleTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_THREADS
               value: {{ int $proxy.threads | quote }}
           {{- if $tracingEnabled }}
