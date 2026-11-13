@@ -10,7 +10,7 @@ import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
 import {HANDLE_VERSION} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {FheType} from "@fhevm-host-contracts/contracts/shared/FheType.sol";
 
-contract AllowlistExecutorDapp {
+contract QuotaExecutorDapp {
     function add(bytes32 lhs) external returns (bytes32) {
         return FHEVMExecutor(fhevmExecutorAdd).fheAdd(lhs, bytes32(uint256(1)), 0x01);
     }
@@ -20,29 +20,33 @@ contract AllowlistExecutorDapp {
     }
 }
 
-contract HCULimitAllowlistIntegrationTest is HostContractsDeployerTestUtils {
+/// @dev A contract outside every quota is refused through FHEVMExecutor without side effects, then computes once the
+///      owner assigns it to a quota.
+contract HCULimitQuotasIntegrationTest is HostContractsDeployerTestUtils {
     address private constant OWNER = address(0xBEEF);
+    uint16 private constant DEFAULT_QUOTA = 0;
+    uint16 private constant DAPP_QUOTA = 3;
     uint48 private constant ADD_HCU = 84_000;
     uint48 private constant RAND_HCU = 23_000;
     bytes32 private constant EXECUTOR_STORAGE_SLOT = 0x4613e1771f6b755d243e536fb5a23c5b15e2826575fee921e8fe7a22a760c800;
 
     ACL private acl;
     HCULimit private hcuLimit;
-    AllowlistExecutorDapp private dapp;
+    QuotaExecutorDapp private dapp;
     bytes32 private input;
 
     function setUp() public {
         (acl, ) = _deployACL(OWNER);
         _deployFHEVMExecutor(OWNER);
         (hcuLimit, ) = _deployHCULimit(OWNER);
-        dapp = new AllowlistExecutorDapp();
+        dapp = new QuotaExecutorDapp();
         input = bytes32(uint256(uint8(FheType.Uint8)) << 8);
 
         vm.prank(OWNER);
-        hcuLimit.setAllowlistActivated(true);
+        hcuLimit.setQuota(DEFAULT_QUOTA, 0, 0);
     }
 
-    function test_fheAddRejectsUnlistedDappWithoutSideEffectsThenSucceeds() public {
+    function test_fheAddRefusesADappInAStoppedQuotaWithoutSideEffectsThenSucceeds() public {
         vm.prank(fhevmExecutorAdd);
         acl.allowTransient(input, address(dapp));
         vm.prank(OWNER);
@@ -51,27 +55,24 @@ contract HCULimitAllowlistIntegrationTest is HostContractsDeployerTestUtils {
         hcuLimit.setMaxHCUPerTx(ADD_HCU);
         bytes32 expectedResult = _addResult();
         assertFalse(acl.isAllowed(expectedResult, address(dapp)));
-        (, uint48 meterBefore) = hcuLimit.getBlockMeter();
 
         vm.recordLogs();
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.CallerNotAllowlisted.selector, address(dapp)));
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaStopped.selector, address(dapp), DEFAULT_QUOTA));
         dapp.add(input);
         assertEq(vm.getRecordedLogs().length, 0);
         assertTrue(acl.isAllowed(input, address(dapp)));
         assertFalse(acl.isAllowed(expectedResult, address(dapp)));
-        (, uint48 meterAfterRejection) = hcuLimit.getBlockMeter();
-        assertEq(meterAfterRejection, meterBefore);
 
-        _allowDapp();
+        _admitDapp();
         vm.expectEmit(true, false, false, true, fhevmExecutorAdd);
         emit FHEEvents.FheAdd(address(dapp), input, bytes32(uint256(1)), 0x01, expectedResult);
         assertEq(dapp.add(input), expectedResult);
         assertTrue(acl.isAllowed(expectedResult, address(dapp)));
-        (, uint48 meterAfterSuccess) = hcuLimit.getBlockMeter();
-        assertEq(meterAfterSuccess, meterBefore + ADD_HCU);
+        (, , uint48 usedHCU) = hcuLimit.getQuota(DAPP_QUOTA);
+        assertEq(usedHCU, ADD_HCU);
     }
 
-    function test_fheRandRejectsUnlistedDappWithoutSideEffectsThenSucceeds() public {
+    function test_fheRandRefusesADappInAStoppedQuotaWithoutSideEffectsThenSucceeds() public {
         vm.prank(OWNER);
         hcuLimit.setMaxHCUDepthPerTx(RAND_HCU);
         vm.prank(OWNER);
@@ -83,32 +84,29 @@ contract HCULimitAllowlistIntegrationTest is HostContractsDeployerTestUtils {
                 abi.encodePacked(bytes8("FHE_comp"), FHEVMExecutor.Operators.fheRand, FheType.Uint8, expectedSeed)
             )
         );
-        (, uint48 meterBefore) = hcuLimit.getBlockMeter();
 
         vm.recordLogs();
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.CallerNotAllowlisted.selector, address(dapp)));
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaStopped.selector, address(dapp), DEFAULT_QUOTA));
         dapp.rand();
         assertEq(vm.getRecordedLogs().length, 0);
         assertEq(uint256(vm.load(fhevmExecutorAdd, EXECUTOR_STORAGE_SLOT)), counterBefore);
         assertFalse(acl.isAllowed(expectedResult, address(dapp)));
-        (, uint48 meterAfterRejection) = hcuLimit.getBlockMeter();
-        assertEq(meterAfterRejection, meterBefore);
 
-        _allowDapp();
+        _admitDapp();
         vm.expectEmit(true, false, false, true, fhevmExecutorAdd);
         emit FHEEvents.FheRand(address(dapp), FheType.Uint8, expectedSeed, expectedResult);
         assertEq(dapp.rand(), expectedResult);
         assertEq(uint256(vm.load(fhevmExecutorAdd, EXECUTOR_STORAGE_SLOT)), counterBefore + 1);
         assertTrue(acl.isAllowed(expectedResult, address(dapp)));
-        (, uint48 meterAfterSuccess) = hcuLimit.getBlockMeter();
-        assertEq(meterAfterSuccess, meterBefore + RAND_HCU);
+        (, , uint48 usedHCU) = hcuLimit.getQuota(DAPP_QUOTA);
+        assertEq(usedHCU, RAND_HCU);
     }
 
-    function _allowDapp() private {
-        address[] memory accounts = new address[](1);
-        accounts[0] = address(dapp);
-        vm.prank(OWNER);
-        hcuLimit.addToAllowlist(accounts);
+    function _admitDapp() private {
+        vm.startPrank(OWNER);
+        hcuLimit.setQuota(DAPP_QUOTA, 1_000_000, 1_000_000);
+        hcuLimit.assignQuota(DAPP_QUOTA, address(dapp));
+        vm.stopPrank();
     }
 
     function _addResult() private view returns (bytes32) {
