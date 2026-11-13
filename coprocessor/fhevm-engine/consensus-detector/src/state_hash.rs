@@ -191,15 +191,21 @@ impl StateHashRecord {
     }
 }
 
-/// SQL `LIKE` pattern matching a stored [`StateHashRecord`] whose `pbs` is the
-/// empty-aggregate hash. A text match on purpose: `state_hash` is not always
-/// JSON (empty blocks store the raw [`EMPTY_BLOCK_STATE_HASH`] sentinel), so a
-/// `::jsonb` cast would make the whole query error on those rows. The pattern
-/// depends on the serialized form, which is pinned by the
-/// `record_serialization_is_canonical_and_stable` and
-/// `empty_pbs_like_pattern_matches_the_serialized_record` tests.
-pub(crate) fn empty_pbs_like_pattern() -> String {
-    format!(r#"%"pbs":"{EMPTY_BLOCK_STATE_HASH}"%"#)
+/// SQL predicate, true unless `column` holds a [`StateHashRecord`] whose `pbs`
+/// is the empty-aggregate hash. Used to keep such records out of the upload
+/// sweep and the anchor candidates.
+///
+/// It extracts the `pbs` value with a regex instead of matching the exact
+/// serialized text, so it does not depend on field order, on spacing around the
+/// `:`, or on hex case. It is not a `::jsonb` cast on purpose: the column is
+/// not always JSON (empty blocks store the raw [`EMPTY_BLOCK_STATE_HASH`]
+/// sentinel, Gateway rows a raw hex hash), and a failed cast would error the
+/// whole query. A value with no extractable `pbs` yields NULL and passes the
+/// predicate; the Rust-side [`StateHashRecord::validate`] still guards it.
+pub(crate) fn pbs_not_empty_sql(column: &str) -> String {
+    format!(
+        r#"lower(substring({column} from '"pbs"\s*:\s*"([0-9A-Fa-f]{{64}})"')) IS DISTINCT FROM '{EMPTY_BLOCK_STATE_HASH}'"#
+    )
 }
 
 /// Verdict over one block's operator slots on a HOST track, where every vote is
@@ -988,7 +994,7 @@ async fn upload_pending_state_hashes(
            -- hash: no squash work means nothing proven about PBS determinism,
            -- and consensus rejects such votes anyway (StateHashRecord::validate).
            -- Filtered here so the row is not re-selected and re-refused forever.
-           AND sh.state_hash NOT LIKE '{empty_pbs}'
+           AND {pbs_not_empty}
            -- Also exclude trivial-only blocks (non-empty but vacuous hash).
            AND EXISTS (
                SELECT 1 FROM computations c
@@ -1000,7 +1006,7 @@ async fn upload_pending_state_hashes(
          LIMIT $1
         "#,
         empty = EMPTY_BLOCK_STATE_HASH,
-        empty_pbs = empty_pbs_like_pattern(),
+        pbs_not_empty = pbs_not_empty_sql("sh.state_hash"),
         opcode = crate::FHE_TRIVIAL_ENCRYPT_OPCODE,
     );
     let started = upload_window(pool, cutoff).await?.0;
@@ -2192,20 +2198,112 @@ mod tests {
         assert_eq!(parsed, record);
     }
 
-    /// The upload and candidate SQL filters match the empty-pbs record as
-    /// text; a serialization change must fail here, not silently disable them.
-    #[test]
-    fn empty_pbs_like_pattern_matches_the_serialized_record() {
-        let json = StateHashRecord {
+    /// The upload and candidate SQL filters must drop an empty-pbs record
+    /// whatever its text form (spacing, field order, hex case), must keep every
+    /// other value, and must never error on a value that is not JSON.
+    #[tokio::test]
+    async fn pbs_not_empty_sql_does_not_depend_on_the_text_form() -> anyhow::Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(instance.db_url())
+            .await?;
+        let e = EMPTY_BLOCK_STATE_HASH;
+        let a = "a".repeat(64);
+        let canonical_empty = StateHashRecord {
             v: STATE_HASH_RECORD_VERSION,
-            fhe: "a".repeat(64),
-            pbs: EMPTY_BLOCK_STATE_HASH.into(),
+            fhe: a.clone(),
+            pbs: e.into(),
         }
         .to_json();
-        let pattern = empty_pbs_like_pattern();
-        let needle = pattern.trim_matches('%');
-        assert_eq!(pattern, format!("%{needle}%"));
-        assert!(json.contains(needle), "{json} does not contain {needle}");
+        let canonical_full = StateHashRecord {
+            v: STATE_HASH_RECORD_VERSION,
+            fhe: e.into(),
+            pbs: a.clone(),
+        }
+        .to_json();
+        // (stored value, expected "pbs is not empty").
+        let cases: Vec<(String, bool)> = vec![
+            // Empty pbs, in several text forms: all dropped.
+            (canonical_empty, false),
+            (format!(r#"{{"v": 1, "fhe": "{a}", "pbs": "{e}"}}"#), false),
+            (format!(r#"{{"pbs":"{e}","fhe":"{a}","v":1}}"#), false),
+            (
+                format!("{{\"v\":1,\"fhe\":\"{a}\",\"pbs\"\n:\t\"{e}\"}}"),
+                false,
+            ),
+            (
+                format!(r#"{{"v":1,"fhe":"{a}","pbs":"{}"}}"#, e.to_uppercase()),
+                false,
+            ),
+            // Real pbs (even with an empty fhe): kept.
+            (canonical_full, true),
+            (format!(r#"{{"v": 1, "fhe": "{a}", "pbs": "{a}"}}"#), true),
+            // Not a record: kept, and no error. The empty-block sentinel, a
+            // Gateway-style raw hash, garbage, and an empty string.
+            (e.to_string(), true),
+            (a.clone(), true),
+            ("{".to_string(), true),
+            (r#"{"pbs":"zz"}"#.to_string(), true),
+            (String::new(), true),
+        ];
+        let sql = format!("SELECT {}", pbs_not_empty_sql("$1::text"));
+        for (value, want) in cases {
+            let (got,): (bool,) = sqlx::query_as(&sql).bind(&value).fetch_one(&pool).await?;
+            assert_eq!(got, want, "value: {value:?}");
+        }
+        Ok(())
+    }
+
+    /// The anchor-candidate query, run for real: empty-pbs records are left
+    /// out in any text form, real records and the non-trivial filter still work.
+    #[tokio::test]
+    async fn candidates_query_skips_empty_pbs_records() -> anyhow::Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(instance.db_url())
+            .await?;
+        let e = EMPTY_BLOCK_STATE_HASH;
+        let a = "a".repeat(64);
+        for sql in [
+            format!("CREATE SCHEMA {GCS_SCHEMA_QUOTED}"),
+            format!("CREATE TABLE {GCS_SCHEMA_QUOTED}.state_hash (LIKE public.state_hash INCLUDING ALL)"),
+            format!("CREATE TABLE {GCS_SCHEMA_QUOTED}.computations (LIKE public.computations INCLUDING ALL)"),
+        ] {
+            sqlx::query(&sql).execute(&pool).await?;
+        }
+        let rows: [(i64, String); 5] = [
+            (100, e.to_string()),                                        // empty block
+            (101, format!(r#"{{"v":1,"fhe":"{a}","pbs":"{e}"}}"#)),      // empty pbs
+            (102, format!(r#"{{"v": 1, "fhe": "{a}", "pbs": "{e}"}}"#)), // empty pbs, spaced
+            (103, format!(r#"{{"v":1,"fhe":"{a}","pbs":"{a}"}}"#)),      // real record
+            (104, format!(r#"{{"pbs":"{a}","fhe":"{a}","v":1}}"#)),      // real, reordered
+        ];
+        for (block, value) in &rows {
+            sqlx::query(&format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.state_hash (chain_id, block_number, state_hash)
+                 VALUES (42, $1, $2)"
+            ))
+            .bind(block)
+            .bind(value)
+            .execute(&pool)
+            .await?;
+        }
+        // Without the non-trivial filter: only the empty-pbs records drop out.
+        let got = crate::host_consensus_candidates(&pool, 42, 0, 1000, false).await?;
+        assert_eq!(got, vec![100, 103, 104]);
+        // With it: no computations seeded, so nothing qualifies - and the
+        // combined query still parses and runs.
+        let got = crate::host_consensus_candidates(&pool, 42, 0, 1000, true).await?;
+        assert!(got.is_empty(), "{got:?}");
+        Ok(())
     }
 
     #[test]
