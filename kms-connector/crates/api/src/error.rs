@@ -23,7 +23,7 @@ pub enum ErrorCode {
     RateLimited,
     /// Endpoint is overloaded.
     Overloaded,
-    /// ACL denied the requested handles (kms_worker row).
+    /// ACL denied the requested handles or pads (kms_worker row).
     AclDenied,
     /// The user's EIP-712 / ERC-1271 signature was rejected per RFC 016 (kms_worker row).
     UserSignatureRejected,
