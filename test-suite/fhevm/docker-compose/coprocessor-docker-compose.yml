@@ -325,8 +325,8 @@ services:
       - --prf-instance=0
       - --prf-key-id=0x01
       - --s3-bucket=${BUCKET_NAME}
+      # The key comes from TX_SENDER_PRIVATE_KEY in the env file.
       - --signer-type=private-key
-      - --private-key=${TX_SENDER_PRIVATE_KEY}
       # e2e limits, short so the "PRF endpoint" suite reaches them; the same ages as prf-service.
       - --pending-max-age=60s
       - --output-max-age=300s
