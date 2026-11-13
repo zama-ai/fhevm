@@ -11,8 +11,7 @@
  * route) bridge it to each platform, so every environment mounts the same core.
  *
  * URL layout (mountPrefix defaults to `/__gw`):
- *   {origin}/__gw/<slot>/rpc                   -> anvil JSON-RPC (proxied; KMSGeneration
- *                                                 key reads answered locally)
+ *   {origin}/__gw/<slot>/rpc                   -> anvil JSON-RPC (proxied)
  *   {origin}/__gw/<slot>/relayer/v2/keyurl     -> keyurl JSON (byte URLs same-origin)
  *   {origin}/__gw/<slot>/relayer/key/pub       -> raw public-key bytes
  *   {origin}/__gw/<slot>/relayer/key/crs       -> raw CRS bytes
@@ -22,7 +21,6 @@
 
 import { buildKeyUrlResponse, loadKeyFile } from './keyRelayer.js';
 import { readWasmAsset } from './assets.js';
-import { answerKmsGenerationCall, type KmsGenerationMockConfig } from './kmsGenerationMock.js';
 
 /**
  * The per-slot chain config served at `/<slot>/config` so the browser can build a
@@ -55,11 +53,6 @@ export type GatewaySlot = {
   readonly rpcUrl?: string | undefined;
   /** Chain config served at `/<slot>/config` (omit for relayer-only slots). */
   readonly chainConfig?: SlotChainConfig | undefined;
-  /**
-   * KMSGeneration key reads the `/<slot>/rpc` proxy answers itself, with the
-   * slot key's digests (see kmsGenerationMock.ts). Omit to proxy every call.
-   */
-  readonly kmsGeneration?: KmsGenerationMockConfig | undefined;
 };
 
 export type GatewayConfig = {
@@ -182,11 +175,6 @@ async function _proxyRpc(slot: GatewaySlot, req: GatewayRequest): Promise<Gatewa
     return _text(502, `Gateway slot has no rpcUrl.`);
   }
 
-  const answered = await _answerKmsGenerationCalls(slot, req);
-  if (answered !== undefined) {
-    return answered;
-  }
-
   const init: RequestInit = {
     method: req.method,
     headers: { 'content-type': 'application/json' },
@@ -207,110 +195,6 @@ async function _proxyRpc(slot: GatewaySlot, req: GatewayRequest): Promise<Gatewa
     headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json', ...NO_STORE },
     body,
   };
-}
-
-/**
- * Answers the slot's KMSGeneration key reads (single or batched JSON-RPC); in a
- * batch, the other calls go to anvil and the answers are merged back in request
- * order. `undefined` when the request has no such read: proxy it as is.
- *
- * Forwarded calls carry a synthetic id (their position in the batch), so answers
- * map back exactly even when client ids are duplicated or missing, or anvil
- * reorders them; each answer then gets the client's original id back.
- * Notifications (no `id`) get no response, as JSON-RPC requires.
- */
-async function _answerKmsGenerationCalls(slot: GatewaySlot, req: GatewayRequest): Promise<GatewayResponse | undefined> {
-  const mock = slot.kmsGeneration;
-  if (mock === undefined || req.method !== 'POST' || req.body === undefined) {
-    return undefined;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(new TextDecoder().decode(req.body));
-  } catch {
-    return undefined;
-  }
-
-  const isBatch = Array.isArray(parsed);
-  const calls: readonly unknown[] = Array.isArray(parsed) ? parsed : [parsed];
-  const local = calls.map((c) => answerKmsGenerationCall(mock, c));
-  if (local.every((r) => r === undefined)) {
-    return undefined;
-  }
-
-  const responses: unknown[] = [...local];
-  const forwarded: number[] = [];
-  for (let i = 0; i < calls.length; i++) {
-    if (local[i] !== undefined) {
-      continue;
-    }
-    if (_isJsonObject(calls[i])) {
-      forwarded.push(i);
-    } else {
-      responses[i] = _rpcError(null, -32600, 'Invalid Request');
-    }
-  }
-
-  if (forwarded.length > 0) {
-    let upstream: Response;
-    try {
-      upstream = await fetch(`${slot.rpcUrl!}${req.search}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(forwarded.map((i) => ({ ...(calls[i] as object), id: i }))),
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (e) {
-      return _text(502, `Gateway RPC upstream request failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-    // Anything but a 2xx JSON array (an HTTP error, an error page, a top-level
-    // JSON-RPC error object) is passed through as is, like the plain proxy path.
-    const bytes = new Uint8Array(await upstream.arrayBuffer());
-    let answers: unknown;
-    try {
-      answers = JSON.parse(new TextDecoder().decode(bytes));
-    } catch {
-      answers = undefined;
-    }
-    if (!upstream.ok || !Array.isArray(answers)) {
-      return {
-        status: upstream.ok ? 502 : upstream.status,
-        headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json', ...NO_STORE },
-        body: bytes,
-      };
-    }
-    const answerByIndex = new Map<unknown, Record<string, unknown>>();
-    for (const a of answers as readonly unknown[]) {
-      if (_isJsonObject(a)) {
-        answerByIndex.set(a.id, a);
-      }
-    }
-    for (const i of forwarded) {
-      const id = (calls[i] as Record<string, unknown>).id ?? null;
-      const answer = answerByIndex.get(i);
-      responses[i] =
-        answer === undefined ? _rpcError(id, -32603, 'No upstream answer for this call') : { ...answer, id };
-    }
-  }
-
-  // Notifications get no response; a batch of only notifications gets no body.
-  const out = responses.filter((_, i) => !_isJsonObject(calls[i]) || 'id' in calls[i]);
-  if (out.length === 0) {
-    return { status: 204, headers: { ...NO_STORE }, body: '' };
-  }
-  return {
-    status: 200,
-    headers: { 'content-type': 'application/json', ...NO_STORE },
-    body: JSON.stringify(isBatch ? out : out[0]),
-  };
-}
-
-function _isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function _rpcError(id: unknown, code: number, message: string): unknown {
-  return { jsonrpc: '2.0', id, error: { code, message } };
 }
 
 function _text(status: number, message: string): GatewayResponse {

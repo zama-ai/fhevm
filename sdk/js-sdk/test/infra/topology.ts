@@ -78,13 +78,22 @@ export const TOPOLOGY: readonly SlotTopology[] = (Object.keys(SLOT_INFO) as Slot
 });
 
 /** Anvil specs for `startAnvils`. Carries the slot's ACL address (for the reuse
- *  check) so a reused anvil is recognized only when its stack is deployed. */
+ *  check) so a reused anvil is recognized only when its stack is deployed, and the
+ *  KMSGeneration to seed with the slot key's digests (key.<ver>.digests.json). */
 export function anvilSpecs(): AnvilSpec[] {
+  const dir = keysDir();
+  const h = deriveFhevmHostAddresses(DEFAULT_DEPLOYER_MNEMONIC);
   return TOPOLOGY.map((t) => ({
     slot: t.slot,
     port: t.port,
     chainId: t.chainId,
-    aclAddress: deriveFhevmHostAddresses(DEFAULT_DEPLOYER_MNEMONIC).acl,
+    aclAddress: h.acl,
+    kmsGeneration: {
+      address: h.kmsGeneration,
+      protocolConfigAddress: h.protocolConfig,
+      aclAddress: h.acl,
+      digestsFilePath: resolve(dir, t.keyFile.replace(/\.json$/, '.digests.json')),
+    },
   }));
 }
 
@@ -116,17 +125,10 @@ export function gatewayConfig(): GatewayConfig {
   const dir = keysDir();
   const slots: Record<string, GatewaySlot> = {};
   for (const t of TOPOLOGY) {
-    const chainConfig = slotChainConfig(t.chainId);
     slots[t.slot] = {
       keyFilePath: resolve(dir, t.keyFile),
       rpcUrl: `http://127.0.0.1:${String(t.port)}`,
-      chainConfig,
-      // The deployed KMSGeneration has no active key: the gateway serves the slot key's
-      // digests (key.<ver>.digests.json) as its active key and CRS materials.
-      kmsGeneration: {
-        address: chainConfig.contracts.kmsGeneration,
-        digestsFilePath: resolve(dir, t.keyFile.replace(/\.json$/, '.digests.json')),
-      },
+      chainConfig: slotChainConfig(t.chainId),
     };
   }
 

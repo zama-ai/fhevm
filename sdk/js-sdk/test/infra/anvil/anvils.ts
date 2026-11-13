@@ -7,6 +7,9 @@
  * scanning the script's stdout for its "stack deployed" marker, which prints
  * only after anvil is up AND the deploy has finished.
  *
+ * Once deployed (or reused), each anvil's KMSGeneration is seeded with the slot
+ * key as its active key and CRS (see kmsGenerationSeed.ts).
+ *
  * Pure orchestration: no Playwright/Next/Vite. Consumers (Playwright globalSetup,
  * a node-server runner, a CLI) import `startAnvils` / `stopAnvils`.
  *
@@ -16,6 +19,7 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { seedKmsGeneration, type KmsGenerationSeedConfig } from './kmsGenerationSeed.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FHEVM_ANVIL_SH = resolve(__dirname, '../../scripts/fhevm-anvil.sh');
@@ -41,6 +45,11 @@ export type AnvilSpec = {
    * reused anvil actually has the FHEVM stack deployed — not just an open port.
    */
   readonly aclAddress: string;
+  /**
+   * The KMSGeneration to seed with the slot key once the stack is deployed (see
+   * kmsGenerationSeed.ts). Omit to leave KMSGeneration without an active key.
+   */
+  readonly kmsGeneration?: KmsGenerationSeedConfig | undefined;
 };
 
 export type AnvilHandle = {
@@ -90,6 +99,7 @@ async function _startAnvil(spec: AnvilSpec, options?: StartAnvilsOptions): Promi
   if (existingChainId !== undefined) {
     const deployed = await _hasCode(rpcUrl, spec.aclAddress);
     if (existingChainId === chainId && deployed) {
+      await _seedKmsGeneration(spec, rpcUrl);
       return { spec, rpcUrl, reused: true, proc: undefined };
     }
     // Stale anvil on a dedicated test port — replace it so the run lands in a
@@ -111,8 +121,22 @@ async function _startAnvil(spec: AnvilSpec, options?: StartAnvilsOptions): Promi
   });
 
   await _waitForDeploy(proc, spec, options?.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
+  try {
+    await _seedKmsGeneration(spec, rpcUrl);
+  } catch (err) {
+    await _stopProc(proc);
+    throw err;
+  }
 
   return { spec, rpcUrl, reused: false, proc };
+}
+
+async function _seedKmsGeneration(spec: AnvilSpec, rpcUrl: string): Promise<void> {
+  if (spec.kmsGeneration === undefined) {
+    return;
+  }
+  const seeded = await seedKmsGeneration(rpcUrl, spec.kmsGeneration);
+  process.stdout.write(`[anvil:${spec.slot}] KMSGeneration ${seeded ? 'seeded with' : 'already has'} the slot key\n`);
 }
 
 function _waitForDeploy(proc: ChildProcess, spec: AnvilSpec, timeoutMs: number): Promise<void> {
