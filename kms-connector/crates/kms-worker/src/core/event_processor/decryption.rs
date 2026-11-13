@@ -47,7 +47,7 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
     ciphertext_manager: CiphertextManager<GP>,
 
     /// Gas cap for the `IERC1271.isValidSignature` static call (RFC-012).
-    erc1271_gas_limit: u64,
+    pub(super) erc1271_gas_limit: u64,
 
     /// The maximum number of handles a single decryption request can contain.
     max_handles_per_decryption: usize,
@@ -100,7 +100,10 @@ where
     }
 
     /// Returns the client of the host chain `chain_id`.
-    fn host_client(&self, chain_id: u64) -> Result<&HostRpcClient<HP>, RequestCheckError> {
+    pub(super) fn host_client(
+        &self,
+        chain_id: u64,
+    ) -> Result<&HostRpcClient<HP>, RequestCheckError> {
         self.host_clients.get(&chain_id).ok_or_else(|| {
             RequestCheckError::recoverable(
                 RequestCheckKind::Acl,
@@ -277,28 +280,8 @@ where
 
         let payload = &request.payload;
 
-        // Validity window
         let start = payload.requestValidity.startTimestamp;
-        let now = U256::from(Utc::now().timestamp() as u64);
-        let end = start.saturating_add(payload.requestValidity.durationSeconds);
-        if now < start {
-            return Err(RequestCheckError::recoverable(
-                RequestCheckKind::Signature,
-                ErrorCode::UserSignatureRejected,
-                anyhow!(
-                    "RFC016 user decryption request not yet valid: now {now} < startTimestamp {start}",
-                ),
-            ));
-        }
-        if now > end {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Signature,
-                ErrorCode::UserDecryptionExpired,
-                anyhow!(
-                    "RFC016 user decryption request validity window expired: now {now} > end {end}"
-                ),
-            ));
-        }
+        check_validity_window(start, payload.requestValidity.durationSeconds)?;
 
         // `userAddress` must not appear in a non-empty `allowedContracts` list.
         if payload.allowedContracts.contains(&payload.userAddress) {
@@ -315,18 +298,7 @@ where
         let host_client = self.host_client(chain_id)?;
 
         // RFC-012: EIP-712 signature verification with ecrecover → ERC-1271 fallback.
-        // The domain takes name/version/verifyingContract from `self.domain` (already validated
-        // at startup) but substitutes the host `contractsChainId` for the Gateway chain id —
-        // `self.domain` targets KMS gRPC requests, the user-decryption signature targets the
-        // host chain.
-        let domain = Eip712Domain {
-            name: Some(self.domain.name.clone().into()),
-            version: Some(self.domain.version.clone().into()),
-            chain_id: Some(U256::from(chain_id)),
-            verifying_contract: Some(*self.decryption_contract.address()),
-            salt: None,
-        };
-        let digest = compute_user_decrypt_digest(payload, &domain);
+        let digest = compute_user_decrypt_digest(payload, &self.user_decrypt_domain(chain_id));
 
         // The signature verification and the ACL reads are independent host-chain reads. Fire
         // them concurrently so the smart-account happy path is faster. `biased;` polls branches
@@ -347,6 +319,17 @@ where
             request.handles.len()
         );
         Ok(())
+    }
+
+    /// The EIP-712 domain of user decryption signatures for the host chain `chain_id`.
+    pub(super) fn user_decrypt_domain(&self, chain_id: u64) -> Eip712Domain {
+        Eip712Domain {
+            name: Some(self.domain.name.clone().into()),
+            version: Some(self.domain.version.clone().into()),
+            chain_id: Some(U256::from(chain_id)),
+            verifying_contract: Some(*self.decryption_contract.address()),
+            salt: None,
+        }
     }
 
     /// RFC016 ACL checks, batched in a single `ACL.multicall`:
@@ -483,6 +466,27 @@ where
 
         Ok(tx.input().to_vec())
     }
+}
+
+/// Checks the current time is within the user-signed validity window `[start, start + duration]`.
+pub(super) fn check_validity_window(start: U256, duration: U256) -> Result<(), RequestCheckError> {
+    let now = U256::from(Utc::now().timestamp() as u64);
+    let end = start.saturating_add(duration);
+    if now < start {
+        return Err(RequestCheckError::recoverable(
+            RequestCheckKind::Signature,
+            ErrorCode::UserSignatureRejected,
+            anyhow!("Request not yet valid: now {now} < startTimestamp {start}"),
+        ));
+    }
+    if now > end {
+        return Err(RequestCheckError::irrecoverable(
+            RequestCheckKind::Signature,
+            ErrorCode::UserDecryptionExpired,
+            anyhow!("Request validity window expired: now {now} > end {end}"),
+        ));
+    }
+    Ok(())
 }
 
 /// Verifies that every handle resolves to the same host chain id, and returns that chain id.
