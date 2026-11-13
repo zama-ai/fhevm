@@ -1,6 +1,6 @@
 {
   "repository": "OpenZeppelin/openzeppelin-contracts",
   "path": "contracts/utils/cryptography/ECDSA.sol",
-  "ref": "a0eb08bfc4e61b8d0cc5ea99cea3e2101b97dcb9",
-  "sha256": "21dfba9eb8ca6cd6ca6e60e7d23b78707426508767910bafa5384528675458b6"
+  "ref": "v5.7.0",
+  "sha256": "e3758f08ce5e53ada22c743450d3b61d965c92d4c76fcc8633a7eebd0455eb7c"
 }
