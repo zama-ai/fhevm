@@ -11,6 +11,16 @@ CREATE INDEX IF NOT EXISTS idx_pads_pending_by_instance
     ON pads (prf_instance, created_at)
     WHERE signature IS NULL AND NOT is_error;
 
+-- The resubmit and the age metric: complete rows without an S3 copy.
+CREATE INDEX IF NOT EXISTS idx_pads_not_uploaded_by_instance
+    ON pads (prf_instance, created_at)
+    WHERE signature IS NOT NULL AND s3_verified_at IS NULL;
+
+-- The GC of old outputs.
+CREATE INDEX IF NOT EXISTS idx_pads_done_by_age
+    ON pads (created_at)
+    WHERE s3_verified_at IS NOT NULL OR is_error;
+
 -- Wakes the pad-worker of a new row. Payload: `<prf>`.
 CREATE OR REPLACE FUNCTION notify_pad_work_available()
     RETURNS trigger AS $$
