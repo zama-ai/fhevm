@@ -24,13 +24,26 @@ done
 
 decryption=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.decryption\.address}')
 gateway_config=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.gateway_config\.address}')
+# v0.13 moved KMSGeneration onto the host chain. Older deploys leave
+# host-sc-addresses without that key; the address is on gw-sc-addresses and
+# chart 1.3.1 reads gatewayContractAddresses.kmsGeneration.
 kms_generation=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_generation\.address}')
 protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
 acl=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
+kms_generation_args=()
+protocol_args=()
+if [[ -n "${kms_generation}" ]]; then
+  kms_generation_args=(--set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}")
+else
+  kms_generation=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_generation\.address}')
+  kms_generation_args=(--set-string "commonConfig.gatewayContractAddresses.kmsGeneration=${kms_generation}")
+fi
+if [[ -n "${protocol_config}" ]]; then
+  protocol_args=(--set-string "commonConfig.ethereumContractAddresses.protocolConfig=${protocol_config}")
+fi
 require_nonempty "${decryption}" "gw-sc-addresses[decryption.address] is empty"
 require_nonempty "${gateway_config}" "gw-sc-addresses[gateway_config.address] is empty"
-require_nonempty "${kms_generation}" "host-sc-addresses[kms_generation.address] is empty"
-require_nonempty "${protocol_config}" "host-sc-addresses[protocol_config.address] is empty"
+require_nonempty "${kms_generation}" "kms_generation.address is empty on host-sc-addresses and gw-sc-addresses"
 require_nonempty "${acl}" "host-sc-addresses[acl.address] is empty"
 
 # Sets host chain ACL contract address in commonConfig.hostChains.
@@ -163,8 +176,8 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     "${polygon_args[@]}" \
     --set-string "commonConfig.gatewayContractAddresses.decryption=${decryption}" \
     --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
-    --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \
-    --set-string "commonConfig.ethereumContractAddresses.protocolConfig=${protocol_config}" \
+    "${kms_generation_args[@]}" \
+    "${protocol_args[@]}" \
     --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
     --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
     --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=$(kms_worker_endpoint "${i}")" \

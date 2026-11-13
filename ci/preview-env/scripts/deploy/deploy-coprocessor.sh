@@ -111,9 +111,12 @@ prepare_legacy_coprocessor_values() {
       {"name": "INPUT_VERIFICATION_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "gw-sc-addresses", "key": "input_verification.address"}}},
       {"name": "KMS_GENERATION_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "gw-sc-addresses", "key": "kms_generation.address"}}}
     ] |
+    .dbMigration.enabled = false |
     .gwListener.args = load(strenv(CHART)).gwListener.args |
     .txSender.args = load(strenv(CHART)).txSender.args |
     .txSender.env = load(strenv(CHART)).txSender.env |
+    .tfheWorker.args = load(strenv(CHART)).tfheWorker.args |
+    .snsWorker.args = load(strenv(CHART)).snsWorker.args |
     .snsWorker.env = load(strenv(CHART)).snsWorker.env + [
       {"name": "S3_BUCKET_NAME", "valueFrom": {"configMapKeyRef": {"name": strenv(CM), "key": "S3_BUCKET_NAME"}}}
     ]
@@ -121,7 +124,18 @@ prepare_legacy_coprocessor_values() {
   PRIV="${privkey}" yq -i '
     (.. | select(type == "!!str")) |= sub("ws://gateway-rpc-node:8548"; "ws://anvil-gateway-anvil-node:8546") |
     (.. | select(type == "!!str")) |= sub("gateway-sc-addresses"; "gw-sc-addresses") |
-    (.txSender.env[] | select(.name == "TX_SENDER_PRIVATE_KEY").value) = strenv(PRIV)
+    (.txSender.env[] | select(.name == "TX_SENDER_PRIVATE_KEY").value) = strenv(PRIV) |
+    .txSender.env += [{"name": "ETHEREUM_RPC_URL", "value": "http://anvil-host-anvil-node:8545"}] |
+    .gwListener.env += [{"name": "CHAIN_ID", "value": "12345"}] |
+    .tfheWorker.args[] |= sub("^--run-bg-worker=true$"; "--run-bg-worker") |
+    .tfheWorker.args[] |= sub("^--run-server=true$"; "--run-server") |
+    .tfheWorker.args[] |= sub("^--generate-fhe-keys=true$"; "--generate-fhe-keys") |
+    .tfheWorker.args[] |= sub("^--disable-dcid-locking=true$"; "--disable-dcid-locking") |
+    del(.tfheWorker.args[] | select(. == "--run-server=false" or . == "--generate-fhe-keys=false" or . == "--disable-dcid-locking=false")) |
+    .snsWorker.args[] |= sub("^--enable-compssion=true$"; "--enable-compression") |
+    .snsWorker.args[] |= sub("^--enable-compression=true$"; "--enable-compression") |
+    .snsWorker.args[] |= sub("^--lifo=true$"; "--lifo") |
+    del(.snsWorker.args[] | select(. == "--lifo=false"))
   ' "${legacy}"
   host_tag="$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
   if [[ "${BLUE_GREEN:-false}" == "true" ]]; then
@@ -132,6 +146,58 @@ prepare_legacy_coprocessor_values() {
     .hostListener.image.tag = strenv(HOST_TAG)
   ' "${legacy}"
   values_files=(-f "${adapted}" -f "${legacy}")
+}
+
+# Chart 0.7.10's migration Job inits with netdata/wget:latest, which is not a
+# real image, so sqlx never runs. The migration binary itself inserts a fake
+# key and only needs the tenant env.
+run_legacy_coprocessor_migration() {
+  local party="$1" tag job
+  tag="$(jq -r .coprocessor_db_migration <<<"${TAGS_JSON}")"
+  if [[ "${BLUE_GREEN:-false}" == "true" ]]; then
+    tag="${BCS_IMAGE_TAG}"
+  fi
+  job="coprocessor-${party}-db-init"
+  echo "coprocessor chart 0.7.x: migrating database without the wget init"
+  kubectl delete job "${job}" -n "${NAMESPACE}" --ignore-not-found
+  kubectl apply -n "${NAMESPACE}" -f - <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${job}
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: registry-credentials
+      containers:
+        - name: db-migration
+          image: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/db-migration:${tag}
+          command: ["/initialize_db.sh"]
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://zama:zama@postgres-coprocessor-${party}:5432/fhevm_e2e"
+            - name: TENANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: coprocessor-api-key
+                  key: coprocessor-api-key
+            - name: CHAIN_ID
+              value: "12345"
+            - name: ACL_CONTRACT_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: host-sc-addresses
+                  key: acl.address
+            - name: INPUT_VERIFIER_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: host-sc-addresses
+                  key: input_verifier.address
+EOF
+  kubectl wait --for=condition=complete "job/${job}" -n "${NAMESPACE}" --timeout=180s
 }
 
 party_common() {
@@ -227,6 +293,9 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     --set-string "fullnameOverride=coprocessor-${i}" \
     "${common_args[@]}" \
     "${bcs_images[@]}"
+  if coprocessor_chart_is_legacy; then
+    run_legacy_coprocessor_migration "${i}"
+  fi
 done
 
 if [[ "${BLUE_GREEN}" == "true" ]]; then
