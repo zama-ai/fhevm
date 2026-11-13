@@ -2263,9 +2263,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "a2376ffd6f96d8a9db59875b4b6b0237d6900b5baf64279714e05493ce64828a"
 dependencies = [
  "cmov",
 ]
@@ -2730,6 +2730,7 @@ dependencies = [
  "humantime",
  "indexmap 2.14.0",
  "moka",
+ "nonce-manager",
  "prometheus",
  "rand 0.10.2",
  "reqwest",
@@ -3930,9 +3931,9 @@ dependencies = [
 
 [[package]]
 name = "libz-sys"
-version = "1.1.29"
+version = "1.1.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9"
+checksum = "ff20308ecabd635a2dc1dd5834a86c462cca20efba1d5d3ddab1f8aea3455cb2"
 dependencies = [
  "cc",
  "libc",
@@ -4059,6 +4060,17 @@ dependencies = [
  "smallvec",
  "tagptr",
  "uuid",
+]
+
+[[package]]
+name = "nonce-manager"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "async-trait",
+ "dashmap",
+ "futures-util",
+ "tracing",
 ]
 
 [[package]]

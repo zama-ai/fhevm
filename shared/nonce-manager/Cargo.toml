@@ -1,0 +1,15 @@
+[package]
+name = "nonce-manager"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+
+[dependencies]
+alloy = { version = "2.2.0", default-features = false, features = ["providers"] }
+async-trait = "0.1"
+dashmap = "6.1.0"
+futures-util = "0.3.31"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }

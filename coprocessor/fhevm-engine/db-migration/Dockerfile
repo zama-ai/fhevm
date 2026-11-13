@@ -85,6 +85,7 @@ COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY shared/block-manifest ./shared/block-manifest
 COPY shared/fhevm-sig-auth ./shared/fhevm-sig-auth
+COPY shared/nonce-manager ./shared/nonce-manager
 COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh ./initialize_db.sh
 COPY coprocessor/fhevm-engine/db-migration/migrations ./migrations
 
