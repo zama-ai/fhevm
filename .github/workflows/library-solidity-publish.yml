@@ -44,7 +44,8 @@ concurrency:
 #   What: compares the tarball from `pack` with a standard `npm pack` of the checkout
 #         (library-solidity/publish/package.test.mjs).
 #   Why:  catches any drift between the template and package.json (files, dependencies,
-#         ...) before anything is published.
+#         ...), and files leaking into the Soldeer package (.soldeerignore), before
+#         anything is published.
 #
 # - publish-npmjs
 #   What: publishes the verified tarball to npm, with provenance.
@@ -267,7 +268,8 @@ jobs:
   # II. Verify
   # Checks the tarball from `pack` against a standard `npm pack` of the checkout
   # (library-solidity/publish/package.test.mjs): same files, byte-identical, and an
-  # equivalent package.json. No `npm ci`: the test uses Node built-ins only.
+  # equivalent package.json; the Soldeer package ships the same files. No `npm ci`:
+  # the test uses Node built-ins only (and `forge` for the Soldeer dry run).
   verify:
     name: library-solidity-publish/verify
     needs: pack
@@ -310,7 +312,15 @@ jobs:
           curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
 
       # ------------------------------------------------------------------------
-      # 4. Download tarball
+      # 4. Install Foundry
+      #    Provides `forge soldeer push --dry-run`: the test also checks the Soldeer
+      #    package (same Foundry version as `publish-soldeer`).
+      # ------------------------------------------------------------------------
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      # ------------------------------------------------------------------------
+      # 5. Download tarball
       #    The tarball built by the `pack` job, the one `publish-npmjs` will publish.
       # ------------------------------------------------------------------------
       - name: Download tarball
@@ -320,7 +330,7 @@ jobs:
           path: ${{ runner.temp }}/tarball
 
       # ------------------------------------------------------------------------
-      # 5. Check tarball hash
+      # 6. Check tarball hash
       #    Fails unless the downloaded tarball is byte-for-byte the one `pack`
       #    checked and hashed, so the test runs on the exact bytes that will be published.
       # ------------------------------------------------------------------------
@@ -332,9 +342,10 @@ jobs:
           echo "$EXPECTED_SHA256  $RUNNER_TEMP/tarball/package.tgz" | sha256sum --check -
 
       # ------------------------------------------------------------------------
-      # 6. Compare with a standard npm pack
+      # 7. Compare with a standard npm pack
       #    PUBLISH_TARBALL makes the test check the downloaded tarball instead of
-      #    building its own from the template.
+      #    building its own from the template. The test also checks that the Soldeer
+      #    package (.soldeerignore) ships the same files, except package.json.
       # ------------------------------------------------------------------------
       - name: Compare with a standard npm pack
         env:
