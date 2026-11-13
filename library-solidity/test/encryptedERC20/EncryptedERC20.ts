@@ -1,10 +1,37 @@
 import { assert, expect } from 'chai';
+import type { ContractTransactionResponse } from 'ethers';
 import hre from 'hardhat';
 
+import type { EncryptedERC20 } from '../../typechain-types';
 import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleHandle } from '../utils';
+import { type Signers, getSigners, initSigners } from '../signers';
+import { userDecryptSingleEuint } from '../utils';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
+
+type Signer = Signers['alice'];
+
+const HANDLE_OPERATIONS = ['transfer', 'approve', 'transferFrom'] as const;
+type HandleOperation = (typeof HANDLE_OPERATIONS)[number];
+
+// Calls `operation` with an existing ciphertext handle (the bytes32 overloads, no input proof).
+function callWithHandle(
+  erc20: EncryptedERC20,
+  caller: Signer,
+  operation: HandleOperation,
+  from: Signer,
+  to: Signer,
+  amount: string,
+): Promise<ContractTransactionResponse> {
+  const contract = erc20.connect(caller);
+  switch (operation) {
+    case 'transfer':
+      return contract['transfer(address,bytes32)'](to.address, amount);
+    case 'approve':
+      return contract['approve(address,bytes32)'](to.address, amount);
+    case 'transferFrom':
+      return contract['transferFrom(address,address,bytes32)'](from.address, to.address, amount);
+  }
+}
 
 describe('EncryptedERC20', function () {
   before(async function () {
@@ -31,7 +58,7 @@ describe('EncryptedERC20', function () {
     expect(balanceHandleAlice.slice(44, 46)).to.eq('ff');
     // Bytes 22-29 must be the chainId
     const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
-    assert(chainId, 'Host chainId not set');
+    assert(chainId !== undefined, 'Host chainId not set');
     expect(balanceHandleAlice.slice(46, 62)).to.eq(chainId.toString(16).padStart(16, '0'));
     // Byte30: type is euint64 (so position 5 in the FheType enum)
     expect(balanceHandleAlice.slice(62, 64)).to.eq('05');
@@ -40,7 +67,7 @@ describe('EncryptedERC20', function () {
 
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
 
-    const balanceAlice = await userDecryptSingleHandle(
+    const balanceAlice = await userDecryptSingleEuint(
       balanceHandleAlice,
       this.contractAddress,
       this.instances.alice,
@@ -55,34 +82,25 @@ describe('EncryptedERC20', function () {
     expect(totalSupply).to.equal(1000n);
   });
 
-  for (const operation of ['transfer', 'approve', 'transferFrom']) {
-    const signature =
-      operation === 'transferFrom' ? 'transferFrom(address,address,bytes32)' : `${operation}(address,bytes32)`;
-
+  for (const operation of HANDLE_OPERATIONS) {
     it(`should reject ${operation} with a handle the caller cannot access`, async function () {
       await (await this.erc20.mint(1000)).wait();
       const amount = await this.erc20.balanceOf(this.signers.alice.address);
-      const args =
-        operation === 'transferFrom'
-          ? [this.signers.alice.address, this.signers.bob.address, amount]
-          : [this.signers.bob.address, amount];
 
-      await expect(this.erc20.connect(this.signers.bob)[signature](...args)).to.be.reverted;
+      await expect(
+        callWithHandle(this.erc20, this.signers.bob, operation, this.signers.alice, this.signers.bob, amount),
+      ).to.be.reverted;
     });
 
     it(`should allow ${operation} with a handle the caller can access`, async function () {
       await (await this.erc20.mint(1000)).wait();
       const amount = await this.erc20.balanceOf(this.signers.alice.address);
-      const args =
-        operation === 'transferFrom'
-          ? [this.signers.alice.address, this.signers.bob.address, amount]
-          : [this.signers.bob.address, amount];
 
       if (operation === 'transferFrom') {
         await (await this.erc20['approve(address,bytes32)'](this.signers.bob.address, amount)).wait();
       }
       const caller = operation === 'transferFrom' ? this.signers.bob : this.signers.alice;
-      await expect(this.erc20.connect(caller)[signature](...args))
+      await expect(callWithHandle(this.erc20, caller, operation, this.signers.alice, this.signers.bob, amount))
         .to.emit(this.erc20, operation === 'approve' ? 'Approval' : 'Transfer')
         .withArgs(this.signers.alice.address, this.signers.bob.address);
     });
@@ -109,7 +127,7 @@ describe('EncryptedERC20', function () {
     // Reencrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const balanceAlice = await userDecryptSingleHandle(
+    const balanceAlice = await userDecryptSingleEuint(
       balanceHandleAlice,
       this.contractAddress,
       this.instances.alice,
@@ -124,7 +142,7 @@ describe('EncryptedERC20', function () {
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const balanceBob = await userDecryptSingleHandle(
+    const balanceBob = await userDecryptSingleEuint(
       balanceHandleBob,
       this.contractAddress,
       this.instances.bob,
@@ -137,7 +155,7 @@ describe('EncryptedERC20', function () {
 
     // on the other hand, Bob should be unable to read Alice's balance
     try {
-      await userDecryptSingleHandle(
+      await userDecryptSingleEuint(
         balanceHandleAlice,
         this.contractAddress,
         this.instances.bob,
@@ -168,7 +186,7 @@ describe('EncryptedERC20', function () {
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
 
-    const balanceAlice = await userDecryptSingleHandle(
+    const balanceAlice = await userDecryptSingleEuint(
       balanceHandleAlice,
       this.contractAddress,
       this.instances.alice,
@@ -183,7 +201,7 @@ describe('EncryptedERC20', function () {
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const balanceBob = await userDecryptSingleHandle(
+    const balanceBob = await userDecryptSingleEuint(
       balanceHandleBob,
       this.contractAddress,
       this.instances.bob,
@@ -224,7 +242,7 @@ describe('EncryptedERC20', function () {
     // Decrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const balanceAlice = await userDecryptSingleHandle(
+    const balanceAlice = await userDecryptSingleEuint(
       balanceHandleAlice,
       this.contractAddress,
       this.instances.alice,
@@ -237,7 +255,7 @@ describe('EncryptedERC20', function () {
     // Decrypt Bob's balance
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const balanceBob = await userDecryptSingleHandle(
+    const balanceBob = await userDecryptSingleEuint(
       balanceHandleBob,
       this.contractAddress,
       this.instances.bob,
@@ -260,7 +278,7 @@ describe('EncryptedERC20', function () {
 
     // Decrypt Alice's balance
     const balanceHandleAlice2 = await this.erc20.balanceOf(this.signers.alice);
-    const balanceAlice2 = await userDecryptSingleHandle(
+    const balanceAlice2 = await userDecryptSingleEuint(
       balanceHandleAlice2,
       this.contractAddress,
       this.instances.alice,
@@ -272,7 +290,7 @@ describe('EncryptedERC20', function () {
 
     // Decrypt Bob's balance
     const balanceHandleBob2 = await this.erc20.balanceOf(this.signers.bob);
-    const balanceBob2 = await userDecryptSingleHandle(
+    const balanceBob2 = await userDecryptSingleEuint(
       balanceHandleBob2,
       this.contractAddress,
       this.instances.bob,

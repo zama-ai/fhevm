@@ -1,37 +1,33 @@
+import type { MakePubliclyDecryptable } from '../../typechain-types';
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
-
-import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
+import { MakePubliclyDecryptable__factory } from '../../typechain-types';
 
 describe('MakePubliclyDecryptable', function () {
+  let contract: MakePubliclyDecryptable;
+
   before(async function () {
     await initSigners(2);
-    this.signers = await getSigners();
-    this.instances = await createInstances(this.signers);
-    const contractFactory = await ethers.getContractFactory('MakePubliclyDecryptable');
-
-    this.contract = await contractFactory.connect(this.signers.alice).deploy();
-    await this.contract.waitForDeployment();
-    this.contractAddress = await this.contract.getAddress();
-    this.instances = await createInstances(this.signers);
+    const signers = await getSigners();
+    contract = await new MakePubliclyDecryptable__factory(signers.alice).deploy();
+    await contract.waitForDeployment();
   });
 
   it('test MakePubliclyDecryptable ebool', async function () {
-    const isPubliclyDecryptableBefore = await this.contract.isPubliclyDecryptableBool();
+    const isPubliclyDecryptableBefore = await contract.isPubliclyDecryptableBool();
     expect(isPubliclyDecryptableBefore).to.equal(false);
-    const tx = await this.contract.makePubliclyDecryptableBool();
+    const tx = await contract.makePubliclyDecryptableBool();
     await tx.wait();
-    const isPubliclyDecryptableAfter = await this.contract.isPubliclyDecryptableBool();
+    const isPubliclyDecryptableAfter = await contract.isPubliclyDecryptableBool();
     expect(isPubliclyDecryptableAfter).to.equal(true);
   });
 
   it('test MakePubliclyDecryptable euint8', async function () {
-    const isPubliclyDecryptableBefore = await this.contract.isPubliclyDecryptableUint8();
+    const isPubliclyDecryptableBefore = await contract.isPubliclyDecryptableUint8();
     expect(isPubliclyDecryptableBefore).to.equal(false);
-    const tx = await this.contract.makePubliclyDecryptableUint8();
+    const tx = await contract.makePubliclyDecryptableUint8();
     await tx.wait();
-    const isPubliclyDecryptableAfter = await this.contract.isPubliclyDecryptableUint8();
+    const isPubliclyDecryptableAfter = await contract.isPubliclyDecryptableUint8();
     expect(isPubliclyDecryptableAfter).to.equal(true);
   });
 });

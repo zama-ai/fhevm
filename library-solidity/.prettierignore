@@ -6,11 +6,14 @@ artifacts
 build
 cache
 coverage
-dependencies
 dist
 node_modules
-out
 types
+
+# Foundry (foundry.toml: out, cache_path, libs)
+out
+cache_forge
+dependencies
 
 # files
 *.env

@@ -1,62 +1,53 @@
 import dotenv from 'dotenv';
 import type { ethers as EthersT } from 'ethers';
-import { log2 } from 'extra-bigint';
 import * as fs from 'fs';
 import { ethers } from 'hardhat';
-import { Database } from 'sqlite3';
 
 import type { FheTypeInfo } from '../lib-js/common';
 import { ALL_FHE_TYPE_INFOS } from '../lib-js/fheTypeInfos';
 import { ALL_OPERATORS_PRICES } from '../lib-js/operatorsPrices';
+import { HOST_ADDRESSES_ENV_PATH } from './utils';
 
-const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('./fhevmTemp/addresses/.env.host'));
+const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
 const coprocAddress = parsedEnvCoprocessor.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
 
 let firstBlockListening = 0;
 let lastBlockSnapshot = 0;
-let lastCounterRand = 0;
-let counterRand = 0;
-let chainId: number;
+let chainId: number | undefined;
 
-//const db = new Database('./sql.db'); // on-disk db for debugging
-const db = new Database(':memory:');
+// Clear value (as a decimal string) of every handle, keyed by the 0x-prefixed lowercase 32-byte hex handle.
+const clearTexts = new Map<string, string>();
 
-export function insertSQL(handle: string, clearText: BigInt | string, replace: boolean = false) {
-  if (replace) {
-    // this is useful if using snapshots while sampling different random numbers on each revert
-    db.run('INSERT OR REPLACE INTO ciphertexts (handle, clearText) VALUES (?, ?)', [handle, clearText.toString()]);
-  } else {
-    db.run('INSERT OR IGNORE INTO ciphertexts (handle, clearText) VALUES (?, ?)', [handle, clearText.toString()]);
+// Returns the key under which `handle` is stored in `clearTexts`.
+function toClearTextKey(handle: string | bigint): string {
+  return ethers.toBeHex(handle, 32);
+}
+
+// Stores the clear value of `handle`. Keeps an existing value unless `replace` is true.
+export function coprocDbWriteCleartext(handle: string, clearText: bigint | string, replace: boolean = false): void {
+  const key = toClearTextKey(handle);
+  // `replace` is useful if using snapshots while sampling different random numbers on each revert
+  if (replace || !clearTexts.has(key)) {
+    clearTexts.set(key, clearText.toString());
   }
 }
 
 // Decrypt any handle, bypassing ACL
 // WARNING : only for testing or internal use
-export const getClearText = async (handle: string | bigint): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    let attempts = 0;
-    const maxRetries = 100;
+export function coprocDbReadCleartext(handle: string | bigint): Promise<string> {
+  const clearText = clearTexts.get(toClearTextKey(handle));
+  if (clearText === undefined) {
+    return Promise.reject(new Error(`No clear value found for handle ${toClearTextKey(handle)}`));
+  }
+  return Promise.resolve(clearText);
+}
 
-    function executeQuery() {
-      db.get('SELECT clearText FROM ciphertexts WHERE handle = ?', [handle], (err, row) => {
-        if (err) {
-          reject(new Error(`Error querying database: ${err.message}`));
-        } else if (row) {
-          resolve((row as any).clearText);
-        } else if (attempts < maxRetries) {
-          attempts++;
-          executeQuery();
-        } else {
-          reject(new Error('No record found after maximum retries'));
-        }
-      });
-    }
-
-    executeQuery();
-  });
-};
-
-db.serialize(() => db.run('CREATE TABLE IF NOT EXISTS ciphertexts (handle BINARY PRIMARY KEY,clearText TEXT)'));
+// floor(log2(x)) for a bigint, i.e. its bit length minus one.
+// Returns 0n for x <= 0 (same as extra-bigint's log2).
+function log2(x: bigint): bigint {
+  const n = x.toString(2).length - 1;
+  return x <= 0n ? 0n : BigInt(n);
+}
 
 interface FHEVMEvent {
   eventName: string;
@@ -74,15 +65,22 @@ const NumBits = {
   8: 256n, //euint256
 };
 
-export function numberToEvenHexString(num: number) {
-  if (typeof num !== 'number' || num < 0) {
-    throw new Error('Input should be a non-negative number.');
+// Returns `fheType` as a key of NumBits, throwing if NumBits has no entry for it.
+function toNumBitsFheType(fheType: number): keyof typeof NumBits {
+  if (!(fheType in NumBits)) {
+    throw new Error(`Unsupported FheType: ${fheType}`);
   }
-  let hexString = num.toString(16);
-  if (hexString.length % 2 !== 0) {
-    hexString = '0' + hexString;
-  }
-  return hexString;
+  return fheType as keyof typeof NumBits;
+}
+
+// Returns the FheType index encoded in byte 30 of `handle`.
+function getHandleTypeIndex(handle: string): number {
+  return parseInt(handle.slice(-4, -2), 16);
+}
+
+// Returns the FheType encoded in byte 30 of `handle`, as a key of NumBits.
+function getHandleFheType(handle: string): keyof typeof NumBits {
+  return toNumBitsFheType(getHandleTypeIndex(handle));
 }
 
 function getRandomBigInt(numBits: number): bigint {
@@ -103,7 +101,7 @@ function getRandomBigInt(numBits: number): bigint {
   return randomBigInt;
 }
 
-function bitwiseNotUintBits(value: BigInt, numBits: number) {
+function bitwiseNotUintBits(value: bigint, numBits: number): bigint {
   if (typeof value !== 'bigint') {
     throw new TypeError('The input value must be a BigInt.');
   }
@@ -116,7 +114,11 @@ function bitwiseNotUintBits(value: BigInt, numBits: number) {
 }
 
 export const awaitCoprocessor = async (): Promise<void> => {
-  chainId = Number((await ethers.provider.getNetwork()).chainId);
+  const currentChainId = Number((await ethers.provider.getNetwork()).chainId);
+  if (chainId !== undefined && chainId !== currentChainId) {
+    throw new Error(`Chain ID changed from ${chainId} to ${currentChainId} since the previous awaitCoprocessor() call`);
+  }
+  chainId = currentChainId;
   await processAllPastFHEVMExecutorEvents();
 };
 
@@ -157,16 +159,67 @@ const abi = [
   'event FheMulDiv(address indexed caller, bytes32 factor1, bytes32 factor2, bytes32 divisor, bytes1 scalarByte, bytes32 result)',
 ];
 
-async function processAllPastFHEVMExecutorEvents() {
+// Parses `log` as an FHEVMExecutor event, or returns undefined if `iface` does not know it.
+function parseFHEVMEvent(iface: EthersT.Interface, log: EthersT.Log): FHEVMEvent | undefined {
+  let parsedLog: EthersT.LogDescription | null;
+  try {
+    parsedLog = iface.parseLog(log);
+  } catch {
+    return undefined;
+  }
+  if (parsedLog === null) {
+    return undefined;
+  }
+  return { eventName: parsedLog.name, args: parsedLog.args };
+}
+
+// Throws if `logs` are not in emission order (by block number, then by log index within a block).
+function assertLogsInEmissionOrder(logs: readonly EthersT.Log[]): void {
+  for (let i = 1; i < logs.length; i++) {
+    const previous = logs[i - 1];
+    const current = logs[i];
+    const isAfterPrevious =
+      current.blockNumber > previous.blockNumber ||
+      (current.blockNumber === previous.blockNumber && current.index > previous.index);
+    if (!isAfterPrevious) {
+      throw new Error(
+        `Logs are not in emission order: log ${i} (block ${current.blockNumber}, index ${current.index}) ` +
+          `follows block ${previous.blockNumber}, index ${previous.index}`,
+      );
+    }
+  }
+}
+
+// Validates the [lastBlockSnapshot, lastCounterRand] pair returned by CustomProvider's `get_lastBlockSnapshot`.
+// lastCounterRand is a number, or a 32-byte hex string once CustomProvider has read it from storage after `evm_revert`.
+function parseLastBlockSnapshot(value: unknown): [number, number] {
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw new Error('get_lastBlockSnapshot: expected a [lastBlockSnapshot, lastCounterRand] pair');
+  }
+  const blockSnapshot: unknown = value[0];
+  const counterRandValue: unknown = value[1];
+  if (typeof blockSnapshot !== 'number') {
+    throw new Error(`get_lastBlockSnapshot: expected lastBlockSnapshot to be a number, got ${typeof blockSnapshot}`);
+  }
+  if (typeof counterRandValue !== 'number' && typeof counterRandValue !== 'string') {
+    throw new Error(`get_lastBlockSnapshot: expected lastCounterRand to be a number or a hex string`);
+  }
+  const counterRandNumber = Number(counterRandValue);
+  if (!Number.isInteger(counterRandNumber)) {
+    throw new Error(`get_lastBlockSnapshot: invalid lastCounterRand ${String(counterRandValue)}`);
+  }
+  return [blockSnapshot, counterRandNumber];
+}
+
+async function processAllPastFHEVMExecutorEvents(): Promise<void> {
   const provider = ethers.provider;
   const latestBlockNumber = await provider.getBlockNumber();
 
   if (process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
-    [lastBlockSnapshot, lastCounterRand] = await provider.send('get_lastBlockSnapshot');
+    [lastBlockSnapshot] = parseLastBlockSnapshot(await provider.send('get_lastBlockSnapshot', []));
     if (lastBlockSnapshot < firstBlockListening) {
       firstBlockListening = lastBlockSnapshot + 1;
-      counterRand = Number(lastCounterRand);
     }
   }
 
@@ -181,467 +234,656 @@ async function processAllPastFHEVMExecutorEvents() {
 
   const logs = await provider.getLogs(filter);
 
-  const events: FHEVMEvent[] = logs
-    .map((log) => {
-      try {
-        const parsedLog = contract.interface.parseLog(log);
-        return {
-          eventName: parsedLog!.name,
-          args: parsedLog!.args,
-        };
-      } catch (e) {
-        // If the log cannot be parsed, skip it
-        return null;
-      }
-    })
-    .filter((event) => event !== null);
+  assertLogsInEmissionOrder(logs);
+
+  const events: FHEVMEvent[] = [];
+  for (const log of logs) {
+    const event = parseFHEVMEvent(contract.interface, log);
+    if (event !== undefined) {
+      events.push(event);
+    }
+  }
 
   firstBlockListening = latestBlockNumber + 1;
   if (process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
     await provider.send('set_lastBlockSnapshot', [firstBlockListening]);
   }
-  events.map(async (event) => await insertHandleFromEvent(event));
+  // Process events in emission order: each operation's inputs are produced by earlier events.
+  for (const event of events) {
+    await insertHandleFromEvent(event);
+  }
 }
 
-async function insertHandleFromEvent(event: FHEVMEvent) {
+// Returns `event.args[index]`, throwing if it is not a bigint.
+function getBigIntEventArg(event: FHEVMEvent, index: number): bigint {
+  const value: unknown = event.args[index];
+  if (typeof value !== 'bigint') {
+    throw new Error(`${event.eventName}: expected argument ${index} to be a bigint, got ${typeof value}`);
+  }
+  return value;
+}
+
+// Returns `event.args[index]`, throwing if it is not a string.
+function getStringEventArg(event: FHEVMEvent, index: number): string {
+  const value: unknown = event.args[index];
+  if (typeof value !== 'string') {
+    throw new Error(`${event.eventName}: expected argument ${index} to be a string, got ${typeof value}`);
+  }
+  return value;
+}
+
+// Returns `event.args[index]`, throwing if it is not an array of strings.
+function getStringArrayEventArg(event: FHEVMEvent, index: number): string[] {
+  const value: unknown = event.args[index];
+  if (!Array.isArray(value) || !value.every((v) => typeof v === 'string')) {
+    throw new Error(`${event.eventName}: expected argument ${index} to be an array of strings`);
+  }
+  return value;
+}
+
+async function insertHandleFromEvent(event: FHEVMEvent): Promise<void> {
   let handle;
   let clearText;
   let clearLHS;
   let clearRHS;
-  let resultType: number;
+  let resultType: keyof typeof NumBits;
   let shift;
 
   switch (event.eventName) {
-    case 'TrivialEncrypt':
-      clearText = event.args[1];
-      handle = ethers.toBeHex(event.args[3], 32);
-      insertSQL(handle, clearText);
-      break;
+    case 'TrivialEncrypt': {
+      const pt: bigint = getBigIntEventArg(event, 1);
+      const result: string = getStringEventArg(event, 3);
 
-    case 'TrivialEncryptBytes':
-      clearText = event.args[1];
-      handle = ethers.toBeHex(event.args[3], 32);
-      insertSQL(handle, BigInt(clearText));
+      clearText = pt;
+      handle = ethers.toBeHex(result, 32);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheAdd':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) + BigInt(event.args[2]);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+    case 'FheAdd': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) + BigInt(rhs);
+        clearText = clearText % 2n ** NumBits[resultType];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) + BigInt(clearRHS);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+        clearText = clearText % 2n ** NumBits[resultType];
       }
 
-      insertSQL(ethers.toBeHex(handle, 32), clearText);
+      coprocDbWriteCleartext(ethers.toBeHex(handle, 32), clearText);
       break;
+    }
 
-    case 'FheSub':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) - BigInt(event.args[2]);
-        if (clearText < 0n) clearText = clearText + 2n ** NumBits[resultType as keyof typeof NumBits];
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+    case 'FheSub': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) - BigInt(rhs);
+        if (clearText < 0n) clearText = clearText + 2n ** NumBits[resultType];
+        clearText = clearText % 2n ** NumBits[resultType];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) - BigInt(clearRHS);
-        if (clearText < 0n) clearText = clearText + 2n ** NumBits[resultType as keyof typeof NumBits];
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+        if (clearText < 0n) clearText = clearText + 2n ** NumBits[resultType];
+        clearText = clearText % 2n ** NumBits[resultType];
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheMul':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) * BigInt(event.args[2]);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+    case 'FheMul': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) * BigInt(rhs);
+        clearText = clearText % 2n ** NumBits[resultType];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) * BigInt(clearRHS);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+        clearText = clearText % 2n ** NumBits[resultType];
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheDiv':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) / BigInt(event.args[2]);
+    case 'FheDiv': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) / BigInt(rhs);
       } else {
         throw new Error('Non-scalar div not implemented yet');
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheRem':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) % BigInt(event.args[2]);
+    case 'FheRem': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) % BigInt(rhs);
       } else {
         throw new Error('Non-scalar rem not implemented yet');
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheBitAnd':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) & BigInt(event.args[2]);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+    case 'FheBitAnd': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) & BigInt(rhs);
+        clearText = clearText % 2n ** NumBits[resultType];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) & BigInt(clearRHS);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+        clearText = clearText % 2n ** NumBits[resultType];
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheBitOr':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) | BigInt(event.args[2]);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+    case 'FheBitOr': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) | BigInt(rhs);
+        clearText = clearText % 2n ** NumBits[resultType];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) | BigInt(clearRHS);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+        clearText = clearText % 2n ** NumBits[resultType];
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheBitXor':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) ^ BigInt(event.args[2]);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+    case 'FheBitXor': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) ^ BigInt(rhs);
+        clearText = clearText % 2n ** NumBits[resultType];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) ^ BigInt(clearRHS);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+        clearText = clearText % 2n ** NumBits[resultType];
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
     case 'FheShl': {
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      const bits = NumBits[resultType as keyof typeof NumBits];
-      const amount = event.args[3] === '0x01' ? BigInt(event.args[2]) : BigInt(await getClearText(event.args[2]));
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      const bits = NumBits[resultType];
+      const amount = scalarByte === '0x01' ? BigInt(rhs) : BigInt(await coprocDbReadCleartext(rhs));
       clearText = amount >= bits ? 0n : (BigInt(clearLHS) << amount) % 2n ** bits;
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
     }
 
     case 'FheShr': {
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      const bits = NumBits[resultType as keyof typeof NumBits];
-      const amount = event.args[3] === '0x01' ? BigInt(event.args[2]) : BigInt(await getClearText(event.args[2]));
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      const bits = NumBits[resultType];
+      const amount = scalarByte === '0x01' ? BigInt(rhs) : BigInt(await coprocDbReadCleartext(rhs));
       clearText = amount >= bits ? 0n : (BigInt(clearLHS) >> amount) % 2n ** bits;
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
     }
 
-    case 'FheRotl':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        shift = BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
-        clearText =
-          (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (NumBits[resultType as keyof typeof NumBits] - shift));
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+    case 'FheRotl': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        shift = BigInt(rhs) % NumBits[resultType];
+        clearText = (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (NumBits[resultType] - shift));
+        clearText = clearText % 2n ** NumBits[resultType];
       } else {
-        clearRHS = await getClearText(event.args[2]);
-        shift = BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
-        clearText =
-          (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (NumBits[resultType as keyof typeof NumBits] - shift));
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+        clearRHS = await coprocDbReadCleartext(rhs);
+        shift = BigInt(clearRHS) % NumBits[resultType];
+        clearText = (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (NumBits[resultType] - shift));
+        clearText = clearText % 2n ** NumBits[resultType];
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheRotr':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        shift = BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
-        clearText =
-          (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (NumBits[resultType as keyof typeof NumBits] - shift));
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+    case 'FheRotr': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        shift = BigInt(rhs) % NumBits[resultType];
+        clearText = (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (NumBits[resultType] - shift));
+        clearText = clearText % 2n ** NumBits[resultType];
       } else {
-        clearRHS = await getClearText(event.args[2]);
-        shift = BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
-        clearText =
-          (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (NumBits[resultType as keyof typeof NumBits] - shift));
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
+        clearRHS = await coprocDbReadCleartext(rhs);
+        shift = BigInt(clearRHS) % NumBits[resultType];
+        clearText = (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (NumBits[resultType] - shift));
+        clearText = clearText % 2n ** NumBits[resultType];
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheEq':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+    case 'FheEq': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
 
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) === BigInt(event.args[2]) ? 1n : 0n;
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) === BigInt(rhs) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = clearLHS === clearRHS ? 1n : 0n;
       }
 
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheEqBytes':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) === BigInt(event.args[2]) ? 1n : 0n;
+    case 'FheEqBytes': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) === BigInt(rhs) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) === BigInt(clearRHS) ? 1n : 0n;
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheNe':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) !== BigInt(event.args[2]) ? 1n : 0n;
+    case 'FheNe': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) !== BigInt(rhs) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) !== BigInt(clearRHS) ? 1n : 0n;
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheNeBytes':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) !== BigInt(event.args[2]) ? 1n : 0n;
+    case 'FheNeBytes': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) !== BigInt(rhs) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) !== BigInt(clearRHS) ? 1n : 0n;
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheGe':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) >= BigInt(event.args[2]) ? 1n : 0n;
+    case 'FheGe': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) >= BigInt(rhs) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) >= BigInt(clearRHS) ? 1n : 0n;
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheGt':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) > BigInt(event.args[2]) ? 1n : 0n;
+    case 'FheGt': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) > BigInt(rhs) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) > BigInt(clearRHS) ? 1n : 0n;
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheLe':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) <= BigInt(event.args[2]) ? 1n : 0n;
+    case 'FheLe': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) <= BigInt(rhs) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) <= BigInt(clearRHS) ? 1n : 0n;
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheLt':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) < BigInt(event.args[2]) ? 1n : 0n;
+    case 'FheLt': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) < BigInt(rhs) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) < BigInt(clearRHS) ? 1n : 0n;
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheMax':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) > BigInt(event.args[2]) ? clearLHS : BigInt(event.args[2]);
+    case 'FheMax': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) > BigInt(rhs) ? clearLHS : BigInt(rhs);
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) > BigInt(clearRHS) ? clearLHS : clearRHS;
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheMin':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) < BigInt(event.args[2]) ? clearLHS : BigInt(event.args[2]);
+    case 'FheMin': {
+      const lhs: string = getStringEventArg(event, 1);
+      const rhs: string = getStringEventArg(event, 2);
+      const scalarByte: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearLHS = await coprocDbReadCleartext(lhs);
+      if (scalarByte === '0x01') {
+        clearText = BigInt(clearLHS) < BigInt(rhs) ? clearLHS : BigInt(rhs);
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await coprocDbReadCleartext(rhs);
         clearText = BigInt(clearLHS) < BigInt(clearRHS) ? clearLHS : clearRHS;
       }
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'Cast':
-      resultType = parseInt(event.args[2]);
-      handle = ethers.toBeHex(event.args[3], 32);
-      clearText = BigInt(await getClearText(event.args[1])) % 2n ** NumBits[resultType as keyof typeof NumBits];
-      insertSQL(handle, clearText);
+    case 'Cast': {
+      const ct: string = getStringEventArg(event, 1);
+      const toType: bigint = getBigIntEventArg(event, 2);
+      const result: string = getStringEventArg(event, 3);
+
+      resultType = toNumBitsFheType(Number(toType));
+      handle = ethers.toBeHex(result, 32);
+      clearText = BigInt(await coprocDbReadCleartext(ct)) % 2n ** NumBits[resultType];
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheNot':
-      handle = ethers.toBeHex(event.args[2], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearText = BigInt(await getClearText(event.args[1]));
-      clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType as keyof typeof NumBits]));
-      insertSQL(handle, clearText);
+    case 'FheNot': {
+      const ct: string = getStringEventArg(event, 1);
+      const result: string = getStringEventArg(event, 2);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearText = BigInt(await coprocDbReadCleartext(ct));
+      clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType]));
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheNeg':
-      handle = ethers.toBeHex(event.args[2], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      clearText = BigInt(await getClearText(event.args[1]));
-      clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType as keyof typeof NumBits]));
-      clearText = (clearText + 1n) % 2n ** NumBits[resultType as keyof typeof NumBits];
-      insertSQL(handle, clearText);
+    case 'FheNeg': {
+      const ct: string = getStringEventArg(event, 1);
+      const result: string = getStringEventArg(event, 2);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      clearText = BigInt(await coprocDbReadCleartext(ct));
+      clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType]));
+      clearText = (clearText + 1n) % 2n ** NumBits[resultType];
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'VerifyInput':
-      handle = event.args[1];
+    case 'VerifyInput': {
+      const inputHandle: string = getStringEventArg(event, 1);
+
+      // Clear values are stored keyed by the 0x-prefixed 32-byte hex handle.
+      handle = ethers.toBeHex(inputHandle, 32);
       try {
-        await getClearText(BigInt(handle));
+        await coprocDbReadCleartext(handle);
       } catch {
         throw Error('User input was not found in DB');
       }
       break;
+    }
 
-    case 'FheIfThenElse':
-      handle = ethers.toBeHex(event.args[4], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      handle = ethers.toBeHex(event.args[4], 32);
-      const clearControl = BigInt(await getClearText(event.args[1]));
-      const clearIfTrue = BigInt(await getClearText(event.args[2]));
-      const clearIfFalse = BigInt(await getClearText(event.args[3]));
+    case 'FheIfThenElse': {
+      const control: string = getStringEventArg(event, 1);
+      const ifTrue: string = getStringEventArg(event, 2);
+      const ifFalse: string = getStringEventArg(event, 3);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+
+      const clearControl = BigInt(await coprocDbReadCleartext(control));
+      const clearIfTrue = BigInt(await coprocDbReadCleartext(ifTrue));
+      const clearIfFalse = BigInt(await coprocDbReadCleartext(ifFalse));
+
       if (clearControl === 1n) {
         clearText = clearIfTrue;
       } else {
         clearText = clearIfFalse;
       }
-      insertSQL(handle, clearText);
-      break;
 
-    case 'FheRand':
-      resultType = parseInt(event.args[1]);
-      handle = ethers.toBeHex(event.args[3], 32);
-      clearText = getRandomBigInt(Number(NumBits[resultType as keyof typeof NumBits]));
-      insertSQL(handle, clearText, true);
-      counterRand++;
+      coprocDbWriteCleartext(handle, clearText);
       break;
+    }
 
-    case 'FheRandBounded':
-      resultType = parseInt(event.args[2]);
-      handle = ethers.toBeHex(event.args[4], 32);
-      clearText = getRandomBigInt(Number(log2(BigInt(event.args[1]))));
-      insertSQL(handle, clearText, true);
-      counterRand++;
+    case 'FheRand': {
+      const randType: bigint = getBigIntEventArg(event, 1);
+      const result: string = getStringEventArg(event, 3);
+
+      resultType = toNumBitsFheType(Number(randType));
+      handle = ethers.toBeHex(result, 32);
+      clearText = getRandomBigInt(Number(NumBits[resultType]));
+      coprocDbWriteCleartext(handle, clearText, true);
       break;
+    }
+
+    case 'FheRandBounded': {
+      const upperBound: bigint = getBigIntEventArg(event, 1);
+      const result: string = getStringEventArg(event, 4);
+
+      handle = ethers.toBeHex(result, 32);
+      clearText = getRandomBigInt(Number(log2(upperBound)));
+      coprocDbWriteCleartext(handle, clearText, true);
+      break;
+    }
 
     case 'FheSum': {
-      handle = ethers.toBeHex(event.args[2], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
+      const values: string[] = getStringArrayEventArg(event, 1);
+      const result: string = getStringEventArg(event, 2);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
       clearText = 0n;
-      for (const valueHandle of event.args[1] as string[]) {
-        clearText = clearText + BigInt(await getClearText(ethers.toBeHex(valueHandle, 32)));
+      for (const valueHandle of values) {
+        clearText = clearText + BigInt(await coprocDbReadCleartext(ethers.toBeHex(valueHandle, 32)));
       }
-      clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
-      insertSQL(handle, clearText);
+      clearText = clearText % 2n ** NumBits[resultType];
+      coprocDbWriteCleartext(handle, clearText);
       break;
     }
 
     case 'FheIsIn': {
-      handle = ethers.toBeHex(event.args[3], 32);
-      const valueText = BigInt(await getClearText(ethers.toBeHex(event.args[1], 32)));
-      const setHandles = event.args[2] as string[];
-      const setClearTexts = await Promise.all(setHandles.map((h) => getClearText(ethers.toBeHex(h, 32)).then(BigInt)));
+      const value: string = getStringEventArg(event, 1);
+      const values: string[] = getStringArrayEventArg(event, 2);
+      const result: string = getStringEventArg(event, 3);
+
+      handle = ethers.toBeHex(result, 32);
+      const valueText = BigInt(await coprocDbReadCleartext(ethers.toBeHex(value, 32)));
+      const setClearTexts = await Promise.all(
+        values.map((h) => coprocDbReadCleartext(ethers.toBeHex(h, 32)).then(BigInt)),
+      );
       clearText = setClearTexts.some((s) => s === valueText) ? 1n : 0n;
-      insertSQL(handle, clearText);
+      coprocDbWriteCleartext(handle, clearText);
       break;
     }
 
     case 'FheMulDiv': {
-      handle = ethers.toBeHex(event.args[5], 32);
-      resultType = parseInt(handle.slice(-4, -2), 16);
-      const clearFactor1 = await getClearText(event.args[1]);
-      const divisor = BigInt(event.args[3]);
-      const factor2IsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+      const factor1: string = getStringEventArg(event, 1);
+      const factor2: string = getStringEventArg(event, 2);
+      const divisor: string = getStringEventArg(event, 3);
+      const scalarByte: string = getStringEventArg(event, 4);
+      const result: string = getStringEventArg(event, 5);
+
+      handle = ethers.toBeHex(result, 32);
+      resultType = getHandleFheType(handle);
+      const clearFactor1 = await coprocDbReadCleartext(factor1);
+      const clearDivisor = BigInt(divisor);
+      const factor2IsScalar = (BigInt(scalarByte) & 0x02n) !== 0n;
       if (factor2IsScalar) {
-        clearText = (BigInt(clearFactor1) * BigInt(event.args[2])) / divisor;
+        clearText = (BigInt(clearFactor1) * BigInt(factor2)) / clearDivisor;
       } else {
-        const clearFactor2 = await getClearText(event.args[2]);
-        clearText = (BigInt(clearFactor1) * BigInt(clearFactor2)) / divisor;
+        const clearFactor2 = await coprocDbReadCleartext(factor2);
+        clearText = (BigInt(clearFactor1) * BigInt(clearFactor2)) / clearDivisor;
       }
-      clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
-      insertSQL(handle, clearText);
+      clearText = clearText % 2n ** NumBits[resultType];
+      coprocDbWriteCleartext(handle, clearText);
       break;
     }
   }
 }
 
+// Returns the name of the FHE type whose index is `typeIndex`, throwing if there is none.
+function getFheTypeName(fheTypeInfos: FheTypeInfo[], typeIndex: number): string {
+  const type = fheTypeInfos.find((t) => t.value === typeIndex)?.type;
+  if (type === undefined) {
+    throw new Error(`Invalid FheType index: ${typeIndex}`);
+  }
+  return type;
+}
+
 export function getTxHCUFromTxReceipt(
   receipt: EthersT.TransactionReceipt,
-  FheTypeInfos: FheTypeInfo[] = ALL_FHE_TYPE_INFOS,
+  fheTypeInfos: FheTypeInfo[] = ALL_FHE_TYPE_INFOS,
 ): {
   globalTxHCU: number;
   maxTxHCUDepth: number;
@@ -651,169 +893,136 @@ export function getTxHCUFromTxReceipt(
     throw new Error('Transaction reverted');
   }
 
+  // Returns the HCU depth recorded for `handle`, or 0 if none was recorded.
   function readFromHCUMap(handle: string): number {
-    if (hcuMap[handle] === undefined) {
-      return 0;
-    }
-    return hcuMap[handle];
+    return handle in hcuMap ? hcuMap[handle] : 0;
   }
 
-  let hcuMap: Record<string, number> = {};
-  let handleSet: Set<string> = new Set();
+  const hcuMap: Record<string, number> = {};
+  const handleSet: Set<string> = new Set<string>();
 
+  // FHEVMExecutor events emitted in the transaction (VerifyInput consumes no HCU, so it is skipped).
   const contract = new ethers.Contract(coprocAddress, abi, ethers.provider);
-  const relevantLogs = receipt.logs.filter((log: EthersT.Log) => {
+  const fhevmEvents: FHEVMEvent[] = [];
+  for (const log of receipt.logs) {
     if (log.address.toLowerCase() !== coprocAddress.toLowerCase()) {
-      return false;
+      continue;
     }
-    try {
-      const parsedLog = contract.interface.parseLog({
-        topics: log.topics,
-        data: log.data,
-      })!;
-      return abi.some((item) => item.startsWith(`event ${parsedLog.name}`) && parsedLog.name !== 'VerifyInput');
-    } catch {
-      return false;
+    const event = parseFHEVMEvent(contract.interface, log);
+    if (event === undefined || event.eventName === 'VerifyInput') {
+      continue;
     }
-  });
-
-  const FHELogs = relevantLogs.map((log: EthersT.Log) => {
-    const parsedLog = contract.interface.parseLog({
-      topics: log.topics,
-      data: log.data,
-    })!;
-    return {
-      name: parsedLog.name,
-      args: parsedLog.args,
-    };
-  });
+    fhevmEvents.push(event);
+  }
 
   let totalHCUConsumed = 0;
 
-  for (const event of FHELogs) {
-    let type: string | undefined;
+  for (const event of fhevmEvents) {
+    let type: string;
     let typeIndex: number;
     let handle: string;
     let handleResult: string;
     let hcuConsumed: number;
 
-    switch (event.name) {
-      case 'TrivialEncrypt':
-        typeIndex = parseInt(event.args[2]);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+    switch (event.eventName) {
+      case 'TrivialEncrypt': {
+        const toType: bigint = getBigIntEventArg(event, 2);
+        const result: string = getStringEventArg(event, 3);
 
-        hcuConsumed = (ALL_OPERATORS_PRICES['trivialEncrypt'].types as Record<string, number>)[type];
+        typeIndex = Number(toType);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+
+        hcuConsumed = (ALL_OPERATORS_PRICES.trivialEncrypt.types as Record<string, number>)[type];
         totalHCUConsumed += hcuConsumed;
-        handleResult = ethers.toBeHex(event.args[3], 32);
+        handleResult = ethers.toBeHex(result, 32);
         hcuMap[handleResult] = hcuConsumed;
         handleSet.add(handleResult);
         break;
+      }
 
-      case 'TrivialEncryptBytes':
-        typeIndex = parseInt(event.args[2]);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+      case 'FheAdd': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        hcuConsumed = (ALL_OPERATORS_PRICES['trivialEncrypt'].types as Record<string, number>)[type];
-        totalHCUConsumed += hcuConsumed;
-        handleResult = ethers.toBeHex(event.args[3], 32);
-        hcuMap[handleResult] = hcuConsumed;
-        handleSet.add(handleResult);
-        break;
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
 
-      case 'FheAdd':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheAdd'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheAdd.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheAdd'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheAdd.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheSub':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheSub': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
 
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheSub'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheSub.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheSub'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheSub.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheMul':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheMul': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
 
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMul'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMul.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMul'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMul.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheDiv':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheDiv'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheDiv': {
+        const lhs: string = getStringEventArg(event, 1);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheDiv.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
           throw new Error('Non-scalar div not implemented yet');
         }
@@ -821,544 +1030,534 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRem':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRem'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheRem': {
+        const lhs: string = getStringEventArg(event, 1);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRem.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
           throw new Error('Non-scalar rem not implemented yet');
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheBitAnd':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitAnd'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheBitAnd': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitAnd.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitAnd'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitAnd.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheBitOr':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitOr'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheBitOr': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitOr.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitOr'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitOr.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheBitXor':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitXor'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheBitXor': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitXor.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheBitXor'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheBitXor.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheShl':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheShl'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheShl': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheShl.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheShl'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheShl.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheShr':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheShr'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheShr': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheShr.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheShr'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheShr.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRotl':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotl'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheRotl': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotl.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotl'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotl.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRotr':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotr'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheRotr': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotr.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheRotr'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheRotr.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheEq':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheEq': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        handleResult = ethers.toBeHex(result, 32);
+        handle = ethers.toBeHex(lhs, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheEqBytes':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheEqBytes': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        handleResult = ethers.toBeHex(result, 32);
+        handle = ethers.toBeHex(lhs, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheEq'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheNe':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheNe': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        handleResult = ethers.toBeHex(result, 32);
+        handle = ethers.toBeHex(lhs, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheNeBytes':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheNeBytes': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        handleResult = ethers.toBeHex(result, 32);
+        handle = ethers.toBeHex(lhs, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheNe'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheGe':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheGe': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheGe'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        handleResult = ethers.toBeHex(result, 32);
+        handle = ethers.toBeHex(lhs, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheGe.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheGe'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheGe.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheGt':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheGt'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheGt': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        handle = ethers.toBeHex(lhs, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheGt.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheGt'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheGt.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheLe':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheLe'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheLe': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        handle = ethers.toBeHex(lhs, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheLe.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheLe'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheLe.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheLt':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheLt'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+      case 'FheLt': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        handle = ethers.toBeHex(lhs, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheLt.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheLt'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheLt.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheMax':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheMax': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
 
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMax'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMax.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMax'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMax.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheMin':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheMin': {
+        const lhs: string = getStringEventArg(event, 1);
+        const rhs: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
 
-        if (event.args[3] === '0x01') {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMin'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+        if (scalarByte === '0x01') {
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMin.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(lhs, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMin'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMin.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
-            hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            hcuConsumed + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'Cast':
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        handleResult = ethers.toBeHex(event.args[3], 32);
+      case 'Cast': {
+        const ct: string = getStringEventArg(event, 1);
+        const result: string = getStringEventArg(event, 3);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+        handle = ethers.toBeHex(ct, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        handleResult = ethers.toBeHex(result, 32);
 
-        hcuConsumed = (ALL_OPERATORS_PRICES['cast'].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES.cast.types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
         totalHCUConsumed += hcuConsumed;
         handleSet.add(handleResult);
         break;
+      }
 
-      case 'FheNot':
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        handleResult = ethers.toBeHex(event.args[2], 32);
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        hcuConsumed = (ALL_OPERATORS_PRICES['fheNot'].types as Record<string, number>)[type];
+      case 'FheNot': {
+        const ct: string = getStringEventArg(event, 1);
+        const result: string = getStringEventArg(event, 2);
+
+        handle = ethers.toBeHex(ct, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        handleResult = ethers.toBeHex(result, 32);
+        hcuConsumed = (ALL_OPERATORS_PRICES.fheNot.types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
         totalHCUConsumed += hcuConsumed;
-        handleSet.add(ethers.toBeHex(event.args[2], 32));
+        handleSet.add(ethers.toBeHex(result, 32));
         break;
+      }
 
-      case 'FheNeg':
-        handle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(handle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        handleResult = ethers.toBeHex(event.args[2], 32);
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        hcuConsumed = (ALL_OPERATORS_PRICES['fheNeg'].types as Record<string, number>)[type];
+      case 'FheNeg': {
+        const ct: string = getStringEventArg(event, 1);
+        const result: string = getStringEventArg(event, 2);
+
+        handle = ethers.toBeHex(ct, 32);
+        typeIndex = getHandleTypeIndex(handle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        handleResult = ethers.toBeHex(result, 32);
+        hcuConsumed = (ALL_OPERATORS_PRICES.fheNeg.types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed + readFromHCUMap(handle);
         totalHCUConsumed += hcuConsumed;
-        handleSet.add(ethers.toBeHex(event.args[2], 32));
+        handleSet.add(ethers.toBeHex(result, 32));
         break;
+      }
 
-      case 'FheIfThenElse':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
+      case 'FheIfThenElse': {
+        const control: string = getStringEventArg(event, 1);
+        const ifTrue: string = getStringEventArg(event, 2);
+        const ifFalse: string = getStringEventArg(event, 3);
+        const result: string = getStringEventArg(event, 4);
 
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
 
-        hcuConsumed = (ALL_OPERATORS_PRICES['ifThenElse'].types as Record<string, number>)[type];
+        hcuConsumed = (ALL_OPERATORS_PRICES.ifThenElse.types as Record<string, number>)[type];
         hcuMap[handleResult] =
           hcuConsumed +
           Math.max(
-            readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-            readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            readFromHCUMap(ethers.toBeHex(event.args[3], 32)),
+            readFromHCUMap(ethers.toBeHex(control, 32)),
+            readFromHCUMap(ethers.toBeHex(ifTrue, 32)),
+            readFromHCUMap(ethers.toBeHex(ifFalse, 32)),
           );
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRand':
-        handleResult = ethers.toBeHex(event.args[3], 32);
-        typeIndex = parseInt(event.args[1]);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        hcuConsumed = (ALL_OPERATORS_PRICES['fheRand'].types as Record<string, number>)[type];
+      case 'FheRand': {
+        const randType: bigint = getBigIntEventArg(event, 1);
+        const result: string = getStringEventArg(event, 3);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = Number(randType);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        hcuConsumed = (ALL_OPERATORS_PRICES.fheRand.types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed;
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRandBounded':
-        handleResult = ethers.toBeHex(event.args[4], 32);
-        typeIndex = parseInt(event.args[2]);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        hcuConsumed = (ALL_OPERATORS_PRICES['fheRandBounded'].types as Record<string, number>)[type];
+      case 'FheRandBounded': {
+        const randType: bigint = getBigIntEventArg(event, 2);
+        const result: string = getStringEventArg(event, 4);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = Number(randType);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        hcuConsumed = (ALL_OPERATORS_PRICES.fheRandBounded.types as Record<string, number>)[type];
         hcuMap[handleResult] = hcuConsumed;
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
       case 'FheSum': {
-        handleResult = ethers.toBeHex(event.args[2], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+        const values: string[] = getStringArrayEventArg(event, 1);
+        const result: string = getStringEventArg(event, 2);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
         const nBucketedPrices = (
-          ALL_OPERATORS_PRICES['fheSum'].nBucketed as Record<
+          ALL_OPERATORS_PRICES.fheSum.nBucketed as Record<
             string,
             { le10: number; le30?: number; le60?: number; le100?: number }
           >
         )[type];
-        const n = (event.args[1] as string[]).length;
+        const n = values.length;
         if (n <= 10) hcuConsumed = nBucketedPrices.le10;
         else if (n <= 30) hcuConsumed = nBucketedPrices.le30 ?? nBucketedPrices.le10;
         else if (n <= 60) hcuConsumed = nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
         else
           hcuConsumed = nBucketedPrices.le100 ?? nBucketedPrices.le60 ?? nBucketedPrices.le30 ?? nBucketedPrices.le10;
-        const inputValues = event.args[1] as string[];
+        const inputValues = values;
         const maxInputHCU =
           inputValues.length > 0 ? Math.max(...inputValues.map((v) => readFromHCUMap(ethers.toBeHex(v, 32)))) : 0;
         hcuMap[handleResult] = hcuConsumed + maxInputHCU;
@@ -1368,20 +1567,21 @@ export function getTxHCUFromTxReceipt(
       }
 
       case 'FheIsIn': {
-        handleResult = ethers.toBeHex(event.args[3], 32);
-        const isInInputHandle = ethers.toBeHex(event.args[1], 32);
-        typeIndex = parseInt(isInInputHandle.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
+        const value: string = getStringEventArg(event, 1);
+        const values: string[] = getStringArrayEventArg(event, 2);
+        const result: string = getStringEventArg(event, 3);
+
+        handleResult = ethers.toBeHex(result, 32);
+        const isInInputHandle = ethers.toBeHex(value, 32);
+        typeIndex = getHandleTypeIndex(isInInputHandle);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
         const nBucketedIsInPrices = (
-          ALL_OPERATORS_PRICES['fheIsIn'].nBucketed as Record<
+          ALL_OPERATORS_PRICES.fheIsIn.nBucketed as Record<
             string,
             { le10: number; le30?: number; le60?: number; le100?: number }
           >
         )[type];
-        const setHandles = event.args[2] as string[];
+        const setHandles = values;
         const setSize = setHandles.length;
         if (setSize <= 10) hcuConsumed = nBucketedIsInPrices.le10;
         else if (setSize <= 30) hcuConsumed = nBucketedIsInPrices.le30 ?? nBucketedIsInPrices.le10;
@@ -1393,7 +1593,7 @@ export function getTxHCUFromTxReceipt(
             nBucketedIsInPrices.le60 ??
             nBucketedIsInPrices.le30 ??
             nBucketedIsInPrices.le10;
-        const valueHandle = ethers.toBeHex(event.args[1], 32);
+        const valueHandle = ethers.toBeHex(value, 32);
         const allInputHandles = [valueHandle, ...setHandles.map((h) => ethers.toBeHex(h, 32))];
         const maxInputHCU = Math.max(...allInputHandles.map((h) => readFromHCUMap(h)));
         hcuMap[handleResult] = hcuConsumed + maxInputHCU;
@@ -1403,24 +1603,23 @@ export function getTxHCUFromTxReceipt(
       }
 
       case 'FheMulDiv': {
-        handleResult = ethers.toBeHex(event.args[5], 32);
-        typeIndex = parseInt(handleResult.slice(-4, -2), 16);
-        type = FheTypeInfos.find((t) => t.value === typeIndex)?.type;
-        if (!type) {
-          throw new Error(`Invalid FheType index: ${typeIndex}`);
-        }
-        const rhsIsScalar = (BigInt(event.args[4]) & 0x02n) !== 0n;
+        const factor1: string = getStringEventArg(event, 1);
+        const factor2: string = getStringEventArg(event, 2);
+        const scalarByte: string = getStringEventArg(event, 4);
+        const result: string = getStringEventArg(event, 5);
+
+        handleResult = ethers.toBeHex(result, 32);
+        typeIndex = getHandleTypeIndex(handleResult);
+        type = getFheTypeName(fheTypeInfos, typeIndex);
+        const rhsIsScalar = (BigInt(scalarByte) & 0x02n) !== 0n;
         if (rhsIsScalar) {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMulDiv'].scalar as Record<string, number>)[type];
-          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(event.args[1], 32));
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMulDiv.scalar as Record<string, number>)[type];
+          hcuMap[handleResult] = hcuConsumed + readFromHCUMap(ethers.toBeHex(factor1, 32));
         } else {
-          hcuConsumed = (ALL_OPERATORS_PRICES['fheMulDiv'].nonScalar as Record<string, number>)[type];
+          hcuConsumed = (ALL_OPERATORS_PRICES.fheMulDiv.nonScalar as Record<string, number>)[type];
           hcuMap[handleResult] =
             hcuConsumed +
-            Math.max(
-              readFromHCUMap(ethers.toBeHex(event.args[1], 32)),
-              readFromHCUMap(ethers.toBeHex(event.args[2], 32)),
-            );
+            Math.max(readFromHCUMap(ethers.toBeHex(factor1, 32)), readFromHCUMap(ethers.toBeHex(factor2, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;

@@ -9,7 +9,7 @@ task('task:addHostPausers')
     false,
     types.boolean,
   )
-  .setAction(async function ({ useInternalProxyAddress }, hre) {
+  .setAction(async function ({ useInternalProxyAddress }: { useInternalProxyAddress: boolean }, hre) {
     const numPausers = getRequiredCountEnvVar('NUM_PAUSERS');
 
     const pausers = [];
