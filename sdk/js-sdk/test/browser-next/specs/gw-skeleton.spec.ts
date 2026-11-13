@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// Step-1 skeleton: the infra (2 anvils + same-origin gateway serving rpc + keys)
+// Step-1 skeleton: the infra (anvil + same-origin gateway serving rpc + keys)
 // is reachable from the browser under COOP/COEP. No SDK assertions yet.
 test('gateway skeleton: anvil rpc + relayer keys reachable same-origin', async ({ page }) => {
   const consoleErrors: string[] = [];

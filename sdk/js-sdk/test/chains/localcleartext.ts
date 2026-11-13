@@ -1,5 +1,6 @@
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 
+// The cleartext v1.0.0 stack (contracts/src/localcleartext): its canonical addresses and gateway values, DEPLOY.md §4-5.
 export const localcleartext = /*#__PURE__*/ defineFhevmChain({
   id: 31_337,
   fhevm: {
@@ -19,7 +20,8 @@ export const localcleartext = /*#__PURE__*/ defineFhevmChain({
     },
     relayerUrl: 'http://localhost:8545',
     gateway: {
-      id: 654_321,
+      // uint48(uint256(keccak256("fhevm.cheat.chainId cleartext gateway"))), v1.0.0's GATEWAY_CHAIN_ID.
+      id: 100_733_346_448_153,
       contracts: {
         decryption: {
           address: '0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721',

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Launch the test infra (2 cleartext anvils + the same-origin gateway).
+# Launch the test infra (the cleartext anvil + the same-origin gateway).
 #
 #   ./test/infra/up.sh              foreground; logs stream here; Ctrl-C to stop.
 #   ./test/infra/up.sh -d|--detach  background it and return the terminal once
@@ -18,9 +18,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JS_SDK_DIR="$(cd "$DIR/../.." && pwd)"
 TSX="$JS_SDK_DIR/node_modules/.bin/tsx"
 
-# Readiness probe: the gateway only comes up after both anvils have deployed.
-# Keep in sync with GATEWAY_PORT / GATEWAY_MOUNT_PREFIX in test/infra/topology.ts.
-READY_URL="http://127.0.0.1:8590/gw/v12/relayer/v2/keyurl"
+# Readiness probe: the gateway only comes up after every anvil has deployed.
+# Keep in sync with GATEWAY_PORT / GATEWAY_MOUNT_PREFIX / CURRENT_SLOT in test/infra/config.ts.
+READY_URL="http://127.0.0.1:8590/gw/v1.0/relayer/v2/keyurl"
 
 detach=0
 case "${1:-}" in

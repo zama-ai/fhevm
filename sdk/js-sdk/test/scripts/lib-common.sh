@@ -29,7 +29,7 @@ detect_rpc_client() {
 # Resolves the RPC URL for a chain name. Precedence — matches the
 # convention used by test/setupCommon.ts:
 #   1. RPC_URL in test/.env.<chain> (or test/.env.localstack for any
-#      localstack* variant — v11, v12, ... all share that file)
+#      localstack* variant — the family shares one file)
 #   2. RPC_URL in the process environment
 #   3. <chain>.rpcUrl in test/chains/chain-defaults.json
 #      (the canonical source of truth for chain defaults)
@@ -115,7 +115,8 @@ resolve_chain_rpc_url() {
         return 1
     fi
 
-    # All localstack* variants share .env.localstack; everything else uses .env.<chain>.
+    # All localstack* variants share .env.localstack (as in setupCommon.ts);
+    # everything else uses .env.<chain>.
     local env_file
     if [[ "$chain" == localstack* ]]; then
         env_file="$test_dir/.env.localstack"

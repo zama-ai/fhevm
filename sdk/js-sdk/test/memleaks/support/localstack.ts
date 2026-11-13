@@ -13,13 +13,11 @@ const localstackRestartScript = resolve(import.meta.dirname, '../../scripts/loca
 export async function ensureLocalstackReady(parameters: {
   readonly restart: boolean;
   readonly rpcUrl: string;
-  readonly chainName: string;
-  readonly fhevmCliProfile?: string | undefined;
 }): Promise<void> {
-  const { restart, rpcUrl, chainName, fhevmCliProfile } = parameters;
+  const { restart, rpcUrl } = parameters;
 
   if (restart) {
-    runLocalstackRestart({ chainName, fhevmCliProfile });
+    runLocalstackRestart();
   }
 
   if (await isJsonRpcReady(rpcUrl)) {
@@ -59,17 +57,8 @@ export async function isJsonRpcReady(rpcUrl: string): Promise<boolean> {
   }
 }
 
-function runLocalstackRestart(parameters: {
-  readonly chainName: string;
-  readonly fhevmCliProfile?: string | undefined;
-}): void {
-  const args = ['--force', '--chain', parameters.chainName];
-
-  if (parameters.fhevmCliProfile !== undefined && parameters.fhevmCliProfile !== '') {
-    args.push('--fhevm-cli-profile', parameters.fhevmCliProfile);
-  }
-
-  const result = spawnSync(localstackRestartScript, args, {
+function runLocalstackRestart(): void {
+  const result = spawnSync(localstackRestartScript, ['--force'], {
     cwd: resolve(import.meta.dirname, '../../..'),
     stdio: 'inherit',
   });

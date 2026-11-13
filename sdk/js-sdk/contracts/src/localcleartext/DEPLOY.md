@@ -63,7 +63,7 @@ All edits are path-only. No Solidity logic was touched.
    With the relative import the folder compiles with the current config, as the siblings do. They commit a
    real-address `FHEVMHostAddresses.sol`, and their deploy regenerates it.
    _Alternative, not done:_ revert that one import to `fhevm-config-1.0.0/addresses.sol` and add
-   `"fhevm-config-1.0.0/=./src/v1.0.0/config/"` to **every** profile's `remappings` (default, v12, v13 and the new one).
+   `"fhevm-config-1.0.0/=./src/localcleartext/config/"` to **every** profile's `remappings` (default, v12, v13 and the new one).
 3. **Left out:** `contracts/bridge/{ConfidentialBridge,HandlesSender,HandlesReceiver}.sol`. They import
    `@layerzerolabs/*`, which this repo does not have. fhevm-mocks never compiles them either (`skip` in
    `fhevm-mocks:foundry.toml`), and a cleartext stack never bridges. `ACL` only needs
@@ -87,7 +87,7 @@ so the repo's `out/` and `cache/` stay untouched:
 cd sdk/js-sdk/contracts
 # only the new folder, with this repo's foundry.toml, per profile
 for p in default v12 v13; do
-  FOUNDRY_PROFILE=$p forge build --contracts src/v1.0.0 --out "$TMP/out-$p" --cache-path "$TMP/cache-$p"
+  FOUNDRY_PROFILE=$p forge build --contracts src/localcleartext --out "$TMP/out-$p" --cache-path "$TMP/cache-$p"
 done                                   # → "Compiler run successful" (solc 0.8.33 auto-detected), 120 files
 # the whole tree (all generations + v1.0.0)
 FOUNDRY_PROFILE=default forge build --out "$TMP/full" --cache-path "$TMP/fullcache"   # → successful, 218 files
@@ -107,19 +107,19 @@ at 22,834 B and `CleartextHCULimit` at 20,511 B, all under EIP-170. The test anv
 ### Optional profile (convention only)
 
 Imports are relative, so no remapping is required. To match the siblings, add a profile. The name is your choice,
-for example `v1.0`, and §7 assumes `v1.0`:
+for example `localcleartext`, and §7 assumes `localcleartext`:
 
 ```toml
-[profile."v1.0"]
+[profile.localcleartext]
 remappings = [ <the 7 shared lines of [profile.v13]>,
-    "@fhevm/host-contracts/=./src/v1.0.0/host-contracts/",
-    "@fhevm/cleartext/=./src/v1.0.0/cleartext/",
-    "@fhevm/host-contracts-1.0.0/=./src/v1.0.0/host-contracts/",
-    "@fhevm/cleartext-1.0.0/=./src/v1.0.0/cleartext/",
+    "@fhevm/host-contracts/=./src/localcleartext/host-contracts/",
+    "@fhevm/cleartext/=./src/localcleartext/cleartext/",
+    "@fhevm/host-contracts-1.0.0/=./src/localcleartext/host-contracts/",
+    "@fhevm/cleartext-1.0.0/=./src/localcleartext/cleartext/",
 ]
 ```
 
-and add `{ access = "write", path = "src/v1.0.0/config" }` to `[profile.default].fs_permissions`. The
+and add `{ access = "write", path = "src/localcleartext/config" }` to `[profile.default].fs_permissions`. The
 address writer (§4) needs it.
 
 ## 4. The address config: `config/addresses.sol`
@@ -173,9 +173,8 @@ KMSVerifier therefore land on the three addresses `library-solidity/config/ZamaC
 for chain 31337, and InputVerifier and ProtocolConfig land where `test/chains/localcleartext.ts` expects them.
 
 The committed `config/addresses.sol` holds exactly this canonical set. **Regenerate it whenever the deployer or the
-start nonce differs.** For example, the multi-chain tests set `DEPLOYER_MNEMONIC=FIRST_ANVIL_MNEMONIC` for the legacy
-slot (`test/infra/config.ts`). After the deploy, restore the canonical file the way `test/infra/anvil/anvils.ts` does for the
-siblings' `FHEVMHostAddresses.sol`. The file must declare all 12 constants with exactly these names. The
+start nonce differs.** The test infra (`test/infra/config.ts`) therefore deploys its single v1.0 slot with the
+default deployer, so the committed file always matches. The file must declare all 12 constants with exactly these names. The
 `WriteAddresses` contract in Appendix A writes it. Never edit `host-contracts/addresses/FHEVMHostAddresses.sol`:
 it is a fixed alias file, unlike the siblings' generated `FHEVMHostAddresses.sol`.
 
@@ -241,7 +240,7 @@ The selector is the same.
 
 | value                                                                                                                        | fhevm-mocks default                                                                                                                                                                    | js-sdk siblings today (`scripts/fhevm-deploy.sh`)                                                          |
 | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| gateway chain id (`GATEWAY_CHAIN_ID`)                                                                                        | `100733346448153` (`uint48(keccak256("fhevm.cheat.chainId cleartext gateway"))`)                                                                                                       | **`654321`**, also hard-coded in `test/chains/localcleartext.ts` (`gateway.id`) and `test/infra/config.ts` |
+| gateway chain id (`GATEWAY_CHAIN_ID`)                                                                                        | `100733346448153` (`uint48(keccak256("fhevm.cheat.chainId cleartext gateway"))`)                                                                                                       | **`654321`** (unused by v1.0); the js-sdk tests use `100733346448153` (`test/chains/localcleartext.ts`, `test/infra/config.ts`) |
 | `DECRYPTION_ADDRESS` (KMSVerifier EIP-712 verifyingContract, domain name `"Decryption"`)                                     | `0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721`                                                                                                                                           | same                                                                                                       |
 | `INPUT_VERIFICATION_ADDRESS` (InputVerifier EIP-712 verifyingContract, domain name `"InputVerification"`)                    | `0x6189F6c0c3E40B4a3c72ec86262295D78d845297`                                                                                                                                           | same                                                                                                       |
 | coprocessor signers (`m/44'/60'/0'/2/i` of `test test test test test test test future home engine virtual motion`, i = 0..3) | `0x6727b56B5D1E990C75fE5dCd572D084fc5DC35cb`, `0xF1CDC3ebe04A063EAbfaf5c3129494F6049Ee229`, `0x46A03377bcBE895407ee4842b63f3249bc8327BD`, `0xFd0ea258B3D2b153DD76CAC0E2270574Da8f18E8` | same pool (4 signers)                                                                                      |
@@ -262,7 +261,7 @@ and paths and reads the signer set on-chain. Both parameter sets were simulated 
 ## 6. How this procedure was verified (no anvil)
 
 The reference script in **Appendix A** was run as an in-memory `forge script`, with no `--rpc-url` and no
-network, from the deployer key above. It ran in a scratch Foundry project whose `src/v1.0.0` is byte-identical to
+network, from the deployer key above. It ran in a scratch Foundry project whose `src/localcleartext` is byte-identical to
 this folder and whose remappings match this repo's `foundry.toml`.
 
 - `DeployAndVerify` with the fhevm-mocks defaults: success. Every CREATE landed on its expected address,
@@ -274,7 +273,7 @@ this folder and whose remappings match this repo's `foundry.toml`.
   (ACL at `0xB2F34cBa704F4F460bFa6718Da9ed1B8CfbDA200`).
 
 Run it the same way once wired:
-`DEPLOYER_PRIVATE_KEY=$(cast wallet private-key --mnemonic "<mnemonic>" --mnemonic-index 5) forge script scripts/v1.0.0/DeployCleartextFHEVMHost.s.sol:DeployAndVerify`.
+`DEPLOYER_PRIVATE_KEY=$(cast wallet private-key --mnemonic "<mnemonic>" --mnemonic-index 5) forge script scripts/localcleartext/DeployCleartextFHEVMHost.s.sol:DeployAndVerify`.
 
 ## 7. Wiring checklist (for the next step; none of it is done)
 
@@ -282,32 +281,32 @@ Use the v0.13.0 path as the template: `scripts/fhevm-deploy.sh` → `scripts/v0.
 → `scripts/v0.13.0/libraries/DeployLib.sol`.
 
 1. `contracts/foundry.toml`:
-   - add `[profile."v1.0"]` (optional, §3);
-   - add `fs_permissions` write on `src/v1.0.0/config`.
-2. `contracts/scripts/v1.0.0/`:
+   - add `[profile.localcleartext]` (optional, §3);
+   - add `fs_permissions` write on `src/localcleartext/config`.
+2. `contracts/scripts/localcleartext/`:
    - Appendix A as `DeployCleartextFHEVMHost.s.sol`.
    - Appendix B as `LocalHostBootstrap.sol`. Set `GATEWAY_CHAIN_ID = 654321` and pick thresholds (§5). Thresholds are
      `COPROCESSOR_THRESHOLD` there, and `_kmsThresholds()` plus the `== 4` check in `verify` in the script.
    - Optionally read the mnemonic, index and thresholds from the same env vars `FhevmConfigLib` uses (`../v0.13.0/libraries/`).
    - Provide equivalents of the contracts `fhevm-deploy.sh` calls:
      - `PrintFhevmSigners`: JSON `{deployer:{address}, emptyUupsDeployer:{address:0x0…0}}`.
-     - `WriteFHEVMHostAddressesDotSol`: here `WriteAddresses`, which writes **`src/v1.0.0/config/addresses.sol`**.
+     - `WriteFHEVMHostAddressesDotSol`: here `WriteAddresses`, which writes **`src/localcleartext/config/addresses.sol`**.
      - `PrintFHEVMHostAddressesDotSol` (dry run).
      - `Deploy`.
      - `Verify`, which needs `ACL_OWNER_ADDRESS = CREATE(deployer, N+14)`.
 3. `contracts/scripts/fhevm-lib.sh`:
-   - `fhevm_assert_foundry_profile`: accept `v1.0`.
-   - `fhevm_host_addresses_file v1.0.0`: return `…/src/v1.0.0/config/addresses.sol`, the file to regenerate.
-4. `contracts/scripts/fhevm-deploy.sh`: map `v1.0 → host_contracts_version="v1.0.0"`, and consider `LATEST_PROFILE_ALIAS`.
-5. `test/scripts/localcleartext-run-tests.sh`: accept `v1.0` in both `case "$PROFILE"` checks.
-6. `test/chains/`: a `localcleartext_v1_0` entry in `chain-defaults.json` and a chain definition if one is needed. The
+   - `fhevm_assert_foundry_profile`: accept `localcleartext`.
+   - `fhevm_host_addresses_file v1.0.0`: return `…/src/localcleartext/config/addresses.sol`, the file to regenerate.
+4. `contracts/scripts/fhevm-deploy.sh`: map `localcleartext → host_contracts_dir="localcleartext"`, and consider `LATEST_PROFILE_ALIAS`.
+5. `test/scripts/localcleartext-run-tests.sh`: accept `localcleartext` in both `case "$PROFILE"` checks.
+6. `test/chains/`: a `localcleartext` entry in `chain-defaults.json` and a chain definition if one is needed. The
    addresses match `localcleartext.ts` for the canonical deployer; v1.0 adds `paddedInputter` at `0xded0…2327`.
 7. `test/infra/config.ts` and `test/infra/anvil/anvils.ts`: update the slot and `profileVersionDir` if v1.0 becomes a slot.
-   anvils.ts restores the regenerated address file after deploy, which here is `src/v1.0.0/config/addresses.sol`.
+   anvils.ts restores the regenerated address file after deploy, which here is `src/localcleartext/config/addresses.sol`.
 8. `scripts/fhetest-deploy.sh` (FHETest) runs after the stack. It sends nothing as the ACL owner, so it is unaffected
    by ACLOwner owning the ACL, but check it with the new profile.
 
-## 8. v1.0.0 deploy specifics (`scripts/v1.0.0/`)
+## 8. v1.0.0 deploy specifics (`scripts/localcleartext/`)
 
 |                                                        | v1.0.0                                                                                                                                                                            |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -321,7 +320,7 @@ Use the v0.13.0 path as the template: `scripts/fhevm-deploy.sh` → `scripts/v0.
 | final ACL owner                                        | **ACLOwner** (`ACLOwner.owner()` = deployer). Later owner-gated calls (`addPauser`, `defineNewKmsContextAndEpoch`, HCU setters…) must go through `ACLOwner.execute(target, data)` |
 | pausers                                                | ACLOwner, plus optional `PAUSER_ADDRESS_0` in fhevm-mocks. Add the env pausers at k = 15, **before** the ownership transfer, or later via `ACLOwner.execute`                      |
 | empty-proxy deployer                                   | not used                                                                                                                                                                          |
-| address file regenerated                               | `src/v1.0.0/config/addresses.sol` (`*_ADDRESS`; `FHEVMHostAddresses.sol` aliases them)                                                                                            |
+| address file regenerated                               | `src/localcleartext/config/addresses.sol` (`*_ADDRESS`; `FHEVMHostAddresses.sol` aliases them)                                                                                            |
 | cleartext markers                                      | `IS_CLEARTEXT()` on CleartextACL, CleartextHCULimit, CleartextArithmetic; `CleartextACL.CLEARTEXT_PROTOCOL_VERSION() == 1000000`                                                  |
 
 ## 9. Post-deploy checks
@@ -369,8 +368,7 @@ These are implemented in `DeployV1.verify` in Appendix A. The full list is in `f
 
 ## 10. Caveats and open questions
 
-- **Gateway chain id.** fhevm-mocks defaults to `100733346448153`; the js-sdk tests assume `654321`. Pick one
-  consistently (§5).
+- **Gateway chain id.** Resolved: the js-sdk tests use fhevm-mocks' `100733346448153` for v1.0 (§5).
 - **SDK support of v1.0 behaviour is not verified.** Two cases are untested: the js-sdk resolving and using a
   standalone `PaddedInputter` proxy, and the version strings above
   (e.g. `KMSVerifier v0.5.0`, `ACL v0.6.0`). Check `src/core/host-contracts/` and the pad-based encryption
@@ -389,7 +387,7 @@ These are implemented in `DeployV1.verify` in Appendix A. The full list is in `f
 
 ## Appendix A: reference deploy script (verified in-memory, §6)
 
-Intended path: `contracts/scripts/v1.0.0/DeployCleartextFHEVMHost.s.sol`. It is adapted from
+Intended path: `contracts/scripts/localcleartext/DeployCleartextFHEVMHost.s.sol`. It is adapted from
 `fhevm-mocks:pkg/forge/script/FhevmDeployScript.s.sol`, `ComputeAddresses.s.sol` and `VerifyFhevmDeploy.s.sol`.
 `PROXY_COUNT` and the `getVersion` strings are copied from `pkg/forge/src/_internal/LocalHostAddresses.sol` and
 `pkg/ts/versions.ts`.
@@ -398,36 +396,36 @@ Intended path: `contracts/scripts/v1.0.0/DeployCleartextFHEVMHost.s.sol`. It is 
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-// Reference deploy for src/v1.0.0. Adapted from fhevm-mocks@8b91ae5
+// Reference deploy for src/localcleartext. Adapted from fhevm-mocks@8b91ae5
 // host-contracts-cleartext/v1.0/pkg/forge/script/FhevmDeployScript.s.sol (+ VerifyFhevmDeploy.s.sol checks).
 // Bootstrap values come from ./LocalHostBootstrap.sol (copied verbatim from
 // host-contracts-cleartext/v1.0/pkg/forge/src/_internal/LocalHostBootstrap.sol).
 
 import {Script, console} from "forge-std/Script.sol";
-import {ERC1967Proxy} from "../../src/v1.0.0/erc1967/ERC1967Proxy.sol";
-import {EmptyUUPSProxyACL} from "../../src/v1.0.0/host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {EmptyUUPSProxy} from "../../src/v1.0.0/host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {ACL} from "../../src/v1.0.0/host-contracts/contracts/ACL.sol";
-import {FHEVMExecutor} from "../../src/v1.0.0/host-contracts/contracts/FHEVMExecutor.sol";
-import {KMSVerifier} from "../../src/v1.0.0/host-contracts/contracts/KMSVerifier.sol";
-import {InputVerifier} from "../../src/v1.0.0/host-contracts/contracts/InputVerifier.sol";
-import {HCULimit} from "../../src/v1.0.0/host-contracts/contracts/HCULimit.sol";
-import {ProtocolConfig} from "../../src/v1.0.0/host-contracts/contracts/ProtocolConfig.sol";
-import {ProtocolConfigReplica} from "../../src/v1.0.0/host-contracts/contracts/ProtocolConfigReplica.sol";
-import {KMSGeneration} from "../../src/v1.0.0/host-contracts/contracts/KMSGeneration.sol";
-import {PaddedInputter} from "../../src/v1.0.0/host-contracts/contracts/PaddedInputter.sol";
-import {PauserSet} from "../../src/v1.0.0/host-contracts/contracts/immutable/PauserSet.sol";
-import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "../../src/v1.0.0/host-contracts/contracts/shared/Constants.sol";
-import {KmsNodeParams, KmsThresholds, PcrValues} from "../../src/v1.0.0/host-contracts/contracts/shared/Structs.sol";
-import {CleartextACL} from "../../src/v1.0.0/cleartext/CleartextACL.sol";
-import {CleartextFHEVMExecutor} from "../../src/v1.0.0/cleartext/CleartextFHEVMExecutor.sol";
-import {CleartextKMSVerifier} from "../../src/v1.0.0/cleartext/CleartextKMSVerifier.sol";
-import {CleartextInputVerifier} from "../../src/v1.0.0/cleartext/CleartextInputVerifier.sol";
-import {CleartextHCULimit} from "../../src/v1.0.0/cleartext/CleartextHCULimit.sol";
-import {CleartextPaddedInputter} from "../../src/v1.0.0/cleartext/CleartextPaddedInputter.sol";
-import {CleartextArithmetic} from "../../src/v1.0.0/cleartext/CleartextArithmetic.sol";
-import {CleartextDB} from "../../src/v1.0.0/cleartext/CleartextDB.sol";
-import {ACLOwner} from "../../src/v1.0.0/upgrade/ACLOwner.sol";
+import {ERC1967Proxy} from "../../src/localcleartext/erc1967/ERC1967Proxy.sol";
+import {EmptyUUPSProxyACL} from "../../src/localcleartext/host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
+import {EmptyUUPSProxy} from "../../src/localcleartext/host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {ACL} from "../../src/localcleartext/host-contracts/contracts/ACL.sol";
+import {FHEVMExecutor} from "../../src/localcleartext/host-contracts/contracts/FHEVMExecutor.sol";
+import {KMSVerifier} from "../../src/localcleartext/host-contracts/contracts/KMSVerifier.sol";
+import {InputVerifier} from "../../src/localcleartext/host-contracts/contracts/InputVerifier.sol";
+import {HCULimit} from "../../src/localcleartext/host-contracts/contracts/HCULimit.sol";
+import {ProtocolConfig} from "../../src/localcleartext/host-contracts/contracts/ProtocolConfig.sol";
+import {ProtocolConfigReplica} from "../../src/localcleartext/host-contracts/contracts/ProtocolConfigReplica.sol";
+import {KMSGeneration} from "../../src/localcleartext/host-contracts/contracts/KMSGeneration.sol";
+import {PaddedInputter} from "../../src/localcleartext/host-contracts/contracts/PaddedInputter.sol";
+import {PauserSet} from "../../src/localcleartext/host-contracts/contracts/immutable/PauserSet.sol";
+import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "../../src/localcleartext/host-contracts/contracts/shared/Constants.sol";
+import {KmsNodeParams, KmsThresholds, PcrValues} from "../../src/localcleartext/host-contracts/contracts/shared/Structs.sol";
+import {CleartextACL} from "../../src/localcleartext/cleartext/CleartextACL.sol";
+import {CleartextFHEVMExecutor} from "../../src/localcleartext/cleartext/CleartextFHEVMExecutor.sol";
+import {CleartextKMSVerifier} from "../../src/localcleartext/cleartext/CleartextKMSVerifier.sol";
+import {CleartextInputVerifier} from "../../src/localcleartext/cleartext/CleartextInputVerifier.sol";
+import {CleartextHCULimit} from "../../src/localcleartext/cleartext/CleartextHCULimit.sol";
+import {CleartextPaddedInputter} from "../../src/localcleartext/cleartext/CleartextPaddedInputter.sol";
+import {CleartextArithmetic} from "../../src/localcleartext/cleartext/CleartextArithmetic.sol";
+import {CleartextDB} from "../../src/localcleartext/cleartext/CleartextDB.sol";
+import {ACLOwner} from "../../src/localcleartext/upgrade/ACLOwner.sol";
 import {LocalHostBootstrap} from "./LocalHostBootstrap.sol";
 import {
     aclAdd,
@@ -442,7 +440,7 @@ import {
     pauserSetAdd,
     cleartextArithmeticAdd,
     cleartextDbAdd
-} from "../../src/v1.0.0/host-contracts/addresses/FHEVMHostAddresses.sol";
+} from "../../src/localcleartext/host-contracts/addresses/FHEVMHostAddresses.sol";
 
 interface ICleartextMarkers {
     function IS_CLEARTEXT() external view returns (bool);
@@ -674,7 +672,7 @@ library DeployV1 {
     }
 }
 
-/// Step 1: write src/v1.0.0/config/addresses.sol for DEPLOYER_PRIVATE_KEY at its CURRENT nonce (read from
+/// Step 1: write src/localcleartext/config/addresses.sol for DEPLOYER_PRIVATE_KEY at its CURRENT nonce (read from
 /// --rpc-url). Path from FHEVM_CONFIG_ADDRESSES_FILE (needs a write fs_permission). Same output shape as
 /// fhevm-mocks pkg/forge/script/ComputeAddresses.s.sol.
 contract WriteAddresses is Script {
@@ -743,7 +741,7 @@ contract DeployAndVerify is Script {
 
 ## Appendix B: `LocalHostBootstrap.sol` (verbatim copy of `fhevm-mocks:pkg/forge/src/_internal/LocalHostBootstrap.sol`)
 
-Intended path: `contracts/scripts/v1.0.0/LocalHostBootstrap.sol`. For the js-sdk suite, change `GATEWAY_CHAIN_ID` to `654321`. Optionally set `COPROCESSOR_THRESHOLD = 1` and the KMS thresholds to 1 (see §5 and §7).
+Intended path: `contracts/scripts/localcleartext/LocalHostBootstrap.sol`. For the js-sdk suite, change `GATEWAY_CHAIN_ID` to `654321`. Optionally set `COPROCESSOR_THRESHOLD = 1` and the KMS thresholds to 1 (see §5 and §7).
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear

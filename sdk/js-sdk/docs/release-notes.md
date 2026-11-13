@@ -27,7 +27,7 @@
   the matching standalone actions in `@fhevm/sdk/actions/encrypt`,
   `initFhevmEncryptWithPadRuntime`, and the `FhevmEncryptWithPadClient` type. Only the cleartext
   pad-share encoding is supported for now, so this works against the v1.0.0 cleartext host
-  contracts only (`npm run start:localcleartext:v1.0`). The input-proof flow
+  contracts only (`npm run start:localcleartext`). The input-proof flow
   (`encryptValue` / `encryptValues`, `inputProof`) is unchanged.
 
 #### Changed
@@ -109,6 +109,15 @@
   process/WASM memory across six scenarios (client reuse/churn, full roundtrip, value churn,
   permit churn, provider churn) to classify each metric as plateauing or growing. Not wired into
   CI yet — thresholds are placeholders pending tuning.
+- Removed the cleartext `v0.12.0` and `v0.13.0` host-contract stacks, their Foundry profiles
+  (`v12`, `v13`) and test chains (`localcleartext_legacy`, `localcleartext_v12`,
+  `localcleartext_v13`). There is now a single local cleartext stack, the current one: its test
+  chain `localcleartext_v1_0` is renamed `localcleartext` (deploy-script default, env file
+  `test/.env.localcleartext`), its npm scripts drop the version suffix (`test:localcleartext`,
+  `test:localcleartext:pack`, `start:localcleartext`) and `localcleartext-run-tests.sh` no longer
+  takes `--foundry-profile`. The `test/infra` / `test/browser-next` matrix now runs a single
+  `v1.0` slot (the coexistence cell checks one real slot alongside a cleartext runtime), and the
+  `protocolEraOf` test helper is replaced by `isLocalstackChain` / `isLocalCleartextChain`.
 
 ---
 

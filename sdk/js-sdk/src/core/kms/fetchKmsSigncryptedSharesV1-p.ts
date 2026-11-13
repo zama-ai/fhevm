@@ -168,7 +168,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   // It is critical to fetch the exact kms signers associated with the extra data
   const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContextFromPermitExtraData(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig.address as ChecksummedAddress,
     extraData: signedPermitExtraData,
     fhevmContext,
   });

@@ -83,8 +83,8 @@ const V1_DELEGATED_TYPES = {
 
 export function defineClientDecryptStalePermitMigrationTests(parameters: {
   readonly runIf: boolean;
-  /** Protocol era of the chain under test (12, 13, 14, or 16 — see `protocolEraOf`). */
-  readonly era: number;
+  /** Whether the chain under test runs protocol v0.14+ (enables the v13 → v14 migration tests). */
+  readonly isProtocolV14OrHigher: boolean;
   readonly createFhevmDecryptClient: CreateViemDecryptClientFn;
 }): void {
   describe.runIf(parameters.runIf)('Decrypt client — stale cached permit across protocol migration', () => {
@@ -282,7 +282,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
     // (0x01 + context id). On a v14+ chain the current context encodes to v2
     // (context id + epoch id), so the encodings differ even when the context
     // id is unchanged — the permit must still decrypt.
-    describe.runIf(parameters.era >= 14)('v13-era cached permit on a v14+ chain', () => {
+    describe.runIf(parameters.isProtocolV14OrHigher)('v13-era cached permit on a v14+ chain', () => {
       it('decrypts with a cached v13-era permit (extraData v1, current context id)', async () => {
         const client = await createReadyClient();
 

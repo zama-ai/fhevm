@@ -5,16 +5,13 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { mnemonicToAccount } from 'viem/accounts';
-import { localcleartext } from '../chains/localcleartext.js';
 import { localstack } from '../chains/localstack.js';
-import { localstack_v14 } from '../chains/localstack_v14.js';
 import { devnet } from '../chains/devnet.js';
-import { polygon_devnet } from '../chains/polygon_devnet.js';
+import { POLYGON_DEVNET_UNSUPPORTED_REASON } from '../chains/polygon_devnet.js';
 import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
 import { hoodi_cleartext } from '../chains/hoodi_cleartext.js';
 import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
-import { localcleartext_legacy } from '../chains/localcleartext_legacy.js';
-import { localcleartext_v1_0 } from '../chains/localcleartext_v1_0.js';
+import { localcleartext } from '../chains/localcleartext.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,12 +23,7 @@ export const FHE_TEST_CHAIN_NAMES = [
   'mainnet',
   'devnet',
   'localcleartext',
-  'localcleartext_legacy',
-  'localcleartext_v12',
-  'localcleartext_v13',
-  'localcleartext_v1_0',
   'localstack',
-  'localstack_v14',
   'polygon_devnet',
   'ingen_trex_cleartext',
   'hoodi_cleartext',
@@ -57,7 +49,7 @@ export type FheTestBaseEnv = {
 // ---------------------------------------------------------------------------
 
 export function isCleartext(chainName: FheTestChainName) {
-  return chainName === 'localcleartext' || chainName.startsWith('localcleartext_') || chainName.endsWith('_cleartext');
+  return chainName === 'localcleartext' || chainName.endsWith('_cleartext');
 }
 
 /**
@@ -65,7 +57,7 @@ export function isCleartext(chainName: FheTestChainName) {
  *
  * Their contracts/relayer roll out independently of this repo, so a nominal protocol version in
  * `PROTOCOL_VERSION_BY_CHAIN` can lag (or a relayer feature can lag its own chain's protocol) —
- * unlike `localstack*`, where `protocolEraOf` statically guarantees the deployed version. Suites
+ * unlike `localstack*`, whose deployed version this repo controls. Suites
  * gated on this should still runtime-probe the actual capability (see
  * `checkRelayerSupportsUnifiedPermit` in the unified-permit test suites) rather than trust a static
  * version check, so this list can safely include chains not on the latest protocol yet — an
@@ -82,24 +74,11 @@ export function isRealDeployedChain(chainName: FheTestChainName): boolean {
 }
 
 /**
- * Protocol era (the minor version of the protocol: 12, 13, 14, 16) a test chain
- * runs on, derived from its name. Used to gate migration tests that only make
- * sense on chains at or above a given protocol version.
- *
- * `localstack` (latest) tracks the newest protocol (v0.14 era today).
+ * Local docker-compose stack (`localstack`). It runs protocol v0.14+, which this repo controls,
+ * so suites gated on this need no runtime capability probe.
  */
-export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 | 16 {
-  if (chainName === 'localcleartext_v12') {
-    return 12;
-  }
-  // v1.0 counts as the newest era the tests know, so every "at or above 16" gate stays on.
-  if (chainName === 'localcleartext_v1_0') {
-    return 16;
-  }
-  if (chainName === 'localstack' || chainName === 'localstack_v14') {
-    return 14;
-  }
-  return 13;
+export function isLocalstackChain(chainName: FheTestChainName): boolean {
+  return chainName.startsWith('localstack');
 }
 
 // ---------------------------------------------------------------------------
@@ -117,10 +96,6 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
   sepolia: '1.4.0-alpha.3',
   testnet: '1.4.0-alpha.3',
   localcleartext: 'cleartext',
-  localcleartext_legacy: 'cleartext',
-  localcleartext_v12: 'cleartext',
-  localcleartext_v13: 'cleartext',
-  localcleartext_v1_0: 'cleartext',
   ingen_trex_cleartext: 'cleartext',
 };
 
@@ -276,8 +251,9 @@ function foundryCastEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function isLocalCleartextChain(chainName: FheTestChainName): boolean {
-  return chainName === 'localcleartext' || chainName.startsWith('localcleartext_');
+/** The local anvil cleartext stack this repo deploys (`localcleartext`). */
+export function isLocalCleartextChain(chainName: FheTestChainName): boolean {
+  return chainName === 'localcleartext';
 }
 
 function isLocalAnvilChain(chainName: FheTestChainName): boolean {
@@ -479,13 +455,13 @@ export function prepareChains(): FheTestBaseEnv[] {
 }
 
 function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
+  if (chainName === 'polygon_devnet') {
+    throw new Error(POLYGON_DEVNET_UNSUPPORTED_REASON);
+  }
+
   const testDir = resolve(import.meta.dirname, '..');
-  const isLocalstack = chainName.startsWith('localstack');
-  const envFilename = isLocalCleartextChain(chainName)
-    ? '.env.localcleartext'
-    : isLocalstack
-      ? '.env.localstack'
-      : `.env.${chainName}`;
+  const isLocalstack = isLocalstackChain(chainName);
+  const envFilename = isLocalstack ? '.env.localstack' : `.env.${chainName}`;
 
   // Load shared secrets
   const sharedEnv = parseEnvFile(resolve(testDir, '.env'));
@@ -516,15 +492,10 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
   const fheTestAddress = resolveFHETestAddress(chainName);
   const fheTestVersion = resolveFHETestVersion(chainName);
 
-  const chainMap: Record<FheTestChainName, FhevmChain> = {
+  // polygon_devnet is unsupported (rejected above): it has no FhevmChain.
+  const chainMap: Record<Exclude<FheTestChainName, 'polygon_devnet'>, FhevmChain> = {
     localstack,
-    localstack_v14,
-    localcleartext_legacy,
     localcleartext,
-    localcleartext_v12: localcleartext_legacy,
-    localcleartext_v13: localcleartext,
-    localcleartext_v1_0,
-    polygon_devnet,
     ingen_trex_cleartext,
     hoodi_cleartext,
     sepolia,
