@@ -2,13 +2,14 @@
 -- context and epoch destruction. The kms-worker stores them so the tx-sender can submit them to
 -- the `ProtocolConfig` contract on Ethereum.
 
--- Pending rows created before this migration carry no signature and can no longer be submitted.
+-- Rows created before this migration carry no signature and can no longer be submitted.
 ALTER TABLE new_kms_context_responses
     ADD COLUMN signature BYTEA NOT NULL DEFAULT '\x',
     ADD COLUMN extra_data BYTEA NOT NULL DEFAULT '\x';
 ALTER TABLE new_kms_context_responses
     ALTER COLUMN signature DROP DEFAULT,
     ALTER COLUMN extra_data DROP DEFAULT;
+UPDATE new_kms_context_responses SET status = 'failed' WHERE status IN ('pending', 'under_process');
 
 ALTER TABLE epoch_result_responses
     ADD COLUMN signature BYTEA NOT NULL DEFAULT '\x',
@@ -16,6 +17,7 @@ ALTER TABLE epoch_result_responses
 ALTER TABLE epoch_result_responses
     ALTER COLUMN signature DROP DEFAULT,
     ALTER COLUMN extra_data DROP DEFAULT;
+UPDATE epoch_result_responses SET status = 'failed' WHERE status IN ('pending', 'under_process');
 
 CREATE TABLE IF NOT EXISTS kms_context_destruction_responses (
     context_id BYTEA NOT NULL,
