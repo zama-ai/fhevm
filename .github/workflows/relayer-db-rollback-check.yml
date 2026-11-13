@@ -1,0 +1,32 @@
+name: relayer-db-rollback-check
+
+# Fails a pull request that leaves the rollback tool incomplete: a migration
+# without a down file, a down file without a migration, or a stray file. The
+# image build runs the same check, but only after the merge.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/relayer-db-rollback-check.yml
+      - relayer-db-rollback/**
+
+permissions: {}
+
+concurrency:
+  group: relayer-db-rollback-check-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: relayer-db-rollback-check/migration-files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: 'read' # Required to checkout repository code
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Every migration has a down file
+        run: relayer-db-rollback/scripts/migrate.sh check
