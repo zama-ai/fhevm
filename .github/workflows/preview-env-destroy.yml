@@ -142,7 +142,12 @@ jobs:
           sparse-checkout: |
             ci/preview-env/scripts/wallets/sweep-wallets.sh
             ci/preview-env/scripts/wallets/sweep-wallets.cjs
+            .github/actions/install-safe-chain/action.yml
           sparse-checkout-cone-mode: false
+
+      - name: Install safe-chain
+        continue-on-error: true
+        uses: ./.github/actions/install-safe-chain
 
       - name: Install ethers for the wallet sweep
         continue-on-error: true
