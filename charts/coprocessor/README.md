@@ -194,8 +194,8 @@ Before you add a pad-worker:
   use `$(DATABASE_USER)`. The migration job of the fleet release gives the table rights.
 - Set `padWorkerShared.config.s3BucketName` to the bucket of the operator, and
   `padWorkerShared.wallet` to the coprocessor signer.
-- An S3 lifecycle rule on `pads/` can delete objects after
-  `padWorkerShared.config.outputMaxAgeSeconds`.
+- Set `padWorkerShared.config.outputMaxAgeSeconds` (required) from measured data. The GC deletes
+  uploaded and failed rows older than it. Set the S3 lifecycle rule on `pads/` to the same age.
 
 A pad-worker keeps its image (`padWorkers[].image`) for the life of its instance. An image that
 changes the bytes of the outputs needs a new `prfId`.

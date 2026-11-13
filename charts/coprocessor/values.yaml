@@ -1861,7 +1861,8 @@ padWorkerShared:
     s3BucketName: {}
     # Use `prfService.limits.padPendingMaxAgeSeconds`: older pending rows are not computed.
     pendingMaxAgeSeconds: 600
-    # Uploaded or failed rows older than this are deleted. If not set, no row is deleted.
+    # Required with `padWorkers`. The GC deletes uploaded or failed rows older than this. Use the same
+    # age in the S3 lifecycle rule on `pads/`.
     outputMaxAgeSeconds:
     # The ct64 of rows older than this is deleted. Unmask then computes it again.
     ct64MaxAgeSeconds: 3600
