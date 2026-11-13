@@ -8,6 +8,8 @@ use std::time::Duration;
 /// Backoff of a temporary error, in seconds: this step for each attempt, up to the max.
 pub const RETRY_BACKOFF_STEP_SECS: i32 = 5;
 pub const RETRY_BACKOFF_MAX_SECS: i32 = 60;
+/// Rows changed by each GC statement, so that each transaction stays short.
+pub const GC_BATCH: i64 = 1000;
 
 /// A claimed row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -244,15 +246,19 @@ pub async fn set_uploaded(pool: &PgPool, claim: &Claim) -> sqlx::Result<()> {
 
 /// Deletes uploaded or failed rows older than `max_age`, of all instances.
 pub async fn delete_old_outputs(pool: &PgPool, max_age: Duration) -> sqlx::Result<u64> {
-    let result = sqlx::query!(
-        "DELETE FROM pads
-          WHERE (s3_verified_at IS NOT NULL OR is_error)
-            AND created_at <= NOW() - make_interval(secs => $1)",
-        max_age.as_secs_f64(),
-    )
-    .execute(pool)
-    .await?;
-    Ok(result.rows_affected())
+    in_batches(|| {
+        sqlx::query!(
+            "DELETE FROM pads WHERE ctid IN (
+                 SELECT ctid FROM pads
+                  WHERE (s3_verified_at IS NOT NULL OR is_error)
+                    AND created_at <= NOW() - make_interval(secs => $1)
+                  LIMIT $2)",
+            max_age.as_secs_f64(),
+            GC_BATCH,
+        )
+        .execute(pool)
+    })
+    .await
 }
 
 /// Deletes expired pending rows with no live claim, of all instances.
@@ -261,29 +267,53 @@ pub async fn delete_expired_pending(
     pending_max_age: Duration,
     claim_timeout: Duration,
 ) -> sqlx::Result<u64> {
-    let result = sqlx::query!(
-        "DELETE FROM pads
-          WHERE signature IS NULL AND NOT is_error
-            AND created_at <= NOW() - make_interval(secs => $1)
-            AND (claimed_at IS NULL OR claimed_at <= NOW() - make_interval(secs => $2))",
-        pending_max_age.as_secs_f64(),
-        claim_timeout.as_secs_f64(),
-    )
-    .execute(pool)
-    .await?;
-    Ok(result.rows_affected())
+    in_batches(|| {
+        sqlx::query!(
+            "DELETE FROM pads WHERE ctid IN (
+                 SELECT ctid FROM pads
+                  WHERE signature IS NULL AND NOT is_error
+                    AND created_at <= NOW() - make_interval(secs => $1)
+                    AND (claimed_at IS NULL OR claimed_at <= NOW() - make_interval(secs => $2))
+                  LIMIT $3)",
+            pending_max_age.as_secs_f64(),
+            claim_timeout.as_secs_f64(),
+            GC_BATCH,
+        )
+        .execute(pool)
+    })
+    .await
 }
 
 /// Clears the ct64 of the rows of all instances older than `max_age`. The digest stays.
 pub async fn clear_old_ct64(pool: &PgPool, max_age: Duration) -> sqlx::Result<u64> {
-    let result = sqlx::query!(
-        "UPDATE pads SET ciphertext64 = NULL
-          WHERE ciphertext64 IS NOT NULL AND created_at <= NOW() - make_interval(secs => $1)",
-        max_age.as_secs_f64(),
-    )
-    .execute(pool)
-    .await?;
-    Ok(result.rows_affected())
+    in_batches(|| {
+        sqlx::query!(
+            "UPDATE pads SET ciphertext64 = NULL WHERE ctid IN (
+                 SELECT ctid FROM pads
+                  WHERE ciphertext64 IS NOT NULL AND created_at <= NOW() - make_interval(secs => $1)
+                  LIMIT $2)",
+            max_age.as_secs_f64(),
+            GC_BATCH,
+        )
+        .execute(pool)
+    })
+    .await
+}
+
+/// Runs `statement` until it changes fewer than `GC_BATCH` rows. Returns the rows changed.
+async fn in_batches<F, Fut>(statement: F) -> sqlx::Result<u64>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = sqlx::Result<sqlx::postgres::PgQueryResult>>,
+{
+    let mut total = 0;
+    loop {
+        let changed = statement().await?.rows_affected();
+        total += changed;
+        if changed < GC_BATCH as u64 {
+            return Ok(total);
+        }
+    }
 }
 
 /// The bytes of all stored ct64.
@@ -304,16 +334,25 @@ pub struct OldestRows {
     pub not_uploaded: Option<f64>,
 }
 
-pub async fn oldest_rows(pool: &PgPool) -> sqlx::Result<Vec<OldestRows>> {
+/// The row ages of each instance with rows, and always of `prf_instance`.
+pub async fn oldest_rows(pool: &PgPool, prf_instance: u16) -> sqlx::Result<Vec<OldestRows>> {
     let rows = sqlx::query!(
-        r#"SELECT prf_instance,
-                  EXTRACT(EPOCH FROM NOW() - MIN(created_at)
-                      FILTER (WHERE signature IS NULL AND NOT is_error))::FLOAT8 AS pending,
-                  EXTRACT(EPOCH FROM NOW() - MIN(created_at)
-                      FILTER (WHERE signature IS NOT NULL AND s3_verified_at IS NULL))::FLOAT8
-                      AS not_uploaded
-             FROM pads
+        r#"SELECT prf_instance AS "prf_instance!", MAX(pending) AS pending,
+                  MAX(not_uploaded) AS not_uploaded
+             FROM (SELECT prf_instance,
+                          EXTRACT(EPOCH FROM NOW() - MIN(created_at))::FLOAT8 AS pending,
+                          NULL::FLOAT8 AS not_uploaded
+                     FROM pads WHERE signature IS NULL AND NOT is_error
+                    GROUP BY prf_instance
+                   UNION ALL
+                   SELECT prf_instance, NULL,
+                          EXTRACT(EPOCH FROM NOW() - MIN(created_at))::FLOAT8
+                     FROM pads WHERE signature IS NOT NULL AND s3_verified_at IS NULL
+                    GROUP BY prf_instance
+                   UNION ALL
+                   SELECT $1::INTEGER, NULL, NULL) AS ages
             GROUP BY prf_instance"#,
+        i32::from(prf_instance),
     )
     .fetch_all(pool)
     .await?;

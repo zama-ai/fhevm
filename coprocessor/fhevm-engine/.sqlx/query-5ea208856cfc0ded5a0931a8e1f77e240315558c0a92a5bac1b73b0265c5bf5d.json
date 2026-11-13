@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pads SET ciphertext64 = NULL WHERE ctid IN (\n                 SELECT ctid FROM pads\n                  WHERE ciphertext64 IS NOT NULL AND created_at <= NOW() - make_interval(secs => $1)\n                  LIMIT $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5ea208856cfc0ded5a0931a8e1f77e240315558c0a92a5bac1b73b0265c5bf5d"
+}
