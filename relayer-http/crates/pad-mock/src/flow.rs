@@ -1,7 +1,8 @@
 //! One pad decryption end to end: a user signs the RFC-016 permit for two fresh witnesses, posts
 //! `POST /v4/pad-decrypt` to the relayer, then checks the answer as the SDK will: every transport signature and
-//! share signature is a distinct KMS signer of the context, the shares of each label agree on their session and
-//! their bytes, and the pad they carry is the cleartext PRF stream of its label.
+//! share signature, under the `fhevm-pad-decryption` domain, is a distinct KMS signer of the context, every payload's
+//! `extraData` names the request's context and epoch, the shares of each label agree on their session and their
+//! bytes, and the pad they carry is the cleartext PRF stream of its label.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -19,6 +20,7 @@ use url::Url;
 use crate::chain::{
     PadDecryptResponseVerification, PadShareVerification, Rpc, UserDecryptRequestVerification,
     cleartextDecryptPadPayloadCall, domain, eip712DomainCall, getKmsSignersForContextCall,
+    pad_decryption_domain,
 };
 
 /// Everything the flow needs; see `main.rs` for the flags.
@@ -146,11 +148,12 @@ pub async fn run(config: &FlowConfig) -> Result<(), String> {
         serde_json::from_value(reply["result"]["responses"].clone())
             .map_err(|e| format!("result.responses: {e}"))?;
 
-    let gateway = domain(&reported, reported.chainId);
+    // ProtocolConfig lives on the host chain in a cleartext stack.
+    let kms_domain = pad_decryption_domain(chain_id, config.protocol_config);
     let mut nodes = BTreeSet::new();
     let mut by_label: BTreeMap<B256, Vec<(Address, crate::chain::PadShare)>> = BTreeMap::new();
     for response in &responses {
-        let node = check_response(config, response, &gateway, &signers, &payload).await?;
+        let node = check_response(config, response, &kms_domain, &signers, &payload).await?;
         if !nodes.insert(node.0) {
             return Err(format!("two responses from {}", node.0));
         }
@@ -181,12 +184,12 @@ pub async fn run(config: &FlowConfig) -> Result<(), String> {
     Ok(())
 }
 
-/// One node's response: its transport signer, then its decrypted shares, each signed by the same signer for the
-/// request's context, one per requested label.
+/// One node's response: its transport signer, then its decrypted payload, whose `extraData` names the request's
+/// context and epoch, and its shares, each signed by the same signer together with that `extraData`.
 async fn check_response(
     config: &FlowConfig,
     response: &PadDecryptionResponse,
-    gateway: &alloy::sol_types::Eip712Domain,
+    kms_domain: &alloy::sol_types::Eip712Domain,
     signers: &[Address],
     payload: &PadDecryptPayload,
 ) -> Result<(Address, Vec<crate::chain::PadShare>), String> {
@@ -194,7 +197,7 @@ async fn check_response(
         requestId: response.decryption_id,
         encryptedPayload: response.encrypted_payload.clone(),
     }
-    .eip712_signing_hash(gateway);
+    .eip712_signing_hash(kms_domain);
     let node = recover(&response.signature, &transport)?;
     if !signers.contains(&node) {
         return Err(format!("transport signer {node} is not a KMS signer"));
@@ -210,29 +213,40 @@ async fn check_response(
         )
         .await
         .map_err(|e| format!("cleartextDecryptPadPayload: {e}"))?;
-    let context = B256::from_slice(&payload.extra_data[1..33]);
+    if !names_same_context_and_epoch(&decrypted.extraData, &payload.extra_data) {
+        return Err(format!(
+            "payload of {node}: extraData {} does not name the request's context and epoch",
+            decrypted.extraData
+        ));
+    }
     for share in &decrypted.shares {
         let digest = PadShareVerification {
             label: share.label,
             rawShares: share.rawShares.clone(),
             partyId: share.partyId,
             degree: share.degree,
-            contextId: share.contextId,
             sessionId: share.sessionId,
-            extraData: share.extraData.clone(),
+            extraData: decrypted.extraData.clone(),
         }
-        .eip712_signing_hash(gateway);
+        .eip712_signing_hash(kms_domain);
         if recover(&share.signature, &digest)? != node {
             return Err(format!("share of {} not signed by {node}", share.label));
         }
-        if share.contextId != context {
-            return Err(format!(
-                "share of {} signed for context {}",
-                share.label, share.contextId
-            ));
-        }
     }
     Ok((node, decrypted.shares))
+}
+
+/// Both are v2 `extraData` (`[0x02 | contextId | epochId]`) naming the same context and epoch.
+fn names_same_context_and_epoch(response: &Bytes, request: &Bytes) -> bool {
+    matches!((v2_ids(response), v2_ids(request)), (Some(a), Some(b)) if a == b)
+}
+
+/// The `contextId ‖ epochId` of v2 `extraData`, `None` for any other.
+fn v2_ids(extra_data: &[u8]) -> Option<&[u8]> {
+    if extra_data.first() != Some(&0x02) {
+        return None;
+    }
+    extra_data.get(1..65)
 }
 
 /// The shares of one label: enough of them, one session, one encoding, and the cleartext PRF stream of the label.
@@ -370,6 +384,29 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(validate(&request, &http, 1_800_000_100), Ok(()));
+    }
+
+    #[test]
+    fn extra_data_names_the_same_context_and_epoch() {
+        let request = crate::chain::default_extra_data();
+        assert!(names_same_context_and_epoch(&request, &request));
+        let mut other_epoch = request.to_vec();
+        other_epoch[64] ^= 1;
+        assert!(!names_same_context_and_epoch(&other_epoch.into(), &request));
+        let mut other_context = request.to_vec();
+        other_context[32] ^= 1;
+        assert!(!names_same_context_and_epoch(
+            &other_context.into(),
+            &request
+        ));
+        let mut v1 = request.to_vec();
+        v1[0] = 0x01;
+        assert!(!names_same_context_and_epoch(&v1.into(), &request));
+        assert!(!names_same_context_and_epoch(
+            &request.slice(..33),
+            &request
+        ));
+        assert!(!names_same_context_and_epoch(&Bytes::new(), &request));
     }
 
     #[test]

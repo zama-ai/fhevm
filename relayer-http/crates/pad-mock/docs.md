@@ -152,13 +152,14 @@ Plays the SDK for one request, then checks the answers the way the SDK will.
   relayer answer: [ response node 1, response node 2, response node 3, response node 4 ]
          │
          ▼
-  ① who signed it?      every transport signature (PadDecryptResponseVerification, gateway-chain domain)
-                        recovers to a KMS signer of the context (ProtocolConfig.getKmsSignersForContext),
-                        and no signer answers twice
+  ① who signed it?      every transport signature (PadDecryptResponseVerification, `fhevm-pad-decryption`
+                        domain on ProtocolConfig) recovers to a KMS signer of the context
+                        (ProtocolConfig.getKmsSignersForContext), and no signer answers twice
          │
          ▼
-  ② what is inside?     every payload decrypts (cleartextDecryptPadPayload) into shares signed by that
-                        same signer (PadShareVerification), naming the request's context
+  ② what is inside?     every payload decrypts (cleartextDecryptPadPayload) into an extraData naming the
+                        request's context and epoch, and shares signed by that same signer together with
+                        that extraData (PadShareVerification)
          │
          ▼
   ③ enough, and         per pad (label): at least --threshold shares (2t + 1),
