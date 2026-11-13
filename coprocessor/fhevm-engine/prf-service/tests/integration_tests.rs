@@ -1,6 +1,6 @@
 mod common;
 
-use alloy::primitives::B256;
+use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{PrfOutputAttestation, PrfOutputRef};
 use common::{CONNECTOR, DEADLINE};
 use coprocessor_api::PRF_ATTESTATION_HEADER;
@@ -32,6 +32,11 @@ struct TestService {
 
 impl TestService {
     async fn start() -> Self {
+        Self::start_with_body_budget(64 << 20, 16 << 20).await
+    }
+
+    /// With a body budget of `pod_bytes` for the pod and `share_bytes` for each connector.
+    async fn start_with_body_budget(pod_bytes: u32, share_bytes: u32) -> Self {
         let db = setup_test_db(ImportMode::None).await.expect("test db");
         let pool = PgPoolOptions::new()
             .max_connections(8)
@@ -53,8 +58,8 @@ impl TestService {
                 max_in_flight_per_connector: NonZeroUsize::new(4).unwrap(),
                 max_adds_per_connector: NonZeroUsize::new(2).unwrap(),
                 pad_poll_interval: Duration::from_secs(3600),
-                max_body_bytes: NonZeroU32::new(64 << 20).unwrap(),
-                max_body_bytes_per_connector: NonZeroU32::new(16 << 20).unwrap(),
+                max_body_bytes: NonZeroU32::new(pod_bytes).unwrap(),
+                max_body_bytes_per_connector: NonZeroU32::new(share_bytes).unwrap(),
             },
             service_pool,
             cancel_token.clone(),
@@ -74,9 +79,43 @@ impl TestService {
 
     /// A request as the proxy sends it, with the signer that it verified.
     fn request(&self, client: &Client, method: Method, path: &str) -> RequestBuilder {
+        self.request_as(client, CONNECTOR, method, path)
+    }
+
+    fn request_as(
+        &self,
+        client: &Client,
+        connector: Address,
+        method: Method,
+        path: &str,
+    ) -> RequestBuilder {
         client
             .request(method, format!("{}{path}", self.base_url))
-            .header(SIGNER_HEADER, CONNECTOR.to_checksum(None))
+            .header(SIGNER_HEADER, connector.to_checksum(None))
+    }
+
+    /// Adds a complete row with a body of `length` bytes, then sends a `GET` for it as `connector`,
+    /// on a new connection.
+    async fn get_output(&self, connector: Address, label: &str, length: usize) -> Response {
+        let path = output_ref(label, 64);
+        sqlx::query(
+            "INSERT INTO pads (prf_instance, label, pad_length, triggered_by) VALUES (0, $1, 64, $2)",
+        )
+        .bind(path.label.as_slice())
+        .bind(connector.as_slice())
+        .execute(&self.pool)
+        .await
+        .unwrap();
+        common::set_output_of_length(&self.pool, &path, 1, length).await;
+        self.request_as(
+            &Client::new(),
+            connector,
+            Method::GET,
+            &prf_path("0", label, "64"),
+        )
+        .send()
+        .await
+        .unwrap()
     }
 
     async fn get(&self, client: &Client, path: &str) -> Response {
@@ -399,4 +438,93 @@ async fn stop_serves_a_row_completed_during_the_drain() {
     assert_eq!(response.status(), StatusCode::OK);
 
     service.task.await.unwrap().unwrap();
+}
+
+/// More than the socket buffers: a client that reads nothing keeps the body in prf-service.
+const LARGE_BODY: usize = 24 << 20;
+const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
+
+fn label(byte: u8) -> String {
+    hex::encode([byte; 32])
+}
+
+#[tokio::test]
+async fn a_body_of_several_chunks_is_served_whole() {
+    let service = TestService::start().await;
+    let length = 100_000;
+    let response = service.get_output(CONNECTOR, &label(1), length).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.content_length(), Some(length as u64));
+    assert_eq!(response.bytes().await.unwrap(), vec![1u8; length]);
+    service.stop().await;
+}
+
+#[tokio::test]
+async fn a_connector_above_its_body_share_gets_concurrency_limited() {
+    let service = TestService::start_with_body_budget(64 << 20, 32 << 20).await;
+    // The client does not read this body, so it keeps its part of the share.
+    let held = service.get_output(CONNECTOR, &label(1), LARGE_BODY).await;
+    assert_eq!(held.status(), StatusCode::OK);
+
+    let refused = service.get_output(CONNECTOR, &label(2), LARGE_BODY).await;
+    assert_eq!(refused.headers()["retry-after"], "1");
+    assert_error(
+        refused,
+        StatusCode::TOO_MANY_REQUESTS,
+        "concurrency_limited",
+        true,
+    )
+    .await;
+    // Another connector has its own share.
+    let other = service
+        .get_output(OTHER_CONNECTOR, &label(3), LARGE_BODY)
+        .await;
+    assert_eq!(other.status(), StatusCode::OK);
+
+    drop((held, other));
+    service.stop().await;
+}
+
+#[tokio::test]
+async fn a_full_pod_body_budget_gives_unavailable_until_a_body_is_released() {
+    let service = TestService::start_with_body_budget(32 << 20, 32 << 20).await;
+    let held = service.get_output(CONNECTOR, &label(1), LARGE_BODY).await;
+    assert_eq!(held.status(), StatusCode::OK);
+
+    // No room in the pod: the request waits 5 s, then gets `503`.
+    let refused = service
+        .get_output(OTHER_CONNECTOR, &label(2), LARGE_BODY)
+        .await;
+    assert_eq!(refused.headers()["retry-after"], "1");
+    assert_error(
+        refused,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "unavailable",
+        true,
+    )
+    .await;
+
+    // The client of the held body disconnects: its budget comes back.
+    drop(held);
+    let served = timeout(DEADLINE, async {
+        loop {
+            let response = service
+                .request_as(
+                    &Client::new(),
+                    OTHER_CONNECTOR,
+                    Method::GET,
+                    &prf_path("0", &label(2), "64"),
+                )
+                .send()
+                .await
+                .unwrap();
+            if response.status() == StatusCode::OK {
+                return response;
+            }
+        }
+    })
+    .await
+    .expect("the body budget comes back after the disconnect");
+    assert_eq!(served.bytes().await.unwrap().len(), LARGE_BODY);
+    service.stop().await;
 }

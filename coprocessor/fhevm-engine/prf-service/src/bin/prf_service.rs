@@ -185,7 +185,13 @@ mod tests {
 
     #[test]
     fn refuses_an_empty_body_budget() {
-        assert!(Args::try_parse_from(["prf-service", "--max-body-bytes=0"]).is_err());
-        assert!(Args::try_parse_from(["prf-service", "--max-body-bytes-per-connector=0"]).is_err());
+        for flag in ["--max-body-bytes=0", "--max-body-bytes-per-connector=0"] {
+            let error = Args::try_parse_from(["prf-service", flag]).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                clap::error::ErrorKind::ValueValidation,
+                "{flag}"
+            );
+        }
     }
 }
