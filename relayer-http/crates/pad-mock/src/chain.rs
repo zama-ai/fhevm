@@ -55,15 +55,14 @@ sol! {
         bytes rawShares;
         uint32 partyId;
         uint32 degree;
-        bytes32 contextId;
         bytes16 sessionId;
-        bytes extraData;
         bytes signature;
     }
 
     #[derive(Debug, PartialEq)]
     struct PadDecryptResponsePayload {
         PadShare[] shares;
+        bytes extraData;
     }
 
     #[derive(Debug, PartialEq)]
@@ -115,7 +114,6 @@ sol! {
         bytes rawShares;
         uint32 partyId;
         uint32 degree;
-        bytes32 contextId;
         bytes16 sessionId;
         bytes extraData;
     }
@@ -162,14 +160,25 @@ pub fn contract_request(request: &ConnectorRequest) -> PadDecryptRequest {
     }
 }
 
-/// A KMSVerifier's ERC-5267 domain with another chain id: the user signs under the host chain's, the KMS nodes
-/// under the gateway chain's (the one the contract reports).
+/// A KMSVerifier's ERC-5267 domain with another chain id: the user signs its permit under the host chain's.
 pub fn domain(reported: &eip712DomainReturn, chain_id: U256) -> Eip712Domain {
     Eip712Domain::new(
         Some(reported.name.clone().into()),
         Some(reported.version.clone().into()),
         Some(chain_id),
         Some(reported.verifyingContract),
+        None,
+    )
+}
+
+/// The domain the KMS nodes sign pad decryption responses under (RFC-030): `fhevm-pad-decryption`, version 1,
+/// anchored on ProtocolConfig's chain id and address (`CleartextPaddedInputter._responseDomainHash`).
+pub fn pad_decryption_domain(chain_id: u64, protocol_config: Address) -> Eip712Domain {
+    Eip712Domain::new(
+        Some("fhevm-pad-decryption".into()),
+        Some("1".into()),
+        Some(U256::from(chain_id)),
+        Some(protocol_config),
         None,
     )
 }
@@ -291,7 +300,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             PadShareVerification::eip712_encode_type(),
-            "PadShareVerification(bytes32 label,bytes rawShares,uint32 partyId,uint32 degree,bytes32 contextId,bytes16 sessionId,bytes extraData)"
+            "PadShareVerification(bytes32 label,bytes rawShares,uint32 partyId,uint32 degree,bytes16 sessionId,bytes extraData)"
         );
         assert_eq!(
             PadDecryptResponseVerification::eip712_encode_type(),
