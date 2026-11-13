@@ -31,6 +31,51 @@ jobs:
               - .github/workflows/coprocessor-cargo-tests.yml
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
+  migration-sql:
+    name: coprocessor-cargo-test/migration-sql (PostgreSQL ${{ matrix.postgres }})
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        postgres: ['15', '17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: migration_test
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply migrations and check S3 mirror locks
+        working-directory: coprocessor/fhevm-engine/db-migration
+        run: |
+          for migration in migrations/*.sql; do
+            psql -X -v ON_ERROR_STOP=1 --single-transaction --file "$migration"
+          done
+          psql -X -v ON_ERROR_STOP=1 --single-transaction \
+            --file migrations/20261113120000_skip_s3_status_only_digest_mirror.sql
+          psql -X -v ON_ERROR_STOP=1 --file tests/s3_status_digest_mirror.sql
+
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes
