@@ -38,9 +38,7 @@ pub struct TestInstance {
 impl Drop for TestInstance {
     fn drop(&mut self) {
         println!("Shutting down the app with signal");
-        if let Some(chan) = &self.app_close_channel {
-            let _ = chan.send_replace(true);
-        }
+        self.stop_worker();
     }
 }
 
@@ -59,6 +57,13 @@ impl TestInstance {
         }
     }
 
+    /// Stops the worker the way SIGTERM does, keeping the database.
+    pub fn stop_worker(&self) {
+        if let Some(chan) = &self.app_close_channel {
+            let _ = chan.send_replace(true);
+        }
+    }
+
     pub fn health_check_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.health_check_port)
     }
@@ -68,8 +73,12 @@ pub fn default_dependence_cache_size() -> u16 {
     128
 }
 
-pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    setup_test_instance(true).await
+/// A database with a worker running against it, its arguments adjusted by
+/// `customize`.
+pub async fn setup_test_app_with(
+    customize: impl FnOnce(&mut Args),
+) -> Result<TestInstance, Box<dyn std::error::Error>> {
+    setup_test_instance(true, customize).await
 }
 
 /// A prepared database with no worker running against it.
@@ -80,26 +89,27 @@ pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>
 /// assertion resting on that fails wherever the machine is fast enough to lose
 /// the race.
 pub async fn setup_test_db_without_worker() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    setup_test_instance(false).await
+    setup_test_instance(false, |_| {}).await
 }
 
 async fn setup_test_instance(
     start_worker: bool,
+    customize: impl FnOnce(&mut Args),
 ) -> Result<TestInstance, Box<dyn std::error::Error>> {
     if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
-        setup_test_app_existing_db(start_worker).await
+        setup_test_app_existing_db(start_worker, customize).await
     } else {
-        setup_test_app_cloned_db(start_worker).await
+        setup_test_app_cloned_db(start_worker, customize).await
     }
 }
 
-/// Like [`setup_test_app`], but with a Postgres container of this test's own.
+/// Like [`setup_test_app_with`], but with a Postgres container of this test's own.
 ///
 /// Only for tests that pause or stop the database server, which would otherwise take
 /// down every test running at the same time. Costs about 26 seconds, so avoid it.
 pub async fn setup_test_app_dedicated_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
     if std::env::var("COPROCESSOR_TEST_LOCAL_DB").is_ok() {
-        setup_test_app_existing_db(true).await
+        setup_test_app_existing_db(true, |_| {}).await
     } else {
         setup_test_app_custom_docker(true).await
     }
@@ -110,6 +120,7 @@ const LOCAL_DB_ADVISORY_LOCK: i64 = 0x6c6f_6361_6c64_6201;
 
 async fn setup_test_app_existing_db(
     start_worker: bool,
+    customize: impl FnOnce(&mut Args),
 ) -> Result<TestInstance, Box<dyn std::error::Error>> {
     let mut lock = PgConnection::connect(LOCAL_DB_URL).await?;
     sqlx::query("SELECT pg_advisory_lock($1)")
@@ -118,7 +129,7 @@ async fn setup_test_app_existing_db(
         .await?;
 
     let (app_close_channel, health_check_port) =
-        maybe_start_worker(start_worker, LOCAL_DB_URL).await;
+        maybe_start_worker(start_worker, LOCAL_DB_URL, customize).await;
     Ok(TestInstance {
         _db: TestDb::External { _lock: lock },
         app_close_channel,
@@ -130,11 +141,13 @@ async fn setup_test_app_existing_db(
 /// The normal setup: a copy of the shared template, with a coprocessor against it.
 async fn setup_test_app_cloned_db(
     start_worker: bool,
+    customize: impl FnOnce(&mut Args),
 ) -> Result<TestInstance, Box<dyn std::error::Error>> {
     let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
     let db_url = db.db_url().to_string();
 
-    let (app_close_channel, health_check_port) = maybe_start_worker(start_worker, &db_url).await;
+    let (app_close_channel, health_check_port) =
+        maybe_start_worker(start_worker, &db_url, customize).await;
     Ok(TestInstance {
         _db: TestDb::Cloned { _db: db },
         app_close_channel,
@@ -147,18 +160,23 @@ async fn setup_test_app_cloned_db(
 async fn maybe_start_worker(
     start_worker: bool,
     db_url: &str,
+    customize: impl FnOnce(&mut Args),
 ) -> (Option<tokio::sync::watch::Sender<bool>>, u16) {
     if !start_worker {
         return (None, 0);
     }
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
-    let health_check_port = start_coprocessor(rx, db_url).await;
+    let health_check_port = start_coprocessor(rx, db_url, customize).await;
     (Some(app_close_channel), health_check_port)
 }
 
-async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
+async fn start_coprocessor(
+    rx: Receiver<bool>,
+    db_url: &str,
+    customize: impl FnOnce(&mut Args),
+) -> u16 {
     let health_check_port = test_harness::localstack::pick_free_port();
-    let args: Args = Args {
+    let mut args: Args = Args {
         max_batch_ttl_secs: 300,
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
@@ -208,6 +226,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         },
         stack_version: false,
     };
+    customize(&mut args);
 
     std::thread::spawn(move || {
         crate::start_runtime(args, Some(rx));
@@ -263,7 +282,8 @@ async fn setup_test_app_custom_docker(
     setup_test_key(&pool, false).await?;
     println!("DB prepared");
 
-    let (app_close_channel, health_check_port) = maybe_start_worker(start_worker, &db_url).await;
+    let (app_close_channel, health_check_port) =
+        maybe_start_worker(start_worker, &db_url, |_| {}).await;
     Ok(TestInstance {
         _db: TestDb::Dedicated(Box::new(container)),
         app_close_channel,

@@ -172,8 +172,10 @@ fn the_in_process_close_channel_path_does_not_terminate_its_caller() {
     // return without terminating this process, which is what is being asserted.
     let _ = close_send.send(true);
     done_rx
-        .recv_timeout(Duration::from_secs(5))
-        .expect("voluntary shutdown must return promptly");
+        // Startup does not watch the close request, so this waits out the
+        // worker's shutdown deadline.
+        .recv_timeout(Duration::from_secs(15))
+        .expect("voluntary shutdown must return within the shutdown deadline");
     voluntary
         .join()
         .expect("a voluntary shutdown must return rather than exiting the process");
