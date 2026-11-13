@@ -12,34 +12,70 @@ To do so, there is a contract named `HCULimit`, which monitors HCU consumption a
 
 - **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. Exceeding it reverts with `HCUTransactionDepthLimitExceeded`.
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. Exceeding it reverts with `HCUTransactionLimitExceeded`.
-- **Global homomorphic operations complexity per block**: Caps the total HCU consumed across all transactions from non-whitelisted callers in the same block. Exceeding it reverts with `HCUBlockLimitExceeded`.
+- **HCU quota**: Limits the HCU that the contracts sharing a quota can use at once (a maximum) and on average (a decay per block). Exceeding it reverts with `HCUQuotaExceeded`; a stopped quota reverts with `HCUQuotaStopped`, and a paused quota with `HCUQuotaPaused`.
 - **Sequential homomorphic operations depth across transactions**: Off by default. When enabled, it caps the depth a handle carries from earlier transactions. Exceeding it reverts with `HCUCrossTxDepthLimitExceeded` (see [Depth across transactions](#depth-across-transactions)).
 
 If any of these limits is exceeded, the transaction will revert.
 
-`HCULimit` also has a separate computation allowlist. When activated, it controls which dApp contracts may perform HCU-charged FHE operations; it does not change the HCU limits.
-
 ## HCU limit
 
-The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. The global per-block HCU cap is set on-chain by governance (via `HCULimit.setHCUPerBlock`) and is always greater than or equal to the per-transaction limit; you can read its current value from the deployed `HCULimit` contract (`getGlobalHCUCapPerBlock()`), and the current block's running total via `getBlockMeter()`. If any HCU limit is exceeded, the transaction will revert.
+The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. Quotas are set on-chain by governance (via `HCULimit.setQuota`); you can read a contract's quota with `getContractQuota(contract)`, and that quota's maximum, decay per block and current usage with `getQuota(quotaId)`. If any HCU limit is exceeded, the transaction will revert.
 
 To resolve a per-transaction revert, you must do one of the following:
 
 - Refactor your code to reduce the number of FHE operations in your transaction.
 - Split your FHE operations across multiple independent transactions.
 
-### Block-level limit and transaction estimation
+### Quotas and transaction estimation
 
-Unlike the per-transaction limits, the per-block cap depends on the **other transactions included in the same block**, not just on your own. The contract keeps a counter (`usedBlockHCU`) that resets every new block and aggregates HCU spent by every transaction from a non-whitelisted caller in that block. Here, the caller is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA. As a result:
+Every contract that calls `FHEVMExecutor` belongs to one quota. Here, the contract is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA. Contracts start in the default quota (`0`). A contract moves to another quota when governance assigns it (`assignQuota`) or when that quota's admin grants it (`grantQuota`).
 
-- A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUBlockLimitExceeded` at execution time if other FHE-heavy transactions are mined in the same block ahead of it.
+On a chain where the 0.14 allowlist was active, an allowlisted contract nobody assigned yet computes in quota `1`, shared at the old per-block cap. If it was also on the block HCU whitelist, it computes in quota `2`, unmetered. `getContractQuota` returns that quota, and only governance moves such a contract. A contract sent back to the default quota leaves the allowlist and stays stopped.
+
+A quota has a maximum and a decay per block, like the depth limit across transactions below. Every FHE operation adds its HCU to the quota's usage, usage decreases by the decay every block, and an operation fits while usage stays at or below the maximum. The maximum sets the largest burst; the decay sets the sustained rate. A quota whose maximum is `type(uint48).max` is not metered. A quota's maximum and decay are both 0 (stopped) or both non-zero.
+
+Unlike the per-transaction limits, a quota depends on **other transactions in the same quota**, not just on your own. As a result:
+
+- A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUQuotaExceeded` at execution time if other FHE-heavy transactions in the same quota are mined ahead of it.
 - This revert is **non-deterministic from the sender's perspective**: it is a function of block-inclusion ordering, not of the transaction's own payload.
 
-If you hit `HCUBlockLimitExceeded`, options include:
+If you hit `HCUQuotaStopped(account, quotaId)`, the quota's maximum is 0, often because the contract is still in a stopped default quota. Retrying fails until the contract is moved to another quota or governance resizes this one.
 
-- **Retry** the transaction in a later block, optionally with adjusted gas/priority so it is included when block HCU usage is lower.
+If you hit `HCUQuotaPaused(account, quotaId)`, a pauser paused the quota. Retrying fails until governance unpauses it.
+
+If you hit `HCUQuotaExceeded(account, quotaId, retryAfterBlocks)`, `retryAfterBlocks` is the wait for the operation that failed, as for the depth limit: wait at least that many blocks, simulate again, and repeat until the simulation passes. It is `type(uint256).max` when one operation alone exceeds the quota's maximum; then retrying fails until the maximum is raised.
+
+The checks run in this order: `HCUQuotaPaused`, `HCUQuotaStopped`, `HCUQuotaExceeded`, then the per-transaction limits and the depth across transactions.
+
+Options include:
+
+- **Retry** the transaction after `retryAfterBlocks`, when the quota has room again.
 - **Reduce the HCU footprint** of the transaction so it is more likely to fit alongside others (same techniques as for per-transaction reverts).
-- **Request a whitelist entry** (`addToBlockHCUWhitelist`) for caller contracts that have a justified need to bypass the block cap; this is governed on-chain and is not available to arbitrary callers.
+- **Ask for your contract to join a quota**: your partner's quota admin can grant it, or governance can assign one for contracts that need more HCU.
+
+A stopped or paused quota does not gate input verification (`FHEVMExecutor.verifyInput`), ACL permission grants, or decryption. A contract in it can still use them; it cannot perform HCU-charged FHE computation. Only a quota's stored-depth limit (see [Depth across transactions](#depth-across-transactions)) can refuse a grant.
+
+### Quota roles
+
+Three roles manage quotas on `HCULimit`. Governance is the ACL owner, and pausers are the ACL's pausers.
+
+| Role        | Functions                                                                                          | What it does                                                                                                                                                           |
+| ----------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Governance  | `setQuota`, `setQuotaAdmin`, `assignQuota`, `pauseQuota`, `unpauseQuota`, `setQuotaMaxStoredDepth` | Sizes every quota, names each quota's admin, moves any contract to the default quota or to a quota that is not stopped, pauses and unpauses, sets stored-depth limits. |
+| Quota admin | `grantQuota(quotaId, contract)`, `revokeQuota(quotaId, contract)`                                  | A partner's address: moves contracts from the default quota into its quota, and any contract of its quota back to the default quota, without a governance proposal.    |
+| Pauser      | `pauseQuota(quotaId)`                                                                              | Stops every contract in a quota. The quota keeps its size and contracts, and its admin cannot move them until governance unpauses it.                                  |
+
+A quota admin can add contracts only while the default quota is stopped (`DefaultQuotaNotStopped` otherwise), so joining a quota never leaves a contract with less room than it had. If governance later reopens the default quota, granted contracts stay in the admin's quota until the admin revokes them or governance moves them. It can send any contract of its quota back to the default quota, including one governance assigned. It cannot resize its quota or take a contract from another quota. Quotas `1` and `2` take no admin. You can read a quota's admin with `getQuotaAdmin(quotaId)` and whether it is paused with `isQuotaPaused(quotaId)`.
+
+### Stopping the default quota
+
+Stopping the default quota (`setQuota(0, 0, 0)`) refuses computation to every contract nobody moved to another quota. It has no on-chain readiness check. Before stopping it, governance should:
+
+1. Inventory **every live dApp contract address** that must keep computing on the chain, including contracts that compute in their constructor (grant their address before deployment).
+2. Move each one to a quota with `assignQuota`, or have its quota admin grant it once the default quota is stopped.
+3. Check `getContractQuota(address)` for every address in the inventory, and stop if one is still in the default quota.
+
+The `task:setQuota` Hardhat task runs the last check: it refuses to stop the default quota unless `--required-accounts` lists the inventory and none of it computes in the default quota. If stopping it disrupts live dApps, governance can reopen it with `setQuota(0, maxHCU, decayPerBlock)`. Reopening keeps every assignment. It suspends the routing of allowlisted contracts nobody assigned: they compute in the default quota until it is stopped again, when they return to quota `1` or `2`. The task guards stopping quotas `1` and `2` the same way.
 
 ### Depth across transactions
 
@@ -52,30 +88,9 @@ The per-transaction depth limit restarts at every transaction. A chain of depend
 
 `retryAfterBlocks` is the wait for the operation that failed. Later operations of the same transaction can need more, so wait at least that many blocks, simulate again, and repeat until the simulation passes. A transaction that simulates successfully can still revert if another transaction extends the same chain first.
 
+Governance can also give a quota a stored-depth limit with `setQuotaMaxStoredDepth(quotaId, maxStoredDepth)`, from `maxHCUDepthPerTx` to `maxDepth`. A contract in that quota cannot grant a handle deeper than the limit, with `FHE.allow` or `FHE.allowTransient`, to itself or to anyone else: the grant reverts with `HCUStoredDepthExceeded(account, quotaId, retryAfterBlocks)`, and succeeds once the handle has decayed for `retryAfterBlocks`. This limit does not refuse computing a deeper result, only granting it. So a quota can be generous in HCU but keep each value shallow. 0 means no limit beyond `maxDepth`. The default quota should keep the strictest limit: `HCULimit` refuses another quota's limit while the default quota has none or below the default quota's, but does not check a later raise of the default quota's limit against the others. It also refuses a `maxHCUDepthPerTx` above the default quota's limit, so a transaction on fresh inputs can always grant its results. You can read a quota's limit with `getQuotaMaxStoredDepth(quotaId)`.
+
 Depth spreads through every value computed from a deep handle, not only through one user's chain. In a token, a transfer computes the recipient's new balance from the sender's, so the recipient's balance inherits the sender's depth. A value that many transactions update, such as a total supply or a pool balance, can therefore keep a whole dApp waiting on `decayPerBlock`.
-
-## Computation allowlist
-
-The computation allowlist is inactive by default. When `isAllowlistActivated()` is `true`, every HCU-charged FHE operation checks the original dApp contract address passed by `FHEVMExecutor`. If `isAllowlisted(dappAddress)` is `false`, the operation reverts with `CallerNotAllowlisted(dappAddress)`. The address is the dApp contract, not the user's wallet. Retrying the transaction will not resolve a missing admission.
-
-This allowlist does not gate input verification (`FHEVMExecutor.verifyInput`), ACL permission grants, or decryption. Those paths retain their own authorization checks; a non-whitelisted dApp can use them if it meets those checks, but it cannot perform HCU-charged FHE computation while the allowlist is active.
-
-The computation allowlist and the block HCU whitelist are independent. `isBlockHCUWhitelisted(dappAddress)` only exempts a caller from the global block HCU cap; it does not admit the caller to computation. An allowlisted dApp remains subject to all HCU limits; a separate block whitelist entry exempts it only from the block cap. `isAllowlisted` reports stored membership even while the computation allowlist is inactive.
-
-### DApp admission
-
-Before a dApp's first HCU-charged FHE operation, check `isAllowlistActivated()` and `isAllowlisted(dappAddress)` on the target chain's deployed `HCULimit`. If activation is planned or already enabled and the dApp is absent, request admission from the ACL owner or an active allowlister. Provide the target chain and every dApp contract address that will call HCU-charged FHE operations. Admission is performed with `addToAllowlist(address[])`; it can be granted before the dApp is deployed. Check membership again after the admission transaction is confirmed. A new dApp address needs its own admission.
-
-### Activating and operating the allowlist
-
-Activation has no on-chain readiness check. The ACL owner should use this sequence before calling `setAllowlistActivated(true)`:
-
-1. Identify the correct chain and `HCULimit` proxy, then inventory **every live dApp contract address** that must continue performing HCU-charged FHE operations, including callers on the block HCU whitelist.
-2. While the allowlist is inactive, admit missing addresses with `addToAllowlist(address[])`. The ACL owner can call it directly or delegate admission temporarily with `addAllowlister(account, futureDeadline)`. Delegation does not itself admit any dApps.
-3. After the admission transactions are confirmed, check `isAllowlisted(address)` on-chain for every address in the inventory. Stop if any are missing, and review the inventory for omissions before activation.
-4. Only then submit `setAllowlistActivated(true)`. Confirm `isAllowlistActivated()` returns `true` afterward and exercise a representative HCU-charged FHE operation from an admitted dApp. Also confirm that the same operation from an non-whitelisted dApp reverts with `CallerNotAllowlisted(dappAddress)`.
-
-The ACL owner can remove dApps with `removeFromAllowlist(address[])` and revoke delegated admission authority with `removeAllowlister(account)`. Removing an allowlister does not remove dApps it previously admitted. If activation disrupts live dApps, the ACL owner can call `setAllowlistActivated(false)` to restore HCU computation for all dApps while the missing addresses are identified and added; deactivation preserves stored memberships and allowlister deadlines.
 
 ## HCU costs for common operations
 

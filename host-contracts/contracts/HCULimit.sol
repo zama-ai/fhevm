@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {aclAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "./ACL.sol";
@@ -11,12 +10,9 @@ import {HCULimitOperators} from "./HCULimitOperators.sol";
 
 /**
  * @title HCULimit
- * @notice Controls admission to HCU-charged FHE computation and enforces block and transaction HCU limits.
+ * @notice This contract manages the total allowed complexity for FHE operations at the
+ * transaction level, the HCU depth carried across transactions, and the HCU quotas per block.
  * @dev The contract is designed to be used with the FHEVMExecutor contract.
- * The computation allowlist controls which dapps may compute while activated. Membership grants no
- * exemption from HCU limits. The independent block HCU whitelist exempts callers only from the global
- * block cap and meter; transaction and depth limits still apply. A caller on the block HCU whitelist
- * must also be on the computation allowlist while allowlist is activated.
  */
 /// @dev This contract was migrated from Ownable2StepUpgradeable to ACLOwnable.
 /// Deployed proxies retain residual `_owner` and `_pendingOwner` values in the
@@ -24,44 +20,63 @@ import {HCULimitOperators} from "./HCULimitOperators.sol";
 /// by ACLOwnable and have no effect on contract behavior.
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
-    /// @notice Returned if the block exceeds the maximum allowed homomorphic complexity units.
-    error HCUBlockLimitExceeded();
+    /// @notice Returned when an operation would take a quota's usage over its maximum.
+    /// @param account Contract that ran the operation.
+    /// @param quotaId Quota the contract is assigned to.
+    /// @param retryAfterBlocks Blocks of decay after which this operation fits, if nothing else spends the quota;
+    ///        type(uint256).max if the operation alone exceeds the maximum. Later operations of the same
+    ///        transaction can need more, so clients simulate again after waiting.
+    error HCUQuotaExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
 
-    /// @notice Returned if the address is already block HCU whitelisted.
-    error AlreadyBlockHCUWhitelisted(address account);
+    /// @notice Returned when the contract's quota has a maximum of 0. Retrying fails until the contract is moved
+    ///         or the owner resizes the quota.
+    /// @param account Contract that ran the operation.
+    /// @param quotaId Quota the contract is assigned to.
+    error HCUQuotaStopped(address account, uint16 quotaId);
 
-    /// @notice Returned if the address is not block HCU whitelisted.
-    error NotBlockHCUWhitelisted(address account);
+    /// @notice Returned when the contract's quota is paused. Retrying fails until the owner unpauses it.
+    /// @param account Contract that ran the operation.
+    /// @param quotaId Quota the contract is assigned to.
+    error HCUQuotaPaused(address account, uint16 quotaId);
 
-    /// @notice Returned if a computation caller is absent from the active allowlist.
-    error CallerNotAllowlisted(address caller);
+    /// @notice Returned when a contract grants a handle deeper than its quota's stored-depth limit, with allow or
+    ///         allowTransient. Retrying succeeds once the handle has decayed for `retryAfterBlocks`.
+    /// @param account Contract that grants the handle.
+    /// @param quotaId Quota the contract computes in.
+    error HCUStoredDepthExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
 
-    /// @notice Returned if the sender is neither the ACL owner nor an active allowlister.
-    error CallerNotACLOwnerOrAllowlister(address caller);
+    /// @notice Returned when the sender is neither the ACL owner nor a pauser.
+    error NotPauser(address sender);
 
-    /// @notice Returned if the address is not allowlisted.
-    error NotAllowlisted(address account);
+    /// @notice Returned when the sender is not the admin of the quota.
+    error NotQuotaAdmin(uint16 quotaId, address sender);
 
-    /// @notice Returned if an allowlist admission or removal batch is empty.
-    error EmptyBatch();
+    /// @notice Returned when a quota admin moves a contract into or out of a paused quota.
+    error QuotaMembershipPaused(uint16 quotaId);
 
-    /// @notice Returned if an allowlister deadline is not in the future.
-    error InvalidAllowlisterDeadline(uint256 deadline);
+    /// @notice Returned when the contract is not in the quota it is moved out of.
+    error ContractNotInQuota(address account, uint16 quotaId);
 
-    /// @notice Returned if an account without a stored allowlister grant tries to renounce.
-    error NotAllowlister(address account);
+    /// @notice Returned when a quota admin adds a contract while the default quota's maximum is above 0: the
+    ///         contract may then have more room in the default quota than in the admin's quota.
+    error DefaultQuotaNotStopped();
 
-    /// @notice Returned if an addition uses the zero address.
-    error InvalidZeroAddress();
+    /// @notice Returned when:
+    ///         - only one of a quota's maximum and decay is 0;
+    ///         - a contract is assigned or granted to a quota whose maximum is 0, other than the default quota;
+    ///         - an admin is set for the default quota or a quota that replaced the allowlist.
+    error InvalidQuota(uint16 quotaId);
+
+    /// @notice Returned when a stored-depth limit is set on quota 1 or 2, outside maxHCUDepthPerTx to maxDepth, or, for
+    ///         a quota other than the default, below the default quota's limit or while the default quota has none.
+    ///         Also returned, for the default quota, when maxHCUDepthPerTx is set above the default quota's limit.
+    error InvalidMaxStoredDepth(uint16 quotaId);
 
     /// @notice Returned if the transaction exceeds the maximum allowed homomorphic complexity units.
     error HCUTransactionLimitExceeded();
 
     /// @notice Returned if the transaction exceeds the maximum allowed depth of homomorphic complexity units.
     error HCUTransactionDepthLimitExceeded();
-
-    /// @notice Returned if hcuPerBlock < maxHCUPerTx.
-    error HCUPerBlockBelowMaxPerTx();
 
     /// @notice Returned if a handle is the zero handle.
     /// @dev Handle slot zero is reserved for the transaction HCU accumulator.
@@ -81,10 +96,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     ///        Later operations of the same transaction can need more, so clients simulate again after waiting.
     error HCUCrossTxDepthLimitExceeded(uint256 retryAfterBlocks);
 
-    /// @notice Emitted when the global block HCU cap is updated.
-    /// @param hcuPerBlock New global block HCU cap.
-    event HCUPerBlockSet(uint48 hcuPerBlock);
-
     /// @notice Emitted when the per-transaction HCU depth limit is updated.
     /// @param maxHCUDepthPerTx New depth limit.
     event MaxHCUDepthPerTxSet(uint48 maxHCUDepthPerTx);
@@ -93,28 +104,20 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @param maxHCUPerTx New transaction limit.
     event MaxHCUPerTxSet(uint48 maxHCUPerTx);
 
-    /// @notice Emitted when a caller is added to the block-cap whitelist.
-    /// @param account Caller address that was whitelisted.
-    event BlockHCUWhitelistAdded(address indexed account);
+    /// @notice Emitted when a quota's maximum and decay are set.
+    event QuotaSet(uint16 indexed quotaId, uint48 maxHCU, uint48 decayPerBlock, address indexed setBy);
 
-    /// @notice Emitted when a caller is removed from the block-cap whitelist.
-    /// @param account Caller address that was removed from the whitelist.
-    event BlockHCUWhitelistRemoved(address indexed account);
+    /// @notice Emitted when the owner names a quota's admin; address(0) removes it.
+    event QuotaAdminSet(uint16 indexed quotaId, address indexed admin);
 
-    /// @notice Emitted when computation allowlist activation is set.
-    event AllowlistActivationChanged(bool activated);
+    /// @notice Emitted when a quota is paused or unpaused.
+    event QuotaPauseSet(uint16 indexed quotaId, bool paused, address indexed setBy);
 
-    /// @notice Emitted for each dapp admitted by the ACL owner or an active allowlister.
-    event AllowlistAdded(address indexed account, address indexed addedBy);
+    /// @notice Emitted when a contract is assigned to a quota, by the owner or the quota's admin.
+    event ContractQuotaAssigned(uint16 indexed quotaId, address indexed account, address indexed setBy);
 
-    /// @notice Emitted for each dapp removed from the computation allowlist.
-    event AllowlistRemoved(address indexed account);
-
-    /// @notice Emitted when an allowlister deadline is granted or replaced.
-    event AllowlisterAdded(address indexed account, uint256 deadline);
-
-    /// @notice Emitted when a nonzero stored allowlister deadline is cleared.
-    event AllowlisterRemoved(address indexed account);
+    /// @notice Emitted when a quota's stored-depth limit is set.
+    event QuotaMaxStoredDepthSet(uint16 indexed quotaId, uint48 maxStoredDepth, address indexed setBy);
 
     /// @notice Emitted when the cross-transaction depth limit is updated.
     event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
@@ -135,33 +138,67 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     ///      depth carried across transactions and bits 0-127 the depth within this transaction.
     uint256 private constant DEPTH_KNOWN = 1 << 255;
 
+    /// @notice Quota of every contract that was never assigned.
+    uint16 private constant DEFAULT_QUOTA = 0;
+
+    /// @notice Quota of contracts the allowlist admitted and nobody assigned yet, while the default quota is stopped.
+    uint16 private constant ALLOWLIST_QUOTA = 1;
+
+    /// @notice Quota of contracts both allowlisted and block-whitelisted that nobody assigned yet, while the default
+    ///         quota is stopped.
+    uint16 private constant BLOCK_WHITELIST_QUOTA = 2;
+
+    /// @notice A quota with this maximum is not metered.
+    uint48 private constant NO_CAP = type(uint48).max;
+
+    /// @dev Limit, meter, pause flag and stored-depth limit of one quota, in one slot. All contracts assigned to the
+    ///      quota share it. Usage decays by decayPerBlock every block, as carried depth does, and an operation fits
+    ///      while usage stays at most maxHCU. maxStoredDepth caps the carried depth its contracts can grant; 0 leaves
+    ///      only maxCrossTxDepth.
+    struct Quota {
+        uint48 maxHCU;
+        uint48 decayPerBlock;
+        uint48 usedHCU;
+        uint48 lastBlock;
+        bool paused;
+        uint48 maxStoredDepth;
+    }
+
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
-    /// @dev The first five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits).
+    /// @dev The first five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits). The
+    ///      cross-transaction fields and the quotas are appended after the allowlist to keep the existing layout.
     struct HCULimitStorage {
-        /// @notice Maximum homomorphic complexity units per block for callers outside the block HCU whitelist.
+        /// @notice Unused since quotas replaced the global block cap; reinitializeV6 copies it into a quota.
         uint48 globalHCUCapPerBlock;
-        /// @notice Used HCU in the current block for callers outside the block HCU whitelist.
+        /// @notice Unused since quotas replaced the global block cap.
         uint48 usedBlockHCU;
-        /// @notice Last seen block number for the block meter.
+        /// @notice Unused since quotas replaced the global block cap.
         uint48 lastSeenBlockNumber;
         /// @notice Maximum sequential HCU depth per transaction.
         uint48 maxHCUDepthPerTx;
         /// @notice Maximum total HCU per transaction.
         uint48 maxHCUPerTx;
-        /// @notice Callers exempt from the global block HCU cap and meter.
-        /// @dev Membership grants no computation admission or exemption from transaction and depth limits.
+        /// @notice Contracts that skipped the global block cap. No setter since quotas replaced it; read only to route
+        ///         allowlisted contracts nobody assigned (see _quotaOf).
         mapping(address account => bool isWhitelisted) blockHCUWhitelist;
-        /// @notice Dapps admitted to HCU-charged computation while the allowlist is active.
-        /// @dev Membership grants no exemption from HCU limits.
+        /// @notice Contracts the allowlist admitted. No setter since quotas replaced it; an entry is deleted when its
+        ///         contract moves to the default quota.
         mapping(address account => bool allowed) isAllowlisted;
-        /// @notice Delegated allowlister deadlines as Unix timestamps in seconds.
+        /// @notice Unused since quota admins replaced allowlisters.
         mapping(address account => uint256 deadline) allowlisters;
-        /// @notice Whether only allowlisted dapps may request HCU-charged computation.
+        /// @notice Whether the allowlist restricted FHE computation when quotas replaced it. No setter; while true and
+        ///         the default quota is stopped, allowlisted contracts nobody assigned keep computing (see _quotaOf).
         bool isAllowlistActivated;
         /// @notice Maximum depth carried across transactions; 0 disables the check.
         uint48 maxCrossTxDepth;
         /// @notice Carried depth the coprocessors are assumed to drain per block.
         uint48 crossTxDepthDecayPerBlock;
+        /// @notice Limit and meter of each quota.
+        mapping(uint16 quotaId => Quota) quotas;
+        /// @notice Quota of each contract; the default quota when never assigned.
+        mapping(address account => uint16 quotaId) contractQuota;
+        /// @notice Address that moves contracts between the default quota and each quota; address(0) when none.
+        mapping(uint16 quotaId => address admin) quotaAdmins;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
@@ -178,6 +215,20 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         }
     }
 
+    /// @dev Pausers are the ACL's pausers (PauserSet).
+    modifier onlyACLOwnerOrPauser() {
+        if (msg.sender != ACL(aclAdd).owner() && !ACL(aclAdd).isPauser(msg.sender)) revert NotPauser(msg.sender);
+        _;
+    }
+
+    /// @dev A paused quota's membership is frozen for its admin; the owner can still move contracts with assignQuota.
+    modifier onlyQuotaAdmin(uint16 quotaId) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if (msg.sender != $.quotaAdmins[quotaId]) revert NotQuotaAdmin(quotaId, msg.sender);
+        if ($.quotas[quotaId].paused) revert QuotaMembershipPaused(quotaId);
+        _;
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -185,35 +236,43 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
 
     /**
      * @notice  Initializes the contract.
-     * @param hcuCapPerBlock Initial global HCU cap per block.
+     * @param defaultQuotaHCUPerBlock Maximum and decay per block of the default quota; type(uint48).max leaves it
+     *        unmetered.
      * @param maxHCUDepthPerTx Maximum sequential HCU depth per transaction.
      * @param maxHCUPerTx Maximum total HCU per transaction.
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
-        uint48 hcuCapPerBlock,
+        uint48 defaultQuotaHCUPerBlock,
         uint48 maxHCUDepthPerTx,
         uint48 maxHCUPerTx
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        _setHCUPerBlock(hcuCapPerBlock);
+        _setQuota(DEFAULT_QUOTA, defaultQuotaHCUPerBlock, defaultQuotaHCUPerBlock);
         _setMaxHCUPerTx(maxHCUPerTx);
         _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
     }
 
     /**
-     * @notice Re-initializes the contract from V4 (the 0.14.x releases) or V5 (the computation allowlist), leaving the
-     *         cross-transaction depth limit disabled.
+     * @notice Re-initializes the contract from V4 (the 0.14.x releases) or V5 (the computation allowlist).
+     * @dev Quotas replace the global block cap, its whitelist and the allowlist. With the allowlist active, the default
+     *      quota is stopped, so unknown contracts stay refused, and allowlisted contracts share the global cap in the
+     *      allowlist quota, or are unmetered if also block-whitelisted. Otherwise the default quota gets the global cap,
+     *      and the upgrade proposal assigns any block-whitelisted contract to a quota that is not metered. The cap
+     *      becomes maximum and decay per block, which allows the same HCU per block. The cross-transaction depth limit
+     *      starts disabled.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
-
-    /**
-     * @notice Sets the block-level HCU limit for callers outside the block HCU whitelist.
-     * @param hcuPerBlock New block-level cap.
-     */
-    function setHCUPerBlock(uint48 hcuPerBlock) external onlyACLOwner {
-        _setHCUPerBlock(hcuPerBlock);
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint48 globalCap = $.globalHCUCapPerBlock;
+        if ($.isAllowlistActivated) {
+            _setQuota(DEFAULT_QUOTA, 0, 0);
+            _setQuota(ALLOWLIST_QUOTA, globalCap, globalCap);
+            _setQuota(BLOCK_WHITELIST_QUOTA, NO_CAP, NO_CAP);
+        } else {
+            _setQuota(DEFAULT_QUOTA, globalCap, globalCap);
+        }
     }
 
     /**
@@ -233,108 +292,65 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Exempts one caller from the global block HCU cap and meter.
-     * @dev An active computation allowlist and transaction and depth limits still apply to this caller.
-     * @param account Caller to add to the block HCU whitelist.
+     * @notice Sets a quota's maximum usage and how much usage decays per block, like setCrossTxDepthLimit.
+     *         A maximum of type(uint48).max leaves the quota unmetered; (0, 0) stops it.
      */
-    function addToBlockHCUWhitelist(address account) external onlyACLOwner {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.blockHCUWhitelist[account]) revert AlreadyBlockHCUWhitelisted(account);
-        $.blockHCUWhitelist[account] = true;
-        emit BlockHCUWhitelistAdded(account);
+    function setQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) external onlyACLOwner {
+        _setQuota(quotaId, maxHCU, decayPerBlock);
     }
 
     /**
-     * @notice Removes one caller's exemption from the global block HCU cap and meter.
-     * @dev Does not change computation allowlist membership.
-     * @param account Caller to remove from the block HCU whitelist.
+     * @notice Names the address that moves contracts between the default quota and this quota.
+     *         address(0) removes the admin. The default quota and the quotas that replaced the allowlist take none.
      */
-    function removeFromBlockHCUWhitelist(address account) external onlyACLOwner {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if (!$.blockHCUWhitelist[account]) revert NotBlockHCUWhitelisted(account);
-        $.blockHCUWhitelist[account] = false;
-        emit BlockHCUWhitelistRemoved(account);
+    function setQuotaAdmin(uint16 quotaId, address admin) external onlyACLOwner {
+        if (quotaId <= BLOCK_WHITELIST_QUOTA) revert InvalidQuota(quotaId);
+        _getHCULimitStorage().quotaAdmins[quotaId] = admin;
+        emit QuotaAdminSet(quotaId, admin);
     }
 
     /**
-     * @notice Activates or deactivates the computation allowlist without clearing membership or deadlines.
-     * @dev When active, callers on the block HCU whitelist must also be on the computation allowlist.
-     * @param activated Whether computation requires allowlist membership.
+     * @notice Moves a contract to the default quota or to a quota whose maximum is above 0, from any quota,
+     *         including a paused one.
      */
-    function setAllowlistActivated(bool activated) external onlyACLOwner {
-        _getHCULimitStorage().isAllowlistActivated = activated;
-        emit AllowlistActivationChanged(activated);
+    function assignQuota(uint16 quotaId, address account) external onlyACLOwner {
+        _assignQuota(quotaId, account);
     }
 
     /**
-     * @notice Atomically admits dapps, including addresses approved before deployment.
-     * @dev Admission grants no exemption from HCU limits or membership in the block HCU whitelist.
-     * Existing members and repeated addresses are skipped without emitting events.
-     * @param accounts Nonempty list of nonzero dapp addresses to admit.
+     * @notice Moves a contract from the default quota into the admin's quota.
+     * @dev Only while the default quota is stopped: a contract then gains room by joining any quota, so an admin
+     *      cannot starve a contract it does not own. If the owner reopens the default quota, granted contracts stay in
+     *      the admin's quota until the admin revokes them or the owner moves them. An allowlisted contract nobody
+     *      assigned computes in the allowlist quota, so it is not in the default quota and only the owner moves it.
      */
-    function addToAllowlist(address[] calldata accounts) external {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if (msg.sender != Ownable2StepUpgradeable(aclAdd).owner() && $.allowlisters[msg.sender] <= block.timestamp) {
-            revert CallerNotACLOwnerOrAllowlister(msg.sender);
-        }
-        if (accounts.length == 0) revert EmptyBatch();
-        for (uint256 i = 0; i < accounts.length; ++i) {
-            address account = accounts[i];
-            if (account == address(0)) revert InvalidZeroAddress();
-            if ($.isAllowlisted[account]) continue;
-            $.isAllowlisted[account] = true;
-            emit AllowlistAdded(account, msg.sender);
-        }
+    function grantQuota(uint16 quotaId, address account) external onlyQuotaAdmin(quotaId) {
+        if (_getHCULimitStorage().quotas[DEFAULT_QUOTA].maxHCU != 0) revert DefaultQuotaNotStopped();
+        if (_quotaOf(account) != DEFAULT_QUOTA) revert ContractNotInQuota(account, DEFAULT_QUOTA);
+        _assignQuota(quotaId, account);
     }
 
     /**
-     * @notice Atomically removes dapps from the computation allowlist.
-     * @dev While allowlist is activated, removed dapps cannot compute even if on the block HCU whitelist.
-     * @param accounts Nonempty list of allowlisted dapp addresses to remove.
+     * @notice Moves a contract from the admin's quota back to the default quota.
      */
-    function removeFromAllowlist(address[] calldata accounts) external onlyACLOwner {
-        if (accounts.length == 0) revert EmptyBatch();
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        for (uint256 i = 0; i < accounts.length; ++i) {
-            address account = accounts[i];
-            if (!$.isAllowlisted[account]) revert NotAllowlisted(account);
-            $.isAllowlisted[account] = false;
-            emit AllowlistRemoved(account);
-        }
+    function revokeQuota(uint16 quotaId, address account) external onlyQuotaAdmin(quotaId) {
+        if (_getHCULimitStorage().contractQuota[account] != quotaId) revert ContractNotInQuota(account, quotaId);
+        _assignQuota(DEFAULT_QUOTA, account);
     }
 
     /**
-     * @notice Grants or replaces an allowlister deadline, including renewal of expired grants.
-     * @param account Nonzero account allowed to admit dapps until the deadline.
-     * @param deadline Future Unix timestamp in seconds; authority expires at this timestamp.
+     * @notice Stops every FHE operation from the quota's contracts and stops its admin from moving contracts,
+     *         keeping its maximum, decay and contracts. Only the owner unpauses.
      */
-    function addAllowlister(address account, uint256 deadline) external onlyACLOwner {
-        if (account == address(0)) revert InvalidZeroAddress();
-        if (deadline <= block.timestamp) revert InvalidAllowlisterDeadline(deadline);
-        _getHCULimitStorage().allowlisters[account] = deadline;
-        emit AllowlisterAdded(account, deadline);
+    function pauseQuota(uint16 quotaId) external onlyACLOwnerOrPauser {
+        _setQuotaPaused(quotaId, true);
     }
 
     /**
-     * @notice Clears an allowlister grant without removing previously admitted dapps.
-     * @dev Clears active or expired deadlines. An absent grant succeeds without emitting an event.
-     * @param account Account whose allowlister grant is cleared.
+     * @notice Lifts a quota's pause.
      */
-    function removeAllowlister(address account) external onlyACLOwner {
-        _removeAllowlister(account);
-    }
-
-    /// @notice Clears the sender's stored allowlister grant, active or expired, without removing previously admitted dapps.
-    function renounceAllowlister() external {
-        if (_getHCULimitStorage().allowlisters[msg.sender] == 0) revert NotAllowlister(msg.sender);
-        _removeAllowlister(msg.sender);
-    }
-
-    function _removeAllowlister(address account) private {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.allowlisters[account] == 0) return;
-        delete $.allowlisters[account];
-        emit AllowlisterRemoved(account);
+    function unpauseQuota(uint16 quotaId) external onlyACLOwner {
+        _setQuotaPaused(quotaId, false);
     }
 
     /**
@@ -358,14 +374,51 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Caches `handle`'s carried depth for the rest of this transaction and returns it. If this
-     *         transaction has not seen the handle yet, the depth comes from `holder`'s permission.
-     *         Returns 0 when disabled.
+     * @notice Sets the carried depth above which a quota's contracts cannot grant a handle, with allow or allowTransient.
+     *         0 leaves only the cross-transaction depth limit. Otherwise the limit is from maxHCUDepthPerTx, so a
+     *         transaction on fresh inputs always fits, to maxDepth.
+     * @dev The default quota keeps the strictest limit: a quota admin can move its contract to the default quota, grant
+     *      a deep handle there and move it back. So the default quota's limit is set first, and another quota's limit
+     *      is refused below it; another quota's 0 counts as maxDepth. Raising the default quota's limit later is not
+     *      checked against the others. Quotas 1 and 2 take no limit: they only hold allowlisted contracts until the
+     *      owner assigns them.
      */
-    function cacheDepth(bytes32 handle, address holder) external returns (uint48) {
+    function setQuotaMaxStoredDepth(uint16 quotaId, uint48 maxStoredDepth) external onlyACLOwner {
+        if (quotaId == ALLOWLIST_QUOTA || quotaId == BLOCK_WHITELIST_QUOTA) revert InvalidMaxStoredDepth(quotaId);
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if (maxStoredDepth != 0) {
+            if (maxStoredDepth < $.maxHCUDepthPerTx || maxStoredDepth > $.maxCrossTxDepth) {
+                revert InvalidMaxStoredDepth(quotaId);
+            }
+            if (quotaId != DEFAULT_QUOTA) {
+                uint48 defaultLimit = $.quotas[DEFAULT_QUOTA].maxStoredDepth;
+                if (defaultLimit == 0 || maxStoredDepth < defaultLimit) revert InvalidMaxStoredDepth(quotaId);
+            }
+        }
+        $.quotas[quotaId].maxStoredDepth = maxStoredDepth;
+        emit QuotaMaxStoredDepthSet(quotaId, maxStoredDepth, msg.sender);
+    }
+
+    /**
+     * @notice Caches `handle`'s carried depth for the rest of this transaction and returns it, when `holder` grants the
+     *         handle. If this transaction has not seen the handle yet, the depth comes from `holder`'s permission.
+     *         Reverts with HCUStoredDepthExceeded above the stored-depth limit of `holder`'s quota. Returns 0 when
+     *         disabled.
+     */
+    function cacheDepth(bytes32 handle, address holder) external returns (uint48 depth) {
         if (msg.sender != aclAdd) revert CallerMustBeACLContract();
-        if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
-        return uint48(_cacheDepths(handle, holder) >> 128);
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.maxCrossTxDepth == 0) return 0;
+        depth = uint48(_cacheDepths(handle, holder) >> 128);
+        uint16 quotaId = _quotaOf(holder);
+        uint48 maxStoredDepth = $.quotas[quotaId].maxStoredDepth;
+        if (maxStoredDepth != 0 && depth > maxStoredDepth) {
+            revert HCUStoredDepthExceeded(
+                holder,
+                quotaId,
+                _blocksToDecay(depth - maxStoredDepth, $.crossTxDepthDecayPerBlock)
+            );
+        }
     }
 
     /**
@@ -516,6 +569,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /// @dev Returns `value` minus `decayPerBlock` for each block since `sinceBlock`, floored at 0.
+    ///      Carried depth and quota usage both decay this way.
     function _decayed(uint48 value, uint48 sinceBlock, uint256 decayPerBlock) private view returns (uint256) {
         uint256 decay = (block.number - sinceBlock) * decayPerBlock;
         return decay >= value ? 0 : value - decay;
@@ -528,48 +582,50 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
 
     /**
      * @notice Updates and verifies the HCU transaction limit.
-     * @param opWork The operation's work, charged to the block meter and the transaction.
-     * @param caller Original dapp caller address for allowlist and block-level checks.
+     * @param opWork The operation's work, charged to the quota and the transaction.
+     * @param caller Contract that runs the operation, charged to its quota.
      */
     function _updateAndVerifyHCUTransactionLimit(uint256 opWork, address caller) internal virtual {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.isAllowlistActivated && !$.isAllowlisted[caller]) {
-            revert CallerNotAllowlisted(caller);
-        }
-        _updateAndVerifyHCUBlockLimit(opWork, caller);
+        _updateAndVerifyHCUQuota(opWork, caller);
 
         uint256 transactionHCU = opWork + _getHCUForTransaction();
-        if (transactionHCU > uint256($.maxHCUPerTx)) {
+        if (transactionHCU > uint256(_getHCULimitStorage().maxHCUPerTx)) {
             revert HCUTransactionLimitExceeded();
         }
         _setHCUForTransaction(transactionHCU);
     }
 
     /**
-     * @notice Updates and enforces the public block HCU cap for one operation.
-     * @dev No-op if caller is whitelisted.
+     * @notice Charges one operation to the quota of the contract that runs it.
      * @param opWork Work of the current operation.
-     * @param caller Original dapp caller address from FHEVMExecutor.
+     * @param caller Contract that calls FHEVMExecutor.
      */
-    function _updateAndVerifyHCUBlockLimit(uint256 opWork, address caller) internal virtual {
+    function _updateAndVerifyHCUQuota(uint256 opWork, address caller) internal virtual {
+        uint16 quotaId = _quotaOf(caller);
+        Quota storage quota = _getHCULimitStorage().quotas[quotaId];
+        if (quota.paused) revert HCUQuotaPaused(caller, quotaId);
+        uint48 maxHCU = quota.maxHCU;
+        if (maxHCU == 0) revert HCUQuotaStopped(caller, quotaId);
+        if (maxHCU == NO_CAP) return;
+        uint48 decayPerBlock = quota.decayPerBlock;
+        uint256 used = _decayed(quota.usedHCU, quota.lastBlock, decayPerBlock) + opWork;
+        if (used > maxHCU) {
+            uint256 wait = opWork > maxHCU ? type(uint256).max : _blocksToDecay(used - maxHCU, decayPerBlock);
+            revert HCUQuotaExceeded(caller, quotaId, wait);
+        }
+        quota.usedHCU = uint48(used);
+        quota.lastBlock = uint48(block.number);
+    }
+
+    /// @dev Returns the quota a contract computes in: the one it is assigned to, else, while the default quota is
+    ///      stopped and the allowlist was active, the quota that replaced the allowlist for it. Reopening the default
+    ///      quota suspends this routing, so an open default quota costs no extra read; stopping it again resumes it.
+    function _quotaOf(address account) private view returns (uint16) {
         HCULimitStorage storage $ = _getHCULimitStorage();
-
-        if ($.blockHCUWhitelist[caller]) {
-            return;
-        }
-
-        uint48 currentBlock = uint48(block.number);
-        uint48 storedHCU = $.usedBlockHCU;
-        if ($.lastSeenBlockNumber != currentBlock) {
-            storedHCU = 0;
-        }
-
-        uint256 nextHCU = uint256(storedHCU) + opWork;
-        if (nextHCU > uint256($.globalHCUCapPerBlock)) {
-            revert HCUBlockLimitExceeded();
-        }
-        $.usedBlockHCU = uint48(nextHCU);
-        $.lastSeenBlockNumber = currentBlock;
+        uint16 quotaId = $.contractQuota[account];
+        if (quotaId != DEFAULT_QUOTA || $.quotas[DEFAULT_QUOTA].maxHCU != 0) return quotaId;
+        if (!$.isAllowlistActivated || !$.isAllowlisted[account]) return DEFAULT_QUOTA;
+        return $.blockHCUWhitelist[account] ? BLOCK_WHITELIST_QUOTA : ALLOWLIST_QUOTA;
     }
 
     /**
@@ -594,16 +650,27 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         }
     }
 
-    /**
-     * @notice Sets the global HCU cap per block.
-     * @param hcuPerBlock New cap value.
-     * @dev Enforces hcuPerBlock >= maxHCUPerTx.
-     */
-    function _setHCUPerBlock(uint48 hcuPerBlock) private {
+    function _setQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) private {
+        // Both 0 stops the quota. A maximum without decay would never free up, and a decay without maximum means nothing.
+        if ((maxHCU == 0) != (decayPerBlock == 0)) revert InvalidQuota(quotaId);
+        Quota storage quota = _getHCULimitStorage().quotas[quotaId];
+        quota.maxHCU = maxHCU;
+        quota.decayPerBlock = decayPerBlock;
+        emit QuotaSet(quotaId, maxHCU, decayPerBlock, msg.sender);
+    }
+
+    /// @dev A contract sent to the default quota also leaves the allowlist, so that the allowlist cannot route it again.
+    function _assignQuota(uint16 quotaId, address account) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        if (hcuPerBlock < $.maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
-        $.globalHCUCapPerBlock = hcuPerBlock;
-        emit HCUPerBlockSet(hcuPerBlock);
+        if (quotaId != DEFAULT_QUOTA && $.quotas[quotaId].maxHCU == 0) revert InvalidQuota(quotaId);
+        $.contractQuota[account] = quotaId;
+        if (quotaId == DEFAULT_QUOTA) delete $.isAllowlisted[account];
+        emit ContractQuotaAssigned(quotaId, account, msg.sender);
+    }
+
+    function _setQuotaPaused(uint16 quotaId, bool paused) private {
+        _getHCULimitStorage().quotas[quotaId].paused = paused;
+        emit QuotaPauseSet(quotaId, paused, msg.sender);
     }
 
     /**
@@ -615,6 +682,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.maxCrossTxDepth != 0 && $.maxCrossTxDepth < maxHCUDepthPerTx) revert CrossTxDepthBelowMaxDepthPerTx();
+        uint48 defaultMaxStoredDepth = $.quotas[DEFAULT_QUOTA].maxStoredDepth;
+        if (defaultMaxStoredDepth != 0 && defaultMaxStoredDepth < maxHCUDepthPerTx) {
+            revert InvalidMaxStoredDepth(DEFAULT_QUOTA);
+        }
         $.maxHCUDepthPerTx = maxHCUDepthPerTx;
         emit MaxHCUDepthPerTxSet(maxHCUDepthPerTx);
     }
@@ -622,12 +693,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /**
      * @notice Sets the per-transaction HCU limit.
      * @param maxHCUPerTx New transaction limit.
-     * @dev Enforces hcuPerBlock >= maxHCUPerTx.
      */
     function _setMaxHCUPerTx(uint48 maxHCUPerTx) private {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.globalHCUCapPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
-        $.maxHCUPerTx = maxHCUPerTx;
+        _getHCULimitStorage().maxHCUPerTx = maxHCUPerTx;
         emit MaxHCUPerTxSet(maxHCUPerTx);
     }
 
@@ -671,11 +739,46 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Returns the global block HCU cap.
+     * @notice Returns a quota's maximum usage, its decay per block and its current usage after decay.
      */
-    function getGlobalHCUCapPerBlock() public view virtual returns (uint48) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        return $.globalHCUCapPerBlock;
+    function getQuota(
+        uint16 quotaId
+    ) public view virtual returns (uint48 maxHCU, uint48 decayPerBlock, uint48 usedHCU) {
+        Quota storage quota = _getHCULimitStorage().quotas[quotaId];
+        return (
+            quota.maxHCU,
+            quota.decayPerBlock,
+            uint48(_decayed(quota.usedHCU, quota.lastBlock, quota.decayPerBlock))
+        );
+    }
+
+    /**
+     * @notice Returns whether a quota is paused.
+     */
+    function isQuotaPaused(uint16 quotaId) public view virtual returns (bool) {
+        return _getHCULimitStorage().quotas[quotaId].paused;
+    }
+
+    /**
+     * @notice Returns a quota's admin; address(0) when it has none.
+     */
+    function getQuotaAdmin(uint16 quotaId) public view virtual returns (address) {
+        return _getHCULimitStorage().quotaAdmins[quotaId];
+    }
+
+    /**
+     * @notice Returns the quota a contract computes in; 0 is the default quota. An allowlisted contract nobody assigned
+     *         is in the quota that replaced the allowlist for it.
+     */
+    function getContractQuota(address account) public view virtual returns (uint16) {
+        return _quotaOf(account);
+    }
+
+    /**
+     * @notice Returns the carried depth above which a quota's contracts cannot grant a handle; 0 when it has none.
+     */
+    function getQuotaMaxStoredDepth(uint16 quotaId) public view virtual returns (uint48) {
+        return _getHCULimitStorage().quotas[quotaId].maxStoredDepth;
     }
 
     /**
@@ -698,49 +801,5 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      */
     function getMaxHCUPerTx() public view virtual returns (uint48) {
         return _getHCULimitStorage().maxHCUPerTx;
-    }
-
-    /**
-     * @notice Returns whether a caller bypasses the global block HCU cap.
-     * @dev This exemption grants no computation admission and leaves transaction and depth limits in force.
-     * @param account Caller address.
-     */
-    function isBlockHCUWhitelisted(address account) public view virtual returns (bool) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        return $.blockHCUWhitelist[account];
-    }
-
-    /// @notice Returns whether HCU-charged computation requires allowlist membership.
-    function isAllowlistActivated() public view virtual returns (bool) {
-        return _getHCULimitStorage().isAllowlistActivated;
-    }
-
-    /// @notice Returns whether a dapp is on the computation allowlist, independently of activation.
-    /// @dev Membership grants no exemption from the block cap, transaction limit, or depth limit.
-    function isAllowlisted(address account) public view virtual returns (bool) {
-        return _getHCULimitStorage().isAllowlisted[account];
-    }
-
-    /// @notice Returns whether the account's allowlister deadline is strictly in the future.
-    function isAllowlister(address account) public view virtual returns (bool) {
-        return _getHCULimitStorage().allowlisters[account] > block.timestamp;
-    }
-
-    /// @notice Returns the stored Unix deadline in seconds, including expired grants; zero means no grant.
-    function allowlisterDeadline(address account) public view virtual returns (uint256) {
-        return _getHCULimitStorage().allowlisters[account];
-    }
-
-    /**
-     * @notice Returns the effective public block HCU meter for the current block.
-     * @dev If storage still contains a previous block meter, returns `(block.number, 0)`.
-     */
-    function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedHCU) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        uint48 currentBlock = uint48(block.number);
-        if ($.lastSeenBlockNumber != currentBlock) {
-            return (currentBlock, 0);
-        }
-        return (currentBlock, $.usedBlockHCU);
     }
 }
