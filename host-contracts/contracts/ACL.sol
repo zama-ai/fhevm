@@ -6,7 +6,8 @@ import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Mu
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd, hcuLimitAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {HCULimit} from "./HCULimit.sol";
 import {IPauserSet} from "./interfaces/IPauserSet.sol";
 import {IConfidentialBridge} from "./bridge/interfaces/IConfidentialBridge.sol";
 
@@ -139,9 +140,23 @@ contract ACL is
         uint64 delegationCounter;
     }
 
+    /**
+     * @notice A persisted permission, with the carried depth of the handle when it was granted.
+     * @dev Packed into the one slot that held a `bool` before 0.7.0, with `allowed` in its low byte, so a
+     *      permission written before the upgrade reads as allowed with depth 0, and the previous ACL reads
+     *      this one as `true`. The upgrade tasks accept this one retype (see STORAGE_EXCEPTION).
+     */
+    struct Permission {
+        bool allowed;
+        /// @notice The handle's carried depth when it was granted (see HCULimit.setCrossTxDepthLimit).
+        uint48 depth;
+        /// @notice The block number of the grant.
+        uint48 storedBlock;
+    }
+
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
-        mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
+        mapping(bytes32 handle => mapping(address account => Permission permission)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
         // prettier-ignore
         mapping(address account =>
@@ -158,7 +173,7 @@ contract ACL is
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 6;
+    uint256 private constant MINOR_VERSION = 7;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -182,7 +197,7 @@ contract ACL is
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 7;
+    uint64 private constant REINITIALIZER_VERSION = 8;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACL_STORAGE_LOCATION = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
@@ -202,11 +217,14 @@ contract ACL is
     }
 
     /**
-     * @notice Re-initializes the contract from V5.
+     * @notice Re-initializes the contract from V5 (the 0.14.x releases) or V6 (the v0.15.0 release candidates).
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {
+        // `allow` and `allowTransient` call HCULimit.cacheDepth: refuse the upgrade until HCULimit has it.
+        HCULimit(hcuLimitAdd).getCrossTxDepthLimit();
+    }
 
     /**
      * @notice Accepts pending ownership and re-syncs the ConfidentialBridge's LayerZero
@@ -234,8 +252,12 @@ contract ACL is
         if (!isAllowed(handle, msg.sender)) {
             revert SenderNotAllowed(msg.sender);
         }
-        ACLStorage storage $ = _getACLStorage();
-        $.persistedAllowedPairs[handle][account] = true;
+        Permission storage permission = _getACLStorage().persistedAllowedPairs[handle][account];
+        if (!permission.allowed) {
+            // A repeated grant keeps the first record, which decays the same way.
+            uint48 depth = HCULimit(hcuLimitAdd).cacheDepth(handle, msg.sender);
+            _getACLStorage().persistedAllowedPairs[handle][account] = Permission(true, depth, uint48(block.number));
+        }
         emit Allowed(msg.sender, account, handle);
     }
 
@@ -301,6 +323,10 @@ contract ACL is
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
             }
+
+            // Caches the sender's depth: the recipient computes on the handle in this transaction
+            // without a stored permission of its own to read the depth from.
+            HCULimit(hcuLimitAdd).cacheDepth(handle, msg.sender);
         }
 
         bytes32 key = keccak256(abi.encodePacked(handle, account));
@@ -565,7 +591,10 @@ contract ACL is
         bytes32 handle
     ) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
-        if (!$.persistedAllowedPairs[handle][delegator] || !$.persistedAllowedPairs[handle][contractAddress]) {
+        if (
+            !$.persistedAllowedPairs[handle][delegator].allowed ||
+            !$.persistedAllowedPairs[handle][contractAddress].allowed
+        ) {
             return false;
         }
         return
@@ -581,7 +610,16 @@ contract ACL is
      */
     function persistAllowed(bytes32 handle, address account) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
-        return $.persistedAllowedPairs[handle][account];
+        return $.persistedAllowedPairs[handle][account].allowed;
+    }
+
+    /**
+     * @notice Returns the carried depth stored with `account`'s permission for `handle` and the block
+     *         it was stored at (see HCULimit.setCrossTxDepthLimit). Both are 0 without a stored permission.
+     */
+    function getStoredDepth(bytes32 handle, address account) external view returns (uint48 depth, uint48 storedBlock) {
+        Permission storage permission = _getACLStorage().persistedAllowedPairs[handle][account];
+        return (permission.depth, permission.storedBlock);
     }
 
     /**

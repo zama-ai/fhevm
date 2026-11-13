@@ -179,7 +179,7 @@ contract HCULimitAllowlistTest is Test {
         assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), 0);
         _compute(DAPP);
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        hcuLimit.reinitializeV5();
+        hcuLimit.reinitializeV6();
     }
 
     function test_upgradePreservesLegacyStorageAndStartsInactive() public {
@@ -190,7 +190,7 @@ contract HCULimitAllowlistTest is Test {
             address(new HCULimitV040TestDouble()),
             abi.encodeCall(HCULimitV040TestDouble.initializeFromEmptyProxy, (DAPP))
         );
-        UnsafeUpgrades.upgradeProxy(proxy, address(new MockHCULimit()), abi.encodeCall(HCULimit.reinitializeV5, ()));
+        UnsafeUpgrades.upgradeProxy(proxy, address(new MockHCULimit()), abi.encodeCall(HCULimit.reinitializeV6, ()));
         vm.stopPrank();
         MockHCULimit upgraded = MockHCULimit(proxy);
         assertEq(upgraded.getGlobalHCUCapPerBlock(), 30_000_000);
@@ -204,13 +204,16 @@ contract HCULimitAllowlistTest is Test {
         assertFalse(upgraded.isAllowlisted(DAPP));
         assertFalse(upgraded.isAllowlister(ALLOWLISTER));
         assertEq(upgraded.allowlisterDeadline(ALLOWLISTER), 0);
-        assertEq(upgraded.getVersion(), "HCULimit v0.5.0");
+        assertEq(upgraded.getVersion(), "HCULimit v0.6.0");
+        (uint48 maxCrossTxDepth, uint48 decayPerBlock) = upgraded.getCrossTxDepthLimit();
+        assertEq(maxCrossTxDepth, 0);
+        assertEq(decayPerBlock, 0);
         vm.prank(executor);
         upgraded.checkHCUForCast(FheType.Uint8, INPUT, RESULT, DAPP);
         (, usedHCU) = upgraded.getBlockMeter();
         assertEq(usedHCU, 12_345);
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        upgraded.reinitializeV5();
+        upgraded.reinitializeV6();
     }
 
     function test_ownerAndAllowlisterBatchAdditionsAndEvents(bool activated) public {
