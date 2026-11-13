@@ -57,6 +57,10 @@ const NO_STORE: &str = "no-store";
 /// next request on a reused connection without a limit.
 pub const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// The longest time for one write to a client. A client that stops reading is then disconnected,
+/// and prf-service frees its body. Pingora has no limit by default.
+pub const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// How long a request signed by an unknown signer waits for a poll of the KMS tx-senders that
 /// started after it, before it is checked again.
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
@@ -134,6 +138,7 @@ impl ProxyHttp for Proxy {
         } else {
             session.set_keepalive(Some(CLIENT_IDLE_TIMEOUT.as_secs()));
         }
+        session.set_write_timeout(Some(CLIENT_WRITE_TIMEOUT));
         Ok(())
     }
 

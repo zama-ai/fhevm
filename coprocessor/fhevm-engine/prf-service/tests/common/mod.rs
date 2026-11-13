@@ -42,6 +42,11 @@ pub fn attestation(byte: u8) -> PrfOutputAttestation {
 
 /// Completes the row with `attestation(byte)` and a body of 32 `byte`s, as the pad-worker does.
 pub async fn set_output(pool: &PgPool, path: &PrfOutputRef, byte: u8) {
+    set_output_of_length(pool, path, byte, 32).await;
+}
+
+/// Completes the row with `attestation(byte)` and a body of `length` `byte`s.
+pub async fn set_output_of_length(pool: &PgPool, path: &PrfOutputRef, byte: u8, length: usize) {
     let attestation = attestation(byte);
     sqlx::query(
         "UPDATE pads SET ciphertext128 = $4, ciphertext_digest = $5, ciphertext128_digest = $6,
@@ -51,7 +56,7 @@ pub async fn set_output(pool: &PgPool, path: &PrfOutputRef, byte: u8) {
     .bind(i32::from(path.prf_id))
     .bind(path.label.as_slice())
     .bind(i32::from(path.pad_length))
-    .bind(vec![byte; 32])
+    .bind(vec![byte; length])
     .bind(attestation.ciphertext_digest.as_slice())
     .bind(attestation.sns_ciphertext_digest.as_slice())
     .bind(attestation.signer.as_slice())
