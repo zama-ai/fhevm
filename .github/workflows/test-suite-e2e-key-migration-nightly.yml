@@ -1,0 +1,34 @@
+name: test-suite-e2e-key-migration-nightly
+
+# Nightly upgrade test from 0.14 to main: the key-migration-from-v0.14 scenario boots the stack at
+# 0.14, then the profile of the same name upgrades it step by step, migrates the existing key and
+# reshares it. Delete this workflow with the profile once production has left 0.14.
+
+on:
+  schedule:
+    # Weekdays only: each run holds a 32-CPU runner for about 2.5 hours, and main rarely
+    # changes at weekends. Off the hour, where GitHub delays or drops scheduled runs.
+    - cron: "23 2 * * 1-5"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  key-migration-from-v0-14:
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'read' # Required to read GitHub packages/container registry
+    secrets:
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+    with:
+      orchestrated: false
+      # Every repo-owned image from this commit. Without it, only Green (a local source in the
+      # scenario) is built; the rest come from the newest published main images.
+      build: true
+      scenario: key-migration-from-v0.14
+      test-profile: key-migration-from-v0.14
