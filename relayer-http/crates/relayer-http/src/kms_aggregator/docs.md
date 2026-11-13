@@ -171,9 +171,11 @@ and never restarts, whatever the other class does in between.
 **Transient: the list is the policy.** `retries.waits` names the wait before each retry, in order; `[]` is a single
 attempt. There is no curve formula: the operator shapes the list. What the stack shows about these failures decides
 the shape. They clear when something slow happens elsewhere: the coprocessors' attestations reach the connector's
-consensus threshold on S3, the ACL update lands on the host chain. That takes seconds, not a fixed delay, and the
-SDK does not retry these codes today (its relayer-http retry loop is in place with a "never retry" decision), so
-the relayer's retries are the only ones a dapp gets. Two short waits first catch a jitter cheaply; longer waits
+consensus threshold on S3, the ACL update lands on the host chain. That takes seconds, not a fixed delay, and nothing
+retries after the relayer: below the threshold it answers the dominant code as is, with the connector's status and
+no `retryable` indication (`endpoint/docs.md` section 5), and the SDK's relayer-http request makes one HTTP attempt
+(`sdk/js-sdk`, `RelayerHttpRequest`; it retries network failures only), so the relayer's retries are the only ones a
+decryption gets unless the dapp sends the request again. Two short waits first catch a jitter cheaply; longer waits
 after reach the deadline instead of giving up with half of it unused. The default `[200ms, 300ms, 500ms, 800ms, 1s]`
 is 2.8 s of waits under the 5 s deadline, up to 6 attempts per node.
 
@@ -182,9 +184,9 @@ is 2.8 s of waits under the 5 s deadline, up to 6 attempts per node.
 window that rejected the call is a guaranteed second 429 and one more unit of the budget spent, so the first retry
 waits a whole window (`initial_delay`, 1 s), and the header raises that floor when the proxy asks for more
 (delta-seconds only, at most 60 s; any other form is ignored). One retry by default: the limit is per sender per
-node, so an over-budget relayer is rejected by every node in the same window and the client's own retry is the
-right place for the second try. More retries double the wait each time, so a sustained 429 backs off instead of
-hammering.
+node, so an over-budget relayer is rejected by every node in the same window, and a second retry here would only
+spend the next window of every node; the request is answered `429 rate_limited` instead. More retries double the
+wait each time, so a sustained 429 backs off instead of hammering.
 
 **The deadline bounds both.** A wait that would end after `call.timeout` is skipped and the call gives up
 (`give_up_reason: deadline`), so no call outlives the aggregation. The deadline itself is at least 1 s. Startup
@@ -193,9 +195,10 @@ retry that could never run (section 9).
 
 **Cost.** Every retry is one more request to that node, counted by its proxy against the sender's 100 per second.
 With the default list a decryption that keeps failing costs up to 6 requests per node (13 nodes: 78), spread over
-2.8 s, so a burst of about 40 such decryptions in one second saturates a node's window; the SDK's later retry policy
-and the ciphertext-commit pre-check (DX027) are the levers that bring this down. A longer list buys coverage of the
-deadline at that price; `relayer_http_kms_attempts` shows what calls actually use.
+2.8 s, so a burst of about 40 such decryptions in one second saturates a node's window. The relayer checks neither
+the ACL nor the ciphertext before the fan-out (section 13), so a decryption that is not ready pays the whole list on
+every node. A longer list buys coverage of the deadline at that price; `relayer_http_kms_attempts` shows what calls
+actually use.
 
 **Observing it.** Each failed attempt is one WARN line with its decision: `retry_class`, `retry_in_ms` (null when
 the call gives up), `retry_after_ms`, `give_up_reason`; `call failed` carries `transient_retries` and
