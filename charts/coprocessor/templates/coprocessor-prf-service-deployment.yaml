@@ -92,6 +92,8 @@ spec:
             - --shutdown-delay={{ int $component.shutdownDelaySeconds }}s
             - --max-concurrent-per-connector={{ int64 $component.limits.maxConcurrentPerConnector }}
             - --max-in-flight-per-connector={{ $component.limits.maxInFlightPerConnector }}
+            - --max-body-bytes={{ int64 $component.limits.maxBodyBytes }}
+            - --max-body-bytes-per-connector={{ int64 $component.limits.maxBodyBytesPerConnector }}
             {{- with $component.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

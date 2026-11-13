@@ -44,7 +44,7 @@ HEAD /v1/prf/{prf}/labels/{label}/{padLength}
 | `405` | A method other than `GET` or `HEAD` |
 | `429 concurrency_limited` | A limit of the connector. `Retry-After: 1` |
 | `500 prf_evaluation_failed` | The evaluation of the row failed |
-| `503 unavailable` | A database error |
+| `503 unavailable` | A database error, or the body budget of the pod is full (`Retry-After: 1`) |
 
 Error bodies are JSON `{code, message, retryable}`, with `Cache-Control: no-store`.
 
@@ -54,7 +54,7 @@ Error bodies are JSON `{code, message, retryable}`, with `Cache-Control: no-stor
 |---|---|---|
 | 8090 | `--http-endpoint` (`PRF_HTTP_ENDPOINT`) | The endpoint, HTTP/1.1. Only the proxy calls it |
 | 8080 | `--health-check-port` | `/healthz`, `/liveness` and `/version` for Kubernetes |
-| 9100 | `--metrics-addr` | `coprocessor_prf_service_requests_total{method, status}`, `coprocessor_prf_service_request_duration_seconds{method, status}` |
+| 9100 | `--metrics-addr` | `coprocessor_prf_service_requests_total{method, status}`, `coprocessor_prf_service_request_duration_seconds{method, status}`, `coprocessor_prf_service_body_refusals_total{reason}`, `coprocessor_prf_service_body_bytes_held` |
 
 ## Database
 
@@ -78,6 +78,11 @@ poll wakes the requests.
 | Two admissions in progress of each connector | Memory | Each pod |
 | One request for each `(connector, label)` | Memory | Each pod |
 | Requests in progress of each connector (`PRF_MAX_IN_FLIGHT_PER_CONNECTOR`) | Memory | Each pod |
+| Bytes of the response bodies of each connector (`PRF_MAX_BODY_BYTES_PER_CONNECTOR`), `429` above (one larger body is served alone) | Memory | Each pod |
+| Bytes of all response bodies (`PRF_MAX_BODY_BYTES`): wait 5 s, then `503` | Memory | Each pod |
+
+Keep 4 times `PRF_MAX_BODY_BYTES_PER_CONNECTOR` below `PRF_MAX_BODY_BYTES` (8 MiB and 64 MiB by
+default), so the 4 faulty connectors that the protocol tolerates cannot fill it.
 
 Do not autoscale `prf-service`. With more pods, one connector can have more requests in progress.
 
