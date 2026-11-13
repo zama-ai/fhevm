@@ -24,8 +24,8 @@ use crate::manifest_consensus::{
         block_discovery::{
             discover_blocks_for_consensus_epoch, discover_children_for_consensus_epoch,
             discover_children_of, lock_next_block_to_progress_for_consensus_epoch,
-            log_discovery_frontiers, pending_chain_ids_for_consensus_epoch, ManifestProgressCursor,
-            PendingBlock,
+            log_discovery_frontiers, log_host_chain_heads, pending_chain_ids_for_consensus_epoch,
+            ManifestProgressCursor, PendingBlock,
         },
         manifest_builder::{
             is_block_manifest_ready, load_manifest_descriptors, missing_handles_are_uncomputed,
@@ -137,6 +137,9 @@ async fn run_manifest_publisher_with_poll_interval(
         incomplete_manifest_max_lag = consensus.incomplete_manifest_max_lag,
         "Manifest publication enabled for this stack consensus_epoch"
     );
+    if let Err(err) = log_host_chain_heads(&pool).await {
+        warn!(error = %err, "Could not read the host chain heads");
+    }
 
     let mut ticker = tokio::time::interval(poll_interval);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);

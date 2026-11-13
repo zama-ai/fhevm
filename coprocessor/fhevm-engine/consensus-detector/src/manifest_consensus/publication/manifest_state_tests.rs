@@ -22,17 +22,24 @@ async fn manifest_selection_serializes_with_ingestion_before_locking_rows() {
         .await
         .unwrap();
     let mut publication = pool.begin().await.unwrap();
+    let started = std::time::Instant::now();
     assert!(
         lock_next_block_to_progress(&mut publication, CHAIN_ID, &ManifestProgressCursor::start())
             .await
             .unwrap()
             .is_none(),
-        "busy ingestion must prevent sealing"
+        "ingestion held past the timeout must prevent sealing"
     );
+    assert!(started.elapsed() >= MANIFEST_HISTORY_LOCK_TIMEOUT);
     publication.rollback().await.unwrap();
-    ingestion.commit().await.unwrap();
 
+    // A short ingestion delays sealing instead of skipping the chain.
+    let release = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        ingestion.commit().await.unwrap();
+    });
     let mut publication = pool.begin().await.unwrap();
+    let started = std::time::Instant::now();
     assert!(lock_next_block_to_progress(
         &mut publication,
         CHAIN_ID,
@@ -41,6 +48,16 @@ async fn manifest_selection_serializes_with_ingestion_before_locking_rows() {
     .await
     .unwrap()
     .is_some());
+    assert!(started.elapsed() < MANIFEST_HISTORY_LOCK_TIMEOUT);
+    release.await.unwrap();
+    let lock_timeout: String = sqlx::query_scalar("SELECT current_setting('lock_timeout')")
+        .fetch_one(publication.as_mut())
+        .await
+        .unwrap();
+    assert_eq!(
+        lock_timeout, "0",
+        "the wait bound must not leak into sealing"
+    );
     let mut ingestion = pool.begin().await.unwrap();
     assert!(
         !try_lock_history_tx(&mut ingestion, ListenerSource::Host, false, CHAIN_ID)
@@ -142,6 +159,21 @@ async fn insert_manifest_state(
     .execute(pool)
     .await
     .expect("insert manifest state");
+}
+
+/// Stands in for sealing: per-poll child discovery only expands sealed parents.
+async fn mark_sealed(pool: &PgPool, block_hash: &[u8]) {
+    sqlx::query(
+        "UPDATE block_manifest_state
+            SET block_content_digest = $3, block_handle_count = 0
+          WHERE host_chain_id = $1 AND block_hash = $2",
+    )
+    .bind(CHAIN_ID)
+    .bind(block_hash)
+    .bind(vec![0xee_u8; 32])
+    .execute(pool)
+    .await
+    .expect("mark block sealed");
 }
 
 async fn load_pending_block(pool: &PgPool, block_hash: &[u8]) -> PendingBlock {
@@ -443,6 +475,7 @@ async fn upgrade_discovery_reroots_after_the_start_block_is_reorged() {
     insert_host_block(&pool, 60, &lost_root, &[0x59; 32], "pending").await;
     insert_host_block(&pool, 61, &lost_child, &lost_root, "pending").await;
     assert_eq!(discover_blocks(&pool).await.unwrap(), 1);
+    mark_sealed(&pool, &lost_root).await;
     assert_eq!(discover_children(&pool).await.unwrap(), 1);
 
     // The winning fork forks below the start block and carries no handles in
@@ -455,6 +488,7 @@ async fn upgrade_discovery_reroots_after_the_start_block_is_reorged() {
 
     assert_eq!(discover_blocks(&pool).await.unwrap(), 1);
     assert!(manifest_state_exists(&pool, &new_root).await);
+    mark_sealed(&pool, &new_root).await;
     assert_eq!(discover_children(&pool).await.unwrap(), 1);
     assert!(manifest_state_exists(&pool, &new_child).await);
 
@@ -1192,6 +1226,33 @@ async fn transient_manifest_publication_errors_exhaust_the_finite_retry_budget()
 
 #[tokio::test]
 #[serial(db)]
+async fn manifest_work_selection_restores_the_join_settings() {
+    let (_instance, pool) = setup_pool().await;
+    insert_manifest_state(&pool, 30, &[0x30; 32], &[0x29; 32]).await;
+    let mut trx = pool.begin().await.expect("begin selection transaction");
+
+    assert!(
+        lock_next_block_to_progress(&mut trx, CHAIN_ID, &ManifestProgressCursor::start())
+            .await
+            .expect("select manifest work")
+            .is_some()
+    );
+    let settings: (String, String) = sqlx::query_as(
+        "SELECT current_setting('enable_hashjoin'), current_setting('enable_mergejoin')",
+    )
+    .fetch_one(trx.as_mut())
+    .await
+    .expect("read join settings");
+    assert_eq!(
+        settings,
+        ("on".to_owned(), "on".to_owned()),
+        "the selector's join settings must not leak into preparation"
+    );
+    trx.rollback().await.expect("roll back selection");
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn local_statement_timeout_bounds_manifest_work_selection() {
     let (_instance, pool) = setup_pool().await;
     let mut trx = pool
@@ -1230,6 +1291,7 @@ async fn discovery_retries_finalized_parent_when_child_arrives_after_first_poll(
     // The listener has persisted a finalized anchor, but not its successor yet.
     insert_host_block(&pool, 100, &parent, &[0x63; 32], "finalized").await;
     assert_eq!(discover_blocks(&pool).await.expect("bootstrap anchor"), 1);
+    mark_sealed(&pool, &parent).await;
     assert_eq!(
         discover_children(&pool)
             .await
@@ -1296,10 +1358,21 @@ async fn discovers_all_direct_children_before_advancing_the_global_frontier() {
     assert!(!manifest_state_exists(&pool, &grandchild).await);
     assert!(!manifest_state_exists(&pool, &orphan).await);
 
+    // Polls do not run ahead of sealing: the grandchild waits for its parent.
     assert_eq!(
         discover_children(&pool)
             .await
-            .expect("advance all known parents by one level"),
+            .expect("skip unsealed parents"),
+        0
+    );
+    assert!(!manifest_state_exists(&pool, &grandchild).await);
+
+    mark_sealed(&pool, &parent).await;
+    mark_sealed(&pool, &first_child).await;
+    assert_eq!(
+        discover_children(&pool)
+            .await
+            .expect("advance sealed parents by one level"),
         1
     );
     let parent_closed = sqlx::query_scalar::<_, bool>(
@@ -1329,6 +1402,7 @@ async fn discovery_waits_for_finalized_successor_after_pending_child_replacement
     let canonical = [0x82; 32];
     insert_host_block(&pool, 100, &parent, &[0x79; 32], "finalized").await;
     insert_manifest_state(&pool, 100, &parent, &[0x79; 32]).await;
+    mark_sealed(&pool, &parent).await;
     insert_host_block(&pool, 101, &pending, &parent, "pending").await;
     assert_eq!(discover_children(&pool).await.unwrap(), 1);
     discover_children(&pool).await.unwrap();
