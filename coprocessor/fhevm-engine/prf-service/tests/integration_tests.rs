@@ -7,7 +7,11 @@ use coprocessor_api::PRF_ATTESTATION_HEADER;
 use prf_service::{Config, PrfService, SIGNER_HEADER};
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, Version};
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
+use std::{
+    net::TcpListener,
+    num::{NonZeroU32, NonZeroUsize},
+    time::Duration,
+};
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use tokio::{task::JoinHandle, time::timeout};
 use tokio_util::sync::CancellationToken;
@@ -49,6 +53,8 @@ impl TestService {
                 max_in_flight_per_connector: NonZeroUsize::new(4).unwrap(),
                 max_adds_per_connector: NonZeroUsize::new(2).unwrap(),
                 pad_poll_interval: Duration::from_secs(3600),
+                max_body_bytes: NonZeroU32::new(64 << 20).unwrap(),
+                max_body_bytes_per_connector: NonZeroU32::new(16 << 20).unwrap(),
             },
             service_pool,
             cancel_token.clone(),

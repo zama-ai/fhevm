@@ -1,4 +1,5 @@
 use crate::{
+    bodies::{BodyBudget, BodyRefusal, BudgetedBody},
     error::{PrfError, NO_STORE},
     in_flight::InFlight,
     instance,
@@ -45,6 +46,7 @@ pub(crate) struct AppState {
     pub in_flight: InFlight,
     pub admissions: Admissions,
     pub waiter: Arc<PadWaiter>,
+    pub bodies: Arc<BodyBudget>,
 }
 
 fn configure(cfg: &mut web::ServiceConfig) {
@@ -139,6 +141,18 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfE
             .insert_header(attestation_header(&output.attestation))
             .body(HeadBody(output.body_length)));
     }
+    // Reserve before the read: the body stays in memory until it is sent.
+    let permit = state
+        .bodies
+        .reserve(connector, output.body_length)
+        .await
+        .map_err(|refusal| match refusal {
+            BodyRefusal::Connector => PrfError::ConcurrencyLimited,
+            BodyRefusal::Pod => {
+                warn!(%connector, body_length = output.body_length, "No room for the body in the pod budget");
+                PrfError::Unavailable
+            }
+        })?;
     // No output: the row was deleted after the read.
     let (attestation, body) = pads::read_output(&state.pool, &path)
         .await
@@ -146,7 +160,7 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfE
         .ok_or(PrfError::Unavailable)?;
     Ok(response
         .insert_header(attestation_header(&attestation))
-        .body(body))
+        .body(BudgetedBody::new(body, permit)))
 }
 
 fn attestation_header(attestation: &PrfOutputAttestation) -> (&'static str, String) {

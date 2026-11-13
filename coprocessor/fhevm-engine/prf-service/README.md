@@ -78,6 +78,8 @@ poll wakes the requests.
 | Two admissions in progress of each connector | Memory | Each pod |
 | One request for each `(connector, label)` | Memory | Each pod |
 | Requests in progress of each connector (`PRF_MAX_IN_FLIGHT_PER_CONNECTOR`) | Memory | Each pod |
+| Bytes of the response bodies of each connector (`PRF_MAX_BODY_BYTES_PER_CONNECTOR`), `429` above | Memory | Each pod |
+| Bytes of all response bodies (`PRF_MAX_BODY_BYTES`): wait 5 s, then `503` | Memory | Each pod |
 
 Do not autoscale `prf-service`. With more pods, one connector can have more requests in progress.
 
