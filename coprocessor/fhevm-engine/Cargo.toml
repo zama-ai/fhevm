@@ -21,6 +21,7 @@ members = [
 authors = ["Zama"]
 edition = "2021"
 license = "BSD-3-Clause-Clear"
+publish = false
 
 [workspace.dependencies]
 actix-web = { version = "=4.18.2", default-features = false }

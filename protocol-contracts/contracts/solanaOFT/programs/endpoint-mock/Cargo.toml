@@ -3,6 +3,7 @@ name = "endpoint-mock"
 version = "0.1.0"
 description = "Endpoint Mock"
 edition = "2021"
+publish = false
 
 [lib]
 crate-type = ["cdylib", "lib"]

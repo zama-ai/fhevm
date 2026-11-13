@@ -1,7 +1,7 @@
 [package]
 authors = ["Zama"]
 name = "fhevm_gateway_bindings"
-publish = true
+publish = false
 edition = "2024"
 license = "BSD-3-Clause-Clear"
 version = "0.15.0"

@@ -1,5 +1,6 @@
 {
   "name": "chains-config-checker",
+  "private": true,
   "version": "1.0.0",
   "description": "FHEVM onchain configuration checker utilities",
   "scripts": {
