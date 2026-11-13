@@ -21,7 +21,7 @@ import {
 } from './config.js';
 import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos.js';
 import { type OverloadTest, type OverloadTests, generateOverloads } from './generateOverloads.js';
-import { generateSolidityHCULimit } from './hcuLimitGenerator.js';
+import { generateSolidityHCULimitOperators } from './hcuLimitGenerator.js';
 import { ALL_OPERATORS } from './operators.js';
 import { ALL_OPERATORS_PRICES } from './operatorsPrices.js';
 import { fromDirToFile, fromFileToFile, isDirectory } from './paths.js';
@@ -205,7 +205,7 @@ export async function commandGenerateAllFiles(options: LibCommandOptions): Promi
   const implDotSol = path.join(absConfig.lib.outDir, 'Impl.sol');
   const ecdsaDotSol = path.join(absConfig.lib.outDir, 'cryptography', 'FhevmECDSA.sol');
   const fheDotSol = path.join(absConfig.lib.outDir, 'FHE.sol');
-  const hcuLimitDotSol = path.join(absConfig.hostContracts.outDir, 'HCULimit.sol');
+  const hcuLimitOperatorsDotSol = path.join(absConfig.hostContracts.outDir, 'HCULimitOperators.sol');
 
   // Confidential-bridge OApp abstracts (`lib/bridge/`); only emitted when `lib.bridge` is enabled.
   const iDstAppDotSol = path.join(absConfig.lib.outDir, 'bridge', 'IDstApp.sol');
@@ -249,7 +249,7 @@ export async function commandGenerateAllFiles(options: LibCommandOptions): Promi
   if (!absConfig.noHostContracts) {
     debugLog(`============= Host Contracts =============`);
     debugLog(`hostContractsDir:   ${absConfig.hostContracts.outDir}`);
-    debugLog(`HCULimit.sol:       ${hcuLimitDotSol}`);
+    debugLog(`HCULimitOperators.sol: ${hcuLimitOperatorsDotSol}`);
   }
 
   debugLog(`============ Tests ============`);
@@ -301,10 +301,10 @@ export async function commandGenerateAllFiles(options: LibCommandOptions): Promi
   }
 
   if (!config.noHostContracts) {
-    const hcuCode = generateSolidityHCULimit(ALL_OPERATORS_PRICES);
+    const hcuCode = generateSolidityHCULimitOperators(ALL_OPERATORS_PRICES);
     // host contracts directory must exist.
     // Generate Host contracts contract files.
-    await formatAndWriteFile(hcuLimitDotSol, hcuCode);
+    await formatAndWriteFile(hcuLimitOperatorsDotSol, hcuCode);
   } else {
     debugLog(`Skipping host contracts generation.`);
   }

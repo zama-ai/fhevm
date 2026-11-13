@@ -27,6 +27,7 @@ pub mod fhe_events;
 pub mod fhevm_executor;
 pub mod i_input_verifier;
 pub mod hcu_limit;
+pub mod hcu_limit_operators;
 pub mod handles_receiver;
 pub mod handles_sender;
 pub mod i_beacon;
