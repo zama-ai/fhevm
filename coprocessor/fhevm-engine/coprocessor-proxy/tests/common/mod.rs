@@ -47,6 +47,9 @@ pub const ACCEPTED: &str = "auth_body_mismatch";
 /// [`TestProxy::answer_code`] for a signer still unknown after one read of the KMS tx-senders.
 pub const UNKNOWN_SIGNER: &str = "auth_unknown_signer";
 
+/// The body of `x-stub-large-body`: more than the socket buffers between the proxy and a client.
+pub const LARGE_BODY_BYTES: usize = 64 << 20;
+
 /// The test proxy's own coprocessor signer address, the audience of the headers it accepts.
 pub const AUDIENCE: Address = Address::repeat_byte(0xa1);
 pub const CHAIN_ID: u64 = 12345;
@@ -224,6 +227,9 @@ async fn prf(
             Json(body),
         )
             .into_response();
+    }
+    if headers.contains_key("x-stub-large-body") {
+        return vec![7u8; LARGE_BODY_BYTES].into_response();
     }
     let output = stub_output(&path);
     if headers.contains_key("x-stub-fail-mid-body") {
