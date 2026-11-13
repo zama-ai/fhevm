@@ -66,12 +66,13 @@ export function isDirectoryEmpty(directoryPath: string): boolean {
 }
 
 export function resolveTemplatePath(templateFilename: string): string {
-  // __dirname should be /path/to/fhevm/library-solidity/codegen/dist/_esm
+  // The compiled module's directory should be /path/to/fhevm/library-solidity/codegen/dist/_esm
   // Throw an error in case dist naming is changed or paths.ts is moved somewhere elst
   // We need to perform the resolve manually
-  if (!__dirname.endsWith('library-solidity/codegen/dist/_esm')) {
-    throw new Error(`Unexpected __dirname value ${__dirname}. Should end with "library-solidity/codegen/dist/_esm"`);
+  const moduleDir = import.meta.dirname;
+  if (!moduleDir.endsWith('library-solidity/codegen/dist/_esm')) {
+    throw new Error(`Unexpected module directory ${moduleDir}. Should end with "library-solidity/codegen/dist/_esm"`);
   }
 
-  return path.normalize(path.join(__dirname, '../../src/templates', templateFilename));
+  return path.normalize(path.join(moduleDir, '../../src/templates', templateFilename));
 }

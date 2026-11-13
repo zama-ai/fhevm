@@ -1,9 +1,9 @@
 import { expect } from 'chai';
 
-import { getTxHCUFromTxReceipt } from '../coprocessorUtils';
-import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
-import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
+import { getTxHCUFromTxReceipt } from '../coprocessorUtils.js';
+import { createInstances } from '../instance.js';
+import { getSigners, initSigners } from '../signers.js';
+import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture.js';
 
 describe('EncryptedERC20:HCU', function () {
   before(async function () {

@@ -1,7 +1,6 @@
-import { ethers } from 'hardhat';
-
-import type { SimpleMultiSig } from '../../typechain-types';
-import { getSigners } from '../signers';
+import type { SimpleMultiSig } from '../../typechain-types/index.js';
+import { ethers } from '../hardhat.js';
+import { getSigners } from '../signers.js';
 
 export async function deploySimpleMultiSigFixture(): Promise<SimpleMultiSig> {
   const signers = await getSigners();

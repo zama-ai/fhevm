@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 
-import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
+import { createInstances } from '../instance.js';
+import { getSigners, initSigners } from '../signers.js';
 
 describe('Testing fhevmjs/fhevmjsMocked', function () {
   before(async function () {

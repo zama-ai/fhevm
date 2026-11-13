@@ -1,6 +1,8 @@
-import { type FheTypeInfo, type Operator, OperatorArguments, ReturnType } from './common';
-import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos';
-import { ALL_OPERATORS } from './operators';
+import type { FheTypeInfo, Operator, PriceData } from './common.js';
+import { FHE_OPERATOR_NAMES, FHE_TYPE_NAMES, OperatorArguments, ReturnType } from './common.js';
+import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos.js';
+import { ALL_OPERATORS } from './operators.js';
+import { ALL_OPERATORS_PRICES } from './operatorsPrices.js';
 
 // Runtime type checks. Values are checked as `unknown`: their static types are not trusted at runtime.
 
@@ -17,6 +19,16 @@ function isNonEmptyString(value: unknown): value is string {
 /** `true` for an optional boolean field: absent (`undefined`) or a boolean. */
 function isOptionalBoolean(value: unknown): value is boolean | undefined {
   return value === undefined || typeof value === 'boolean';
+}
+
+/** `true` for one of the FHE type names (`FheTypeName`). */
+function isFheTypeName(value: unknown): boolean {
+  return typeof value === 'string' && (FHE_TYPE_NAMES as readonly string[]).includes(value);
+}
+
+/** `true` for an optional number field: absent (`undefined`) or a number. */
+function isOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || typeof value === 'number';
 }
 
 /**
@@ -47,7 +59,7 @@ function validateFHETypeInfos(fheTypes: FheTypeInfo[]): void {
   }
 
   fheTypes.forEach((fheType) => {
-    if (typeof fheType.type !== 'string' || typeof fheType.clearMatchingType !== 'string') {
+    if (!isFheTypeName(fheType.type) || typeof fheType.clearMatchingType !== 'string') {
       throw new Error(`Invalid FHE type: ${JSON.stringify(fheType)}`);
     }
 
@@ -190,9 +202,91 @@ function validateOperators(operators: Operator[]): void {
   });
 }
 
+/**
+ * Validates a per-FHE-type cost map (`scalar`, `nonScalar`, `types` or `nBucketed` of a `PriceData` entry): optional,
+ * keyed by FHE type names, each value checked by `isValidCost`.
+ */
+function validateCostMap(
+  map: unknown,
+  isValidCost: (cost: unknown) => boolean,
+  operatorName: string,
+  fieldName: string,
+): void {
+  if (map === undefined) {
+    return;
+  }
+  if (!isRecord(map)) {
+    throw new Error(`Invalid ${fieldName} prices for operator: ${operatorName}`);
+  }
+  for (const [typeName, cost] of Object.entries(map)) {
+    if (!isFheTypeName(typeName)) {
+      throw new Error(`Invalid ${fieldName} prices for operator: ${operatorName}. Unknown FHE type: ${typeName}`);
+    }
+    if (!isValidCost(cost)) {
+      throw new Error(`Invalid ${fieldName} price for operator: ${operatorName}, FHE type: ${typeName}`);
+    }
+  }
+}
+
+/** `true` for an `NBucketedCost`: `le10` is required, the other buckets are optional. */
+function isNBucketedCost(cost: unknown): boolean {
+  if (!isRecord(cost) || typeof cost.le10 !== 'number') {
+    return false;
+  }
+  const buckets = ['le10', 'le30', 'le60', 'le100', 'le128'];
+  return Object.entries(cost).every(([bucket, value]) => buckets.includes(bucket) && isOptionalNumber(value));
+}
+
+/**
+ * Validates the operators prices (`PriceData`, loaded from `operatorsPrices.json`).
+ *
+ * @param prices - The operators prices to validate.
+ * @throws Will throw an error if an operator is missing or unknown, or if an entry has invalid properties.
+ */
+function validateOperatorsPrices(prices: PriceData): void {
+  // Runtime check: the data comes from JSON, so its static type is not trusted here.
+  const pricesValue: unknown = prices;
+  if (!isRecord(pricesValue)) {
+    throw new Error('Operators prices is not defined or invalid');
+  }
+
+  for (const operatorName of FHE_OPERATOR_NAMES) {
+    if (!(operatorName in pricesValue)) {
+      throw new Error(`Missing prices for operator: ${operatorName}`);
+    }
+  }
+
+  for (const [operatorName, entry] of Object.entries(pricesValue)) {
+    if (!(FHE_OPERATOR_NAMES as readonly string[]).includes(operatorName)) {
+      throw new Error(`Unknown operator in prices: ${operatorName}`);
+    }
+    if (!isRecord(entry)) {
+      throw new Error(`Invalid prices for operator: ${operatorName}`);
+    }
+    const fields = ['supportScalar', 'numberInputs', 'scalar', 'nonScalar', 'types', 'nBucketed'];
+    const unknownField = Object.keys(entry).find((field) => !fields.includes(field));
+    if (unknownField !== undefined) {
+      throw new Error(`Unknown field in prices for operator: ${operatorName}. Field: ${unknownField}`);
+    }
+    if (typeof entry.supportScalar !== 'boolean') {
+      throw new Error(`Invalid supportScalar value for operator: ${operatorName}`);
+    }
+    if (typeof entry.numberInputs !== 'number') {
+      throw new Error(`Invalid numberInputs value for operator: ${operatorName}`);
+    }
+    const isNumber = (cost: unknown): boolean => typeof cost === 'number';
+    validateCostMap(entry.scalar, isNumber, operatorName, 'scalar');
+    validateCostMap(entry.nonScalar, isNumber, operatorName, 'nonScalar');
+    validateCostMap(entry.types, isNumber, operatorName, 'types');
+    validateCostMap(entry.nBucketed, isNBucketedCost, operatorName, 'nBucketed');
+  }
+}
+
 export function validate(): void {
   // Validate the FHE types
   validateFHETypeInfos(ALL_FHE_TYPE_INFOS);
   // Validate the operators
   validateOperators(ALL_OPERATORS);
+  // Validate the operators prices
+  validateOperatorsPrices(ALL_OPERATORS_PRICES);
 }

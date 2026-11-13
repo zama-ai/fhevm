@@ -23,7 +23,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // Entries removed from the published package.json.
-const CLEANED_UP = ["scripts", "devDependencies", "optionalDependencies", "engines", "main"];
+// `type` only tells Node how to load the Hardhat tooling (ESM); the published package ships Solidity files only.
+const CLEANED_UP = ["scripts", "devDependencies", "optionalDependencies", "engines", "main", "type"];
 // Files both tarballs must contain.
 const REQUIRED_FILES = ["package.json", "README.md", "LICENSE"];
 // Entries that only exist in the published package.json.

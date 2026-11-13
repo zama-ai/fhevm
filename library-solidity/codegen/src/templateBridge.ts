@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 
-import { resolveTemplatePath } from './paths';
-import { removeTemplateComments } from './utils';
+import { resolveTemplatePath } from './paths.js';
+import { removeTemplateComments } from './utils.js';
 
 /**
  * Confidential-bridge OApp abstracts (`lib/bridge/`).

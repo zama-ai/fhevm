@@ -1,4 +1,4 @@
-import type { NBucketedCost, PriceData } from './common';
+import type { NBucketedCost, PriceData } from './common.js';
 
 export function generateSolidityHCULimit(priceData: PriceData): string {
   if ((priceData as unknown) === undefined || (priceData as unknown) === null) {

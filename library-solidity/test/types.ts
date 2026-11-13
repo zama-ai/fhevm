@@ -1,6 +1,6 @@
-import type { EncryptedERC20, Rand } from '../typechain-types';
-import type { FhevmInstance } from './legacyRelayerSdk/types';
-import type { Signers } from './signers';
+import type { EncryptedERC20, Rand } from '../typechain-types/index.js';
+import type { FhevmInstance } from './legacyRelayerSdk/types.js';
+import type { Signers } from './signers.js';
 
 declare module 'mocha' {
   export interface Context {
