@@ -128,6 +128,7 @@ async fn test_processing_request(
         // and to build the response.
         TestEventType::NewKmsEpoch => {
             let fetch_count = if already_sent { 1 } else { 2 };
+            // Two `eth_call`s per fetch.
             for _ in 0..2 * fetch_count {
                 asserter.push_success(&Vec::<U256>::new().abi_encode());
             }
