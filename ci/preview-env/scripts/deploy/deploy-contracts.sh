@@ -15,6 +15,16 @@ else
 fi
 
 kind="${1:?kind}"
+
+# --with-kms-generation and host-side task:triggerKeygen arrived with the v0.13
+# canonical-host split. A vX.Y.Z pin older than that still deploys KMSGeneration
+# from gateway-contracts and triggers keygen there. Non-semver tags are current.
+host_contracts_before_v013() {
+  local tag="$1"
+  [[ "${tag}" =~ ^v([0-9]+)\.([0-9]+)\. ]] || return 1
+  (( 10#${BASH_REMATCH[1]} == 0 && 10#${BASH_REMATCH[2]} < 13 ))
+}
+
 case "${kind}" in
   gateway)
     helm upgrade --install gateway-contracts "${CONTRACTS_CHART}" \
@@ -23,10 +33,8 @@ case "${kind}" in
       --wait --wait-for-jobs --timeout="${deploy_timeout}"
     ;;
   host)
-    # --with-kms-generation arrived with the v0.13 canonical-host split.
-    # Older images reject it (HH305). v0.10 deploys KMSGeneration from gateway-contracts.
     host_tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")
-    if [[ "${host_tag}" =~ ^v([0-9]+)\.([0-9]+)\. ]] && (( BASH_REMATCH[1] == 0 && BASH_REMATCH[2] < 13 )); then
+    if host_contracts_before_v013 "${host_tag}"; then
       echo "host-contracts ${host_tag} has no --with-kms-generation; deploying without it"
       yq -i '.scDeploy.deployCommands = ["npx hardhat task:deployAllHostContracts"]' "${VALUES_FILE}"
     fi
@@ -54,9 +62,36 @@ case "${kind}" in
       --wait --wait-for-jobs --timeout="${deploy_timeout}"
     ;;
   trigger-keygen)
+    keygen_values="ci/preview-env/host-chain/values-host-trigger-keygen-e2e.yaml"
+    keygen_tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")
+    host_tag="${keygen_tag}"
+    if host_contracts_before_v013 "${host_tag}"; then
+      # KMSGeneration is on the gateway chain. keygen() is onlyGatewayOwner, and
+      # the gateway deploy uses Hardhat account #0 (values-gateway-contracts-e2e.yaml).
+      echo "host-contracts ${host_tag}: triggering keygen from gateway-contracts"
+      keygen_values="$(mktemp)"
+      cp ci/preview-env/host-chain/values-host-trigger-keygen-e2e.yaml "${keygen_values}"
+      KEYGEN_EXPORT="$(cat <<'EOF'
+export KMS_GENERATION_CONTRACT_ADDRESS=$(grep --color=never '^KMS_GENERATION_ADDRESS=' addresses/.env.gateway | cut -d'=' -f2 | tr -d '[:space:]')
+if [[ -z "${KMS_GENERATION_CONTRACT_ADDRESS}" ]]; then
+  echo "::error::KMS_GENERATION_ADDRESS could not be extracted from addresses/.env.gateway - refusing to start the consensus poll with a broken address"
+  exit 1
+fi
+echo "Resolved KMS_GENERATION_CONTRACT_ADDRESS=${KMS_GENERATION_CONTRACT_ADDRESS}"
+EOF
+)"
+      KEYGEN_EXPORT="${KEYGEN_EXPORT}" yq -i '
+        .scDeploy.image.name = "hub.zama.org/ghcr/zama-ai/fhevm/gateway-contracts" |
+        .persistence.volumeClaim.name = "gateway-sc-deploy-workdir" |
+        (.scDeploy.env[] | select(.name == "RPC_URL").value) = "http://anvil-gateway-anvil-node:8546" |
+        (.scDeploy.env[] | select(.name == "DEPLOYER_PRIVATE_KEY").value) = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" |
+        .scDeploy.deployCommands[0] = strenv(KEYGEN_EXPORT)
+      ' "${keygen_values}"
+      keygen_tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")
+    fi
     helm upgrade --install host-trigger-keygen "${CONTRACTS_CHART}" \
-      -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-host-trigger-keygen-e2e.yaml \
-      --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
+      -n "${NAMESPACE}" -f "${keygen_values}" \
+      --set-string "scDeploy.image.tag=${keygen_tag}" \
       --wait --wait-for-jobs --timeout="${keygen_timeout}"
     ;;
   *)
