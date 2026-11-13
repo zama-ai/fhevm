@@ -1,22 +1,15 @@
 /**
  * Single source of truth for the test topology: which slots exist, the foundry
- * profile / anvil port / chain id behind each, and the key file each one serves.
+ * anvil port / chain id behind each, and the key file each one serves.
  *
  * Everything downstream derives from this — anvil specs (orchestration), gateway
  * config (relayer + rpc proxy), and (later) the per-slot viem chain defs — so the
  * matrix stays consistent and adding a slot is a one-line change.
  *
- * foundry profile -> on-chain ACL version -> resolved TFHE/key version:
- *   v12 -> protocol 0.12 -> tfhe 1.5.4
- *   v13 -> protocol 0.13 -> tfhe 1.6.1
- *
- * The two anvils deploy from DIFFERENT deployer mnemonics so their FHEVM stacks
- * land at DIFFERENT addresses (the SDK resolves/caches the protocol version per
- * contract address — shared addresses across chains collide). v12 uses
- * FIRST_ANVIL_MNEMONIC; v13 uses the deploy's default mnemonic (so its committed
- * addresses file is regenerated identically and stays clean). Each slot's
- * addresses are derived here and served at `/<slot>/config` so the browser never
- * hardcodes them.
+ * There is a single slot today: the current cleartext stack (protocol 1.0). It deploys
+ * from the default deployer mnemonic (the only one the v1.0 deploy accepts), and
+ * its addresses are derived here and served at `/<slot>/config` so the browser
+ * never hardcodes them.
  */
 
 import { dirname, resolve } from 'node:path';
@@ -25,13 +18,11 @@ import type { AnvilSpec } from './anvil/anvils.js';
 import type { GatewayConfig, GatewaySlot, SlotChainConfig } from './gateway/gateway.js';
 import { deriveFhevmHostAddresses } from './anvil/fhevmAddresses.js';
 import {
-  CURRENT_SLOT,
   DEFAULT_DEPLOYER_MNEMONIC,
   GATEWAY_CHAIN_ID,
   GATEWAY_CHEAT_ADDRESSES,
   GATEWAY_MOUNT_PREFIX,
   SLOT_INFO,
-  type FoundryProfile,
   type SlotId,
 } from './config.js';
 
@@ -67,75 +58,56 @@ function wasmAssetDir(): string {
 
 export type SlotTopology = {
   readonly slot: string;
-  readonly foundryProfile: FoundryProfile;
   readonly port: number;
   readonly chainId: number;
   readonly tfheVersion: string;
   /** Basename of the key file under `test/keys`. */
   readonly keyFile: string;
-  /**
-   * Deployer mnemonic for this slot's anvil. Omit to use the deploy's built-in
-   * default (the committed addresses; its FHEVMHostAddresses.sol stays clean). Set
-   * a custom one to land the stack at a distinct address set — anvils.ts then
-   * passes it as `DEPLOYER_MNEMONIC` and restores the regenerated address file.
-   */
-  readonly deployerMnemonic?: string | undefined;
 };
 
-// Derived from config's SLOT_INFO — adding/rolling a slot is a one-line change
-// there. Each slot uses a distinct chain id (Foundry broadcast/cache is keyed by
-// chain id; concurrent same-id deploys collide as "nonce too low") AND a distinct
-// deployer (so addresses differ — see config.ts).
+// Derived from config's SLOT_INFO — adding/rolling a slot is a one-line change there.
 export const TOPOLOGY: readonly SlotTopology[] = (Object.keys(SLOT_INFO) as SlotId[]).map((slot) => {
   const info = SLOT_INFO[slot];
   return {
     slot,
-    foundryProfile: info.foundryProfile,
     port: info.port,
     chainId: info.chainId,
     tfheVersion: info.tfheVersion,
     keyFile: info.keyFile,
-    deployerMnemonic: info.deployerMnemonic,
   };
 });
 
-/** Resolved deployer mnemonic for a slot (its own, or the deploy default). */
-function slotMnemonic(t: SlotTopology): string {
-  return t.deployerMnemonic ?? DEFAULT_DEPLOYER_MNEMONIC;
-}
-
-/** Anvil specs for `startAnvils`. Carries the per-slot deployer + its ACL address
- *  (for the reuse check) so each anvil deploys to — and is recognized at — its own
- *  distinct addresses. */
+/** Anvil specs for `startAnvils`. Carries the slot's ACL address (for the reuse
+ *  check) so a reused anvil is recognized only when its stack is deployed, and the
+ *  KMSGeneration to seed with the slot key's digests (key.<ver>.digests.json). */
 export function anvilSpecs(): AnvilSpec[] {
+  const dir = keysDir();
+  const h = deriveFhevmHostAddresses(DEFAULT_DEPLOYER_MNEMONIC);
   return TOPOLOGY.map((t) => ({
     slot: t.slot,
     port: t.port,
-    foundryProfile: t.foundryProfile,
     chainId: t.chainId,
-    deployerMnemonic: t.deployerMnemonic,
-    aclAddress: deriveFhevmHostAddresses(slotMnemonic(t)).acl,
+    aclAddress: h.acl,
+    kmsGeneration: {
+      address: h.kmsGeneration,
+      protocolConfigAddress: h.protocolConfig,
+      aclAddress: h.acl,
+      digestsFilePath: resolve(dir, t.keyFile.replace(/\.json$/, '.digests.json')),
+    },
   }));
 }
 
-/** Per-slot chain config (addresses) served at `/<slot>/config`.
- *
- * `protocolConfig` is only included for the current (v13) profile: it doesn't
- * exist on the legacy (v12) deploy, whose nonce layout stops at `hcuLimit`
- * (nonce 6) — nonce 7 there is the `CleartextACL` *implementation* contract
- * deployed by the proxy-upgrade pass, not ProtocolConfig. Including it
- * unconditionally would have the SDK read that implementation's
- * `getVersion()` (which returns "ACL v...") and fail the
- * `assertIsHostContractVersionOf(..., 'ProtocolConfig', 'ProtocolConfigReplica')` check. */
-function slotChainConfig(chainId: number, mnemonic: string, foundryProfile: FoundryProfile): SlotChainConfig {
-  const h = deriveFhevmHostAddresses(mnemonic);
+/** Per-slot chain config (addresses) served at `/<slot>/config`. */
+function slotChainConfig(chainId: number): SlotChainConfig {
+  const h = deriveFhevmHostAddresses(DEFAULT_DEPLOYER_MNEMONIC);
   return {
     chainId,
     contracts: {
       acl: h.acl,
       inputVerifier: h.inputVerifier,
       kmsVerifier: h.kmsVerifier,
-      ...(foundryProfile === CURRENT_SLOT ? { protocolConfig: h.protocolConfig } : {}),
+      protocolConfig: h.protocolConfig,
+      kmsGeneration: h.kmsGeneration,
     },
     gateway: {
       id: GATEWAY_CHAIN_ID,
@@ -148,7 +120,7 @@ function slotChainConfig(chainId: number, mnemonic: string, foundryProfile: Foun
 }
 
 /** Gateway config: each slot proxies its anvil RPC, serves its key, and serves its
- *  (per-deployer) chain config at `/<slot>/config`. */
+ *  chain config at `/<slot>/config`. */
 export function gatewayConfig(): GatewayConfig {
   const dir = keysDir();
   const slots: Record<string, GatewaySlot> = {};
@@ -156,7 +128,7 @@ export function gatewayConfig(): GatewayConfig {
     slots[t.slot] = {
       keyFilePath: resolve(dir, t.keyFile),
       rpcUrl: `http://127.0.0.1:${String(t.port)}`,
-      chainConfig: slotChainConfig(t.chainId, slotMnemonic(t), t.foundryProfile),
+      chainConfig: slotChainConfig(t.chainId),
     };
   }
 

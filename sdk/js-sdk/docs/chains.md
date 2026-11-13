@@ -44,7 +44,7 @@ type FhevmChain = {
       readonly acl: ChainContract;
       readonly inputVerifier: ChainContract;
       readonly kmsVerifier: ChainContract;
-      readonly protocolConfig: ChainContract | undefined;
+      readonly protocolConfig: ChainContract;
       readonly kmsGeneration?: ChainContract | undefined; // Ethereum only
     };
     readonly relayerUrl: string;
@@ -70,7 +70,7 @@ type ChainContract = {
 | `fhevm.contracts.acl`                   | Access Control List — tracks who may decrypt what.          |
 | `fhevm.contracts.inputVerifier`         | Verifies encrypted inputs and their proofs.                 |
 | `fhevm.contracts.kmsVerifier`           | Holds the authorized KMS signer set and quorum threshold.   |
-| `fhevm.contracts.protocolConfig`        | Optional aggregate config contract; may be `undefined`.     |
+| `fhevm.contracts.protocolConfig`        | Holds the current KMS context and epoch. Required.          |
 | `fhevm.contracts.kmsGeneration`         | Ethereum only: digests of the FHE public key and CRS, checked before encryption. Set only in Ethereum chain definitions. |
 | `fhevm.relayerUrl`                       | The Relayer the SDK sends proof, pad and decryption requests to. |
 | `fhevm.gateway.id`                       | The gateway rollup's chain id.                              |
@@ -170,8 +170,8 @@ export const myDevnet = defineFhevmChain({
 const client = createFhevmClient({ chain: myDevnet, provider });
 ```
 
-Set `protocolConfig` to `undefined` if your deployment doesn't have one. All
-four built-in chains now define it.
+`protocolConfig` is required: the SDK checks it when a client starts and reads the
+current KMS context and epoch from it. All built-in chains define it.
 
 ## Related
 

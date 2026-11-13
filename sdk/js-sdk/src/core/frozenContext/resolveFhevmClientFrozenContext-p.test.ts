@@ -17,7 +17,7 @@ import { resolveFhevmClientFrozenContext } from './resolveFhevmClientFrozenConte
 const ACL_ADDRESS = polygonAmoy.fhevm.contracts.acl.address as ChecksummedAddress;
 const INPUT_VERIFIER_ADDRESS = polygonAmoy.fhevm.contracts.inputVerifier.address as ChecksummedAddress;
 const KMS_VERIFIER_ADDRESS = polygonAmoy.fhevm.contracts.kmsVerifier.address as ChecksummedAddress;
-const PROTOCOL_CONFIG_ADDRESS = polygonAmoy.fhevm.contracts.protocolConfig?.address as ChecksummedAddress;
+const PROTOCOL_CONFIG_ADDRESS = polygonAmoy.fhevm.contracts.protocolConfig.address as ChecksummedAddress;
 
 // getVersion() answers per address. getCurrentKmsContextAndEpoch() answers (7, 3).
 function makeClient(protocolConfigVersion: string) {

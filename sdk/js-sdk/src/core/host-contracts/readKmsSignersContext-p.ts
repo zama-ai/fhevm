@@ -18,7 +18,7 @@ type Context = {
 
 type Parameters = {
   readonly kmsVerifierAddress: ChecksummedAddress;
-  readonly protocolConfigAddress: ChecksummedAddress | undefined;
+  readonly protocolConfigAddress: ChecksummedAddress;
   readonly fhevmContext: FhevmClientFrozenContext;
   readonly forceRefresh?: boolean | undefined;
 };
@@ -43,8 +43,8 @@ type ReturnType = KmsSignersContext;
  * is what the permit embeds and the user signs.
  *
  * The returned encoding is always v2 (`contextId` + `epochId`), read from the
- * current on-chain context and epoch. `protocolConfigAddress` is required: throws
- * if it is missing.
+ * current on-chain context and epoch, read from the ProtocolConfig contract at
+ * `protocolConfigAddress`.
  *
  * NOTE — this differs from {@link readKmsSignersContextFromPermitExtraData}, which
  * resolves an *already-chosen* permit `extraData` to the most precise context
@@ -88,16 +88,8 @@ export async function readKmsSignersContextFromPermitExtraData(
 ////////////////////////////////////////////////////////////////////////////////
 
 async function _readCurrentKmsSignersContext(context: Context, parameters: Parameters): Promise<ReturnType> {
-  if (parameters.protocolConfigAddress === undefined) {
-    throw new Error('protocolConfigAddress is required on protocol v0.14.0+');
-  }
-  const protocolConfigAddress = parameters.protocolConfigAddress;
-
   // TTL-Cached
-  const { contextId, epochId } = await getCurrentKmsContextAndEpoch(context, {
-    ...parameters,
-    protocolConfigAddress,
-  });
+  const { contextId, epochId } = await getCurrentKmsContextAndEpoch(context, parameters);
 
   const extraDataV2 = createKmsExtraDataV2({
     kmsContextId: contextId,

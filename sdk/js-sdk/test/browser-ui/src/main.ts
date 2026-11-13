@@ -436,7 +436,7 @@ function resolveChain(target: ChainTarget): FhevmChain {
             acl: { address: '0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c' },
             inputVerifier: { address: '0x857Ca72A957920Fa0FB138602995839866Bd4005' },
             kmsVerifier: { address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11' },
-            protocolConfig: undefined, // To be filled
+            protocolConfig: { address: '0x52054F36036811ca418be59e41Fc6DD1b9e4F4c8' },
           },
           relayerUrl: LOCALSTACK_RELAYER_URL,
           gateway: {
@@ -456,11 +456,15 @@ function resolveChain(target: ChainTarget): FhevmChain {
             acl: { address: '0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D' },
             inputVerifier: { address: '0x36772142b74871f255CbD7A3e89B401d3e45825f' },
             kmsVerifier: { address: '0x901F8942346f7AB3a01F6D7613119Bca447Bb030' },
-            protocolConfig: undefined, // To be filled
+            protocolConfig: { address: '0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc' },
           },
           relayerUrl: 'http://localhost:8545',
           gateway: {
-            id: 654_321,
+            // The cleartext gateway chain id, hashed from a name so it cannot collide with a
+            // real network: uint48(uint256(keccak256("fhevm.cheat.chainId cleartext gateway"))).
+            // Defined as CLEARTEXT_GATEWAY_CHAIN_ID in
+            // contracts/src/localcleartext/cleartext/shared/LibFhevmCleartextConfig.sol.
+            id: 100_733_346_448_153,
             contracts: {
               decryption: { address: '0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721' },
               inputVerification: { address: '0x6189F6c0c3E40B4a3c72ec86262295D78d845297' },

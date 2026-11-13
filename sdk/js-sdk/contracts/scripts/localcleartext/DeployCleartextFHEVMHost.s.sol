@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-// Reference deploy for src/v1.0.0. Adapted from fhevm-mocks@8b91ae5
+// Reference deploy for src/localcleartext. Adapted from fhevm-mocks@8b91ae5
 // host-contracts-cleartext/v1.0/pkg/forge/script/FhevmDeployScript.s.sol (+ VerifyFhevmDeploy.s.sol checks).
 // Bootstrap values come from ./LocalHostBootstrap.sol (copied verbatim from
 // host-contracts-cleartext/v1.0/pkg/forge/src/_internal/LocalHostBootstrap.sol).
 
 import {Script, console} from "forge-std/Script.sol";
-import {ERC1967Proxy} from "../../src/v1.0.0/erc1967/ERC1967Proxy.sol";
-import {EmptyUUPSProxyACL} from "../../src/v1.0.0/host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {EmptyUUPSProxy} from "../../src/v1.0.0/host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {ACL} from "../../src/v1.0.0/host-contracts/contracts/ACL.sol";
-import {FHEVMExecutor} from "../../src/v1.0.0/host-contracts/contracts/FHEVMExecutor.sol";
-import {KMSVerifier} from "../../src/v1.0.0/host-contracts/contracts/KMSVerifier.sol";
-import {InputVerifier} from "../../src/v1.0.0/host-contracts/contracts/InputVerifier.sol";
-import {HCULimit} from "../../src/v1.0.0/host-contracts/contracts/HCULimit.sol";
-import {ProtocolConfig} from "../../src/v1.0.0/host-contracts/contracts/ProtocolConfig.sol";
-import {ProtocolConfigReplica} from "../../src/v1.0.0/host-contracts/contracts/ProtocolConfigReplica.sol";
-import {KMSGeneration} from "../../src/v1.0.0/host-contracts/contracts/KMSGeneration.sol";
-import {PaddedInputter} from "../../src/v1.0.0/host-contracts/contracts/PaddedInputter.sol";
-import {PauserSet} from "../../src/v1.0.0/host-contracts/contracts/immutable/PauserSet.sol";
-import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "../../src/v1.0.0/host-contracts/contracts/shared/Constants.sol";
-import {KmsNodeParams, KmsThresholds, PcrValues} from "../../src/v1.0.0/host-contracts/contracts/shared/Structs.sol";
-import {CleartextACL} from "../../src/v1.0.0/cleartext/CleartextACL.sol";
-import {CleartextFHEVMExecutor} from "../../src/v1.0.0/cleartext/CleartextFHEVMExecutor.sol";
-import {CleartextKMSVerifier} from "../../src/v1.0.0/cleartext/CleartextKMSVerifier.sol";
-import {CleartextInputVerifier} from "../../src/v1.0.0/cleartext/CleartextInputVerifier.sol";
-import {CleartextHCULimit} from "../../src/v1.0.0/cleartext/CleartextHCULimit.sol";
-import {CleartextPaddedInputter} from "../../src/v1.0.0/cleartext/CleartextPaddedInputter.sol";
-import {CleartextArithmetic} from "../../src/v1.0.0/cleartext/CleartextArithmetic.sol";
-import {CleartextDB} from "../../src/v1.0.0/cleartext/CleartextDB.sol";
-import {ACLOwner} from "../../src/v1.0.0/upgrade/ACLOwner.sol";
+import {ERC1967Proxy} from "../../src/localcleartext/erc1967/ERC1967Proxy.sol";
+import {EmptyUUPSProxyACL} from "../../src/localcleartext/host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
+import {EmptyUUPSProxy} from "../../src/localcleartext/host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {ACL} from "../../src/localcleartext/host-contracts/contracts/ACL.sol";
+import {FHEVMExecutor} from "../../src/localcleartext/host-contracts/contracts/FHEVMExecutor.sol";
+import {KMSVerifier} from "../../src/localcleartext/host-contracts/contracts/KMSVerifier.sol";
+import {InputVerifier} from "../../src/localcleartext/host-contracts/contracts/InputVerifier.sol";
+import {HCULimit} from "../../src/localcleartext/host-contracts/contracts/HCULimit.sol";
+import {ProtocolConfig} from "../../src/localcleartext/host-contracts/contracts/ProtocolConfig.sol";
+import {ProtocolConfigReplica} from "../../src/localcleartext/host-contracts/contracts/ProtocolConfigReplica.sol";
+import {KMSGeneration} from "../../src/localcleartext/host-contracts/contracts/KMSGeneration.sol";
+import {PaddedInputter} from "../../src/localcleartext/host-contracts/contracts/PaddedInputter.sol";
+import {PauserSet} from "../../src/localcleartext/host-contracts/contracts/immutable/PauserSet.sol";
+import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "../../src/localcleartext/host-contracts/contracts/shared/Constants.sol";
+import {KmsNodeParams, KmsThresholds, PcrValues} from "../../src/localcleartext/host-contracts/contracts/shared/Structs.sol";
+import {CleartextACL} from "../../src/localcleartext/cleartext/CleartextACL.sol";
+import {CleartextFHEVMExecutor} from "../../src/localcleartext/cleartext/CleartextFHEVMExecutor.sol";
+import {CleartextKMSVerifier} from "../../src/localcleartext/cleartext/CleartextKMSVerifier.sol";
+import {CleartextInputVerifier} from "../../src/localcleartext/cleartext/CleartextInputVerifier.sol";
+import {CleartextHCULimit} from "../../src/localcleartext/cleartext/CleartextHCULimit.sol";
+import {CleartextPaddedInputter} from "../../src/localcleartext/cleartext/CleartextPaddedInputter.sol";
+import {CleartextArithmetic} from "../../src/localcleartext/cleartext/CleartextArithmetic.sol";
+import {CleartextDB} from "../../src/localcleartext/cleartext/CleartextDB.sol";
+import {ACLOwner} from "../../src/localcleartext/upgrade/ACLOwner.sol";
 import {LocalHostBootstrap} from "./LocalHostBootstrap.sol";
 import {
     aclAdd,
@@ -45,7 +45,7 @@ import {
     pauserSetAdd,
     cleartextArithmeticAdd,
     cleartextDbAdd
-} from "../../src/v1.0.0/host-contracts/addresses/FHEVMHostAddresses.sol";
+} from "../../src/localcleartext/host-contracts/addresses/FHEVMHostAddresses.sol";
 
 interface ICleartextMarkers {
     function IS_CLEARTEXT() external view returns (bool);
@@ -286,7 +286,7 @@ library DeployV1 {
 // -----------------------------------------------------------------------------------------------------------------
 // Entry points called by scripts/fhevm-deploy.sh, the same names as every other generation. Only the deployer comes
 // from the environment (DEPLOYER_MNEMONIC, DEPLOYER_MNEMONIC_INDEX); every other value is LocalHostBootstrap's.
-// src/v1.0.0 is read-only: its committed config/addresses.sol (canonical deployer, start nonce 0) is checked, never
+// src/localcleartext is read-only: its committed config/addresses.sol (canonical deployer, start nonce 0) is checked, never
 // rewritten, so only a deployer whose addresses match it can deploy.
 // -----------------------------------------------------------------------------------------------------------------
 
@@ -322,13 +322,13 @@ abstract contract DeployerScript is Script {
         if (vm.computeCreateAddress(deployer, nonce) != expected) {
             revert(
                 string.concat(
-                    "src/v1.0.0/config/addresses.sol does not match deployer ",
+                    "src/localcleartext/config/addresses.sol does not match deployer ",
                     vm.toString(deployer),
                     " at start nonce ",
                     vm.toString(uint256(nonce)),
                     " (",
                     name,
-                    "). It holds the canonical set (DEPLOY.md section 4) and src/v1.0.0 is read-only."
+                    "). It holds the canonical set (DEPLOY.md section 4) and src/localcleartext is read-only."
                 )
             );
         }
@@ -354,14 +354,14 @@ contract PrintFhevmSigners is DeployerScript {
 contract WriteFHEVMHostAddressesDotSol is DeployerScript {
     function run() external view {
         _requireAddressesFor(_deployer(), vm.getNonce(_deployer()));
-        console.log("src/v1.0.0/config/addresses.sol matches the deployer; nothing written (read-only folder).");
+        console.log("src/localcleartext/config/addresses.sol matches the deployer; nothing written (read-only folder).");
     }
 }
 
 contract PrintFHEVMHostAddressesDotSol is DeployerScript {
     function run() external view {
         address d = _deployer();
-        console.log("FHEVM host addresses (v1.0.0, src/v1.0.0/config/addresses.sol)");
+        console.log("FHEVM host addresses (v1.0.0, src/localcleartext/config/addresses.sol)");
         console.log("  acl                   :", aclAdd);
         console.log("  fhevmExecutor         :", fhevmExecutorAdd);
         console.log("  kmsVerifier           :", kmsVerifierAdd);
