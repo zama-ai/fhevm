@@ -65,7 +65,7 @@ Grafana UI → **Dashboards** → **New** → **Import** → upload the JSON fil
 ### Rows
 
 1. **Overview** (5 stats, always expanded): Chain Height, DB Tip, Sync Lag, Cursor Rate (per min), Reorgs 24h — all filtered by `$chain_id`.
-2. **Cursor & Sync**: block heights (chain vs DB), sync-lag timeseries, cursor iteration rate, reorgs bar chart.
+2. **Cursor & Sync**: block heights (chain vs DB), sync-lag timeseries, cursor iteration rate, reorgs bar chart (with cursor re-arms per `flow`, from `listener_rearms_total`).
 3. **Block Fetch Performance**: block-fetch heatmap + p50/p95/p99, range-fetch heatmap + p50/p95/p99.
 4. **Listener Errors**: transient by kind, permanent by kind, publish errors rate.
 5. **Block Compute Verification**: two sub-sections per failure type (transaction root, receipt root, block hash):

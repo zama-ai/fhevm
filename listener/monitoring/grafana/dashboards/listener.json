@@ -356,7 +356,12 @@
           "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 80, "showPoints": "never" },
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "re-arm.*" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "purple" } }]
+          }
+        ]
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
       "id": 14,
@@ -371,6 +376,13 @@
           "expr": "increase(listener_reorgs_total{chain_id=\"$chain_id\"}[$__rate_interval])",
           "legendFormat": "reorgs",
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (flow) (increase(listener_rearms_total{chain_id=\"$chain_id\"}[$__rate_interval]))",
+          "legendFormat": "re-arm {{flow}}",
+          "refId": "B"
         }
       ],
       "title": "Reorgs over Time",

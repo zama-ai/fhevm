@@ -27,6 +27,7 @@ Enabled via `telemetry.enabled: true` in config.
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `listener_reorgs_total` | Counter | `chain_id` | Total chain reorganizations detected by the cursor. |
+| `listener_rearms_total` | Counter | `chain_id`, `flow` | Cursor re-arms after inconsistent or unavailable block data. `flow="live"`: a block's receipts did not match it (count, tx hashes or `blockHash`; chain moved between RPC calls). `flow="reorg"`: the reorg walk could not fetch a block consistently by hash and was abandoned before any DB write. A sustained rate means the RPC keeps serving inconsistent data. |
 
 ### Fetch Timing
 

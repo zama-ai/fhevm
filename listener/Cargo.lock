@@ -4219,6 +4219,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "telemetry",
+ "test-support",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
