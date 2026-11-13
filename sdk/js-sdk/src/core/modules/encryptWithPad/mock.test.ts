@@ -7,7 +7,7 @@ import type {
   Uint64BigInt,
 } from '../../types/primitives.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
-import type { PadDecryptResponse, PadWitness } from '../relayer/types.js';
+import type { PadDecryptResponse, PadEntry } from '../relayer/types.js';
 import type { PadDecryptResponsePayload, PadShare } from './types.js';
 import { describe, expect, it } from 'vitest';
 import { bytesToHex, hexToBytes, recoverTypedDataAddress } from 'viem';
@@ -69,20 +69,22 @@ const ethereum = {
     (await recoverTypedDataAddress(parameters)) as ChecksummedAddress,
 };
 
-function witness(byte: string, padLength: number): PadWitness {
+function padEntry(byte: string, padLength: number): PadEntry {
   return {
-    submitter: KMS_SIGNERS[0]!,
-    consumer: KMS_SIGNERS[1]!,
-    expirationTimestamp: 0n as Uint64BigInt,
-    decryptors: [],
-    nonce: `0x${'00'.repeat(16)}` as BytesHex,
     label: `0x${byte.repeat(32)}` as Bytes32Hex,
+    witness: {
+      submitter: KMS_SIGNERS[0]!,
+      consumer: KMS_SIGNERS[1]!,
+      expirationTimestamp: 0n as Uint64BigInt,
+      decryptors: [],
+      nonce: `0x${'00'.repeat(16)}` as BytesHex,
+    },
     padLength: padLength as Uint16Number,
   };
 }
 
 /** The expected plaintext pad bytes of `w`: blocks filled with `fill`, truncated to `padLength` bits. */
-function expectedPad(w: PadWitness, fill: number): Uint8Array {
+function expectedPad(w: PadEntry, fill: number): Uint8Array {
   const numBytes = Math.ceil(w.padLength / 8);
   const pad = new Uint8Array(numBytes).fill(fill);
   const extraBits = numBytes * 8 - w.padLength;
@@ -93,7 +95,7 @@ function expectedPad(w: PadWitness, fill: number): Uint8Array {
 }
 
 /** Cleartext rawShares of `w`: the version byte, then ⌈padLength/256⌉ blocks of `fill`. */
-function rawShares(w: PadWitness, fill: number, { extraBlocks = 0, version = 0 } = {}): BytesHex {
+function rawShares(w: PadEntry, fill: number, { extraBlocks = 0, version = 0 } = {}): BytesHex {
   const numBlocks = Math.ceil(w.padLength / (8 * PAD_BLOCK_BYTES)) + extraBlocks;
   const byte = (n: number) => n.toString(16).padStart(2, '0');
   return `0x${byte(version)}${byte(fill).repeat(numBlocks * PAD_BLOCK_BYTES)}` as BytesHex;
@@ -190,12 +192,12 @@ const { encryptWithPad } = encryptWithPadModule({ ethereum } as unknown as Fhevm
 
 function run(
   responses: readonly PadDecryptResponse[],
-  witnesses: readonly PadWitness[],
+  pads: readonly PadEntry[],
   { module = encryptWithPad, transportPublicKey = TRANSPORT_PUBLIC_KEY } = {},
 ) {
   return module.reconstructPads({
     responses,
-    witnesses,
+    pads,
     extraData: EXTRA_DATA,
     transportPublicKey,
     kmsSigners: KMS_SIGNERS,
@@ -208,9 +210,9 @@ function run(
 ////////////////////////////////////////////////////////////////////////////////
 
 describe('reconstructPads', () => {
-  const a = witness('aa', 300); // 2 blocks, 38 bytes, 4 trailing bits cleared
-  const b = witness('bb', 8); // 1 block, 1 byte
-  const shareOf = (w: PadWitness, fill: number, sid = '11', opts = {}): ShareSpec => ({
+  const a = padEntry('aa', 300); // 2 blocks, 38 bytes, 4 trailing bits cleared
+  const b = padEntry('bb', 8); // 1 block, 1 byte
+  const shareOf = (w: PadEntry, fill: number, sid = '11', opts = {}): ShareSpec => ({
     label: w.label,
     sessionId: session(sid),
     rawShares: rawShares(w, fill, opts),
@@ -412,8 +414,8 @@ describe.each(ADAPTERS)('cleartext payload decoding (%s)', (_name, adapter) => {
   const { encryptWithPad: module } = encryptWithPadModule({
     ethereum: { ...ethereum, decode: adapter.decode },
   } as unknown as FhevmRuntime);
-  const a = witness('aa', 300);
-  const shareOf = (w: PadWitness): ShareSpec => ({
+  const a = padEntry('aa', 300);
+  const shareOf = (w: PadEntry): ShareSpec => ({
     label: w.label,
     sessionId: session('11'),
     rawShares: rawShares(w, 0x3c),

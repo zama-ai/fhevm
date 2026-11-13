@@ -41,14 +41,16 @@ const parameters: FetchPadSharesParameters = {
     witnessVersion: 0 as Uint8Number,
     prfId: 1 as Uint16Number,
     chainId: 31337n as Uint64BigInt,
-    witnesses: [
+    pads: [
       {
-        submitter: USER,
-        consumer: APP,
-        expirationTimestamp: 1800604800n as Uint64BigInt,
-        decryptors: [],
-        nonce: `0x${'77'.repeat(16)}` as BytesHex,
         label: LABEL,
+        witness: {
+          submitter: USER,
+          consumer: APP,
+          expirationTimestamp: 1800604800n as Uint64BigInt,
+          decryptors: [],
+          nonce: `0x${'77'.repeat(16)}` as BytesHex,
+        },
         padLength: 64 as Uint16Number,
       },
     ],

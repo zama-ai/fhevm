@@ -58,7 +58,7 @@ Step by step:
 
 | #   | who             | what                                                                                                                   |
 | --- | --------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| 1   | flow → relayer  | the user's signed request: a permit plus the list of pads wanted (the _witnesses_)                                     |
+| 1   | flow → relayer  | the user's signed request: a permit plus the list of pads wanted (each a label, its _witness_ and a length)            |
 | 2   | relayer → nodes | the relayer checks the request, then sends it to every node at once                                                    |
 | 3   | node → anvil    | each node asks the contract for the material it has to sign                                                            |
 | 4   | node → relayer  | each node signs with its own KMS key and answers                                                                       |

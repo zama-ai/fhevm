@@ -13,7 +13,7 @@ import type {
   FetchPadSharesParameters,
   FetchPadSharesReturnType,
   PadDecryptResponse,
-  PadWitness,
+  PadEntry,
   RelayerClientWithRuntime,
 } from '../types.js';
 import { assertIsBytes32Hex, assertIsBytes32HexArray, assertIsBytesHexArray } from '../../../base/bytes.js';
@@ -70,16 +70,23 @@ const padDecryptRequestAbiParameter = {
         { name: 'prfId', type: 'uint16', internalType: 'uint16' },
         { name: 'chainId', type: 'uint64', internalType: 'uint64' },
         {
-          name: 'witnesses',
+          name: 'pads',
           type: 'tuple[]',
-          internalType: 'struct PadWitness[]',
+          internalType: 'struct PadEntry[]',
           components: [
-            { name: 'submitter', type: 'address', internalType: 'address' },
-            { name: 'consumer', type: 'address', internalType: 'address' },
-            { name: 'expirationTimestamp', type: 'uint64', internalType: 'uint64' },
-            { name: 'decryptors', type: 'address[]', internalType: 'address[]' },
-            { name: 'nonce', type: 'bytes16', internalType: 'bytes16' },
             { name: 'label', type: 'bytes32', internalType: 'bytes32' },
+            {
+              name: 'witness',
+              type: 'tuple',
+              internalType: 'struct PadWitness',
+              components: [
+                { name: 'submitter', type: 'address', internalType: 'address' },
+                { name: 'consumer', type: 'address', internalType: 'address' },
+                { name: 'expirationTimestamp', type: 'uint64', internalType: 'uint64' },
+                { name: 'decryptors', type: 'address[]', internalType: 'address[]' },
+                { name: 'nonce', type: 'bytes16', internalType: 'bytes16' },
+              ],
+            },
             { name: 'padLength', type: 'uint16', internalType: 'uint16' },
           ],
         },
@@ -167,7 +174,7 @@ type PadDecryptRequest = {
     readonly witnessVersion: Uint8Number;
     readonly prfId: Uint16Number;
     readonly chainId: Uint64BigInt;
-    readonly witnesses: readonly PadWitness[];
+    readonly pads: readonly PadEntry[];
   };
 };
 
@@ -270,15 +277,7 @@ function _createPadDecryptRequest(parameters: FetchPadSharesParameters): PadDecr
       witnessVersion: payload.witnessVersion,
       prfId: payload.prfId,
       chainId: payload.chainId,
-      witnesses: payload.witnesses.map((w) => ({
-        submitter: w.submitter,
-        consumer: w.consumer,
-        expirationTimestamp: w.expirationTimestamp,
-        decryptors: w.decryptors,
-        nonce: w.nonce,
-        label: w.label,
-        padLength: w.padLength,
-      })),
+      pads: payload.pads,
     },
   };
 }

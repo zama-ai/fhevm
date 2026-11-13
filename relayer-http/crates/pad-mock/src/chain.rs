@@ -30,7 +30,12 @@ sol! {
         uint64 expirationTimestamp;
         address[] decryptors;
         bytes16 nonce;
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct PadEntry {
         bytes32 label;
+        PadWitness witness;
         uint16 padLength;
     }
 
@@ -39,7 +44,7 @@ sol! {
         uint8 witnessVersion;
         uint16 prfId;
         uint64 chainId;
-        PadWitness[] witnesses;
+        PadEntry[] pads;
     }
 
     #[derive(Debug, PartialEq)]
@@ -125,8 +130,7 @@ sol! {
     }
 }
 
-/// The connector request as `CleartextPaddedInputter` takes it: the same fields, each pad's label and length inside
-/// its witness, the window as `uint256`.
+/// The connector request as `CleartextPaddedInputter` takes it: the same fields, the window as `uint256`.
 pub fn contract_request(request: &ConnectorRequest) -> PadDecryptRequest {
     let payload = &request.payload;
     PadDecryptRequest {
@@ -143,16 +147,18 @@ pub fn contract_request(request: &ConnectorRequest) -> PadDecryptRequest {
             witnessVersion: payload.witnessVersion,
             prfId: payload.prfId,
             chainId: payload.chainId,
-            witnesses: payload
+            pads: payload
                 .pads
                 .iter()
-                .map(|p| PadWitness {
-                    submitter: p.witness.submitter,
-                    consumer: p.witness.consumer,
-                    expirationTimestamp: p.witness.expirationTimestamp,
-                    decryptors: p.witness.decryptors.clone(),
-                    nonce: p.witness.nonce,
+                .map(|p| PadEntry {
                     label: p.label,
+                    witness: PadWitness {
+                        submitter: p.witness.submitter,
+                        consumer: p.witness.consumer,
+                        expirationTimestamp: p.witness.expirationTimestamp,
+                        decryptors: p.witness.decryptors.clone(),
+                        nonce: p.witness.nonce,
+                    },
                     padLength: p.padLength,
                 })
                 .collect(),
@@ -336,15 +342,13 @@ pub(crate) mod tests {
             (c.payload.witnessVersion, c.payload.prfId, c.payload.chainId),
             (0, 1, 31337)
         );
-        let (pad, cw) = (&p.pads[0], &c.payload.witnesses[0]);
-        let w = &pad.witness;
+        let (pad, cp) = (&p.pads[0], &c.payload.pads[0]);
+        let (w, cw) = (&pad.witness, &cp.witness);
+        assert_eq!((cp.label, cp.padLength), (pad.label, pad.padLength));
         assert_eq!((cw.submitter, cw.consumer), (w.submitter, w.consumer));
         assert_eq!(cw.expirationTimestamp, w.expirationTimestamp);
         assert_eq!(cw.decryptors, w.decryptors);
-        assert_eq!(
-            (cw.nonce, cw.label, cw.padLength),
-            (w.nonce, pad.label, pad.padLength)
-        );
+        assert_eq!(cw.nonce, w.nonce);
     }
 
     #[test]
