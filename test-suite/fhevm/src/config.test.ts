@@ -179,7 +179,9 @@ describe("relayer-http config", () => {
     expect(config.http.supported_chain_ids).toEqual([12345, 67890]);
     expect(config.kms_aggregator.public_decrypt.threshold).toBe(2);
     expect(config.kms_aggregator.user_decrypt.threshold).toBe(3);
-    expect(config.kms_aggregator.pad_decrypt.threshold).toBe(3);
+    // Left out so the stack also runs relayer-http images that predate it (they reject the key);
+    // relayer-http then uses user_decrypt.threshold for the pad flow.
+    expect(config.kms_aggregator.pad_decrypt).toBeUndefined();
     expect(config.kms_aggregator.auth.chain_id).toBe(12345);
     expect(config.kms_aggregator.auth.protocol_config).toBe("0x00000000000000000000000000000000000000c0");
     expect(config.kms_aggregator.auth.address).toBe("0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0");
