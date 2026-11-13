@@ -25,7 +25,8 @@ export function encodeMirrorKmsContextAndEpoch(iface: Interface, snapshot: Canon
   ]);
 }
 
-// Fails with an explicit mismatch message instead of the replica's NonIncreasingKmsContextId revert.
+// Rejects a stale switch, since the mirror methods would move the replica back. Run it again before a
+// DAO proposal executes. A replica that the submit path moved ahead of canonical gets its own error.
 export async function assertReplicaNeedsContextSwitch(
   hre: HardhatRuntimeEnvironment,
   replicaProtocolConfigAddress: string,
@@ -36,9 +37,15 @@ export async function assertReplicaNeedsContextSwitch(
     replicaProtocolConfigAddress,
   )) as unknown as ProtocolConfigReplica;
   const [replicaContextId] = await replica.getCurrentKmsContextAndEpoch();
-  if (canonicalContextId <= replicaContextId) {
+  if (replicaContextId > canonicalContextId) {
     throw new Error(
-      `Replica ${replicaProtocolConfigAddress} is already at context ${replicaContextId}, which is >= canonical's ${canonicalContextId}. `,
+      `Replica ${replicaProtocolConfigAddress} is at context ${replicaContextId}, ahead of canonical's ${canonicalContextId}. ` +
+        `See section 5.7 of KMS_CONTEXT_SWITCH_RUNBOOK.md.`,
+    );
+  }
+  if (replicaContextId === canonicalContextId) {
+    throw new Error(
+      `Replica ${replicaProtocolConfigAddress} is already at context ${replicaContextId}, the same as canonical's.`,
     );
   }
 }
@@ -156,9 +163,15 @@ export async function assertReplicaNeedsEpochMirror(
         `Run task:mirrorKmsContextAndEpoch first to mirror the context switch.`,
     );
   }
-  if (canonicalEpochId <= replicaEpochId) {
+  if (replicaEpochId > canonicalEpochId) {
     throw new Error(
-      `Replica ${replicaProtocolConfigAddress} is already at epoch ${replicaEpochId}, which is >= canonical's ${canonicalEpochId}. Nothing to mirror.`,
+      `Replica ${replicaProtocolConfigAddress} is at epoch ${replicaEpochId}, ahead of canonical's ${canonicalEpochId}. ` +
+        `See section 5.7 of KMS_CONTEXT_SWITCH_RUNBOOK.md.`,
+    );
+  }
+  if (replicaEpochId === canonicalEpochId) {
+    throw new Error(
+      `Replica ${replicaProtocolConfigAddress} is already at epoch ${replicaEpochId}, the same as canonical's. Nothing to mirror.`,
     );
   }
 }

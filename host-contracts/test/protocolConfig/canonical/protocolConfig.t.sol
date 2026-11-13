@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {Vm} from "forge-std/Test.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
@@ -16,8 +15,9 @@ import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {ProtocolConfigTestBase} from "../ProtocolConfigTestBase.sol";
 
-contract ProtocolConfigTest is HostContractsDeployerTestUtils {
+contract ProtocolConfigTest is ProtocolConfigTestBase {
     address internal constant owner = address(456);
     uint256 internal constant SPLIT_CONTEXT_ID = KMS_CONTEXT_COUNTER_BASE + 1;
     uint256 internal constant SPLIT_EPOCH_ID = EPOCH_COUNTER_BASE + 2;
@@ -165,24 +165,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, contextId));
         protocolConfig.getMpcThresholdForContext(contextId);
-    }
-
-    /// @dev Entry i has key id KEY_COUNTER_BASE + 1 + i and CRS id CRS_COUNTER_BASE + 1 + i.
-    function _buildTwoEpochResults()
-        internal
-        pure
-        returns (IProtocolConfig.EpochKeyResult[] memory keys, IProtocolConfig.EpochCrsResult[] memory crsList)
-    {
-        keys = new IProtocolConfig.EpochKeyResult[](2);
-        crsList = new IProtocolConfig.EpochCrsResult[](2);
-        for (uint256 i = 0; i < 2; i++) {
-            (
-                IProtocolConfig.EpochKeyResult[] memory oneKey,
-                IProtocolConfig.EpochCrsResult[] memory oneCrs
-            ) = _buildEpochResults(KEY_COUNTER_BASE + 1 + i, CRS_COUNTER_BASE + 1 + i);
-            keys[i] = oneKey[0];
-            crsList[i] = oneCrs[0];
-        }
     }
 
     /// @dev Under the new same-set epoch SPLIT_EPOCH_ID, signer0 confirms the first payload with
@@ -512,7 +494,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _activatePendingContextWithDefaultSigners(newContextId, nodeConfigHash, EPOCH_COUNTER_BASE + 2, 1);
 
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestroyed(firstContextId);
+        emit IProtocolConfigBase.KmsContextDestroyed(firstContextId);
         vm.prank(owner);
         protocolConfig.destroyKmsContext(firstContextId);
         assertFalse(protocolConfig.isValidKmsContext(firstContextId));
@@ -528,7 +510,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 currentId = protocolConfig.getCurrentKmsContextId();
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsContextCannotBeDestroyed.selector, currentId)
+            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsContextCannotBeDestroyed.selector, currentId)
         );
         protocolConfig.destroyKmsContext(currentId);
     }
@@ -702,7 +684,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestroyed(oldEpochId);
+        emit IProtocolConfigBase.KmsEpochDestroyed(oldEpochId);
         vm.prank(owner);
         protocolConfig.destroyKmsEpoch(oldEpochId);
 
@@ -714,7 +696,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsEpochCannotBeDestroyed.selector, currentEpochId)
+            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsEpochCannotBeDestroyed.selector, currentEpochId)
         );
         protocolConfig.destroyKmsEpoch(currentEpochId);
     }
@@ -739,7 +721,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestroyed(pendingEpochId);
+        emit IProtocolConfigBase.KmsEpochDestroyed(pendingEpochId);
         vm.prank(owner);
         protocolConfig.destroyKmsEpoch(pendingEpochId);
 
@@ -766,13 +748,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (
             IProtocolConfig.EpochKeyResult[] memory keys0,
             IProtocolConfig.EpochCrsResult[] memory crsList0
-        ) = _buildEpochResults(KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
-        (
-            IProtocolConfig.EpochKeyResult[] memory keys1,
-            IProtocolConfig.EpochCrsResult[] memory crsList1
-        ) = _buildEpochResults(KEY_COUNTER_BASE + 2, CRS_COUNTER_BASE + 1);
+        ) = _buildEpochResults(0, 1);
+        (IProtocolConfig.EpochKeyResult[] memory keys1, ) = _buildEpochResults(1, 1);
         _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk0, keys0, crsList0);
-        _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk1, keys1, crsList1);
+        _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk1, keys1, crsList0);
 
         // Each signer can confirm only once, so the split confirmations never reach quorum. Resubmitting the other
         // signer's result reverts with EpochActivationAlreadyConfirmed.
@@ -781,7 +760,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             pendingEpochId,
             kmsPk0,
             keys1,
-            crsList1
+            crsList0
         );
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -793,7 +772,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.confirmEpochActivation(
             pendingEpochId,
             keys1,
-            crsList1,
+            crsList0,
             _materialExtraData(contextId, pendingEpochId),
             signature,
             EMPTY_EXTRA_DATA
@@ -823,13 +802,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (
             IProtocolConfig.EpochKeyResult[] memory keys2,
             IProtocolConfig.EpochCrsResult[] memory crsList2
-        ) = _buildEpochResults(KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
-        (
-            IProtocolConfig.EpochKeyResult[] memory keys3,
-            IProtocolConfig.EpochCrsResult[] memory crsList3
-        ) = _buildEpochResults(KEY_COUNTER_BASE + 2, CRS_COUNTER_BASE + 1);
+        ) = _buildEpochResults(0, 1);
+        (IProtocolConfig.EpochKeyResult[] memory keys3, ) = _buildEpochResults(1, 1);
         _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk2, keys2, crsList2);
-        _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk3, keys3, crsList3);
+        _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk3, keys3, crsList2);
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, pendingEpochId));
@@ -872,7 +848,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineSameSetContextSwitch();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestroyed(pendingContextId);
+        emit IProtocolConfigBase.KmsContextDestroyed(pendingContextId);
         vm.prank(owner);
         protocolConfig.destroyKmsContext(pendingContextId);
 
@@ -922,16 +898,18 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getKmsGenThresholdForContext(KMS_CONTEXT_COUNTER_BASE + 2), 1);
     }
 
-    /// @dev Previous-side quorum boundary, both sides: with n = 4 previous nodes and t = 1, the
-    ///      target is n - t = 3. All-new + n - t - 1 previous confirmations stay Pending, the
-    ///      (n - t)-th completes creation (NewKmsEpoch), and any later one hits the Created state.
+    /// @dev Previous-side quorum boundary. With n = 4 previous nodes and t = 1, the target is n - t = 3.
+    ///      All new confirmations plus n - t - 1 previous confirmations leave the context Pending. The
+    ///      (n - t)-th previous confirmation completes creation and emits NewKmsEpoch. A later one reverts
+    ///      because the context is no longer Pending.
     function test_confirmKmsContextCreationUsesNewSignersAndOldQuorum() public {
         _setupDefaultWithMpcThreshold(1);
-        bytes32 nodeConfigHash = _defineContextSwitchToSigners(0xB2, 0xB3);
+        uint256[] memory newKeys = _keys(SEED1, 2);
+        bytes32 nodeConfigHash = _defineContextSwitchToSigners(newKeys[0], newKeys[1]);
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        _confirmContextCreation(newContextId, nodeConfigHash, 0xB2, EMPTY_EXTRA_DATA);
-        _confirmContextCreation(newContextId, nodeConfigHash, 0xB3, EMPTY_EXTRA_DATA);
+        _confirmContextCreation(newContextId, nodeConfigHash, newKeys[0], EMPTY_EXTRA_DATA);
+        _confirmContextCreation(newContextId, nodeConfigHash, newKeys[1], EMPTY_EXTRA_DATA);
         _confirmContextCreation(newContextId, nodeConfigHash, kmsPk0, EMPTY_EXTRA_DATA);
         _confirmContextCreation(newContextId, nodeConfigHash, kmsPk1, EMPTY_EXTRA_DATA);
         assertFalse(protocolConfig.isValidKmsContext(newContextId));
@@ -947,28 +925,30 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function test_confirmKmsContextCreationRequiresAllNewSigners() public {
         _setupDefaultWithMpcThreshold(3);
-        bytes32 nodeConfigHash = _defineContextSwitchToSigners(0xB2, 0xB3);
+        uint256[] memory newKeys = _keys(SEED1, 2);
+        bytes32 nodeConfigHash = _defineContextSwitchToSigners(newKeys[0], newKeys[1]);
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        _confirmContextCreation(newContextId, nodeConfigHash, 0xB2, EMPTY_EXTRA_DATA);
+        _confirmContextCreation(newContextId, nodeConfigHash, newKeys[0], EMPTY_EXTRA_DATA);
         _confirmContextCreation(newContextId, nodeConfigHash, kmsPk0, EMPTY_EXTRA_DATA);
         _confirmContextCreation(newContextId, nodeConfigHash, kmsPk1, EMPTY_EXTRA_DATA);
         assertFalse(protocolConfig.isValidKmsContext(newContextId));
 
         // The quorum-completing confirmation (all new signers present) must emit NewKmsEpoch with the
         // pending epoch's full indexed args. Before this last confirmation no such event was emitted.
-        _confirmContextCreationExpectingFirstSwitchEpoch(newContextId, nodeConfigHash, 0xB3);
+        _confirmContextCreationExpectingFirstSwitchEpoch(newContextId, nodeConfigHash, newKeys[1]);
     }
 
     /// @dev The previous committee has n = 4 and t = 4, so n - t is 0 and the previous quorum is floored at 1.
     ///      The new committee alone cannot complete the switch. The first previous confirmation completes it.
     function test_confirmKmsContextCreationPreviousQuorumFlooredAtOne() public {
         _setupDefaultWithMpcThreshold(4);
-        bytes32 nodeConfigHash = _defineContextSwitchToSigners(0xB2, 0xB3);
+        uint256[] memory newKeys = _keys(SEED1, 2);
+        bytes32 nodeConfigHash = _defineContextSwitchToSigners(newKeys[0], newKeys[1]);
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        _confirmContextCreation(newContextId, nodeConfigHash, 0xB2, EMPTY_EXTRA_DATA);
-        _confirmContextCreation(newContextId, nodeConfigHash, 0xB3, EMPTY_EXTRA_DATA);
+        _confirmContextCreation(newContextId, nodeConfigHash, newKeys[0], EMPTY_EXTRA_DATA);
+        _confirmContextCreation(newContextId, nodeConfigHash, newKeys[1], EMPTY_EXTRA_DATA);
 
         _confirmContextCreationExpectingFirstSwitchEpoch(newContextId, nodeConfigHash, kmsPk0);
     }
@@ -1105,8 +1085,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         _defineSameSetContextSwitch();
 
-        // Destroying the pending switch must reopen the gate: destroyed entries are None,
-        // not in flight.
+        // A destroyed switch is no longer in flight, so a new switch can start.
         vm.prank(owner);
         protocolConfig.destroyKmsContext(KMS_CONTEXT_COUNTER_BASE + 2);
 
@@ -1305,7 +1284,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
-        // A live pending epoch passes the state check, so an empty key or CRS list reaches the dedicated revert.
+        // A live pending epoch passes the state check, so an empty key or CRS list reverts with EmptyEpochActivationResults.
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
@@ -1384,7 +1363,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildEpochResults(KEY_COUNTER_BASE + 2, CRS_COUNTER_BASE + 2);
+        ) = _buildEpochResults(1, 1);
         _confirmEpochActivationWithDefaultExtraData(
             KMS_CONTEXT_COUNTER_BASE + 2,
             EPOCH_COUNTER_BASE + 3,
@@ -1654,7 +1633,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(impl, "");
 
         assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 1);
-        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(3)));
+        _pinToV014InitializedVersion();
 
         ProtocolConfig(protocolConfigAdd).reinitializeV3();
         assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 4);
@@ -1668,7 +1647,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_reinitializeV3OnV014StateThenRotatesEpoch() public {
         _setupTwoNodeContext();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(3)));
+        _pinToV014InitializedVersion();
         address impl = address(new ProtocolConfig());
         vm.prank(owner);
         protocolConfig.upgradeToAndCall(impl, abi.encodeCall(ProtocolConfig.reinitializeV3, ()));
@@ -1679,6 +1658,63 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (uint256 currentContextId, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(currentContextId, contextId);
         assertEq(currentEpochId, epochId);
+    }
+
+    /// @dev A context left Pending at upgrade could never be confirmed, so the upgrade must revert.
+    function test_revertReinitializeV3OnV014StateWithPendingContext() public {
+        _setupTwoNodeContext();
+        _defineSameSetContextSwitch();
+        _pinToV014InitializedVersion();
+        address impl = address(new ProtocolConfig());
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 2,
+                EPOCH_COUNTER_BASE + 1
+            )
+        );
+        protocolConfig.upgradeToAndCall(impl, abi.encodeCall(ProtocolConfig.reinitializeV3, ()));
+    }
+
+    /// @dev A context left Created at upgrade still waits for the activation of its paired epoch, so the
+    ///      upgrade must revert.
+    function test_revertReinitializeV3OnV014StateWithCreatedContext() public {
+        _setupTwoNodeContext();
+        (uint256 newContextId, bytes32 nodeConfigHash) = _defineSameSetContextSwitch();
+        _confirmContextCreationWithTwoSigners(newContextId, nodeConfigHash);
+        _pinToV014InitializedVersion();
+        address impl = address(new ProtocolConfig());
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 2,
+                EPOCH_COUNTER_BASE + 2
+            )
+        );
+        protocolConfig.upgradeToAndCall(impl, abi.encodeCall(ProtocolConfig.reinitializeV3, ()));
+    }
+
+    /// @dev An epoch left Pending at upgrade keeps its pre-upgrade confirmations, so the upgrade must revert.
+    function test_revertReinitializeV3OnV014StateWithPendingEpoch() public {
+        _setupTwoNodeContext();
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+        _pinToV014InitializedVersion();
+        address impl = address(new ProtocolConfig());
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 1,
+                EPOCH_COUNTER_BASE + 2
+            )
+        );
+        protocolConfig.upgradeToAndCall(impl, abi.encodeCall(ProtocolConfig.reinitializeV3, ()));
     }
 
     // -----------------------------------------------------------------------
@@ -1914,17 +1950,18 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
 
     /// @dev A signer in both committees confirms once and counts toward both sides. New committee
-    ///      {signer0, 0xB2}, previous quorum n - t = 3: after 0xB2, signer1 and signer2, both sides
+    ///      {signer0, newKey}, previous quorum n - t = 3: after newKey, signer1 and signer2, both sides
     ///      lack one confirmation, and signer0 alone completes the creation.
     function test_confirmKmsContextCreationSharedSignerCountsInBothCommittees() public {
         _setupDefaultWithMpcThreshold(1);
+        uint256 newKey = _keys(SEED1, 1)[0];
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        nodes[1].signerAddress = vm.addr(0xB2);
+        nodes[1].signerAddress = vm.addr(newKey);
         vm.prank(owner);
         bytes32 nodeConfigHash = _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        _confirmContextCreation(newContextId, nodeConfigHash, 0xB2, EMPTY_EXTRA_DATA);
+        _confirmContextCreation(newContextId, nodeConfigHash, newKey, EMPTY_EXTRA_DATA);
         _confirmContextCreation(newContextId, nodeConfigHash, kmsPk1, EMPTY_EXTRA_DATA);
         _confirmContextCreation(newContextId, nodeConfigHash, kmsPk2, EMPTY_EXTRA_DATA);
         assertFalse(protocolConfig.isValidKmsContext(newContextId));
@@ -2030,15 +2067,16 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     ///      unanimity on extraData Y do not complete the switch.
     function test_confirmKmsContextCreationQuorumsOnDifferentExtraDataDoNotComplete() public {
         _setupDefaultWithMpcThreshold(1);
-        bytes32 nodeConfigHash = _defineContextSwitchToSigners(0xB2, 0xB3);
+        uint256[] memory newKeys = _keys(SEED1, 2);
+        bytes32 nodeConfigHash = _defineContextSwitchToSigners(newKeys[0], newKeys[1]);
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
         // The previous quorum is n - t = 3 for the genesis committee.
         _confirmContextCreation(newContextId, nodeConfigHash, kmsPk0, hex"01");
         _confirmContextCreation(newContextId, nodeConfigHash, kmsPk1, hex"01");
         _confirmContextCreation(newContextId, nodeConfigHash, kmsPk2, hex"01");
-        _confirmContextCreation(newContextId, nodeConfigHash, 0xB2, hex"02");
-        _confirmContextCreation(newContextId, nodeConfigHash, 0xB3, hex"02");
+        _confirmContextCreation(newContextId, nodeConfigHash, newKeys[0], hex"02");
+        _confirmContextCreation(newContextId, nodeConfigHash, newKeys[1], hex"02");
 
         vm.prank(owner);
         vm.expectRevert(
@@ -2194,7 +2232,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildTwoEpochResults();
+        ) = _buildEpochResults(0, 2);
         _confirmEpochActivationWithDefaultExtraData(contextId, epochId, kmsPk0, keys, crsList);
         _confirmEpochActivationWithDefaultExtraData(contextId, epochId, kmsPk1, keys, crsList);
         (, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
@@ -2211,7 +2249,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildTwoEpochResults();
+        ) = _buildEpochResults(0, 2);
         bytes memory materialExtraData = _materialExtraData(KMS_CONTEXT_COUNTER_BASE + 1, epochId);
         IProtocolConfig.EpochKeyResult[] memory swappedKeys = new IProtocolConfig.EpochKeyResult[](2);
         (swappedKeys[0], swappedKeys[1]) = (keys[1], keys[0]);
