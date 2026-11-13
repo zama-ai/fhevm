@@ -3,7 +3,7 @@
   "description": "A Solidity library for interacting with fhevm protocol",
   "version": "0.15.0",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "main": "lib/FHE.sol",
   "scripts": {
@@ -14,7 +14,9 @@
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
-    "test": "hardhat test",
+    "test": "npm run test:publish && npm run test:hardhat",
+    "test:hardhat": "hardhat test",
+    "test:publish": "node --test publish/package.test.mjs",
     "coverage": "SOLIDITY_COVERAGE=true hardhat coverage",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
     "codegen": "./codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
