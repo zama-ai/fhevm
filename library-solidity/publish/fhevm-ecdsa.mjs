@@ -9,12 +9,17 @@
 //   - a @dev note saying that the library is a renamed fork is added to the library documentation.
 // Anything else in FhevmECDSA.sol must come from OpenZeppelin unchanged.
 //
+// The codegen (`npm run codegen`) also writes FhevmECDSA.sol, from codegen/src/templates/FhevmECDSA.sol-template:
+// `generate` writes both files with the same content, and `check` fails if they differ.
+//
 // Usage (from library-solidity/):
 //   node publish/fhevm-ecdsa.mjs check                  checks, offline, that FhevmECDSA.sol is the pinned
-//                                                       source (`sha256`) with the FhevmECDSA changes
+//                                                       source (`sha256`) with the FhevmECDSA changes, and
+//                                                       that the codegen template is identical to it
 //   node publish/fhevm-ecdsa.mjs check --online         also downloads the pinned ref and checks that its
 //                                                       hash is `sha256`
-//   node publish/fhevm-ecdsa.mjs generate               regenerates FhevmECDSA.sol from the pinned ref
+//   node publish/fhevm-ecdsa.mjs generate               regenerates FhevmECDSA.sol and the codegen template
+//                                                       from the pinned ref
 //   node publish/fhevm-ecdsa.mjs generate --ref <ref>   regenerates it from <ref> and pins <ref> in
 //                                                       publish/fhevm-ecdsa.json
 //   --source <file>                                     uses a local copy of ECDSA.sol instead of downloading it
@@ -31,6 +36,8 @@ import { fileURLToPath } from 'node:url';
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const configFile = join(packageDir, 'publish', 'fhevm-ecdsa.json');
 const targetFile = join(packageDir, 'lib', 'cryptography', 'FhevmECDSA.sol');
+// The codegen copies this template to FhevmECDSA.sol (it has no `//$$` template comments to remove).
+const templateFile = join(packageDir, 'codegen', 'src', 'templates', 'FhevmECDSA.sol-template');
 
 const LIBRARY_LINE = '\nlibrary ECDSA {\n';
 const FORKED_LIBRARY_LINE = '\nlibrary FhevmECDSA {\n';
@@ -149,6 +156,7 @@ if (
 
 const config = JSON.parse(readFileSync(configFile, 'utf8'));
 const target = relative(packageDir, targetFile);
+const template = relative(packageDir, templateFile);
 const configName = relative(packageDir, configFile);
 const regenerateHint = 'Run `node publish/fhevm-ecdsa.mjs generate` to regenerate it.';
 
@@ -162,6 +170,12 @@ if (command === 'check') {
   const pinned = `${config.repository}@${config.ref} (sha256 ${config.sha256})`;
   if (sha256(fromFhevmECDSA(actual, target)) !== config.sha256) {
     fail(`${target} is not in sync with ${pinned}: it has changes other than the FhevmECDSA ones.\n${regenerateHint}`);
+  }
+
+  // The codegen template must be identical, or `npm run codegen` would overwrite FhevmECDSA.sol with it.
+  const templateSource = readFileSync(templateFile, 'utf8');
+  if (templateSource !== actual) {
+    fail(`${template} differs from ${target}, ${firstDifference(templateSource, actual)}\n${regenerateHint}`);
   }
 
   // Online, or with --source: the downloaded or given source must be the pinned one.
@@ -183,11 +197,15 @@ if (command === 'check') {
 } else {
   const ref = values.ref ?? config.ref;
   const source = await readSource(config, ref, values.source);
-  writeFileSync(targetFile, toFhevmECDSA(source));
+  const generated = toFhevmECDSA(source);
+  writeFileSync(targetFile, generated);
+  writeFileSync(templateFile, generated);
   const newConfig = { ...config, ref, sha256: sha256(source) };
   if (JSON.stringify(newConfig) !== JSON.stringify(config)) {
     writeFileSync(configFile, `${JSON.stringify(newConfig, null, 2)}\n`);
     console.log(`fhevm-ecdsa: pinned ${config.repository}@${ref} (sha256 ${newConfig.sha256}) in ${configName}`);
   }
-  console.log(`fhevm-ecdsa: generated ${target} from ${values.source ?? `${config.repository}@${ref}`}`);
+  console.log(
+    `fhevm-ecdsa: generated ${target} and ${template} from ${values.source ?? `${config.repository}@${ref}`}`,
+  );
 }
