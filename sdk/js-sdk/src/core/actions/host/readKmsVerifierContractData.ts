@@ -31,7 +31,7 @@ export async function readKmsVerifierContractData(
   const kmsVerifierAddress = parameters.address;
   const protocolConfigAddress = parameters.protocolConfigAddress;
 
-  const fhevmContext = await initPublicAction(fhevm);
+  await initPublicAction(fhevm);
 
   ////////////////////////////////////////////////////////////////////////////
   //
@@ -47,7 +47,7 @@ export async function readKmsVerifierContractData(
   const rpcCalls = [
     () => getHostContractVersion(fhevm, parameters),
     () => eip712Domain(fhevm, parameters),
-    () => readCurrentKmsSignersContext(fhevm, { kmsVerifierAddress, protocolConfigAddress, fhevmContext }),
+    () => readCurrentKmsSignersContext(fhevm, { kmsVerifierAddress, protocolConfigAddress }),
   ];
 
   const res = await executeWithBatching<unknown>(rpcCalls, fhevm.options.batchRpcCalls);

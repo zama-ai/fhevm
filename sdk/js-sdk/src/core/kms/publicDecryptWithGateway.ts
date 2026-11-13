@@ -43,7 +43,6 @@ export async function publicDecryptWithGateway(context: Context, parameters: Par
   const requestedKmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-    fhevmContext,
   });
 
   const requestedExtraData: KmsExtraData = kmsSignersContextToExtraData(requestedKmsSignersContext);
