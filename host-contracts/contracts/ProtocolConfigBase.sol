@@ -11,22 +11,20 @@ import {KmsContextAnchor, KmsNode, KmsThresholds} from "./shared/Structs.sol";
 abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @notice Lifecycle state of a KMS context: created Pending, promoted to Created once the
     ///         creation quorum confirms, then Active when its first epoch activates. A destruction
-    ///         sets it to Destroyed.
+    ///         resets it to None.
     enum ContextState {
         None,
         Pending,
         Created,
-        Active,
-        Destroyed
+        Active
     }
 
     /// @notice Lifecycle state of an epoch: opened Pending for resharing, then Active once the
-    ///         activation quorum confirms. A destruction sets it to Destroyed.
+    ///         activation quorum confirms. A destruction resets it to None.
     enum EpochState {
         None,
         Pending,
-        Active,
-        Destroyed
+        Active
     }
 
     /// @notice Upper bound on the KMS committee size and on every per-context threshold.
@@ -288,8 +286,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
      * v0.14 upgrade read as None.
      */
     function _isLiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
-        ContextState state = _getProtocolConfigStorage().contextState[kmsContextId];
-        return state != ContextState.None && state != ContextState.Destroyed;
+        return _getProtocolConfigStorage().contextState[kmsContextId] != ContextState.None;
     }
 
     /**
@@ -367,23 +364,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Deletes the nodes and signer lookups stored under `contextId`. The inverse of
-     *      `_storeKmsNodesAndThresholds`, without the thresholds.
-     */
-    function _clearKmsNodes(uint256 contextId) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        KmsNode[] storage storedNodes = $.kmsNodesForContext[contextId];
-        for (uint256 i = 0; i < storedNodes.length; i++) {
-            address txSender = storedNodes[i].txSenderAddress;
-            delete $.isKmsTxSenderForContext[contextId][txSender];
-            delete $.isKmsSignerForContext[contextId][storedNodes[i].signerAddress];
-            delete $.kmsNodeByTxSenderForContext[contextId][txSender];
-        }
-        delete $.kmsNodesForContext[contextId];
-        delete $.kmsSignerAddressesForContext[contextId];
-    }
-
-    /**
      * @dev Validates a single threshold: must be non-zero and at most nodeCount.
      */
     function _checkThreshold(string memory name, uint256 value, uint256 nodeCount) internal pure {
@@ -405,19 +385,28 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Sets `destroyedContextId` Destroyed and emits `KmsContextDestroyed`.
+     * @dev Resets `destroyedContextId` to None and emits `KmsContextDestroyed`.
      */
     function _destroyKmsContext(uint256 destroyedContextId) internal virtual {
-        _getProtocolConfigStorage().contextState[destroyedContextId] = ContextState.Destroyed;
+        delete _getProtocolConfigStorage().contextState[destroyedContextId];
         emit KmsContextDestroyed(destroyedContextId);
     }
 
     /**
-     * @dev Sets `destroyedEpochId` Destroyed and emits `KmsEpochDestroyed`.
+     * @dev Clears `destroyedEpochId` and emits `KmsEpochDestroyed`.
      */
     function _destroyKmsEpoch(uint256 destroyedEpochId) internal virtual {
-        _getProtocolConfigStorage().epochState[destroyedEpochId] = EpochState.Destroyed;
+        _clearKmsEpoch(destroyedEpochId);
         emit KmsEpochDestroyed(destroyedEpochId);
+    }
+
+    /**
+     * @dev Resets `epochId` to None and removes its context link.
+     */
+    function _clearKmsEpoch(uint256 epochId) internal virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        delete $.epochState[epochId];
+        delete $.contextForEpoch[epochId];
     }
 
     /**

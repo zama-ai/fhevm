@@ -90,14 +90,6 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     /// @param epochId The submitted epoch ID.
     error StaleKmsEpoch(uint256 epochId);
 
-    /// @notice The context ID is already destroyed.
-    /// @param contextId The destroyed context ID.
-    error KmsContextAlreadyDestroyed(uint256 contextId);
-
-    /// @notice The epoch ID is already destroyed.
-    /// @param epochId The destroyed epoch ID.
-    error KmsEpochAlreadyDestroyed(uint256 epochId);
-
     /// @notice The context ID is above the active one. Retry after the replica passes it.
     /// @param contextId The context ID to destroy.
     error KmsContextDestructionAheadOfReplica(uint256 contextId);
@@ -105,14 +97,6 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     /// @notice The epoch ID is above the active one. Retry after the replica passes it.
     /// @param epochId The epoch ID to destroy.
     error KmsEpochDestructionAheadOfReplica(uint256 epochId);
-
-    /// @notice A submission cannot activate a destroyed context.
-    /// @param contextId The destroyed context ID.
-    error DestroyedKmsContextCannotBeActivated(uint256 contextId);
-
-    /// @notice A submission cannot activate a destroyed epoch.
-    /// @param epochId The destroyed epoch ID.
-    error DestroyedKmsEpochCannotBeActivated(uint256 epochId);
 
     /// @notice There are fewer signatures than the quorum.
     /// @param signatureCount The number of signatures.
@@ -185,8 +169,8 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
     // Mirror functions
     //
-    // Owner only, with no signature check and no ordering check. They can move the replica back.
-    // Activation clears the Destroyed state of the pair.
+    // Owner only, with no signature check and no ordering check. They can move the replica back
+    // below a forged ID that canonical can never reach.
     // -----------------------------------------------------------------------------------------
 
     /**
@@ -213,14 +197,14 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /**
      * @notice Destroys a context.
-     * @dev Unlike the submit path, the ID can be above the active one.
+     * @dev Unlike the submit path, the ID can be above the active one, for a forged ID after a rollback.
      * @param destroyedContextId The context ID to destroy.
      */
     function mirrorKmsContextDestruction(uint256 destroyedContextId) external;
 
     /**
      * @notice Destroys an epoch.
-     * @dev Unlike the submit path, the ID can be above the active one.
+     * @dev Unlike the submit path, the ID can be above the active one, for a forged ID after a rollback.
      * @param destroyedEpochId The epoch ID to destroy.
      */
     function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external;

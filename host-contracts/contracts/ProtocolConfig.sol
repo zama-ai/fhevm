@@ -324,11 +324,10 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert InvalidKmsContext(kmsContextId);
         }
 
-        // Clear the paired Pending epoch. This lets `_checkNoKmsLifecycleOperationInFlight` pass again
-        // and stops its activation from setting this destroyed context back to Active.
+        // Destroying an in-flight context also aborts its Pending epoch.
         uint256 latestEpochId = $.epochCounter;
         if ($.contextForEpoch[latestEpochId] == kmsContextId) {
-            delete $.epochState[latestEpochId];
+            _clearKmsEpoch(latestEpochId);
         }
 
         _destroyKmsContext(kmsContextId);
@@ -618,8 +617,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @dev Reverts when a context switch or epoch rotation is still settling. In flight means the
-     *      latest-issued context is Pending/Created or the latest-issued epoch is Pending. Destroyed
-     *      and cleared entries do not count, so this check passes again after a destroy.
+     *      latest-issued context is Pending/Created or the latest-issued epoch is Pending. A destroy
+     *      resets the entry to None, so this check passes again.
      */
     function _checkNoKmsLifecycleOperationInFlight() internal view virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();

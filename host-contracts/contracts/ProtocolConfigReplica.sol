@@ -113,9 +113,6 @@ contract ProtocolConfigReplica is
         if (context.contextId <= previousContextId) {
             revert StaleKmsContextSwitch(context.contextId);
         }
-        if ($.contextState[context.contextId] == ContextState.Destroyed) {
-            revert DestroyedKmsContextCannotBeActivated(context.contextId);
-        }
 
         _verifyActiveCommitteeQuorum(
             _contextCreationStructHash(
@@ -183,7 +180,17 @@ contract ProtocolConfigReplica is
         KmsThresholds calldata thresholds
     ) external virtual onlyACLOwner {
         // Clear the stored committee first, so none of its signers stays a member.
-        _clearKmsNodes(contextId);
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        KmsNode[] storage storedNodes = $.kmsNodesForContext[contextId];
+        for (uint256 i = 0; i < storedNodes.length; i++) {
+            address txSender = storedNodes[i].txSenderAddress;
+            delete $.isKmsTxSenderForContext[contextId][txSender];
+            delete $.isKmsSignerForContext[contextId][storedNodes[i].signerAddress];
+            delete $.kmsNodeByTxSenderForContext[contextId][txSender];
+        }
+        delete $.kmsNodesForContext[contextId];
+        delete $.kmsSignerAddressesForContext[contextId];
+
         _storeKmsNodesAndThresholds(contextId, nodes, thresholds);
         _activateKmsContextAndEpoch(contextId, epochId);
         emit MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
@@ -233,14 +240,11 @@ contract ProtocolConfigReplica is
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @dev Rejects a destroyed `epoch`. Verifies the signatures of every signer of `contextId` over an
-     *      activation with the active epoch as `previousEpochId`. Then activates the pair.
+     * @dev Verifies the signatures of every signer of `contextId` over an activation with the active
+     *      epoch as `previousEpochId`. Then activates the pair.
      */
     function _applyKmsEpoch(uint256 contextId, KmsEpochSubmission calldata epoch) private {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if ($.epochState[epoch.epochId] == EpochState.Destroyed) {
-            revert DestroyedKmsEpochCannotBeActivated(epoch.epochId);
-        }
         _verifyQuorum(
             _epochActivationStructHash(
                 contextId,
@@ -257,26 +261,20 @@ contract ProtocolConfigReplica is
     }
 
     /**
-     * @dev Reverts if `destroyedContextId` is already destroyed or is the active context.
+     * @dev Reverts if `destroyedContextId` is the active context.
      */
     function _checkKmsContextDestroyable(uint256 destroyedContextId) private view {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if ($.contextState[destroyedContextId] == ContextState.Destroyed) {
-            revert KmsContextAlreadyDestroyed(destroyedContextId);
-        }
         if (destroyedContextId == $.latestActiveKmsContextId) {
             revert LatestActiveKmsContextCannotBeDestroyed(destroyedContextId);
         }
     }
 
     /**
-     * @dev Reverts if `destroyedEpochId` is already destroyed or is the active epoch.
+     * @dev Reverts if `destroyedEpochId` is the active epoch.
      */
     function _checkKmsEpochDestroyable(uint256 destroyedEpochId) private view {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if ($.epochState[destroyedEpochId] == EpochState.Destroyed) {
-            revert KmsEpochAlreadyDestroyed(destroyedEpochId);
-        }
         if (destroyedEpochId == $.latestActiveEpochId) {
             revert LatestActiveKmsEpochCannotBeDestroyed(destroyedEpochId);
         }

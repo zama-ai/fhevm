@@ -130,14 +130,12 @@ rotation.
   as active. It emits `MirrorKmsContextAndEpoch`.
 - `mirrorKmsEpoch(contextId, epochId)` sets the active epoch of the active context. It emits
   `MirrorKmsEpoch`.
-- `mirrorKmsContextDestruction(contextId)` and `mirrorKmsEpochDestruction(epochId)` mark an ID
-  destroyed. They emit `KmsContextDestroyed` and `KmsEpochDestroyed`.
+- `mirrorKmsContextDestruction(contextId)` and `mirrorKmsEpochDestruction(epochId)` reset an ID
+  to `None`. They emit `KmsContextDestroyed` and `KmsEpochDestroyed`.
 
 `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` have **no ordering check** on the IDs. They
 overwrite a context or epoch already stored under the given ID, and a lower ID moves the replica
-back. `mirrorKmsEpoch` requires the active context ID. An activation replaces the Destroyed state
-of the IDs it activates, in both `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch`. The submit path
-rejects a destroyed ID, so only the mirror path can activate it. See runbook §5.7 to recover a
+back. `mirrorKmsEpoch` requires the active context ID. See runbook §5.7 to recover a
 replica. Gaps are fine (contexts/epochs aborted or never activated on Ethereum are just never
 mirrored). Nothing stops a replica from
 **drifting** if a mirror call is skipped: replaying each Ethereum rotation to every replica is the

@@ -465,8 +465,9 @@ A destruction on canonical reaches a replica through `submitKmsContextDestructio
 - The replica accepts an ID that it never stored, if the ID is below its active ID. The
   canonical can destroy a pending context or epoch that never reached this replica.
 - A destruction of an ID above the active ID reverts with `KmsContextDestructionAheadOfReplica`.
-  Retry after the replica activates a higher ID. So an early destruction does not block the
-  switches and resharings that canonical made before it.
+  Retry after the replica activates a higher ID. Without this rule, an early destruction has no
+  effect, and a later submission activates the ID anyway.
+- A repeated destruction does not revert. It emits `KmsContextDestroyed` again.
 - The replica verifies the signatures against its active committee.
 - A replica that is behind can also revert with `LatestActiveKmsContextCannotBeDestroyed`,
   `KmsSignatureQuorumNotReached` or `KmsSignerNotInCommittee`. Retry after the replica catches up.
@@ -480,7 +481,7 @@ A destruction on canonical reaches a replica through `submitKmsContextDestructio
   checks the C1 signatures against C3. So the call succeeds only if at least `n - t` C1 signers
   are also in C3. Else the owner uses `mirrorKmsContextDestruction`.
 - Two signatures from the same signer revert with `DuplicateKmsSigner`.
-- `submitKmsEpochDestruction` follows the same rules, with `KmsEpochAlreadyDestroyed`,
+- `submitKmsEpochDestruction` follows the same rules, with
   `LatestActiveKmsEpochCannotBeDestroyed`, `KmsEpochDestructionAheadOfReplica` and the
   `mirrorKmsEpochDestruction` fallback. A resharing keeps the committee, so a retry after a
   resharing succeeds. A pending epoch whose next activation is a context switch has the same
@@ -512,25 +513,20 @@ cast send $PROTOCOL_CONFIG_CONTRACT_ADDRESS "mirrorKmsEpochDestruction(uint256)"
   --rpc-url <replica-rpc-url> --private-key $DEPLOYER_PRIVATE_KEY
 ```
 
-- **Mirror cancellations too.** The replica records the ID of a cancelled switch or reshare
-  as destroyed, so the submit path never activates it later.
 - **A context destruction covers its epochs.** Mirror an epoch destruction only after a
   canonical `destroyKmsEpoch`.
 - **The replica refuses to destroy its active context or epoch.** That revert means the
   replica is behind: mirror the successor first (§5.3 or §5.4).
-- **Catch up before you mirror a destruction of an ID that canonical activated.** If the replica
-  has not reached that ID, first mirror the canonical active pair with `mirrorKmsEpoch` or
-  `mirrorKmsContextAndEpoch`. Then mirror the destruction. In the other order, the submit path
-  stalls. The destroyed ID reverts with `DestroyedKmsEpochCannotBeActivated` or
-  `DestroyedKmsContextCannotBeActivated`. The next ID reverts with `KmsSignerNotInCommittee`.
+- **Catch up before you mirror a destruction.** If the replica has not reached the ID, first
+  mirror the canonical active pair with `mirrorKmsEpoch` or `mirrorKmsContextAndEpoch`. Then
+  mirror the destruction. In the other order, the destruction has no effect. A later submission
+  activates the ID, and `KMSVerifier` trusts it.
 
 Do this with the same urgency as the canonical call: for a context destroyed because it was
 compromised, every replica trusts it until this step is done.
 
-For a switch that canonical aborted while it was in flight, only this mirror path step can block
-it on a replica. A destruction through the submit path reverts until the replica passes the ID.
-Until then, the public creation signatures and a full set of activation signatures can still
-activate the aborted context.
+Do not destroy an ID on a replica before the replica reaches it. If someone applies an aborted
+canonical step on a replica, recover the replica forward (§5.7).
 
 ### 5.7 Recover a replica from a context canonical never activated
 
@@ -546,9 +542,8 @@ C4 with an honest committee, then destroys every context and epoch that canonica
 activated.
 
 Use two DAO proposals. Do not put the destructions in the first proposal. Until C4 lands, the
-committee of that context can submit a destruction of one of its own IDs. A mirror destruction of
-an ID that is already destroyed reverts, and the revert fails the whole proposal. The committee
-can repeat this for every new proposal.
+committee of that context can submit more switches and resharings. Each one adds IDs to destroy.
+Proposal 1 freezes the list of IDs.
 
 1. Wait until canonical activates C4 with an honest committee (§4).
 2. Proposal 1: `mirrorKmsContextAndEpoch` with C4, its epoch ID, nodes and thresholds. Nothing
@@ -559,22 +554,39 @@ can repeat this for every new proposal.
    had not activated when the replica activated it. Take that context, every context the replica
    activated after it, and every epoch of those contexts. Keep an ID on the list even if canonical
    later activated the same number, because the replica still stores the committee it activated
-   under that ID. Remove only C4, its epoch, and every ID that the replica's `KmsContextDestroyed`
-   and `KmsEpochDestroyed` events show as destroyed.
+   under that ID. Remove only C4 and its epoch.
 4. Proposal 2, in this order: `mirrorKmsContextDestruction` for each context ID on the list, then
    `mirrorKmsEpochDestruction` for each epoch ID on the list.
 
 Between the two proposals, every context on the list stays valid for `KMSVerifier`. Submit
 proposal 2 with the same urgency as proposal 1.
 
-For a resharing epoch that canonical never activated under an honest active context, the owner
-calls `mirrorKmsEpoch` with canonical's active pair. Then the owner calls
+For a resharing epoch that canonical never activated under an honest active context, wait until
+canonical activates a later epoch. The owner calls `mirrorKmsEpoch` with canonical's active pair.
+Then the owner calls
 `mirrorKmsEpochDestruction` for every epoch ID of that context that canonical never activated,
 from the `SubmitKmsEpoch` events. Put all actions in one DAO proposal, in this order.
 
 If canonical later uses a destroyed ID, mirror it with `mirrorKmsContextAndEpoch` or
-`mirrorKmsEpoch`. The activation replaces the Destroyed state. No task wraps the recovery, so the
-owner builds the calls directly.
+`mirrorKmsEpoch`. No task wraps the recovery, so the owner builds the calls directly.
+
+#### Recover from a forged ID that canonical can never reach
+
+A compromised committee can sign a context or epoch with a very high ID, for example `2^255`. A
+context switch needs `n - t` signers of the active committee. A resharing needs every signer.
+Canonical IDs increase by one per operation, so canonical never reaches the forged ID. The submit
+path accepts only IDs above the active one, so forward recovery is not possible. The owner must move
+the replica back. Canonical must also rotate to a new committee. Use the same two proposals, with
+these differences:
+
+- Proposal 1 calls `mirrorKmsContextAndEpoch` with canonical's new context, its epoch ID, nodes
+  and thresholds. This moves the replica back. Do not use `mirrorKmsEpoch` here.
+- Never roll back to the committee that signed the forged ID. That committee can sign new IDs.
+- The forged IDs are above the active pair. Only `mirrorKmsContextDestruction` and
+  `mirrorKmsEpochDestruction` accept them.
+
+After the recovery, a replay of a forged submission reverts with `KmsSignerNotInCommittee`. Its
+signatures cover the old `previousContextId` or `contextId`, so the digest does not match.
 
 ## 6. Quick reference
 
@@ -621,8 +633,8 @@ Quorum cheat-sheet:
   identified by a domain-tagged id (`0x07…NN`). **Epoch** = one key-material generation
   under a context (`0x08…NN`). `getCurrentKmsContextAndEpoch()` returns the active pair.
 - **Lifecycle states**: context `Pending → Created → Active`; epoch `Pending → Active`.
-  `destroyKmsContext` and `destroyKmsEpoch` set a context or epoch `Destroyed`. Canonical
-  `destroyKmsContext` resets its paired `Pending` epoch to `None`.
+  `destroyKmsContext` and `destroyKmsEpoch` reset a context or epoch to `None`. Canonical
+  `destroyKmsContext` also resets its paired `Pending` epoch to `None`.
   Governance only _opens_ a switch. The KMS connectors do not submit context creation or
   epoch activation confirmations in this version (planning-blockchain#1369). The connectors
   have no code that submits the two destruction confirmations. No other service submits them.
