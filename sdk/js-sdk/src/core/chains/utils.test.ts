@@ -29,7 +29,19 @@ describe('defineFhevmChain', () => {
   it('throws a descriptive error when protocolConfig is missing', () => {
     const c = chain({ acl: { address: A }, inputVerifier: { address: A }, kmsVerifier: { address: A } });
     expect(() => defineFhevmChain(c)).toThrow(
-      "Invalid FHEVM chain (id: 1): missing required 'fhevm.contracts.protocolConfig.address'.",
+      "Invalid FHEVM chain (id: 1): missing or invalid required 'fhevm.contracts.protocolConfig.address'.",
+    );
+  });
+
+  it('throws a descriptive error when an address is malformed', () => {
+    const c = chain({
+      acl: { address: A },
+      inputVerifier: { address: '0x1234' },
+      kmsVerifier: { address: A },
+      protocolConfig: { address: A },
+    });
+    expect(() => defineFhevmChain(c)).toThrow(
+      "Invalid FHEVM chain (id: 1): missing or invalid required 'fhevm.contracts.inputVerifier.address'.",
     );
   });
 });

@@ -1,5 +1,6 @@
 import type { FhevmChain } from '../types/fhevmChain.js';
 import { simpleDeepFreeze } from '../base/object.js';
+import { isAddress } from '../base/address.js';
 
 const REQUIRED_CONTRACTS = ['acl', 'inputVerifier', 'kmsVerifier', 'protocolConfig'] as const;
 
@@ -15,9 +16,9 @@ export function assertFhevmChainContracts(fhevmChain: FhevmChain): void {
     ?.contracts;
   for (const name of REQUIRED_CONTRACTS) {
     const address = contracts?.[name]?.address;
-    if (typeof address !== 'string' || address.length === 0) {
+    if (!isAddress(address)) {
       throw new Error(
-        `Invalid FHEVM chain (id: ${String(fhevmChain.id)}): missing required 'fhevm.contracts.${name}.address'.`,
+        `Invalid FHEVM chain (id: ${String(fhevmChain.id)}): missing or invalid required 'fhevm.contracts.${name}.address'.`,
       );
     }
   }
