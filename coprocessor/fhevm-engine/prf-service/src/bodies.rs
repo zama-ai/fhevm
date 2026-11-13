@@ -1,4 +1,7 @@
 //! Limits the bytes of the response bodies in memory: for the pod, and for each connector.
+//!
+//! A body that fits in the socket and proxy buffers leaves prf-service at once and gives its permit
+//! back. So the budget limits the memory of prf-service, and in practice only the largest bodies.
 
 use crate::metrics::{BODY_BYTES_HELD, BODY_REFUSALS};
 use actix_web::{
