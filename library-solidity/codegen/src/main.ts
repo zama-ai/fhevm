@@ -2,11 +2,11 @@ import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
 
-import type { OverloadSignature } from './common';
+import type { OverloadSignature } from './common.js';
 import {
   type LibCommandOptions,
   type OverloadsCommandOptions,
-  type TestGroup,
+  type TypescriptTestGroup,
   debugLog,
   errorLog,
   formatAndWriteFile,
@@ -18,32 +18,32 @@ import {
   toAbsoluteFileWithExtension,
   toAbsulteConfig,
   toImportsCode,
-} from './config';
-import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos';
-import { type OverloadTest, type OverloadTests, generateOverloads } from './generateOverloads';
-import { generateSolidityHCULimit } from './hcuLimitGenerator';
-import { ALL_OPERATORS } from './operators';
-import { ALL_OPERATORS_PRICES } from './operatorsPrices';
-import { fromDirToFile, fromFileToFile, isDirectory } from './paths';
+} from './config.js';
+import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos.js';
+import { type OverloadTest, type OverloadTests, generateOverloads } from './generateOverloads.js';
+import { generateSolidityHCULimit } from './hcuLimitGenerator.js';
+import { ALL_OPERATORS } from './operators.js';
+import { ALL_OPERATORS_PRICES } from './operatorsPrices.js';
+import { fromDirToFile, fromFileToFile, isDirectory } from './paths.js';
 import {
   generateConfidentialOAppCoreLib,
   generateConfidentialOAppLib,
   generateConfidentialOAppReceiverLib,
   generateConfidentialOAppSenderLib,
   generateIDstAppLib,
-} from './templateBridge';
-import { generateFhevmECDSALib, generateSolidityFHELib } from './templateFHEDotSol';
-import { generateSolidityFheType } from './templateFheTypeDotSol';
-import { generateSolidityImplLib } from './templateImpDotSol';
+} from './templateBridge.js';
+import { generateFhevmECDSALib, generateSolidityFHELib } from './templateFHEDotSol.js';
+import { generateSolidityFheType } from './templateFheTypeDotSol.js';
+import { generateSolidityImplLib } from './templateImpDotSol.js';
 import {
   type TypescriptTestGroupImports,
   generateSolidityOverloadTestFiles,
   generateSolidityUnitTestContracts,
   generateTypeScriptTestCode,
   splitOverloadsToShards,
-} from './testgen';
-import { toBigInt } from './utils';
-import { validate } from './validate';
+} from './testgen.js';
+import { toBigInt } from './utils.js';
+import { validate } from './validate.js';
 
 function isNumberOrBigInt(value: unknown): value is number | bigint {
   return typeof value === 'number' || typeof value === 'bigint';
@@ -397,7 +397,7 @@ export async function commandGenerateAllFiles(options: LibCommandOptions): Promi
       numberOfTestSplits,
       overloadTests,
       typescriptTestGroupImports,
-      config.tests,
+      { ...config.tests, hardhatVersion: typescriptTestGroup.hardhatVersion },
     );
     await Promise.all(
       tsSplits.map((split, splitIdx) =>
@@ -409,15 +409,20 @@ export async function commandGenerateAllFiles(options: LibCommandOptions): Promi
   }
 }
 
-function computeOperationsTestsGroupImports(operationsTestGroup: TestGroup): TypescriptTestGroupImports {
+function computeOperationsTestsGroupImports(operationsTestGroup: TypescriptTestGroup): TypescriptTestGroupImports {
   const imports: TypescriptTestGroupImports = {
     signers: '',
     instance: '',
     typechain: '',
   };
 
-  const importModuleNames = Object.keys(imports) as Array<keyof TypescriptTestGroupImports>;
-  const importModuleNamesSet = new Set(importModuleNames);
+  // `hardhat` (the module exporting the shared HH3 network connection) exists only for HH3 tests: it is required
+  // with `hardhatVersion: 3`, and refused otherwise (so an HH2 config cannot set it by mistake, and be ignored).
+  const requiredModuleNames: Array<keyof TypescriptTestGroupImports> = ['signers', 'instance', 'typechain'];
+  if (operationsTestGroup.hardhatVersion === 3) {
+    requiredModuleNames.push('hardhat');
+  }
+  const importModuleNamesSet = new Set(requiredModuleNames);
 
   if (operationsTestGroup.imports) {
     for (let i = 0; i < operationsTestGroup.imports.length; ++i) {
@@ -429,15 +434,19 @@ function computeOperationsTestsGroupImports(operationsTestGroup: TestGroup): Typ
       if (importModuleNamesSet.has(k)) {
         imports[k] = imp[1];
       } else {
-        throw new Error(`Unknown operations import module name ${k}`);
+        throw new Error(
+          `Unknown operations import module name ${k}` +
+            (k === 'hardhat' ? ' (only allowed with "tests.typescript.hardhatVersion": 3)' : ''),
+        );
       }
     }
   } else {
     throw new Error('Missing operations test group imports declaration.');
   }
 
-  importModuleNames.forEach((k) => {
-    if (imports[k].length === 0) {
+  requiredModuleNames.forEach((k) => {
+    const value = imports[k];
+    if (value === undefined || value.length === 0) {
       throw new Error(`Missing operations test group '${k}' import declaration.`);
     }
   });

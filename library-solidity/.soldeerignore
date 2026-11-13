@@ -16,22 +16,18 @@ publish/
 .env*
 .eslintignore
 .eslintrc.yml
-.gitpod.yml
 .lintstagedrc.json
 .npmignore
 .prettierignore
 .prettierrc.json
-.solcover.js
 .solhintignore
 hardhat.config.ts
 tsconfig.json
 commitlint.config.ts
 codegen.config.json
-mlc_config.json
 foundry.toml
 remappings.txt
 soldeer.lock
-CustomProvider.ts
 
 # Source directories not needed by consumers
 codegen/

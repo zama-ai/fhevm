@@ -1,6 +1,6 @@
 {
   "name": "codegen",
-  "bin": "./dist/_esm/index.js",
+  "type": "module",
   "dependencies": {
     "commander": "^14.0.1",
     "prettier": "^3.3.3",

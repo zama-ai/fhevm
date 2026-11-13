@@ -1,120 +1,128 @@
-export type FheTypeName =
-  | 'Bool'
-  | 'Uint4'
-  | 'Uint8'
-  | 'Uint16'
-  | 'Uint32'
-  | 'Uint64'
-  | 'Uint128'
-  | 'Uint160'
-  | 'Uint256'
-  | 'Uint512'
-  | 'Uint1024'
-  | 'Uint2048'
-  | 'Uint2'
-  | 'Uint6'
-  | 'Uint10'
-  | 'Uint12'
-  | 'Uint14'
-  | 'Int2'
-  | 'Int4'
-  | 'Int6'
-  | 'Int8'
-  | 'Int10'
-  | 'Int12'
-  | 'Int14'
-  | 'Int16'
-  | 'Int32'
-  | 'Int64'
-  | 'Int128'
-  | 'Int160'
-  | 'Int256'
-  | 'AsciiString'
-  | 'Int512'
-  | 'Int1024'
-  | 'Int2048'
-  | 'Uint24'
-  | 'Uint40'
-  | 'Uint48'
-  | 'Uint56'
-  | 'Uint72'
-  | 'Uint80'
-  | 'Uint88'
-  | 'Uint96'
-  | 'Uint104'
-  | 'Uint112'
-  | 'Uint120'
-  | 'Uint136'
-  | 'Uint144'
-  | 'Uint152'
-  | 'Uint168'
-  | 'Uint176'
-  | 'Uint184'
-  | 'Uint192'
-  | 'Uint200'
-  | 'Uint208'
-  | 'Uint216'
-  | 'Uint224'
-  | 'Uint232'
-  | 'Uint240'
-  | 'Uint248'
-  | 'Int24'
-  | 'Int40'
-  | 'Int48'
-  | 'Int56'
-  | 'Int72'
-  | 'Int80'
-  | 'Int88'
-  | 'Int96'
-  | 'Int104'
-  | 'Int112'
-  | 'Int120'
-  | 'Int136'
-  | 'Int144'
-  | 'Int152'
-  | 'Int168'
-  | 'Int176'
-  | 'Int184'
-  | 'Int192'
-  | 'Int200'
-  | 'Int208'
-  | 'Int216'
-  | 'Int224'
-  | 'Int232'
-  | 'Int240'
-  | 'Int248';
+/** Every FHE type name. Checked at runtime against the JSON data by `validate()`. */
+export const FHE_TYPE_NAMES = [
+  'Bool',
+  'Uint4',
+  'Uint8',
+  'Uint16',
+  'Uint32',
+  'Uint64',
+  'Uint128',
+  'Uint160',
+  'Uint256',
+  'Uint512',
+  'Uint1024',
+  'Uint2048',
+  'Uint2',
+  'Uint6',
+  'Uint10',
+  'Uint12',
+  'Uint14',
+  'Int2',
+  'Int4',
+  'Int6',
+  'Int8',
+  'Int10',
+  'Int12',
+  'Int14',
+  'Int16',
+  'Int32',
+  'Int64',
+  'Int128',
+  'Int160',
+  'Int256',
+  'AsciiString',
+  'Int512',
+  'Int1024',
+  'Int2048',
+  'Uint24',
+  'Uint40',
+  'Uint48',
+  'Uint56',
+  'Uint72',
+  'Uint80',
+  'Uint88',
+  'Uint96',
+  'Uint104',
+  'Uint112',
+  'Uint120',
+  'Uint136',
+  'Uint144',
+  'Uint152',
+  'Uint168',
+  'Uint176',
+  'Uint184',
+  'Uint192',
+  'Uint200',
+  'Uint208',
+  'Uint216',
+  'Uint224',
+  'Uint232',
+  'Uint240',
+  'Uint248',
+  'Int24',
+  'Int40',
+  'Int48',
+  'Int56',
+  'Int72',
+  'Int80',
+  'Int88',
+  'Int96',
+  'Int104',
+  'Int112',
+  'Int120',
+  'Int136',
+  'Int144',
+  'Int152',
+  'Int168',
+  'Int176',
+  'Int184',
+  'Int192',
+  'Int200',
+  'Int208',
+  'Int216',
+  'Int224',
+  'Int232',
+  'Int240',
+  'Int248',
+] as const;
 
-export type FheOperatorName =
-  | 'fheAdd'
-  | 'fheSub'
-  | 'fheMul'
-  | 'fheDiv'
-  | 'fheRem'
-  | 'fheBitAnd'
-  | 'fheBitOr'
-  | 'fheBitXor'
-  | 'fheShl'
-  | 'fheShr'
-  | 'fheRotl'
-  | 'fheRotr'
-  | 'fheEq'
-  | 'fheNe'
-  | 'fheGe'
-  | 'fheGt'
-  | 'fheLe'
-  | 'fheLt'
-  | 'fheMin'
-  | 'fheMax'
-  | 'fheNeg'
-  | 'fheNot'
-  | 'cast'
-  | 'trivialEncrypt'
-  | 'ifThenElse'
-  | 'fheRand'
-  | 'fheRandBounded'
-  | 'fheSum'
-  | 'fheIsIn'
-  | 'fheMulDiv';
+export type FheTypeName = (typeof FHE_TYPE_NAMES)[number];
+
+/** Every FHE operator name (the keys of `PriceData`). Checked at runtime against the JSON data by `validate()`. */
+export const FHE_OPERATOR_NAMES = [
+  'fheAdd',
+  'fheSub',
+  'fheMul',
+  'fheDiv',
+  'fheRem',
+  'fheBitAnd',
+  'fheBitOr',
+  'fheBitXor',
+  'fheShl',
+  'fheShr',
+  'fheRotl',
+  'fheRotr',
+  'fheEq',
+  'fheNe',
+  'fheGe',
+  'fheGt',
+  'fheLe',
+  'fheLt',
+  'fheMin',
+  'fheMax',
+  'fheNeg',
+  'fheNot',
+  'cast',
+  'trivialEncrypt',
+  'ifThenElse',
+  'fheRand',
+  'fheRandBounded',
+  'fheSum',
+  'fheIsIn',
+  'fheMulDiv',
+] as const;
+
+export type FheOperatorName = (typeof FHE_OPERATOR_NAMES)[number];
 
 export type NBucketedCost = {
   le10: number;

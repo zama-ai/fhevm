@@ -1,6 +1,6 @@
 import { getAddress, hexlify, isAddress, isHexString } from 'ethers';
 
-import type { EIP712 } from './types';
+import type { EIP712 } from './types.js';
 
 // Same limits as @fhevm/sdk (sdk/js-sdk/src/core/kms/SignedDecryptionPermitV1-p.ts)
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;

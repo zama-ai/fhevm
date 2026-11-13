@@ -1,6 +1,6 @@
-import type { EncryptedERC20 } from '../../typechain-types';
-import { EncryptedERC20__factory } from '../../typechain-types';
-import { getSigners } from '../signers';
+import type { EncryptedERC20 } from '../../typechain-types/index.js';
+import { EncryptedERC20__factory } from '../../typechain-types/index.js';
+import { getSigners } from '../signers.js';
 
 export async function deployEncryptedERC20Fixture(): Promise<EncryptedERC20> {
   const signers = await getSigners();
