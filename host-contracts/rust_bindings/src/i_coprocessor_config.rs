@@ -29,7 +29,6 @@ interface ICoprocessorConfig {
     error InvalidBlockWindow(uint64 chainId, uint64 startBlock, uint64 endBlock);
     error InvalidCoprocessorContext(uint256 coprocessorContextId);
     error InvalidCoprocessorMajorityThreshold(uint256 majorityThreshold, uint256 coprocessorCount);
-    error InvalidProposalId();
     error ZeroChainId();
     error ZeroGwStartBlock();
 
@@ -47,7 +46,7 @@ interface ICoprocessorConfig {
     function isCoprocessorSignerForContext(uint256 coprocessorContextId, address signer) external view returns (bool);
     function isCoprocessorTxSenderForContext(uint256 coprocessorContextId, address txSender) external view returns (bool);
     function isValidCoprocessorContext(uint256 coprocessorContextId) external view returns (bool);
-    function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
+    function proposeCoprocessorUpgrade(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
 }
 ```
 
@@ -277,11 +276,6 @@ interface ICoprocessorConfig {
     "type": "function",
     "name": "proposeCoprocessorUpgrade",
     "inputs": [
-      {
-        "name": "proposalId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
       {
         "name": "softwareVersion",
         "type": "string",
@@ -569,11 +563,6 @@ interface ICoprocessorConfig {
         "internalType": "uint256"
       }
     ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidProposalId",
-    "inputs": []
   },
   {
     "type": "error",
@@ -2281,80 +2270,6 @@ error InvalidCoprocessorMajorityThreshold(uint256 majorityThreshold, uint256 cop
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.coprocessorCount),
                 )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidProposalId()` and selector `0x0992f7ad`.
-```solidity
-error InvalidProposalId();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct InvalidProposalId;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<InvalidProposalId> for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidProposalId) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidProposalId {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidProposalId {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidProposalId()";
-            const SELECTOR: [u8; 4] = [9u8, 146u8, 247u8, 173u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -4510,15 +4425,13 @@ function isValidCoprocessorContext(uint256 coprocessorContextId) external view r
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)` and selector `0xccbf8199`.
+    /**Function with signature `proposeCoprocessorUpgrade(string,(uint64,uint64,uint64)[],uint64)` and selector `0x36359dd5`.
 ```solidity
-function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
+function proposeCoprocessorUpgrade(string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct proposeCoprocessorUpgradeCall {
-        #[allow(missing_docs)]
-        pub proposalId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub softwareVersion: alloy::sol_types::private::String,
         #[allow(missing_docs)]
@@ -4528,7 +4441,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         pub gwStartBlock: u64,
     }
-    ///Container type for the return parameters of the [`proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)`](proposeCoprocessorUpgradeCall) function.
+    ///Container type for the return parameters of the [`proposeCoprocessorUpgrade(string,(uint64,uint64,uint64)[],uint64)`](proposeCoprocessorUpgradeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct proposeCoprocessorUpgradeReturn {}
@@ -4544,14 +4457,12 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             #[doc(hidden)]
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::String,
                 alloy::sol_types::sol_data::Array<ChainUpgradeWindow>,
                 alloy::sol_types::sol_data::Uint<64>,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
                 alloy::sol_types::private::String,
                 alloy::sol_types::private::Vec<
                     <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
@@ -4575,7 +4486,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             for UnderlyingRustTuple<'_> {
                 fn from(value: proposeCoprocessorUpgradeCall) -> Self {
                     (
-                        value.proposalId,
                         value.softwareVersion,
                         value.chainUpgradeWindows,
                         value.gwStartBlock,
@@ -4588,10 +4498,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             for proposeCoprocessorUpgradeCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        proposalId: tuple.0,
-                        softwareVersion: tuple.1,
-                        chainUpgradeWindows: tuple.2,
-                        gwStartBlock: tuple.3,
+                        softwareVersion: tuple.0,
+                        chainUpgradeWindows: tuple.1,
+                        gwStartBlock: tuple.2,
                     }
                 }
             }
@@ -4642,7 +4551,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[automatically_derived]
         impl alloy_sol_types::SolCall for proposeCoprocessorUpgradeCall {
             type Parameters<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::String,
                 alloy::sol_types::sol_data::Array<ChainUpgradeWindow>,
                 alloy::sol_types::sol_data::Uint<64>,
@@ -4655,8 +4563,8 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)";
-            const SELECTOR: [u8; 4] = [204u8, 191u8, 129u8, 153u8];
+            const SIGNATURE: &'static str = "proposeCoprocessorUpgrade(string,(uint64,uint64,uint64)[],uint64)";
+            const SELECTOR: [u8; 4] = [54u8, 53u8, 157u8, 213u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4666,9 +4574,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.proposalId),
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
                         &self.softwareVersion,
                     ),
@@ -4744,9 +4649,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [14u8, 24u8, 135u8, 201u8],
             [23u8, 10u8, 41u8, 129u8],
             [48u8, 198u8, 106u8, 128u8],
+            [54u8, 53u8, 157u8, 213u8],
             [96u8, 154u8, 219u8, 114u8],
             [137u8, 9u8, 10u8, 68u8],
-            [204u8, 191u8, 129u8, 153u8],
             [215u8, 64u8, 228u8, 2u8],
             [232u8, 246u8, 139u8, 131u8],
             [235u8, 15u8, 119u8, 100u8],
@@ -4758,9 +4663,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(isValidCoprocessorContext),
             ::core::stringify!(getCurrentCoprocessorContextId),
             ::core::stringify!(getCoprocessorsForContext),
+            ::core::stringify!(proposeCoprocessorUpgrade),
             ::core::stringify!(isCoprocessorSignerForContext),
             ::core::stringify!(getPreviousCoprocessorContextId),
-            ::core::stringify!(proposeCoprocessorUpgrade),
             ::core::stringify!(destroyCoprocessorContext),
             ::core::stringify!(defineNewCoprocessorContext),
             ::core::stringify!(isCoprocessorTxSenderForContext),
@@ -4772,9 +4677,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <isValidCoprocessorContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCoprocessorsForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isCoprocessorSignerForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getPreviousCoprocessorContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::SIGNATURE,
             <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <defineNewCoprocessorContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isCoprocessorTxSenderForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -4906,6 +4811,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     getCoprocessorsForContext
                 },
                 {
+                    fn proposeCoprocessorUpgrade(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorConfigCalls> {
+                        <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(ICoprocessorConfigCalls::proposeCoprocessorUpgrade)
+                    }
+                    proposeCoprocessorUpgrade
+                },
+                {
                     fn isCoprocessorSignerForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICoprocessorConfigCalls> {
@@ -4928,17 +4844,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             )
                     }
                     getPreviousCoprocessorContextId
-                },
-                {
-                    fn proposeCoprocessorUpgrade(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorConfigCalls> {
-                        <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ICoprocessorConfigCalls::proposeCoprocessorUpgrade)
-                    }
-                    proposeCoprocessorUpgrade
                 },
                 {
                     fn destroyCoprocessorContext(
@@ -5053,6 +4958,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     getCoprocessorsForContext
                 },
                 {
+                    fn proposeCoprocessorUpgrade(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorConfigCalls> {
+                        <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ICoprocessorConfigCalls::proposeCoprocessorUpgrade)
+                    }
+                    proposeCoprocessorUpgrade
+                },
+                {
                     fn isCoprocessorSignerForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICoprocessorConfigCalls> {
@@ -5075,17 +4991,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             )
                     }
                     getPreviousCoprocessorContextId
-                },
-                {
-                    fn proposeCoprocessorUpgrade(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorConfigCalls> {
-                        <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICoprocessorConfigCalls::proposeCoprocessorUpgrade)
-                    }
-                    proposeCoprocessorUpgrade
                 },
                 {
                     fn destroyCoprocessorContext(
@@ -5312,8 +5217,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         InvalidCoprocessorMajorityThreshold(InvalidCoprocessorMajorityThreshold),
         #[allow(missing_docs)]
-        InvalidProposalId(InvalidProposalId),
-        #[allow(missing_docs)]
         ZeroChainId(ZeroChainId),
         #[allow(missing_docs)]
         ZeroGwStartBlock(ZeroGwStartBlock),
@@ -5327,7 +5230,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [1u8, 49u8, 181u8, 233u8],
-            [9u8, 146u8, 247u8, 173u8],
             [12u8, 47u8, 205u8, 53u8],
             [23u8, 211u8, 233u8, 72u8],
             [28u8, 200u8, 104u8, 124u8],
@@ -5347,7 +5249,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(CoprocessorSignerAlreadyRegistered),
-            ::core::stringify!(InvalidProposalId),
             ::core::stringify!(CoprocessorNullSigner),
             ::core::stringify!(ZeroGwStartBlock),
             ::core::stringify!(CoprocessorNullTxSender),
@@ -5367,7 +5268,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
-            <InvalidProposalId as alloy_sol_types::SolError>::SIGNATURE,
             <CoprocessorNullSigner as alloy_sol_types::SolError>::SIGNATURE,
             <ZeroGwStartBlock as alloy_sol_types::SolError>::SIGNATURE,
             <CoprocessorNullTxSender as alloy_sol_types::SolError>::SIGNATURE,
@@ -5409,7 +5309,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for ICoprocessorConfigErrors {
         const NAME: &'static str = "ICoprocessorConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 17usize;
+        const COUNT: usize = 16usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5455,9 +5355,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 Self::InvalidCoprocessorMajorityThreshold(_) => {
                     <InvalidCoprocessorMajorityThreshold as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidProposalId(_) => {
-                    <InvalidProposalId as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::ZeroChainId(_) => {
                     <ZeroChainId as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -5495,17 +5392,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             )
                     }
                     CoprocessorSignerAlreadyRegistered
-                },
-                {
-                    fn InvalidProposalId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorConfigErrors> {
-                        <InvalidProposalId as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ICoprocessorConfigErrors::InvalidProposalId)
-                    }
-                    InvalidProposalId
                 },
                 {
                     fn CoprocessorNullSigner(
@@ -5710,17 +5596,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             )
                     }
                     CoprocessorSignerAlreadyRegistered
-                },
-                {
-                    fn InvalidProposalId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorConfigErrors> {
-                        <InvalidProposalId as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICoprocessorConfigErrors::InvalidProposalId)
-                    }
-                    InvalidProposalId
                 },
                 {
                     fn CoprocessorNullSigner(
@@ -5979,11 +5854,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
-                Self::InvalidProposalId(inner) => {
-                    <InvalidProposalId as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::ZeroChainId(inner) => {
                     <ZeroChainId as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
@@ -6077,12 +5947,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::InvalidCoprocessorMajorityThreshold(inner) => {
                     <InvalidCoprocessorMajorityThreshold as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::InvalidProposalId(inner) => {
-                    <InvalidProposalId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -6517,7 +6381,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`proposeCoprocessorUpgrade`] function.
         pub fn proposeCoprocessorUpgrade(
             &self,
-            proposalId: alloy::sol_types::private::primitives::aliases::U256,
             softwareVersion: alloy::sol_types::private::String,
             chainUpgradeWindows: alloy::sol_types::private::Vec<
                 <ChainUpgradeWindow as alloy::sol_types::SolType>::RustType,
@@ -6526,7 +6389,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, proposeCoprocessorUpgradeCall, N> {
             self.call_builder(
                 &proposeCoprocessorUpgradeCall {
-                    proposalId,
                     softwareVersion,
                     chainUpgradeWindows,
                     gwStartBlock,
