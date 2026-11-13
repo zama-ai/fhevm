@@ -100,6 +100,9 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
   }
   signedPermit.assertNotExpired();
 
+  // The KMS signs pad decryption responses under the `fhevm-pad-decryption` EIP-712 domain, anchored on ProtocolConfig.
+  const protocolConfigAddress = context.chain.fhevm.contracts.protocolConfig.address as ChecksummedAddress;
+
   // 1. Pad length: every part is padded to whole bytes.
   const padLength = _computePadLength(values);
 
@@ -148,7 +151,7 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
     fetchShares(),
     readKmsSignersContextFromPermitExtraData(context, {
       kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-      protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig.address as ChecksummedAddress,
+      protocolConfigAddress,
       fhevmContext,
       extraData: createKmsExtraDataFromBytesHex(extraData),
     }),
@@ -165,9 +168,11 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
       // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
       // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
       mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
-      gatewayChainId: context.chain.fhevm.gateway.id,
-      verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption
-        .address as ChecksummedAddress,
+      // TODO(RFC-030): the spec anchors the domain on ProtocolConfig's own chain, i.e. Ethereum's. The chain
+      // configuration has no such chain id; the host chain is ProtocolConfig's (or its replica's) one here, as in a
+      // cleartext stack. Revisit once the spec settles the replica case.
+      protocolConfigChainId: context.chain.id,
+      protocolConfigAddress,
     });
   const pads = await reconstructWithOneRetry(firstResponses, fetchShares, reconstruct);
   const pad = pads.get(label);

@@ -26,14 +26,19 @@ library LibCleartextPad {
     bytes8 internal constant CLEARTEXT_SESSION_DOMAIN_SEPARATOR = "FHE_csid";
 
     /**
-     * @notice Version byte leading every cleartext `rawShares`: the RFC leaves the encoding of the ring elements to
-     *         the KMS. Version 0 (cleartext mode only) is the pad itself, not a share of it: one 256-bit PRF block
-     *         per ring element, `rawShares = 0x00 ‖ block_0 ‖ … ‖ block_{k-1}` for `k = ⌈padLength/256⌉`.
+     * @notice Version byte leading every cleartext `rawShares`: RFC-030 leaves `rawShares` opaque, the encoding of the
+     *         ring elements and their metadata being the KMS's. Version 0 (cleartext mode only) is the pad itself, not
+     *         a share of it: one 256-bit PRF block per ring element,
+     *         `rawShares = 0x00 ‖ block_0 ‖ … ‖ block_{k-1}` for `k = ⌈padLength/256⌉`.
      */
     uint8 internal constant CLEARTEXT_RAW_SHARES_VERSION = 0x00;
 
-    /// @notice The `extraData` of every cleartext share: version 0, no metadata.
-    bytes internal constant CLEARTEXT_SHARE_EXTRA_DATA = hex"00";
+    /// @notice Name of the EIP-712 domain both pad decryption response signatures are made under.
+    /// @dev Defined in https://github.com/zama-ai/tech-spec/blob/5e6b1ca40e36543299ee97a678d5e9c1d30e89a0/rfcs/030-pad-based-input.md#L470
+    string internal constant PAD_DECRYPTION_DOMAIN_NAME = "fhevm-pad-decryption";
+
+    /// @notice Version of the EIP-712 domain both pad decryption response signatures are made under.
+    string internal constant PAD_DECRYPTION_DOMAIN_VERSION = "1";
 
     /// @notice Bits per block of the cleartext PRF (one keccak256 output).
     uint256 internal constant BLOCK_BITS = 256;
@@ -77,24 +82,24 @@ library LibCleartextPad {
     }
 
     /// @notice RFC-030 `PadShareVerification` EIP-712 typehash: the share signature, one per pad share.
-    /// @dev Defined in https://github.com/zama-ai/tech-spec/blob/950587724a33f72066e864a8934ee0909144d147/rfcs/030-pad-based-input.md#L411-L419
+    /// @dev Defined in https://github.com/zama-ai/tech-spec/blob/5e6b1ca40e36543299ee97a678d5e9c1d30e89a0/rfcs/030-pad-based-input.md#L460-L467
     bytes32 internal constant PAD_SHARE_VERIFICATION_TYPEHASH = keccak256(
-        "PadShareVerification(bytes32 label,bytes rawShares,uint32 partyId,uint32 degree,bytes32 contextId,bytes16 sessionId,bytes extraData)"
+        "PadShareVerification(bytes32 label,bytes rawShares,uint32 partyId,uint32 degree,bytes16 sessionId,bytes extraData)"
     );
 
     /// @notice RFC-030 `PadDecryptResponseVerification` EIP-712 typehash: the transport signature, one per response.
-    /// @dev Defined in https://github.com/zama-ai/tech-spec/blob/950587724a33f72066e864a8934ee0909144d147/rfcs/030-pad-based-input.md#L406-L409
+    /// @dev Defined in https://github.com/zama-ai/tech-spec/blob/5e6b1ca40e36543299ee97a678d5e9c1d30e89a0/rfcs/030-pad-based-input.md#L455-L458
     bytes32 internal constant PAD_DECRYPT_RESPONSE_VERIFICATION_TYPEHASH =
         keccak256("PadDecryptResponseVerification(bytes32 requestId,bytes encryptedPayload)");
 
-    /// @notice EIP-712 struct hash of one share's `PadShareVerification`.
-    /// @dev Defined in https://github.com/zama-ai/tech-spec/blob/950587724a33f72066e864a8934ee0909144d147/rfcs/030-pad-based-input.md#L411-L419
+    /// @notice EIP-712 struct hash of one share's `PadShareVerification`; `extraData` is the response payload's, the
+    ///         same for every share of the response.
+    /// @dev Defined in https://github.com/zama-ai/tech-spec/blob/5e6b1ca40e36543299ee97a678d5e9c1d30e89a0/rfcs/030-pad-based-input.md#L460-L467
     function padShareVerificationStructHash(
         bytes32 label,
         bytes memory rawShares,
         uint32 partyId,
         uint32 degree,
-        bytes32 contextId,
         bytes16 sessionId_,
         bytes memory extraData
     ) internal pure returns (bytes32) {
@@ -105,7 +110,6 @@ library LibCleartextPad {
                 keccak256(rawShares),
                 partyId,
                 degree,
-                contextId,
                 sessionId_,
                 keccak256(extraData)
             )
@@ -113,7 +117,7 @@ library LibCleartextPad {
     }
 
     /// @notice EIP-712 struct hash of a response's `PadDecryptResponseVerification`.
-    /// @dev Defined in https://github.com/zama-ai/tech-spec/blob/950587724a33f72066e864a8934ee0909144d147/rfcs/030-pad-based-input.md#L406-L409
+    /// @dev Defined in https://github.com/zama-ai/tech-spec/blob/5e6b1ca40e36543299ee97a678d5e9c1d30e89a0/rfcs/030-pad-based-input.md#L455-L458
     function padDecryptResponseVerificationStructHash(bytes32 requestId, bytes memory encryptedPayload)
         internal
         pure
@@ -128,7 +132,7 @@ library LibCleartextPad {
     }
 
     /// @notice The cleartext mock's request id: keccak256(label_1 ‖ … ‖ label_n ‖ extraData ‖ signature).
-    /// @dev The field it fills, `PadDecryptResponse.requestId`, is defined in https://github.com/zama-ai/tech-spec/blob/950587724a33f72066e864a8934ee0909144d147/rfcs/030-pad-based-input.md#L382
+    /// @dev The field it fills, `PadDecryptResponse.requestId`, is defined in https://github.com/zama-ai/tech-spec/blob/5e6b1ca40e36543299ee97a678d5e9c1d30e89a0/rfcs/030-pad-based-input.md#L432
     ///      Its derivation is this mock's own: RFC-030 leaves it to the transport (RFC-002/004).
     function cleartextPadRequestId(bytes32[] memory labels, bytes memory extraData, bytes memory signature)
         internal
