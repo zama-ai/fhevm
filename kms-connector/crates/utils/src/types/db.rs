@@ -302,25 +302,31 @@ impl std::fmt::Display for OperationStatus {
     }
 }
 
-/// Marks a destroyed KMS context as invalid in the `kms_context` validation cache.
+/// Marks a destroyed KMS context and its cached epochs as invalid in the `kms_context` and
+/// `kms_epoch` validation caches.
 ///
-/// The invalidation is upserted so the destruction is recorded even if the context was not cached.
+/// The context invalidation is upserted so the destruction is recorded even if the context was not
+/// cached.
 pub async fn invalidate_kms_context<'e>(
     executor: impl PgExecutor<'e>,
     context_id: U256,
 ) -> anyhow::Result<()> {
     let now = Utc::now();
     sqlx::query!(
-        "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
-        VALUES ($1, FALSE, $2, $2)
-        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
+        "WITH context AS (
+            INSERT INTO kms_context(id, is_valid, created_at, updated_at)
+            VALUES ($1, FALSE, $2, $2)
+            ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2
+        )
+        UPDATE kms_epoch SET is_valid = FALSE, updated_at = $2
+        WHERE context_id = $1 AND is_valid",
         context_id.as_le_slice(),
         now,
     )
     .execute(executor)
     .await?;
 
-    info!("KMS context #{context_id:#066x} marked as destroyed in DB");
+    info!("KMS context #{context_id:#066x} and its epochs marked as destroyed in DB");
     Ok(())
 }
 

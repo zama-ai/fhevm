@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH context AS (\n            INSERT INTO kms_context(id, is_valid, created_at, updated_at)\n            VALUES ($1, FALSE, $2, $2)\n            ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2\n        )\n        UPDATE kms_epoch SET is_valid = FALSE, updated_at = $2\n        WHERE context_id = $1 AND is_valid",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "983753648c3a2a06a4d23176467a8b27baa9824633c1cc0e13de756a76209e43"
+}
