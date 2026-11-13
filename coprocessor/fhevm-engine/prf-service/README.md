@@ -44,7 +44,7 @@ HEAD /v1/prf/{prf}/labels/{label}/{padLength}
 | `405` | A method other than `GET` or `HEAD` |
 | `429 concurrency_limited` | A limit of the connector. `Retry-After: 1` |
 | `500 prf_evaluation_failed` | The evaluation of the row failed |
-| `503 unavailable` | A database error |
+| `503 unavailable` | A database error, or the body budget of the pod is full (`Retry-After: 1`) |
 
 Error bodies are JSON `{code, message, retryable}`, with `Cache-Control: no-store`.
 
