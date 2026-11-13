@@ -160,7 +160,8 @@ pub struct FetchConfig {
     pub not_found_max_retries: Option<u32>,
     /// Reject receipts whose `blockHash` is not the fetched block's hash
     /// ([`BlockFetchError::ReceiptBlockMismatch`]). Off by default: only flows
-    /// that can race a reorg (live cursor, reorg walk) enable it.
+    /// that can race a reorg (live cursor, reorg walk) enable it; catch-up,
+    /// finality and startup keep it off so their behaviour is unchanged.
     pub verify_receipt_block_hash: bool,
 }
 
@@ -1003,3 +1004,7 @@ fn classify_error(error: &RpcProviderError) -> ErrorClassification {
 #[cfg(test)]
 #[path = "./tests/evm_block_fetcher_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "./tests/mock_rpc.rs"]
+pub(crate) mod mock_rpc;

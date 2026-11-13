@@ -124,7 +124,15 @@ pre-existing behaviour (no new failure mode on historic data).
   is still real is re-detected at any depth; one that vanished is simply
   followed on the new canonical chain.
 - Consumers may receive duplicates (blocks of an abandoned walk are published
-  again by the next walk), never gaps. Counted by
+  again by the next walk), never gaps.
+- An abandon does **not** retract what the walk already published: block N
+  (`Live`) and the walked blocks (`Reorged`) stay delivered but are never
+  committed. If the chain settles back on the branch the DB already holds,
+  those events belong to blocks that never became canonical. Nothing is
+  missing: the DB blocks at those heights were published when first inserted.
+  This is the same exposure as any reorg flip-flop; finality events are the
+  canonical signal.
+- Counted by
   `listener_rearms_total{flow="live"|"reorg"}`; each walk also counts in
   `listener_reorgs_total`, so an abandoned and re-detected reorg counts twice.
 
@@ -139,6 +147,11 @@ pre-existing behaviour (no new failure mode on historic data).
   the by-hash cap does not apply. An error message containing "does not exist"
   is classified `UnsupportedMethod` instead (unrecoverable → transient at the
   handler → redelivered).
+- A permanent receipt quirk on one block (node or chain always returning
+  receipts that do not match it): the live cursor re-arms on it forever and
+  the DB tip stops there. This is not a transient error, so it shows only in
+  `listener_rearms_total{flow="live"}` and the re-arm WARN, not in
+  `listener_transient_errors_total`; watch sync lag and the re-arm rate.
 - A block computer mismatch on a block the reorg walk needs: the walk is
   retried transiently; set `compute_block_allow_skipping` for chains with
   unsupported tx types.
