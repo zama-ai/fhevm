@@ -14,9 +14,11 @@ use connector_utils::{
 };
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
-    CrsGenResult, EpochResultResponse as GrpcEpochResultResponse, KeyDigest, KeyGenPreprocResult,
-    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload, SigningSchemeType,
-    TypedSignature, UserDecryptionResponse, UserDecryptionResponsePayload,
+    CrsGenResult, DestroyMpcContextPayload, DestroyMpcContextResponse, DestroyMpcEpochPayload,
+    DestroyMpcEpochResponse, EpochResultResponse as GrpcEpochResultResponse, KeyDigest,
+    KeyGenPreprocResult, KeyGenResult, NewMpcContextPayload, NewMpcContextResponse,
+    NewMpcEpochPayload, PublicDecryptionResponse, PublicDecryptionResponsePayload,
+    SigningSchemeType, TypedSignature, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{DbKmsResponsePublisher, KmsResponsePublisher};
 use sqlx::Row;
@@ -262,9 +264,14 @@ async fn test_publish_new_kms_context_response() -> anyhow::Result<()> {
 
     info!("Mocking NewKmsContextResponse from KMS Core...");
     let rand_context_id = rand_u256();
-    let grpc_response = KmsGrpcResponse::NewKmsContext {
-        context_id: rand_context_id,
-    };
+    let rand_signature = rand_signature();
+    let grpc_response = KmsGrpcResponse::NewKmsContext(NewMpcContextResponse {
+        payload: Some(NewMpcContextPayload {
+            new_context_id: Some(u256_to_request_id(rand_context_id)),
+            ..Default::default()
+        }),
+        signatures: ecdsa_signatures(&rand_signature),
+    });
     let response = KmsResponse::new(
         KmsResponseKind::process(grpc_response)?,
         PropagationContext::empty(),
@@ -275,14 +282,94 @@ async fn test_publish_new_kms_context_response() -> anyhow::Result<()> {
     info!("NewKmsContextResponse successfully published!");
 
     info!("Checking NewKmsContextResponse is stored in DB...");
-    let row = sqlx::query("SELECT context_id FROM new_kms_context_responses")
+    let row = sqlx::query("SELECT context_id, signature FROM new_kms_context_responses")
         .fetch_one(test_instance.db())
         .await?;
 
     let context_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?);
     assert_eq!(context_id, rand_context_id);
+    assert_eq!(row.try_get::<Vec<u8>, _>("signature")?, rand_signature);
     info!("Response successfully stored!");
     Ok(())
+}
+
+#[tokio::test]
+async fn test_publish_context_destruction_response() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+    let publisher = DbKmsResponsePublisher::new(test_instance.db().clone());
+
+    info!("Mocking ContextDestructionResponse from KMS Core...");
+    let rand_context_id = rand_u256();
+    let rand_signature = rand_signature();
+    let grpc_response = KmsGrpcResponse::ContextDestruction(DestroyMpcContextResponse {
+        payload: Some(DestroyMpcContextPayload {
+            context_id: Some(u256_to_request_id(rand_context_id)),
+            extra_data: vec![],
+        }),
+        signatures: ecdsa_signatures(&rand_signature),
+    });
+    let response = KmsResponse::new(
+        KmsResponseKind::process(grpc_response)?,
+        PropagationContext::empty(),
+        RequestSource::OnChain,
+    );
+
+    publisher.publish_response(response).await?;
+    info!("ContextDestructionResponse successfully published!");
+
+    info!("Checking ContextDestructionResponse is stored in DB...");
+    let row = sqlx::query("SELECT context_id, signature FROM kms_context_destruction_responses")
+        .fetch_one(test_instance.db())
+        .await?;
+
+    let context_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?);
+    assert_eq!(context_id, rand_context_id);
+    assert_eq!(row.try_get::<Vec<u8>, _>("signature")?, rand_signature);
+    info!("Response successfully stored!");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_publish_epoch_destruction_response() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+    let publisher = DbKmsResponsePublisher::new(test_instance.db().clone());
+
+    info!("Mocking EpochDestructionResponse from KMS Core...");
+    let rand_epoch_id = rand_u256();
+    let rand_signature = rand_signature();
+    let grpc_response = KmsGrpcResponse::EpochDestruction(DestroyMpcEpochResponse {
+        payload: Some(DestroyMpcEpochPayload {
+            epoch_id: Some(u256_to_request_id(rand_epoch_id)),
+            extra_data: vec![],
+        }),
+        signatures: ecdsa_signatures(&rand_signature),
+    });
+    let response = KmsResponse::new(
+        KmsResponseKind::process(grpc_response)?,
+        PropagationContext::empty(),
+        RequestSource::OnChain,
+    );
+
+    publisher.publish_response(response).await?;
+    info!("EpochDestructionResponse successfully published!");
+
+    info!("Checking EpochDestructionResponse is stored in DB...");
+    let row = sqlx::query("SELECT epoch_id, signature FROM kms_epoch_destruction_responses")
+        .fetch_one(test_instance.db())
+        .await?;
+
+    let epoch_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?);
+    assert_eq!(epoch_id, rand_epoch_id);
+    assert_eq!(row.try_get::<Vec<u8>, _>("signature")?, rand_signature);
+    info!("Response successfully stored!");
+    Ok(())
+}
+
+fn ecdsa_signatures(signature: &[u8]) -> Vec<TypedSignature> {
+    vec![TypedSignature {
+        scheme: SigningSchemeType::Ecdsa256k1 as i32,
+        signature: signature.to_vec(),
+    }]
 }
 
 #[tokio::test]
@@ -293,11 +380,18 @@ async fn test_publish_epoch_result_response() -> anyhow::Result<()> {
     info!("Mocking EpochResultResponse from KMS Core...");
     let rand_context_id = rand_u256();
     let rand_epoch_id = rand_u256();
-    let grpc_response = KmsGrpcResponse::EpochResult {
-        context_id: rand_context_id,
-        epoch_id: rand_epoch_id,
-        grpc_response: GrpcEpochResultResponse::default(),
-    };
+    let rand_signature = rand_signature();
+    let grpc_response = KmsGrpcResponse::EpochResult(GrpcEpochResultResponse {
+        payload: Some(NewMpcEpochPayload {
+            context_id: Some(u256_to_request_id(rand_context_id)),
+            epoch_id: Some(u256_to_request_id(rand_epoch_id)),
+            ..Default::default()
+        }),
+        signatures: vec![TypedSignature {
+            scheme: SigningSchemeType::Ecdsa256k1 as i32,
+            signature: rand_signature.clone(),
+        }],
+    });
     let response = KmsResponse::new(
         KmsResponseKind::process(grpc_response)?,
         PropagationContext::empty(),
@@ -308,15 +402,15 @@ async fn test_publish_epoch_result_response() -> anyhow::Result<()> {
     info!("EpochResultResponse successfully published!");
 
     info!("Checking EpochResultResponse is stored in DB...");
-    let row =
-        sqlx::query("SELECT context_id, epoch_id, keys, crs_list FROM epoch_result_responses")
-            .fetch_one(test_instance.db())
-            .await?;
+    let row = sqlx::query("SELECT context_id, epoch_id, signature FROM epoch_result_responses")
+        .fetch_one(test_instance.db())
+        .await?;
 
     let context_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?);
     let epoch_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?);
     assert_eq!(context_id, rand_context_id);
     assert_eq!(epoch_id, rand_epoch_id);
+    assert_eq!(row.try_get::<Vec<u8>, _>("signature")?, rand_signature);
     info!("Response successfully stored!");
     Ok(())
 }

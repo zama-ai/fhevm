@@ -1,16 +1,12 @@
 use crate::core::tx_sender::{Error, get_revert_reason, overprovision_gas};
 use alloy::{
     hex,
-    primitives::Bytes,
     providers::Provider,
     rpc::types::{TransactionReceipt, TransactionRequest},
     sol_types::SolValue,
 };
 use anyhow::anyhow;
-use connector_utils::types::{
-    CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind, NewKmsContextResponse,
-    PrepKeygenResponse,
-};
+use connector_utils::types::{KmsResponseKind, extra_data::extra_data_v2_payload};
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::KMSGenerationInstance,
     protocol_config::{
@@ -76,19 +72,9 @@ where
     #[tracing::instrument(skip_all)]
     pub async fn send_to_ethereum(&self, response: KmsResponseKind) -> Result<(), Error> {
         info!("Sending response to Ethereum: {response:?}");
-        let tx_result = match response {
-            KmsResponseKind::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
-            KmsResponseKind::Keygen(response) => self.send_keygen_response(response).await,
-            KmsResponseKind::Crsgen(response) => self.send_crsgen_response(response).await,
-            KmsResponseKind::NewKmsContext(response) => {
-                self.send_new_kms_context_response(response).await
-            }
-            KmsResponseKind::EpochResult(response) => {
-                self.send_epoch_result_response(response).await
-            }
-            _ => {
-                unreachable!("Only keygen and ProtocolConfig responses should be sent to Ethereum")
-            }
+        let tx_result = match self.build_call(response) {
+            Ok(call) => self.send_tx_with_retry(call).await,
+            Err(e) => Err(e),
         };
 
         let receipt = tx_result.inspect_err(|e| {
@@ -104,83 +90,61 @@ where
         Ok(())
     }
 
-    pub async fn send_prep_keygen_response(
-        &self,
-        response: PrepKeygenResponse,
-    ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self
-            .kms_generation_contract
-            .prepKeygenResponse(response.prep_keygen_id, response.signature.into());
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_with_retry(call).await
-    }
-
-    pub async fn send_keygen_response(
-        &self,
-        response: KeygenResponse,
-    ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self.kms_generation_contract.keygenResponse(
-            response.key_id,
-            response.key_digests.into_iter().map(|k| k.into()).collect(),
-            response.signature.into(),
-        );
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_with_retry(call).await
-    }
-
-    pub async fn send_crsgen_response(
-        &self,
-        response: CrsgenResponse,
-    ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self.kms_generation_contract.crsgenResponse(
-            response.crs_id,
-            response.crs_digest.into(),
-            response.signature.into(),
-        );
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_with_retry(call).await
-    }
-
-    pub async fn send_new_kms_context_response(
-        &self,
-        response: NewKmsContextResponse,
-    ) -> Result<TransactionReceipt, Error> {
-        // TODO: forward the KMS Core's EIP-712 signature and extraData once available.
-        let call_builder = self.protocol_config_contract.confirmKmsContextCreation(
-            response.context_id,
-            Bytes::new(),
-            Bytes::new(),
-        );
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_with_retry(call).await
-    }
-
-    pub async fn send_epoch_result_response(
-        &self,
-        response: EpochResultResponse,
-    ) -> Result<TransactionReceipt, Error> {
-        let keys = <Vec<EpochKeyResult> as SolValue>::abi_decode(&response.keys)
-            .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch keys: {e}")))?;
-        let crs_list = <Vec<EpochCrsResult> as SolValue>::abi_decode(&response.crs_list)
-            .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch crs_list: {e}")))?;
-
-        // TODO: forward materialExtraData, the KMS Core's EIP-712 signature and extraData once
-        // available. The contract also requires keys and crs_list sorted by ID.
-        let call_builder = self.protocol_config_contract.confirmEpochActivation(
-            response.epoch_id,
-            keys,
-            crs_list,
-            Bytes::new(),
-            Bytes::new(),
-            Bytes::new(),
-        );
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_with_retry(call).await
+    /// Builds the transaction request matching the given response.
+    fn build_call(&self, response: KmsResponseKind) -> Result<TransactionRequest, Error> {
+        let call = match response {
+            KmsResponseKind::PrepKeygen(r) => self
+                .kms_generation_contract
+                .prepKeygenResponse(r.prep_keygen_id, r.signature.into())
+                .into_transaction_request(),
+            KmsResponseKind::Keygen(r) => self
+                .kms_generation_contract
+                .keygenResponse(
+                    r.key_id,
+                    r.key_digests.into_iter().map(|k| k.into()).collect(),
+                    r.signature.into(),
+                )
+                .into_transaction_request(),
+            KmsResponseKind::Crsgen(r) => self
+                .kms_generation_contract
+                .crsgenResponse(r.crs_id, r.crs_digest.into(), r.signature.into())
+                .into_transaction_request(),
+            KmsResponseKind::NewKmsContext(r) => self
+                .protocol_config_contract
+                .confirmKmsContextCreation(r.context_id, r.signature.into(), r.extra_data.into())
+                .into_transaction_request(),
+            KmsResponseKind::ContextDestruction(r) => self
+                .protocol_config_contract
+                .confirmKmsContextDestruction(r.context_id, r.signature.into(), r.extra_data.into())
+                .into_transaction_request(),
+            KmsResponseKind::EpochDestruction(r) => self
+                .protocol_config_contract
+                .confirmKmsEpochDestruction(r.epoch_id, r.signature.into(), r.extra_data.into())
+                .into_transaction_request(),
+            KmsResponseKind::EpochResult(r) => {
+                let keys = <Vec<EpochKeyResult> as SolValue>::abi_decode(&r.keys).map_err(|e| {
+                    Error::Irrecoverable(anyhow!("Failed to decode epoch keys: {e}"))
+                })?;
+                let crs_list =
+                    <Vec<EpochCrsResult> as SolValue>::abi_decode(&r.crs_list).map_err(|e| {
+                        Error::Irrecoverable(anyhow!("Failed to decode epoch crs_list: {e}"))
+                    })?;
+                self.protocol_config_contract
+                    .confirmEpochActivation(
+                        r.epoch_id,
+                        keys,
+                        crs_list,
+                        extra_data_v2_payload(r.context_id, r.epoch_id).into(),
+                        r.signature.into(),
+                        r.extra_data.into(),
+                    )
+                    .into_transaction_request()
+            }
+            _ => {
+                unreachable!("Only keygen and ProtocolConfig responses should be sent to Ethereum")
+            }
+        };
+        Ok(call)
     }
 
     /// Sends the requested transaction with retries.
@@ -283,6 +247,7 @@ mod tests {
         config::KmsWallet,
         provider::NonceManagedProvider,
         tests::rand::{rand_signature, rand_u256},
+        types::PrepKeygenResponse,
     };
     use serde::de::DeserializeOwned;
     use std::fs::File;

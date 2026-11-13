@@ -28,11 +28,16 @@ use connector_utils::{
         u256_to_request_id,
     },
 };
-use fhevm_host_bindings::protocol_config::ProtocolConfig::NewKmsContext;
+use fhevm_host_bindings::protocol_config::{
+    IProtocolConfig::{EpochCrsResult, EpochKeyResult},
+    ProtocolConfig::NewKmsContext,
+};
 use kms_grpc::kms::v1::{
-    CrsGenResult, Empty, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
-    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload, SigningSchemeType,
-    TypedSignature, UserDecryptionResponse, UserDecryptionResponsePayload,
+    CrsGenResult, DestroyMpcContextPayload, DestroyMpcContextResponse, DestroyMpcEpochPayload,
+    DestroyMpcEpochResponse, Empty, EpochResultResponse as GrpcEpochResultResponse,
+    KeyGenPreprocResult, KeyGenResult, NewMpcContextPayload, NewMpcContextResponse,
+    NewMpcEpochPayload, PublicDecryptionResponse, PublicDecryptionResponsePayload,
+    SigningSchemeType, TypedSignature, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{Config, event_processor::compute_anchor_event_hash};
 use mocktail::{MockSet, StatusCode, server::MockServer};
@@ -100,9 +105,10 @@ async fn test_processing_request(
         // The `NewKmsContext` flow makes two RPC calls before going to the Core: an `eth_call`
         // on `getKmsContextAnchor(previousContextId)` and an `eth_getLogs` to fetch the
         // previous-context event. We fabricate a default previous event, hash it the same way
-        // the production code does, and queue both responses on the FIFO asserter. These calls
-        // belong to request preparation, so they are skipped on `already_sent` retries.
-        TestEventType::NewKmsContext if !already_sent => {
+        // the production code does, and queue both responses on the FIFO asserter. The request
+        // is answered synchronously by the Core, so it is prepared and re-sent even on
+        // `already_sent` retries.
+        TestEventType::NewKmsContext => {
             let previous_event = NewKmsContext::default();
             let anchor_hash = compute_anchor_event_hash(&previous_event);
             asserter.push_success(&(U256::ZERO, anchor_hash).abi_encode_sequence());
@@ -115,14 +121,17 @@ async fn test_processing_request(
             };
             asserter.push_success(&vec![rpc_log]);
         }
-        // The `NewKmsEpoch` flow fetches the previous epoch material from `KMSGeneration` via two
-        // `eth_call`s at `materialBlockNumber`: `getCompletedKeyIds()` then `getCompletedCrsIds()`.
-        // Returning empty id lists short-circuits the per-key/per-crs `getKeyInfo`/`getCrsMaterials`
-        // follow-ups, so these two responses are all the flow needs. These calls belong to
-        // request preparation, so they are skipped on `already_sent` retries.
-        TestEventType::NewKmsEpoch if !already_sent => {
-            asserter.push_success(&Vec::<U256>::new().abi_encode());
-            asserter.push_success(&Vec::<U256>::new().abi_encode());
+        // The `NewKmsEpoch` flow fetches the previous epoch material from `KMSGeneration` at
+        // `materialBlockNumber`. Each fetch is two `eth_call`s: `getCompletedKeyIds()` then
+        // `getCompletedCrsIds()`. Returning empty id lists skips the per-key/per-crs follow-up calls.
+        // The material is fetched twice: to build the request (skipped on `already_sent` retries),
+        // and to build the response.
+        TestEventType::NewKmsEpoch => {
+            let fetch_count = if already_sent { 1 } else { 2 };
+            // Two `eth_call`s per fetch.
+            for _ in 0..2 * fetch_count {
+                asserter.push_success(&Vec::<U256>::new().abi_encode());
+            }
         }
         _ => (),
     }
@@ -188,12 +197,9 @@ async fn test_processing_request(
     // Waiting for kms_worker to process the request
     if matches!(
         event_type,
-        TestEventType::AbortKeygen
-            | TestEventType::AbortCrsgen
-            | TestEventType::KmsContextDestroyed
-            | TestEventType::KmsEpochDestroyed
+        TestEventType::AbortKeygen | TestEventType::AbortCrsgen
     ) {
-        // Abort and destruction events yield no response row, so just wait for it to be `completed`
+        // Abort events yield no response row, so just wait for it to be `completed`
         wait_for_no_response_event_completed(test_instance.db(), event_type).await?;
     } else {
         let response = wait_for_response_in_db(test_instance.db(), &request).await?;
@@ -238,14 +244,33 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
 
+    // Requests answered synchronously are re-sent on retries, as there is no result to poll
+    let result_on_send = matches!(
+        req,
+        ProtocolEventKind::NewKmsContext(_)
+            | ProtocolEventKind::KmsContextDestroyed(_)
+            | ProtocolEventKind::KmsEpochDestroyed(_)
+    );
+
     // No mock if `already_sent` to ensure this request is skipped on kms_worker side
-    if !already_sent {
+    if !already_sent || result_on_send {
         // Mock initial KMS response to initial GRPC request
         kms_mocks.mock(|when, then| {
             when.path(format!(
                 "/kms_service.v1.CoreServiceEndpoint/{req_endpoint}"
             ));
-            then.pb(Empty::default());
+            match req {
+                ProtocolEventKind::NewKmsContext(r) => {
+                    then.pb(mock_new_mpc_context_response(r.contextId))
+                }
+                ProtocolEventKind::KmsContextDestroyed(r) => {
+                    then.pb(mock_destroy_mpc_context_response(r.kmsContextId))
+                }
+                ProtocolEventKind::KmsEpochDestroyed(r) => {
+                    then.pb(mock_destroy_mpc_epoch_response(r.epochId))
+                }
+                _ => then.pb(Empty::default()),
+            };
         });
     }
 
@@ -284,7 +309,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 signatures: mock_signatures(),
                 ..Default::default()
             }),
-            ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
+            ProtocolEventKind::NewKmsEpoch(r) => {
+                then.pb(mock_epoch_result_response(r.kmsContextId, r.epochId))
+            }
             ProtocolEventKind::NewKmsContext(_)
             | ProtocolEventKind::AbortKeygen(_)
             | ProtocolEventKind::AbortCrsgen(_)
@@ -297,6 +324,47 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
     });
 
     kms_mocks
+}
+
+fn mock_new_mpc_context_response(context_id: U256) -> NewMpcContextResponse {
+    NewMpcContextResponse {
+        payload: Some(NewMpcContextPayload {
+            new_context_id: Some(u256_to_request_id(context_id)),
+            ..Default::default()
+        }),
+        signatures: mock_signatures(),
+    }
+}
+
+fn mock_destroy_mpc_context_response(context_id: U256) -> DestroyMpcContextResponse {
+    DestroyMpcContextResponse {
+        payload: Some(DestroyMpcContextPayload {
+            context_id: Some(u256_to_request_id(context_id)),
+            extra_data: vec![],
+        }),
+        signatures: mock_signatures(),
+    }
+}
+
+fn mock_destroy_mpc_epoch_response(epoch_id: U256) -> DestroyMpcEpochResponse {
+    DestroyMpcEpochResponse {
+        payload: Some(DestroyMpcEpochPayload {
+            epoch_id: Some(u256_to_request_id(epoch_id)),
+            extra_data: vec![],
+        }),
+        signatures: mock_signatures(),
+    }
+}
+
+fn mock_epoch_result_response(context_id: U256, epoch_id: U256) -> GrpcEpochResultResponse {
+    GrpcEpochResultResponse {
+        payload: Some(NewMpcEpochPayload {
+            context_id: Some(u256_to_request_id(context_id)),
+            epoch_id: Some(u256_to_request_id(epoch_id)),
+            ..Default::default()
+        }),
+        signatures: mock_signatures(),
+    }
 }
 
 fn mock_signatures() -> Vec<TypedSignature> {
@@ -323,11 +391,12 @@ async fn wait_for_response_in_db(
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
         ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
-        ProtocolEventKind::AbortKeygen(_)
-        | ProtocolEventKind::AbortCrsgen(_)
-        | ProtocolEventKind::KmsContextDestroyed(_)
-        | ProtocolEventKind::KmsEpochDestroyed(_) => {
-            unreachable!("abort and destruction events produce no response row")
+        ProtocolEventKind::KmsContextDestroyed(_) => {
+            "SELECT * FROM kms_context_destruction_responses"
+        }
+        ProtocolEventKind::KmsEpochDestroyed(_) => "SELECT * FROM kms_epoch_destruction_responses",
+        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+            unreachable!("abort events produce no response row")
         }
     };
     let response = loop {
@@ -362,11 +431,14 @@ async fn wait_for_response_in_db(
                 ProtocolEventKind::NewKmsEpoch(_) => {
                     break kms_response::from_epoch_result_row(&result[0])?;
                 }
-                ProtocolEventKind::AbortKeygen(_)
-                | ProtocolEventKind::AbortCrsgen(_)
-                | ProtocolEventKind::KmsContextDestroyed(_)
-                | ProtocolEventKind::KmsEpochDestroyed(_) => {
-                    unreachable!("abort and destruction events produce no response row")
+                ProtocolEventKind::KmsContextDestroyed(_) => {
+                    break kms_response::from_context_destruction_response_row(&result[0])?;
+                }
+                ProtocolEventKind::KmsEpochDestroyed(_) => {
+                    break kms_response::from_epoch_destruction_response_row(&result[0])?;
+                }
+                ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+                    unreachable!("abort events produce no response row")
                 }
             };
         }
@@ -418,22 +490,28 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             signatures: mock_signatures(),
             ..Default::default()
         }),
-        ProtocolEventKind::NewKmsContext(r) => KmsGrpcResponse::NewKmsContext {
-            context_id: r.contextId,
-        },
-        ProtocolEventKind::NewKmsEpoch(r) => KmsGrpcResponse::EpochResult {
-            context_id: r.kmsContextId,
-            epoch_id: r.epochId,
-            grpc_response: GrpcEpochResultResponse::default(),
-        },
-        ProtocolEventKind::AbortKeygen(_)
-        | ProtocolEventKind::AbortCrsgen(_)
-        | ProtocolEventKind::KmsContextDestroyed(_)
-        | ProtocolEventKind::KmsEpochDestroyed(_) => {
-            unreachable!("abort and destruction events produce no response to check")
+        ProtocolEventKind::NewKmsContext(r) => {
+            KmsGrpcResponse::NewKmsContext(mock_new_mpc_context_response(r.contextId))
+        }
+        ProtocolEventKind::NewKmsEpoch(r) => {
+            KmsGrpcResponse::EpochResult(mock_epoch_result_response(r.kmsContextId, r.epochId))
+        }
+        ProtocolEventKind::KmsContextDestroyed(r) => {
+            KmsGrpcResponse::ContextDestruction(mock_destroy_mpc_context_response(r.kmsContextId))
+        }
+        ProtocolEventKind::KmsEpochDestroyed(r) => {
+            KmsGrpcResponse::EpochDestruction(mock_destroy_mpc_epoch_response(r.epochId))
+        }
+        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+            unreachable!("abort events produce no response to check")
         }
     };
-    assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
+    let mut expected_response = KmsResponseKind::process(expected_response)?;
+    if let KmsResponseKind::EpochResult(r) = &mut expected_response {
+        r.keys = Vec::<EpochKeyResult>::new().abi_encode();
+        r.crs_list = Vec::<EpochCrsResult>::new().abi_encode();
+    }
+    assert_eq!(response.kind, expected_response);
     info!("Response data validated!");
     Ok(())
 }
@@ -450,15 +528,7 @@ async fn wait_for_no_response_event_completed(
         TestEventType::AbortCrsgen => {
             "SELECT COUNT(crs_id) FROM abort_crsgen_requests WHERE status = 'completed'"
         }
-        TestEventType::KmsContextDestroyed => {
-            "SELECT COUNT(context_id) FROM kms_context_destroyed WHERE status = 'completed'"
-        }
-        TestEventType::KmsEpochDestroyed => {
-            "SELECT COUNT(epoch_id) FROM kms_epoch_destroyed WHERE status = 'completed'"
-        }
-        _ => unreachable!(
-            "wait_for_no_response_event_completed only handles abort and destruction events"
-        ),
+        _ => unreachable!("wait_for_no_response_event_completed only handles abort events"),
     };
     loop {
         let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
