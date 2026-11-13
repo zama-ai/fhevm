@@ -11,6 +11,9 @@
 {{- if not (or $component.config.s3BucketName.value $component.config.s3BucketName.valueFrom) }}
 {{- fail "padWorkerShared.config.s3BucketName is required" }}
 {{- end }}
+{{- if not $component.config.outputMaxAgeSeconds }}
+{{- fail "padWorkerShared.config.outputMaxAgeSeconds is required, or no pads row is deleted" }}
+{{- end }}
 {{- end }}
 {{- $seen := dict }}
 {{- range $index, $worker := .Values.padWorkers }}
@@ -107,9 +110,7 @@ spec:
             - --health-check-port={{ $component.ports.healthcheck }}
             - --metrics-addr=0.0.0.0:{{ $component.ports.metrics }}
             - --pending-max-age={{ int $component.config.pendingMaxAgeSeconds }}s
-            {{- with $component.config.outputMaxAgeSeconds }}
-            - --output-max-age={{ int . }}s
-            {{- end }}
+            - --output-max-age={{ int $component.config.outputMaxAgeSeconds }}s
             {{- with $component.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
