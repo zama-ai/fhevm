@@ -30,7 +30,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::{OwnedSemaphorePermit, Semaphore},
+    sync::{Notify, OwnedSemaphorePermit, Semaphore},
     task::JoinSet,
     time::{sleep, timeout},
 };
@@ -88,6 +88,8 @@ pub struct PadWorker {
     ready: Arc<AtomicBool>,
     /// The claims of this pod whose evaluation runs.
     running: Mutex<HashSet<Claim>>,
+    /// Wakes the claim loop when an evaluation slot is free, before the upload ends.
+    slot_free: Notify,
 }
 
 /// Adds a claim to `running` until its evaluation ends.
@@ -123,6 +125,7 @@ impl PadWorker {
             cancel_token,
             ready: Arc::default(),
             running: Mutex::default(),
+            slot_free: Notify::new(),
         }
     }
 
@@ -179,6 +182,7 @@ impl PadWorker {
                     notification.context("listen for pad_work_available")?;
                 }
                 () = tokio::time::sleep(worker.config.poll_interval) => {}
+                () = worker.slot_free.notified() => {}
                 Some(done) = tasks.join_next() => done??,
             }
         }
@@ -295,6 +299,7 @@ impl PadWorker {
             Err(e) => return self.retry(&claim, &format!("write: {e}")).await,
         }
         drop(slot);
+        self.slot_free.notify_one();
         self.upload(output, false).await
     }
 
