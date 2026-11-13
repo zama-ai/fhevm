@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-e2e test-e2e-amqp test-e2e-redis test-e2e-broker test-e2e-consumer \
+.PHONY: test test-unit test-e2e test-e2e-amqp test-e2e-redis test-e2e-broker test-e2e-consumer test-e2e-listener \
        clean-e2e-containers clippy helm-lint
 
 # ── Unit tests (no Docker required) ──────────────────────────────────────────
@@ -49,8 +49,15 @@ test-e2e-consumer: clean-e2e-containers
 	$(MAKE) clean-e2e-containers; \
 	exit $$status
 
+# ── listener_core e2e (Postgres via DATABASE_URL + Redis container) ───────────
+test-e2e-listener: clean-e2e-containers
+	cargo test -p listener_core --lib -- --ignored reorg_abandon; \
+	status=$$?; \
+	$(MAKE) clean-e2e-containers; \
+	exit $$status
+
 # ── Run all e2e tests ─────────────────────────────────────────────────────────
-test-e2e: test-e2e-amqp test-e2e-redis test-e2e-broker test-e2e-consumer
+test-e2e: test-e2e-amqp test-e2e-redis test-e2e-broker test-e2e-consumer test-e2e-listener
 
 # ── Clippy (same flags as CI) ────────────────────────────────────────────────
 clippy:
