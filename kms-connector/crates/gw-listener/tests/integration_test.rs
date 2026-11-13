@@ -44,7 +44,8 @@ async fn test_publish_event(#[case] event_type: TestEventType) -> anyhow::Result
 
 /// Besides storing the event for the kms-worker (covered by `test_publish_event`),
 /// `KmsContextDestroyed` must invalidate the destroyed context in the `kms_context` validation
-/// cache — even when the context was never cached — leaving other contexts untouched.
+/// cache — even when the context was never cached — and its epochs in the `kms_epoch` cache,
+/// leaving other contexts and their epochs untouched.
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
@@ -59,8 +60,11 @@ async fn test_kms_context_destroyed_invalidates_cache() -> anyhow::Result<()> {
     let destroyed_context_id = KMS_CONTEXT_COUNTER_BASE + U256::from(7);
     let other_context_id = KMS_CONTEXT_COUNTER_BASE + U256::from(8);
     let uncached_context_id = KMS_CONTEXT_COUNTER_BASE + U256::from(9);
-    publish_context_and_epoch(test_instance.db(), destroyed_context_id, U256::from(1)).await?;
-    publish_context_and_epoch(test_instance.db(), other_context_id, U256::from(2)).await?;
+    // Epoch #1 is already cached for the on-chain context at startup
+    let destroyed_epoch_id = U256::from(2);
+    let other_epoch_id = U256::from(3);
+    publish_context_and_epoch(test_instance.db(), destroyed_context_id, destroyed_epoch_id).await?;
+    publish_context_and_epoch(test_instance.db(), other_context_id, other_epoch_id).await?;
 
     for context_id in [destroyed_context_id, uncached_context_id] {
         info!("Destroying KMS context #{context_id:#066x} on Anvil...");
@@ -76,9 +80,19 @@ async fn test_kms_context_destroyed_invalidates_cache() -> anyhow::Result<()> {
     poll_db_until_invalid(test_instance.db(), "kms_context", destroyed_context_id).await?;
     poll_db_until_invalid(test_instance.db(), "kms_context", uncached_context_id).await?;
     assert_eq!(
+        fetch_valid_flag(test_instance.db(), "kms_epoch", destroyed_epoch_id).await?,
+        Some(false),
+        "the epoch of the destroyed context should be invalidated with it"
+    );
+    assert_eq!(
         fetch_valid_flag(test_instance.db(), "kms_context", other_context_id).await?,
         Some(true),
         "the untouched context should remain valid"
+    );
+    assert_eq!(
+        fetch_valid_flag(test_instance.db(), "kms_epoch", other_epoch_id).await?,
+        Some(true),
+        "the epoch of the untouched context should remain valid"
     );
     info!("Contexts successfully invalidated! Stopping GatewayListener...");
 
