@@ -2,7 +2,7 @@
  * Defines hardcoded companion version pins layered onto non-network targets during bundle resolution.
  */
 export const MAINLINE_COMPANIONS = {
-  CORE_VERSION: "v0.15.0-0",
+  CORE_VERSION: "f4caf6a",
 } as const;
 
 export const NON_NETWORK_COMPANIONS = {
