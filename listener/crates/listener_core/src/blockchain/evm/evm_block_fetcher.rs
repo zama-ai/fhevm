@@ -163,6 +163,12 @@ pub struct FetchConfig {
     /// that can race a reorg (live cursor, reorg walk) enable it; catch-up,
     /// finality and startup keep it off so their behaviour is unchanged.
     pub verify_receipt_block_hash: bool,
+    /// Cap on `NotFound` for per-tx receipt calls only (`eth_getTransactionReceipt`,
+    /// single or batched). A tx listed in a block fetched by number can be dropped
+    /// by a reorg and never be found again; capping lets the live cursor re-arm
+    /// instead of stalling. `None` falls back to `not_found_max_retries`. Block
+    /// calls and `eth_getBlockReceipts` never use it.
+    pub receipt_not_found_max_retries: Option<u32>,
 }
 
 impl Default for FetchConfig {
@@ -176,6 +182,7 @@ impl Default for FetchConfig {
             chain_id: 0,
             not_found_max_retries: None,
             verify_receipt_block_hash: false,
+            receipt_not_found_max_retries: None,
         }
     }
 }
@@ -249,6 +256,20 @@ impl EvmBlockFetcher {
     pub fn with_verify_receipt_block_hash(mut self, verify: bool) -> Self {
         self.config.verify_receipt_block_hash = verify;
         self
+    }
+
+    /// Cap `NotFound` on per-tx receipt calls only (see
+    /// [`FetchConfig::receipt_not_found_max_retries`]).
+    pub fn with_receipt_not_found_max_retries(mut self, max: Option<u32>) -> Self {
+        self.config.receipt_not_found_max_retries = max;
+        self
+    }
+
+    /// `NotFound` cap for per-tx receipt calls.
+    fn receipt_not_found_cap(&self) -> Option<u32> {
+        self.config
+            .receipt_not_found_max_retries
+            .or(self.config.not_found_max_retries)
     }
 
     /// Fetch a block and its receipts using eth_getBlockReceipts (by block number).
@@ -391,7 +412,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
-            self.config.not_found_max_retries,
+            self.receipt_not_found_cap(),
         )
         .await?;
 
@@ -429,7 +450,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
-            self.config.not_found_max_retries,
+            self.receipt_not_found_cap(),
         )
         .await?;
 
@@ -514,7 +535,7 @@ impl EvmBlockFetcher {
             let provider = self.provider.clone();
             let retry_interval = self.config.retry_interval;
             let max_backoff = self.config.max_exponential_backoff_ms;
-            let not_found_max = self.config.not_found_max_retries;
+            let not_found_max = self.receipt_not_found_cap();
             let token = cancel_token.clone();
 
             join_set.spawn(async move {
@@ -621,7 +642,7 @@ impl EvmBlockFetcher {
             let provider = self.provider.clone();
             let retry_interval = self.config.retry_interval;
             let max_backoff = self.config.max_exponential_backoff_ms;
-            let not_found_max = self.config.not_found_max_retries;
+            let not_found_max = self.receipt_not_found_cap();
             let token = cancel_token.clone();
             let hash_str = tx_hash.to_string();
 
@@ -734,7 +755,7 @@ impl EvmBlockFetcher {
                 self.config.retry_interval,
                 self.config.max_exponential_backoff_ms,
                 cancel_token,
-                self.config.not_found_max_retries,
+                self.receipt_not_found_cap(),
             )
             .await?;
             receipts.push(receipt);

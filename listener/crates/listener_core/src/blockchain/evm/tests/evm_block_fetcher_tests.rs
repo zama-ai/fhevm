@@ -1685,3 +1685,120 @@ async fn test_by_hash_null_gives_up_after_cap() {
     let calls = node.by_hash_calls.load(std::sync::atomic::Ordering::SeqCst);
     assert!((3..=6).contains(&calls), "by-hash calls: {calls}");
 }
+
+// ── Null per-tx receipts (tx dropped by a reorg) ────────────────────────────
+
+/// Fetch block by number with each per-tx receipt strategy (2-5).
+async fn fetch_per_tx_strategy(
+    fetcher: &EvmBlockFetcher,
+    strategy: &str,
+    block_number: u64,
+) -> Result<FetchedBlock, BlockFetchError> {
+    match strategy {
+        "batch_full" => {
+            fetcher
+                .fetch_block_with_batch_receipts_by_number(block_number)
+                .await
+        }
+        "batch_range" => {
+            fetcher
+                .fetch_block_by_number_with_parallel_batched_receipts(block_number, 1)
+                .await
+        }
+        "individual" => {
+            fetcher
+                .fetch_block_with_individual_receipts_by_number(block_number)
+                .await
+        }
+        "sequential" => {
+            fetcher
+                .fetch_block_with_sequential_receipts_by_number(block_number)
+                .await
+        }
+        other => unreachable!("{other}"),
+    }
+}
+
+const PER_TX_STRATEGIES: [&str; 4] = ["batch_full", "batch_range", "individual", "sequential"];
+
+/// Sanity: the mock serves real receipts per tx, single and batched.
+#[tokio::test]
+async fn test_per_tx_strategies_fetch_receipts_from_mock() {
+    let node = mock_rpc::start(None, false).await;
+    for strategy in PER_TX_STRATEGIES {
+        let fetched = fetch_per_tx_strategy(&mock_fetcher(&node.url), strategy, node.block_number)
+            .await
+            .unwrap_or_else(|e| panic!("{strategy}: {e:?}"));
+        assert_eq!(fetched.receipts.len(), 2, "{strategy}");
+    }
+}
+
+/// Live cursor: a tx dropped by a reorg keeps a null receipt forever. With the
+/// receipt cap, every per-tx strategy gives up with an inconsistent-snapshot
+/// error (which re-arms the cursor) instead of stalling.
+#[tokio::test]
+async fn test_null_tx_receipt_gives_up_after_receipt_cap() {
+    let node = mock_rpc::start_with_null_tx_receipts().await;
+    for strategy in PER_TX_STRATEGIES {
+        let fetcher = mock_fetcher(&node.url).with_receipt_not_found_max_retries(Some(2));
+        let err = fetch_per_tx_strategy(&fetcher, strategy, node.block_number)
+            .await
+            .expect_err(strategy);
+        assert!(
+            matches!(err, BlockFetchError::NotFoundAfterRetries { attempts: 3 }),
+            "{strategy}: got {err:?}"
+        );
+        assert!(err.is_inconsistent_snapshot(), "{strategy}");
+    }
+}
+
+/// Without the cap (catch-up, final catch-up, finality, startup): unchanged,
+/// a null receipt is retried until cancelled.
+#[tokio::test]
+async fn test_null_tx_receipt_uncapped_retries_until_cancelled() {
+    let node = mock_rpc::start_with_null_tx_receipts().await;
+    for strategy in PER_TX_STRATEGIES {
+        let before = node
+            .tx_receipt_calls
+            .load(std::sync::atomic::Ordering::SeqCst);
+        let token = CancellationToken::new();
+        let fetcher = mock_fetcher(&node.url).with_cancellation_token(token.clone());
+        let cancel_task = {
+            let calls = node.tx_receipt_calls.clone();
+            tokio::spawn(async move {
+                // Cancel only once the cap a capped fetch would use is far exceeded.
+                while calls.load(std::sync::atomic::Ordering::SeqCst) < before + 20 {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                token.cancel();
+            })
+        };
+        let err = fetch_per_tx_strategy(&fetcher, strategy, node.block_number)
+            .await
+            .expect_err(strategy);
+        cancel_task.await.unwrap();
+        assert!(
+            matches!(err, BlockFetchError::Cancelled),
+            "{strategy}: got {err:?}"
+        );
+    }
+}
+
+/// `block_receipts` never uses the receipt cap: a null `eth_getBlockReceipts`
+/// is still governed by `not_found_max_retries` only (here: uncapped).
+#[tokio::test]
+async fn test_receipt_cap_ignored_by_block_receipts_strategy() {
+    let node = mock_rpc::start_with_null_tx_receipts().await;
+    // eth_getBlockReceipts is served normally: the receipt cap must not matter.
+    let fetched = mock_fetcher(&node.url)
+        .with_receipt_not_found_max_retries(Some(0))
+        .fetch_block_with_block_receipts_by_number(node.block_number)
+        .await
+        .expect("block_receipts unaffected");
+    assert_eq!(fetched.receipts.len(), 2);
+    assert_eq!(
+        node.tx_receipt_calls
+            .load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+}
