@@ -2,21 +2,31 @@
 pragma solidity ^0.8.24;
 
 import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
-import {IProtocolConfigReplica} from "./interfaces/IProtocolConfigReplica.sol";
+import {IProtocolConfigReplica, KmsContextSubmission, KmsEpochSubmission} from "./interfaces/IProtocolConfigReplica.sol";
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
 import {KmsThresholds, KmsNode} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title ProtocolConfigReplica
  * @notice Read-replica of the canonical ProtocolConfig on non-canonical host chains.
- * @dev Ethereum is the canonical host and the single source of truth.
+ * @dev Ethereum is the canonical host. On the submit path, anyone may apply a canonical lifecycle
+ *      step with the KMS signatures the canonical collected. On the mirror path, the owner applies
+ *      it without signatures, for the repo tasks and for recovery.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
-contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UUPSUpgradeableEmptyProxy, ACLOwnable {
+contract ProtocolConfigReplica is
+    IProtocolConfigReplica,
+    ProtocolConfigBase,
+    UUPSUpgradeableEmptyProxy,
+    EIP712UpgradeableCrossChain,
+    ACLOwnable
+{
     // -----------------------------------------------------------------------------------------
     // Contract information
     // -----------------------------------------------------------------------------------------
@@ -45,11 +55,13 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
     /**
      * @notice Canonical mirror initializer: seeds a non-canonical host from Ethereum's active state.
      * @dev Preserves both the canonical context ID and canonical epoch ID. This is the bootstrap path.
-     *      Later canonical updates use `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch`.
+     *      Later canonical updates use the submit path or the mirror path.
      * @param canonicalContextId The active Ethereum KMS context ID to preserve.
      * @param canonicalEpochId The active Ethereum epoch ID to preserve.
      * @param canonicalNodes The active Ethereum KMS node set.
      * @param canonicalThresholds The active Ethereum thresholds.
+     * @param canonicalProtocolConfig The canonical ProtocolConfig address, in its EIP-712 domain.
+     * @param canonicalChainId The chain ID of the canonical ProtocolConfig, in its EIP-712 domain.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
@@ -57,7 +69,9 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
         uint256 canonicalContextId,
         uint256 canonicalEpochId,
         KmsNode[] calldata canonicalNodes,
-        KmsThresholds calldata canonicalThresholds
+        KmsThresholds calldata canonicalThresholds,
+        address canonicalProtocolConfig,
+        uint64 canonicalChainId
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         if (canonicalContextId < KMS_CONTEXT_COUNTER_BASE + 1) {
             revert InvalidKmsContext(canonicalContextId);
@@ -66,16 +80,93 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
             revert InvalidKmsEpoch(canonicalEpochId);
         }
 
-        _storeAndActivateKmsContextAndEpoch(canonicalContextId, canonicalEpochId, canonicalNodes, canonicalThresholds);
+        _storeKmsNodesAndThresholds(canonicalContextId, canonicalNodes, canonicalThresholds);
+        _activateKmsContextAndEpoch(canonicalContextId, canonicalEpochId);
+        __EIP712_init(EIP712_NAME, EIP712_VERSION, canonicalProtocolConfig, canonicalChainId);
     }
 
     /**
-     * @notice Re-initializes a replica proxy upgraded from `ProtocolConfig`.
-     * @dev See `REINITIALIZER_VERSION`.
+     * @notice Re-initializes a replica proxy upgraded from a v0.14 `ProtocolConfig`, which initialized at version 3.
+     * @param canonicalProtocolConfig The canonical ProtocolConfig address, in its EIP-712 domain.
+     * @param canonicalChainId The chain ID of the canonical ProtocolConfig, in its EIP-712 domain.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3(
+        address canonicalProtocolConfig,
+        uint64 canonicalChainId
+    ) public virtual reinitializer(REINITIALIZER_VERSION) {
+        __EIP712_init(EIP712_NAME, EIP712_VERSION, canonicalProtocolConfig, canonicalChainId);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Submit functions
+    // -----------------------------------------------------------------------------------------
+
+    /// @inheritdoc IProtocolConfigReplica
+    function submitKmsContextAndEpoch(
+        KmsContextSubmission calldata context,
+        KmsEpochSubmission calldata epoch
+    ) external virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        uint256 previousContextId = $.latestActiveKmsContextId;
+        if (context.contextId <= previousContextId) {
+            revert StaleKmsContextSwitch(context.contextId);
+        }
+
+        _verifyActiveCommitteeQuorum(
+            _contextCreationStructHash(
+                previousContextId,
+                context.contextId,
+                _nodeConfigHash(context.nodes, context.thresholds),
+                context.extraData
+            ),
+            context.signatures
+        );
+        _storeKmsNodesAndThresholds(context.contextId, context.nodes, context.thresholds);
+        _applyKmsEpoch(context.contextId, epoch);
+        emit SubmitKmsContextAndEpoch(context.contextId, epoch.epochId);
+    }
+
+    /// @inheritdoc IProtocolConfigReplica
+    function submitKmsEpoch(KmsEpochSubmission calldata epoch) external virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if (epoch.epochId <= $.latestActiveEpochId) {
+            revert StaleKmsEpoch(epoch.epochId);
+        }
+
+        uint256 contextId = $.latestActiveKmsContextId;
+        _applyKmsEpoch(contextId, epoch);
+        emit SubmitKmsEpoch(contextId, epoch.epochId);
+    }
+
+    /// @inheritdoc IProtocolConfigReplica
+    function submitKmsContextDestruction(
+        uint256 destroyedContextId,
+        bytes[] calldata signatures,
+        bytes calldata extraData
+    ) external virtual {
+        _checkKmsContextDestroyable(destroyedContextId);
+        if (destroyedContextId > _getProtocolConfigStorage().latestActiveKmsContextId) {
+            revert KmsContextDestructionAheadOfReplica(destroyedContextId);
+        }
+        _verifyActiveCommitteeQuorum(_contextDestructionStructHash(destroyedContextId, extraData), signatures);
+        _destroyKmsContext(destroyedContextId);
+    }
+
+    /// @inheritdoc IProtocolConfigReplica
+    function submitKmsEpochDestruction(
+        uint256 destroyedEpochId,
+        bytes[] calldata signatures,
+        bytes calldata extraData
+    ) external virtual {
+        _checkKmsEpochDestroyable(destroyedEpochId);
+        if (destroyedEpochId > _getProtocolConfigStorage().latestActiveEpochId) {
+            revert KmsEpochDestructionAheadOfReplica(destroyedEpochId);
+        }
+        _verifyActiveCommitteeQuorum(_epochDestructionStructHash(destroyedEpochId, extraData), signatures);
+        _destroyKmsEpoch(destroyedEpochId);
+    }
 
     // -----------------------------------------------------------------------------------------
     // Mirror functions
@@ -88,23 +179,20 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
         KmsNode[] calldata nodes,
         KmsThresholds calldata thresholds
     ) external virtual onlyACLOwner {
+        // Clear the stored committee first, so none of its signers stays a member.
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 latestActiveKmsContextId = $.latestActiveKmsContextId;
-        if (contextId <= latestActiveKmsContextId) {
-            revert NonIncreasingKmsContextId(contextId, latestActiveKmsContextId);
+        KmsNode[] storage storedNodes = $.kmsNodesForContext[contextId];
+        for (uint256 i = 0; i < storedNodes.length; i++) {
+            address txSender = storedNodes[i].txSenderAddress;
+            delete $.isKmsTxSenderForContext[contextId][txSender];
+            delete $.isKmsSignerForContext[contextId][storedNodes[i].signerAddress];
+            delete $.kmsNodeByTxSenderForContext[contextId][txSender];
         }
-        uint256 currentEpochId = $.epochCounter;
-        if (epochId <= currentEpochId) {
-            revert NonIncreasingEpochId(epochId, currentEpochId);
-        }
+        delete $.kmsNodesForContext[contextId];
+        delete $.kmsSignerAddressesForContext[contextId];
 
-        // A canonical proxy upgraded in place can hold a Pending context above the active one.
-        uint256 currentKmsContextId = $.currentKmsContextId;
-        if (contextId <= currentKmsContextId) {
-            revert NonIncreasingKmsContextId(contextId, currentKmsContextId);
-        }
-
-        _storeAndActivateKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
+        _storeKmsNodesAndThresholds(contextId, nodes, thresholds);
+        _activateKmsContextAndEpoch(contextId, epochId);
         emit MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
     }
 
@@ -114,14 +202,21 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
         if (contextId != $.latestActiveKmsContextId || !_isLiveKmsContext(contextId)) {
             revert InvalidKmsContext(contextId);
         }
-        uint256 currentEpochId = $.epochCounter;
-        if (epochId <= currentEpochId) {
-            revert NonIncreasingEpochId(epochId, currentEpochId);
-        }
 
-        $.epochCounter = epochId;
         _activateKmsContextAndEpoch(contextId, epochId);
         emit MirrorKmsEpoch(contextId, epochId);
+    }
+
+    /// @inheritdoc IProtocolConfigReplica
+    function mirrorKmsContextDestruction(uint256 destroyedContextId) external virtual onlyACLOwner {
+        _checkKmsContextDestroyable(destroyedContextId);
+        _destroyKmsContext(destroyedContextId);
+    }
+
+    /// @inheritdoc IProtocolConfigReplica
+    function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external virtual onlyACLOwner {
+        _checkKmsEpochDestroyable(destroyedEpochId);
+        _destroyKmsEpoch(destroyedEpochId);
     }
 
     /// @inheritdoc IProtocolConfigBase
@@ -143,6 +238,86 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
     // -----------------------------------------------------------------------------------------
     // Internal
     // -----------------------------------------------------------------------------------------
+
+    /**
+     * @dev Verifies the signatures of every signer of `contextId` over an activation with the active
+     *      epoch as `previousEpochId`. Then activates the pair.
+     */
+    function _applyKmsEpoch(uint256 contextId, KmsEpochSubmission calldata epoch) private {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _verifyQuorum(
+            _epochActivationStructHash(
+                contextId,
+                $.latestActiveEpochId,
+                epoch.epochId,
+                epoch.epochMaterialHash,
+                epoch.extraData
+            ),
+            epoch.signatures,
+            contextId,
+            _kmsCommitteeSize(contextId)
+        );
+        _activateKmsContextAndEpoch(contextId, epoch.epochId);
+    }
+
+    /**
+     * @dev Reverts if `destroyedContextId` is the active context.
+     */
+    function _checkKmsContextDestroyable(uint256 destroyedContextId) private view {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if (destroyedContextId == $.latestActiveKmsContextId) {
+            revert LatestActiveKmsContextCannotBeDestroyed(destroyedContextId);
+        }
+    }
+
+    /**
+     * @dev Reverts if `destroyedEpochId` is the active epoch.
+     */
+    function _checkKmsEpochDestroyable(uint256 destroyedEpochId) private view {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if (destroyedEpochId == $.latestActiveEpochId) {
+            revert LatestActiveKmsEpochCannotBeDestroyed(destroyedEpochId);
+        }
+    }
+
+    /**
+     * @dev Requires at least `quorum` signatures over `structHash` under the canonical domain. Every
+     *      signature must recover to a distinct signer of the committee of `contextId`.
+     */
+    function _verifyQuorum(
+        bytes32 structHash,
+        bytes[] calldata signatures,
+        uint256 contextId,
+        uint256 quorum
+    ) private view {
+        if (signatures.length < quorum) {
+            revert KmsSignatureQuorumNotReached(signatures.length, quorum);
+        }
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address[] memory signers = new address[](signatures.length);
+        for (uint256 i = 0; i < signatures.length; i++) {
+            address signer = ECDSA.recover(digest, signatures[i]);
+            if (!$.isKmsSignerForContext[contextId][signer]) {
+                revert KmsSignerNotInCommittee(signer, contextId);
+            }
+            // A committee has at most 255 signers, so the quadratic scan stays small.
+            for (uint256 j = 0; j < i; j++) {
+                if (signers[j] == signer) {
+                    revert DuplicateKmsSigner(signer);
+                }
+            }
+            signers[i] = signer;
+        }
+    }
+
+    /**
+     * @dev Requires the `n - t` quorum of the active committee over `structHash`.
+     */
+    function _verifyActiveCommitteeQuorum(bytes32 structHash, bytes[] calldata signatures) private view {
+        uint256 activeContextId = _getProtocolConfigStorage().latestActiveKmsContextId;
+        _verifyQuorum(structHash, signatures, activeContextId, _faultTolerantQuorum(activeContextId));
+    }
 
     /**
      * @dev Authorization for UUPS upgrades.

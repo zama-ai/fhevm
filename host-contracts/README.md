@@ -109,25 +109,37 @@ destruction confirmations (`confirmKmsContextDestruction`, `confirmKmsEpochDestr
 active committee. It emits a quorum event once `n - t` of them agree on one digest. `KMSGeneration`
 is deployed only here.
 
-Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica`, a read-replica. Replicas never
-run the lifecycle/quorum path, since KMS resharing and attestations happen once, on Ethereum. They
-have no `KMSGeneration`, and their only write path is the mirror methods below.
+Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica`, a read-replica. Replicas never run the
+lifecycle (pending states and confirmation collection), since KMS resharing and attestations happen
+once, on Ethereum. They have no `KMSGeneration`. Anyone may apply a canonical lifecycle step on a
+replica with the KMS confirmation signatures, through the `submitKms*` methods. This is the
+submit path. The repo tasks do not call them. The `mirrorKms*` methods below are the mirror path.
+Only the owner can call them. The repo tasks use them for rotations. The owner also uses them to
+recover a replica.
 
-### Mirror methods (non-canonical write path)
+A submitted destruction has ordering and retry rules. See `submitKmsContextDestruction` in
+`IProtocolConfigReplica`.
 
-`mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` are how a replica tracks Ethereum. They are `onlyACLOwner`
-and bypass the confirmation quorum — a replica can't re-run the MPC attestations, so it trusts the
-operator to import state Ethereum has already finalized, landing it as immediately `Active`:
+### Mirror path
 
-- `mirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds)` —
-  imports a context and its epoch as active; emits `MirrorKmsContextAndEpoch`.
-- `mirrorKmsEpoch(contextId, epochId)` — advances the active epoch of the mirrored context; emits
+The mirror path methods are `onlyACLOwner`. They skip signature checks and apply canonical state
+directly. The repo mirror tasks call `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` for every
+rotation.
+
+- `mirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds)` imports a context and its epoch
+  as active. It emits `MirrorKmsContextAndEpoch`.
+- `mirrorKmsEpoch(contextId, epochId)` sets the active epoch of the active context. It emits
   `MirrorKmsEpoch`.
+- `mirrorKmsContextDestruction(contextId)` and `mirrorKmsEpochDestruction(epochId)` reset an ID
+  to `None`. They emit `KmsContextDestroyed` and `KmsEpochDestroyed`.
 
-IDs must be **strictly increasing** — the only on-chain guard, preventing rollback. Gaps are fine
-(contexts/epochs aborted or never activated on Ethereum are just never mirrored). Nothing stops a
-replica from **drifting** if a mirror call is skipped or applied out of order: replaying each
-Ethereum rotation to every replica, in order, is the operator's responsibility.
+`mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` have **no ordering check** on the IDs. They
+overwrite a context or epoch already stored under the given ID, and a lower ID moves the replica
+back. `mirrorKmsEpoch` requires the active context ID. See runbook §5.7 to recover a
+replica. Gaps are fine (contexts/epochs aborted or never activated on Ethereum are just never
+mirrored). Nothing stops a replica from
+**drifting** if a mirror call is skipped: replaying each Ethereum rotation to every replica is the
+operator's responsibility.
 
 ### Initializing a ProtocolConfigReplica from the canonical chain
 
@@ -135,8 +147,12 @@ The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **ne
 seed their replica from it.
 
 An existing replica proxy that still runs `ProtocolConfig` does not need this flow. It migrates in
-place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV3())`. Both contracts use the
-same storage, so the KMS context, epoch and nodes stay as they are.
+place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV3(canonicalProtocolConfig, canonicalChainId))`.
+The two arguments set the canonical `ProtocolConfig` EIP-712 domain. Both contracts use the
+same base storage, so the KMS context, epoch and nodes stay as they are. Before the upgrade, check
+that the proxy holds no Pending, Created or destroyed context above the active one. The submit
+path stores a committee without clearing one already stored under its ID, so such a context
+stalls the submit path. No v0.14 deployment destroyed a context.
 
 The flow is artifact-centric — the same three steps in every environment:
 
@@ -168,24 +184,26 @@ on devnet is byte-identical to what the DAO signs**.
 Both apply tasks read their configuration from environment variables. They take no command-line flags
 for the canonical state. A deployment platform injects the values into the deploy container.
 
-The table lists the `export` keys from step 1. The tasks reject a bad value before they deploy anything, so a
-misconfigured environment leaves the proxy untouched.
+The table lists the `export` keys from step 1. The tasks run the checks listed below the table before
+they deploy anything. A value that fails a check leaves the proxy untouched.
 
 | Variable                            | Type           | Meaning                                                |
 | ----------------------------------- | -------------- | ------------------------------------------------------ |
-| `CANONICAL_CHAIN_ID`                | decimal string | Chain id of the canonical host chain.                  |
+| `CANONICAL_CHAIN_ID`                | decimal string | Chain ID of the canonical host chain.                  |
 | `CANONICAL_PROTOCOL_CONFIG_ADDRESS` | address        | Canonical `ProtocolConfig` the snapshot was read from. |
 | `CANONICAL_BLOCK_NUMBER`            | decimal string | Block the snapshot was pinned to.                      |
 | `CANONICAL_BLOCK_HASH`              | 32-byte hex    | Hash of that block.                                    |
-| `CANONICAL_KMS_CONTEXT_ID`          | decimal string | Active KMS context id to mirror.                       |
-| `CANONICAL_EPOCH_ID`                | decimal string | Active KMS epoch id to mirror.                         |
+| `CANONICAL_KMS_CONTEXT_ID`          | decimal string | Active KMS context ID to mirror.                       |
+| `CANONICAL_EPOCH_ID`                | decimal string | Active KMS epoch ID to mirror.                         |
 | `CANONICAL_KMS_NODES`               | JSON array     | The KMS node set, one JSON object per node.            |
 | `CANONICAL_KMS_THRESHOLDS`          | JSON object    | The four thresholds, each a decimal string.            |
 
-The context id, epoch id, node set and thresholds become the `initializeFromCanonical` calldata, so
-the tasks check them in full. The chain id and block number are provenance, and the tasks parse them
-as decimal strings. The block hash and the address are provenance that the tasks only check for
-presence, then print.
+The context ID, epoch ID, node set, thresholds, address and chain ID become the
+`initializeFromCanonical` calldata. The chain ID and the address set the canonical EIP-712 domain
+that the replica verifies signatures under. The tasks parse the context ID, epoch ID and block
+number as decimal strings. They check the node set and thresholds in full. They require a chain ID
+in [1, 2^64) and a valid nonzero address. They only check the block hash for presence, then print
+it. The block number and block hash are provenance.
 
 | Environment       | Task                                            | Signer                                              |
 | ----------------- | ----------------------------------------------- | --------------------------------------------------- |
@@ -202,18 +220,18 @@ npx hardhat task:prepareDeployProtocolConfigFromCanonical
 
 Only step 1 talks to the canonical chain. The tasks check what the environment gives them, and no more.
 They do not prove the values match the reviewed artifact. The deployment platform
-owns that binding. Both apply tasks print `decodedArgs`, the context id, epoch id, node set and
-thresholds the payload encodes. They also print the chain id, block number, block hash and canonical
-`ProtocolConfig` address. An operator compares every provenance value against the artifact.
+owns that binding. Both apply tasks print `decodedArgs`, the context ID, epoch ID, node set,
+thresholds, chain ID and address the payload encodes. They also print the block number and block
+hash. An operator compares every provenance value against the artifact.
 
 When deploying a full non-canonical host stack, `task:deployAllHostContracts
 --protocol-config-source canonical` runs the mirror in sequence with the other host contracts, with
 the same environment variables (this is what the fhevm-cli multi-chain stack uses, so e2e seeds
 non-canonical chains exactly like production).
 
-Later canonical rotations are mirrored with `task:buildMirrorKmsContextAndEpochCalldata` /
+The rotation tasks are `task:buildMirrorKmsContextAndEpochCalldata` /
 `task:mirrorKmsContextAndEpoch` (context switch) and `task:buildMirrorKmsEpochCalldata` /
 `task:mirrorKmsEpoch` (same-set epoch rotation), defined in `tasks/mirrorKmsContext.ts`. Both read
 canonical's active KMS context/epoch over `--canonical-rpc-url` / `--canonical-protocol-config-address`
 and call the replica's `mirrorKmsContextAndEpoch` /
-`mirrorKmsEpoch` described in [Mirror methods](#mirror-methods-non-canonical-write-path).
+`mirrorKmsEpoch` described in [Mirror path](#mirror-path).

@@ -5,12 +5,36 @@ import {KmsNode} from "../shared/Structs.sol";
 
 /**
  * @title Interface for the shared ProtocolConfig reads and errors.
- * @notice Declares the read functions and errors that ProtocolConfig and ProtocolConfigReplica share.
+ * @notice Declares the read functions, events and errors that ProtocolConfig and ProtocolConfigReplica share.
  */
 interface IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
+    // Events
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * @notice Emitted when a KMS context is destroyed.
+     * @param kmsContextId The destroyed context ID.
+     */
+    event KmsContextDestroyed(uint256 indexed kmsContextId);
+
+    /**
+     * @notice Emitted when a KMS epoch is destroyed.
+     * @param epochId The destroyed epoch ID.
+     */
+    event KmsEpochDestroyed(uint256 indexed epochId);
+
+    // -----------------------------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------------------------
+
+    /// @notice Cannot destroy the latest active context.
+    /// @param kmsContextId The latest active context ID.
+    error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
+
+    /// @notice Cannot destroy the latest active epoch.
+    /// @param epochId The latest active epoch ID.
+    error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
 
     /// @notice The KMS nodes array is empty.
     error EmptyKmsNodes();
@@ -53,11 +77,6 @@ interface IProtocolConfigBase {
     /// @param epochId The epoch ID.
     error InvalidKmsEpoch(uint256 epochId);
 
-    /// @notice The mirrored context ID is not strictly greater than the latest activated one.
-    /// @param contextId The rejected context ID.
-    /// @param latestActiveKmsContextId The most recently activated mirrored context ID.
-    error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
-
     /**
      * @notice Returns the active KMS context and epoch IDs.
      * @return contextId The active context ID.
@@ -78,14 +97,6 @@ interface IProtocolConfigBase {
      * @return The active context ID.
      */
     function getCurrentKmsContextId() external view returns (uint256);
-
-    /**
-     * @notice Returns the KMS context ID allocation counter: the latest issued context ID.
-     * @dev This is the allocation frontier, always `>= getCurrentKmsContextId()`. It differs from the
-     *      active context ID while a context is Pending or Created (an in-flight context switch).
-     * @return The latest issued context ID.
-     */
-    function getCurrentKmsContextIdCounter() external view returns (uint256);
 
     /**
      * @notice Checks whether a KMS context ID is valid (exists, is not destroyed, and is active).
