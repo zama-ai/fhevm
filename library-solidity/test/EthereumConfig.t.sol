@@ -117,7 +117,7 @@ contract EthereumConfigTest is Test {
         testContract.getEthereumCoprocessorConfig();
     }
 
-    function test_ZamaConfigGetEthereumCoprocessorConfigPolygonSeparation() public {
+    function test_ZamaConfigGetEthereumCoprocessorConfigPolygonAmoySeparation() public {
         vm.chainId(80002);
 
         TestContract testContract = new TestContract();
@@ -128,6 +128,24 @@ contract EthereumConfigTest is Test {
 
     function test_ZamaConfigGetEthereumCoprocessorConfigPolygonMainnetSeparation() public {
         vm.chainId(137);
+
+        TestContract testContract = new TestContract();
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        testContract.getEthereumCoprocessorConfig();
+    }
+
+    function test_ZamaConfigGetEthereumCoprocessorConfigBscTestnetSeparation() public {
+        vm.chainId(97);
+
+        TestContract testContract = new TestContract();
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        testContract.getEthereumCoprocessorConfig();
+    }
+
+    function test_ZamaConfigGetEthereumCoprocessorConfigBscMainnetSeparation() public {
+        vm.chainId(56);
 
         TestContract testContract = new TestContract();
 
