@@ -35,6 +35,18 @@ By default the stack pulls the relayer-http image resolved for the target (`RELA
 
 Use it when the change must be seen through the stack as deployed: the config template (`test-suite/fhevm/templates/config/relayer-http.yaml`), the TLS path to the proxies, the relayer proxy route. For code iteration with logs in the terminal, `make run` below is faster (no image build).
 
+### In the preview env
+
+The preview env (`ci/preview-env/README.md`, section relayer-http) deploys the same template, merged under
+`ci/preview-env/relayer/values-relayer-http-e2e.yaml` from the PR's checkout, and the image resolved for the PR: built
+from the PR head when the PR changes `relayer-http/**`, `kms-connector/crates/api/**`, `shared/fhevm-sig-auth/**` or
+the template (`.github/workflows/relayer-http-docker-build.yml`), the base commit's image otherwise. On a PR against
+main, configuration and image therefore come from the same tree. A PR stacked on an unmerged branch resolves images
+from its merge-base with main (`ci/preview-env/101-preview-env.md`, gotchas): when the parent changes the schema,
+relayer-http fails at startup there unless the parent's build is pinned,
+`./ci/preview-env/preview-env launch --ref <branch> --set relayer_http_version=<parent head short sha>` (the tag a
+labeled run gives its images, in the run summary's Images table).
+
 ### Through the relayer proxy
 
 The stack also serves relayer-http through the relayer proxy, on `localhost:3003` (`/v2`, `/v3` → relayer, `/v4` → relayer-http). To run the flows through it, set `RELAYER_HTTP_URL` to the proxy's port on the host:
