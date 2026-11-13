@@ -99,7 +99,9 @@ struct Args {
     #[arg(long, value_enum, default_value = "private-key")]
     signer_type: SignerType,
 
-    #[arg(long)]
+    /// Signing key with `--signer-type private-key`. Prefer the env var: a flag value is visible in
+    /// the process list.
+    #[arg(long, env = "TX_SENDER_PRIVATE_KEY", hide_env_values = true)]
     private_key: Option<String>,
 
     /// HTTP server port for health checks

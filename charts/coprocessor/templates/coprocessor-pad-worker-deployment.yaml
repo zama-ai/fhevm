@@ -101,8 +101,8 @@ spec:
             {{- if $component.wallet.awsKms.enabled }}
             - --signer-type=aws-kms
             {{- else }}
+            {{- /* The key comes from the env var TX_SENDER_PRIVATE_KEY, not a flag: a flag is visible in the process list. */}}
             - --signer-type=private-key
-            - --private-key=$(TX_SENDER_PRIVATE_KEY)
             {{- end }}
             - --health-check-port={{ $component.ports.healthcheck }}
             - --metrics-addr=0.0.0.0:{{ $component.ports.metrics }}
