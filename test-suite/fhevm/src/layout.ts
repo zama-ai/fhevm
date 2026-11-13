@@ -358,7 +358,7 @@ export const TEST_GREP: Record<string, string> = {
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
   "operators": "test operator|FHEVM manual operations",
   "hcu-block-cap": "block cap scenarios",
-  "hcu-allowlist": "HCU allowlist",
+  "hcu-quotas": "HCU quotas",
   "erc20": "should transfer tokens between two users.",
   "cross-cutover-setup": "\\[cross-cutover-setup\\]",
   "cross-cutover-transfer": "\\[cross-cutover-transfer\\]",
@@ -409,7 +409,7 @@ export const STANDARD_TEST_PROFILES = [
   "multi-chain-isolation",
   "confidential-bridge",
   "hcu-block-cap",
-  "hcu-allowlist",
+  "hcu-quotas",
   // Covers both drift detection (incl. an on-chain divergence cross-check folded
   // in from the former `ciphertext-drift` profile) and full auto-recovery.
   // `ciphertext-drift` is still registered as a profile for on-demand runs but
@@ -455,7 +455,7 @@ export const STANDARD_SHARD_COMPUTE_TEST_PROFILES = [
   "multi-chain-isolation",
   "confidential-bridge",
   "hcu-block-cap",
-  "hcu-allowlist",
+  "hcu-quotas",
 ] as const;
 
 /** Heavy suites are the slowest and most stateful CI checks. */
