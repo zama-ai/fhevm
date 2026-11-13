@@ -81,6 +81,9 @@ poll wakes the requests.
 | Bytes of the response bodies of each connector (`PRF_MAX_BODY_BYTES_PER_CONNECTOR`), `429` above (one larger body is served alone) | Memory | Each pod |
 | Bytes of all response bodies (`PRF_MAX_BODY_BYTES`): wait 5 s, then `503` | Memory | Each pod |
 
+Keep 4 times `PRF_MAX_BODY_BYTES_PER_CONNECTOR` below `PRF_MAX_BODY_BYTES` (8 MiB and 64 MiB by
+default), so the 4 faulty connectors that the protocol tolerates cannot fill it.
+
 Do not autoscale `prf-service`. With more pods, one connector can have more requests in progress.
 
 ## Tests

@@ -1766,8 +1766,9 @@ prfService:
     # Requests in progress of one connector in one pod.
     maxInFlightPerConnector: 256
     # Bytes of response bodies in memory for one connector, in one pod. Above it: `429`. One larger
-    # body is served alone.
-    maxBodyBytesPerConnector: 16777216
+    # body is served alone. Keep 4 times this below `maxBodyBytes`, so 4 faulty connectors cannot
+    # fill it.
+    maxBodyBytesPerConnector: 8388608
     # Bytes of all response bodies in memory, in one pod. Keep `resources.limits.memory` above it.
     maxBodyBytes: 67108864
 
