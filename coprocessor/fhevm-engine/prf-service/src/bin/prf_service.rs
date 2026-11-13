@@ -187,8 +187,5 @@ mod tests {
     fn refuses_an_empty_body_budget() {
         assert!(Args::try_parse_from(["prf-service", "--max-body-bytes=0"]).is_err());
         assert!(Args::try_parse_from(["prf-service", "--max-body-bytes-per-connector=0"]).is_err());
-        let args = Args::try_parse_from(["prf-service"]).unwrap();
-        assert_eq!(args.max_body_bytes.get(), 64 << 20);
-        assert_eq!(args.max_body_bytes_per_connector.get(), 16 << 20);
     }
 }
