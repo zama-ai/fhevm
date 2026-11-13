@@ -16,7 +16,9 @@ enum RequestType {
     Crsgen, // 5
     _deprecatedKeyReshare_, // 6: was KeyReshare on Gateway
     KmsContext, // 7
-    Epoch // 8
+    Epoch, // 8
+    CoprocessorContext, // 9
+    CoprocessorUpgradeProposal // 10
 }
 
 // Bit position to left shift for initializing KMS ID counters.
@@ -36,6 +38,13 @@ uint256 constant KMS_CONTEXT_COUNTER_BASE = uint256(RequestType.KmsContext) << R
 
 /// @dev Base value for epoch IDs. Format: [0x08 type tag | 31 counter bytes].
 uint256 constant EPOCH_COUNTER_BASE = uint256(RequestType.Epoch) << REQUEST_TYPE_SHIFT;
+
+/// @dev Base value for coprocessor context IDs. Format: [0x09 type tag | 31 counter bytes].
+uint256 constant COPROCESSOR_CONTEXT_COUNTER_BASE = uint256(RequestType.CoprocessorContext) << REQUEST_TYPE_SHIFT;
+
+/// @dev Base value for coprocessor upgrade proposal IDs. Format: [0x0a type tag | 31 counter bytes].
+uint256 constant COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE = uint256(RequestType.CoprocessorUpgradeProposal) <<
+    REQUEST_TYPE_SHIFT;
 
 /// @dev Version byte for v1 extraData layout: [version(1)] [contextId(32)].
 uint8 constant EXTRA_DATA_V1 = 0x01;
