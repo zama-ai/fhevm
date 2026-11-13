@@ -2,8 +2,8 @@ import { type Provider, getAddress } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
+import { assertCanonicalBlockHash, resolveCanonicalBlock } from './utils/canonicalBlock';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
-import { formatError } from './utils/formatError';
 import { type UpgradeProposal, buildUpgradeProposal } from './utils/upgradeProposal';
 
 export type KmsNode = {
@@ -41,40 +41,10 @@ export async function readCanonicalSnapshot(
 ): Promise<CanonicalSnapshot> {
   const { ethers } = hre;
   const { canonicalProvider, canonicalProtocolConfigAddress } = options;
-  if (options.blockNumber !== undefined && (!Number.isSafeInteger(options.blockNumber) || options.blockNumber < 0)) {
-    throw new Error('Canonical block number must be a nonnegative safe integer.');
-  }
-
-  // Handshake before the identity check so a dead or mistyped RPC URL is reported as an RPC
-  // problem, not as a contract identity failure. Require finality even for an explicit block:
-  // a finalized block can't be reorged out, so the exported artifact stays
-  // reproducible. We resolve the full block (not just its number) to capture the hash too, which
-  // uniquely identifies the read's state across reorgs — a height alone is ambiguous.
-  let canonicalChainId: bigint;
-  let finalizedBlock: Awaited<ReturnType<Provider['getBlock']>>;
-  try {
-    canonicalChainId = (await canonicalProvider.getNetwork()).chainId;
-    finalizedBlock = await canonicalProvider.getBlock('finalized');
-  } catch (err) {
-    throw new Error(`Canonical RPC handshake failed (${formatError(err)}).`);
-  }
-  if (finalizedBlock === null || finalizedBlock.hash === null) {
-    throw new Error('Canonical RPC returned no finalized block.');
-  }
-  if (options.blockNumber !== undefined && options.blockNumber > finalizedBlock.number) {
-    throw new Error(
-      `Canonical block ${options.blockNumber} is above the latest finalized block ${finalizedBlock.number}; wait for finalization.`,
-    );
-  }
-  const block =
-    options.blockNumber === undefined || options.blockNumber === finalizedBlock.number
-      ? finalizedBlock
-      : await canonicalProvider.getBlock(options.blockNumber);
-  if (block === null || block.hash === null) {
-    throw new Error(`Canonical RPC returned no block or hash for "${options.blockNumber}".`);
-  }
-  const blockNumber = block.number;
-  const blockHash = block.hash;
+  const { canonicalChainId, blockNumber, blockHash } = await resolveCanonicalBlock(
+    canonicalProvider,
+    options.blockNumber,
+  );
   const at = { blockTag: blockNumber };
 
   // Reuse the shared version-prefix check, pointed at the canonical provider rather than the local
@@ -119,11 +89,7 @@ export async function readCanonicalSnapshot(
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
 
-  // RPC providers must disable caching so this re-fetches the block after the state reads.
-  const refetched = await canonicalProvider.getBlock(blockNumber);
-  if (refetched?.hash !== blockHash) {
-    throw new Error(`Canonical block ${blockNumber} is missing or its hash changed during the read; retry.`);
-  }
+  await assertCanonicalBlockHash(canonicalProvider, { blockNumber, blockHash });
 
   return {
     protocolConfigAddress: getAddress(canonicalProtocolConfigAddress),

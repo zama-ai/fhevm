@@ -203,3 +203,61 @@ export async function rotateToNewKmsContext(
   await activateDefinedKmsContext(asOwner, committee.signerSigners, context);
   return context.contextId;
 }
+
+export type CoprocessorFixture = {
+  txSenderAddress: string;
+  signerAddress: string;
+  storageUrl: string;
+  prfEndpointUrl: string;
+};
+
+export function buildCoprocessors(): CoprocessorFixture[] {
+  return [
+    {
+      txSenderAddress: '0x000000000000000000000000000000000000c111',
+      signerAddress: '0x000000000000000000000000000000000000c222',
+      storageUrl: 'https://coprocessor0.example.com',
+      prfEndpointUrl: 'https://prf0.example.com',
+    },
+    {
+      txSenderAddress: '0x000000000000000000000000000000000000c333',
+      signerAddress: '0x000000000000000000000000000000000000c444',
+      storageUrl: 'https://coprocessor1.example.com',
+      prfEndpointUrl: '',
+    },
+    {
+      txSenderAddress: '0x000000000000000000000000000000000000c555',
+      signerAddress: '0x000000000000000000000000000000000000c666',
+      storageUrl: 'https://coprocessor2.example.com',
+      prfEndpointUrl: '',
+    },
+  ];
+}
+
+// Smallest majority of the coprocessors in buildCoprocessors.
+export const COPROCESSOR_MAJORITY_THRESHOLD = Math.floor(buildCoprocessors().length / 2) + 1;
+
+export async function deployFreshCoprocessorConfigProxy(
+  deployer: Wallet,
+  coprocessors: CoprocessorFixture[],
+  majorityThreshold: number,
+): Promise<string> {
+  const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+  await upgradeEmptyProxy(proxyAddress, deployer, 'CoprocessorConfig', {
+    call: { fn: 'initializeFromEmptyProxy', args: [coprocessors, majorityThreshold] },
+  });
+  return proxyAddress;
+}
+
+export async function deployFreshCoprocessorConfigReplicaProxy(
+  deployer: Wallet,
+  coprocessorContextId: bigint,
+  coprocessors: CoprocessorFixture[],
+  majorityThreshold: number,
+): Promise<string> {
+  const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+  await upgradeEmptyProxy(proxyAddress, deployer, 'CoprocessorConfigReplica', {
+    call: { fn: 'initializeFromCanonical', args: [coprocessorContextId, coprocessors, majorityThreshold] },
+  });
+  return proxyAddress;
+}

@@ -217,3 +217,36 @@ Later canonical rotations are mirrored with `task:buildMirrorKmsContextAndEpochC
 canonical's active KMS context/epoch over `--canonical-rpc-url` / `--canonical-protocol-config-address`
 and call the replica's `mirrorKmsContextAndEpoch` /
 `mirrorKmsEpoch` described in [Mirror methods](#mirror-methods-non-canonical-write-path).
+
+## CoprocessorConfig
+
+`CoprocessorConfig` stores the coprocessor contexts and emits the coprocessor upgrade proposals. It
+runs on Ethereum, and every other host chain runs `CoprocessorConfigReplica`. Both are governed by the
+ACL owner.
+
+A coprocessor context is an immutable snapshot of the coprocessor set and its majority threshold.
+Context IDs carry the type byte `0x09`, so the first context is `0x0900...0001`.
+
+- **Canonical**: `initializeFromEmptyProxy` defines the first context from the `COPROCESSOR_*` env
+  variables (`task:deployCoprocessorConfig`). `defineNewCoprocessorContext` and
+  `destroyCoprocessorContext` change it later (`tasks/coprocessorContext.ts`, a `task:build…Calldata`
+  task for the DAO path and a broadcasting task for devnet).
+- **Replica**: `initializeFromCanonical` lands the replica on canonical's current context. Export it
+  with `task:exportCanonicalCoprocessorConfig`, then apply it with
+  `task:deployCoprocessorConfigFromCanonical` (devnet) or `task:prepareDeployCoprocessorConfigFromCanonical`
+  (DAO). The apply tasks read these variables:
+
+| Variable                                    | Type           | Meaning                                                   |
+| ------------------------------------------- | -------------- | --------------------------------------------------------- |
+| `CANONICAL_COPROCESSOR_CONFIG_CHAIN_ID`     | decimal string | Chain id of the canonical host chain.                     |
+| `CANONICAL_COPROCESSOR_CONFIG_ADDRESS`      | address        | Canonical `CoprocessorConfig` the snapshot was read from. |
+| `CANONICAL_COPROCESSOR_CONFIG_BLOCK_NUMBER` | decimal string | Block the snapshot was pinned to.                         |
+| `CANONICAL_COPROCESSOR_CONFIG_BLOCK_HASH`   | 32-byte hex    | Hash of that block.                                       |
+| `CANONICAL_COPROCESSOR_CONTEXT_ID`          | decimal string | Current coprocessor context id to mirror.                 |
+| `CANONICAL_COPROCESSORS`                    | JSON array     | The coprocessor set, one JSON object per coprocessor.     |
+| `CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD`  | decimal string | Majority threshold of the coprocessor context.            |
+
+`task:deployAllHostContracts --protocol-config-source canonical` also seeds the replica, so it needs
+these variables too. Later canonical contexts are mirrored with `task:mirrorCoprocessorContext` and
+`task:mirrorCoprocessorContextDestruction` (`tasks/mirrorCoprocessorContext.ts`). A replica accepts
+gaps, so only canonical's current context is mirrored.
