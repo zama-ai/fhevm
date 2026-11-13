@@ -116,6 +116,7 @@ prepare_legacy_coprocessor_values() {
     .txSender.args = load(strenv(CHART)).txSender.args |
     .txSender.env = load(strenv(CHART)).txSender.env |
     .tfheWorker.args = load(strenv(CHART)).tfheWorker.args |
+    .tfheWorker.env = load(strenv(CHART)).tfheWorker.env + [{"name": "WORKER_ID", "value": "00000000-0000-0000-0000-000000000001"}] |
     .snsWorker.args = load(strenv(CHART)).snsWorker.args |
     .snsWorker.env = load(strenv(CHART)).snsWorker.env + [
       {"name": "S3_BUCKET_NAME", "valueFrom": {"configMapKeyRef": {"name": strenv(CM), "key": "S3_BUCKET_NAME"}}}
@@ -135,7 +136,9 @@ prepare_legacy_coprocessor_values() {
     .snsWorker.args[] |= sub("^--enable-compssion=true$"; "--enable-compression") |
     .snsWorker.args[] |= sub("^--enable-compression=true$"; "--enable-compression") |
     .snsWorker.args[] |= sub("^--lifo=true$"; "--lifo") |
-    del(.snsWorker.args[] | select(. == "--lifo=false"))
+    del(.snsWorker.args[] | select(. == "--lifo=false")) |
+    .txSender.args[] |= sub("delegation-clear-after-n_blocks"; "delegation-clear-after-n-blocks") |
+    del(.txSender.args[] | select(test("^--delegation-fallback-polling=") or test("^--delegation-max-retry=") or test("^--retry-immediately-on-nonce-error=")))
   ' "${legacy}"
   host_tag="$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
   if [[ "${BLUE_GREEN:-false}" == "true" ]]; then

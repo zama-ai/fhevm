@@ -9,9 +9,15 @@ const methods = new Map([
   ['KeyGen', 'InsecureKeyGen'],
   ['GetKeyGenResult', 'GetInsecureKeyGenResult'],
 ]);
+// v0.12 and v0.13 implement InsecureKeyGen but not InsecureKeyGenPreproc.
+// Pass "secure-preproc" as the second argument to leave preprocessing on KeyGenPreproc.
+function rewritePreproc() {
+  return process.argv[3] !== 'secure-preproc';
+}
 function rewritePath(path) {
   if (!path.startsWith(prefix)) return path;
   const method = path.slice(prefix.length);
+  if (!rewritePreproc() && (method === 'KeyGenPreproc' || method === 'GetKeyGenPreprocResult')) return path;
   return methods.has(method) ? prefix + methods.get(method) : path;
 }
 function createProxy(destination, observe = () => {}) {

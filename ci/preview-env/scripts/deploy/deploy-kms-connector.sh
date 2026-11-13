@@ -156,12 +156,20 @@ kms_worker_endpoint() {
 # switches keygen to the Insecure* RPCs (see values-kms-insecure-keygen-redirect-e2e.yaml).
 if [[ "${KEYGEN}" == "insecure" ]]; then
   pids=()
+  # InsecureKeyGenPreproc landed after v0.13 (present in v0.14.2). Older cores
+  # return Unimplemented for that RPC, which the connector treats as fatal.
+  preproc_mode=()
+  if [[ "${KMS_CORE_TAG:-}" =~ ^v0\.1[23]\. ]]; then
+    echo "kms ${KMS_CORE_TAG}: preprocessing stays on KeyGenPreproc; KeyGen still uses InsecureKeyGen"
+    preproc_mode=("secure-preproc")
+  fi
   for i in $(seq 1 "${NB_KMS_CORE}"); do
+    proxy_args=("$(kms_core_url "${i}")" ${preproc_mode[@]+"${preproc_mode[@]}"})
     helm upgrade --install "$(keygen_redirect "${i}")" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
       -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-insecure-keygen-redirect-e2e.yaml \
       --set-string "fullnameOverride=$(keygen_redirect "${i}")" \
       --set-file "configmapFiles.files.kms-test-keygen-proxy\.cjs=test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs" \
-      --set-json "args=[\"$(kms_core_url "${i}")\"]" \
+      --set-json "args=$(jq -nc --args '$ARGS.positional' -- "${proxy_args[@]}")" \
       --wait &
     pids+=($!)
   done
