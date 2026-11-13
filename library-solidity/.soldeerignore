@@ -32,6 +32,7 @@ soldeer.lock
 # Source directories not needed by consumers
 codegen/
 test/
+test_forge/
 tasks/
 examples/
 lib-js/

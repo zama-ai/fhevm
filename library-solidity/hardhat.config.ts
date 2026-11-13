@@ -114,7 +114,7 @@ export default defineConfig({
       './examples',
     ],
     tests: {
-      // The Foundry tests in test/*.t.sol run with `forge test`, not Hardhat. This folder does not exist, so
+      // The Foundry tests in test_forge/ run with `forge test`, not Hardhat. This folder does not exist, so
       // Hardhat finds no Solidity tests to build.
       solidity: './hardhat-solidity-tests',
     },
