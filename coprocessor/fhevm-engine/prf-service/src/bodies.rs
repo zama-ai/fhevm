@@ -1,5 +1,6 @@
 //! Limits the bytes of the response bodies in memory: for the pod, and for each connector.
 
+use crate::metrics::{BODY_BYTES_HELD, BODY_REFUSALS};
 use actix_web::{
     body::{BodySize, MessageBody},
     web::Bytes,
@@ -10,7 +11,7 @@ use std::{
     convert::Infallible,
     num::NonZeroU32,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
     task::{Context, Poll},
     time::Duration,
 };
@@ -43,6 +44,11 @@ pub enum BodyRefusal {
 impl BodyBudget {
     /// A body counts with its true size, at most `pod_bytes`: a larger body is served alone.
     pub fn new(pod_bytes: NonZeroU32, max_per_connector: NonZeroU32, wait: Duration) -> Arc<Self> {
+        // Export the metrics at 0 from the start.
+        for reason in ["connector", "pod"] {
+            BODY_REFUSALS.with_label_values(&[reason]);
+        }
+        LazyLock::force(&BODY_BYTES_HELD);
         Arc::new(Self {
             pod: Arc::new(Semaphore::new(pod_bytes.get() as usize)),
             pod_bytes: pod_bytes.get(),
@@ -69,7 +75,10 @@ impl BodyBudget {
                 Some(total) if total <= self.max_per_connector || *connector_bytes == 0 => {
                     *connector_bytes = total
                 }
-                _ => return Err(BodyRefusal::Connector),
+                _ => {
+                    BODY_REFUSALS.with_label_values(&["connector"]).inc();
+                    return Err(BodyRefusal::Connector);
+                }
             }
         }
         // From here, a timeout or a dropped request gives the share back.
@@ -79,12 +88,15 @@ impl BodyBudget {
             bytes,
         };
         match timeout(self.wait, self.pod.clone().acquire_many_owned(bytes)).await {
-            Ok(Ok(pod)) => Ok(BodyPermit {
-                _share: share,
-                _pod: pod,
-            }),
+            Ok(Ok(pod)) => {
+                BODY_BYTES_HELD.add(i64::from(bytes));
+                Ok(BodyPermit { share, _pod: pod })
+            }
             // The semaphore is never closed: this is a timeout.
-            Ok(Err(_)) | Err(_) => Err(BodyRefusal::Pod),
+            Ok(Err(_)) | Err(_) => {
+                BODY_REFUSALS.with_label_values(&["pod"]).inc();
+                Err(BodyRefusal::Pod)
+            }
         }
     }
 }
@@ -110,8 +122,14 @@ impl Drop for ConnectorShare {
 
 /// Bytes reserved for one body. On drop, they go back to the pod and to the connector.
 pub struct BodyPermit {
-    _share: ConnectorShare,
+    share: ConnectorShare,
     _pod: OwnedSemaphorePermit,
+}
+
+impl Drop for BodyPermit {
+    fn drop(&mut self) {
+        BODY_BYTES_HELD.sub(i64::from(self.share.bytes));
+    }
 }
 
 /// A response body. It keeps its permit until it is sent or its connection closes.
@@ -162,7 +180,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn refuses_a_connector_above_its_share_but_not_another_connector() {
+    async fn refuses_a_connector_above_itsshare_but_not_another_connector() {
         let budget = BodyBudget::new(nz(100), nz(60), WAIT);
         let first = budget.reserve(CONNECTOR, 40).await.unwrap();
         assert_eq!(
@@ -195,7 +213,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_request_dropped_while_it_waits_gives_its_share_back() {
+    async fn a_request_dropped_while_it_waits_gives_itsshare_back() {
         let budget = BodyBudget::new(nz(100), nz(60), Duration::from_secs(60));
         let _full = budget.reserve(CONNECTOR, 60).await.unwrap();
         let _other = budget.reserve(OTHER_CONNECTOR, 40).await.unwrap();
@@ -215,10 +233,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_body_larger_than_the_share_counts_its_true_size_and_is_served_alone() {
+    async fn a_body_larger_than_theshare_counts_its_true_size_and_is_served_alone() {
         let budget = BodyBudget::new(nz(100), nz(60), WAIT);
         let permit = budget.reserve(CONNECTOR, 80).await.unwrap();
-        assert_eq!(permit._share.bytes, 80);
+        assert_eq!(permit.share.bytes, 80);
         assert_eq!(budget.pod.available_permits(), 20);
         assert_eq!(
             budget.reserve(CONNECTOR, 1).await.err(),
@@ -233,7 +251,7 @@ mod tests {
     async fn a_body_larger_than_the_pod_budget_counts_as_the_budget() {
         let budget = BodyBudget::new(nz(100), nz(60), WAIT);
         let permit = budget.reserve(CONNECTOR, 1_000).await.unwrap();
-        assert_eq!(permit._share.bytes, 100);
+        assert_eq!(permit.share.bytes, 100);
         assert_eq!(budget.pod.available_permits(), 0);
     }
 
