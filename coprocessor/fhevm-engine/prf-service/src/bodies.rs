@@ -19,6 +19,7 @@ use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
     time::timeout,
 };
+use tracing::warn;
 
 /// Size of each body chunk. Actix asks for the next chunk only when its write buffer has room, so
 /// a slow client keeps its permit until the body is almost sent.
@@ -65,6 +66,10 @@ impl BodyBudget {
         connector: Address,
         bytes: u64,
     ) -> Result<BodyPermit, BodyRefusal> {
+        // The share expects bodies of a few MiB at most.
+        if bytes > u64::from(self.max_per_connector) {
+            warn!(%connector, bytes, share = self.max_per_connector, "Body larger than the connector share");
+        }
         let bytes = u32::try_from(bytes)
             .unwrap_or(u32::MAX)
             .clamp(1, self.pod_bytes);
