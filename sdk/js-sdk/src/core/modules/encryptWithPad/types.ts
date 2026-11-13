@@ -1,7 +1,7 @@
 import type { Prettify } from '../../types/utils.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { Bytes32Hex, BytesHex, ChecksummedAddress, Uint32Number, Uint64BigInt } from '../../types/primitives.js';
-import type { PadDecryptResponse, PadWitness } from '../relayer/types.js';
+import type { PadDecryptResponse, PadEntry } from '../relayer/types.js';
 import type {
   GenerateTkmsPrivateKeyModuleFunction,
   GetTkmsModuleInfoFunction,
@@ -26,22 +26,21 @@ import type {
 // PadDecryptResponsePayload (decrypted content of a PadDecryptResponse)
 ////////////////////////////////////////////////////////////////////////////////
 
-/** One node's share of one pad, keyed by label and signed on its own (`PadShare` in RFC-030). */
+/**
+ * One node's share of one pad, keyed by label (`PadShare` in RFC-030), signed on its own together with the
+ * payload's `extraData`.
+ */
 export type PadShare = {
   readonly label: Bytes32Hex;
-  /** Versioned, encoded ring elements: a version byte, then the elements it defines. */
+  /** Encoded ring elements, opaque: the encoding and its metadata are the KMS's. */
   readonly rawShares: BytesHex;
   /** This node's 1-indexed evaluation point. */
   readonly partyId: Uint32Number;
   /** The sharing polynomial degree `t`. */
   readonly degree: Uint32Number;
-  /** The KMS context, selecting the signer set. */
-  readonly contextId: Bytes32Hex;
   /** 16 bytes: opaque id of the MPC session that produced the share. */
   readonly sessionId: BytesHex;
-  /** Versioned, unstructured metadata. */
-  readonly extraData: BytesHex;
-  /** EIP-712 signature over the share's `PadShareVerification`. */
+  /** EIP-712 signature over the share's `PadShareVerification`, which includes the payload's `extraData`. */
   readonly signature: BytesHex;
 };
 
@@ -49,6 +48,8 @@ export type PadShare = {
 export type PadDecryptResponsePayload = {
   /** One per pad in the request; order carries no meaning. */
   readonly shares: readonly PadShare[];
+  /** Response metadata naming the KMS context and epoch the request was served under. */
+  readonly extraData: BytesHex;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -57,8 +58,8 @@ export type PadDecryptResponsePayload = {
 
 export type ReconstructPadsParameters = {
   readonly responses: readonly PadDecryptResponse[];
-  /** The witnesses of the request, i.e. the client's own local record. */
-  readonly witnesses: readonly PadWitness[];
+  /** The pads of the request, i.e. the client's own local record. */
+  readonly pads: readonly PadEntry[];
   /** The request's signed `extraData`. */
   readonly extraData: BytesHex;
   /** The request's transport public key (`auth.publicKey`). */
@@ -71,9 +72,12 @@ export type ReconstructPadsParameters = {
    * the degree a response signs for itself is never trusted to set the bar.
    */
   readonly mpcThreshold: number;
-  /** EIP-712 domain of the response signature (gateway chain, KMS `Decryption` domain). */
-  readonly gatewayChainId: Uint64BigInt | number;
-  readonly verifyingContractAddressDecryption: ChecksummedAddress;
+  /**
+   * EIP-712 domain of the response signatures (`fhevm-pad-decryption`, version 1): the chain id and address of
+   * ProtocolConfig.
+   */
+  readonly protocolConfigChainId: Uint64BigInt | number;
+  readonly protocolConfigAddress: ChecksummedAddress;
 };
 
 /** Plaintext pads keyed by label; each is ⌈padLength/8⌉ bytes, LSB-first bit order. */
@@ -85,7 +89,7 @@ export type ReconstructPadsModuleReturnType = ReconstructedPads;
 export type ReconstructPadsModuleFunction = {
   /**
    * Opens and verifies the pad decryption responses, then reconstructs one pad
-   * per witness label.
+   * per requested label.
    */
   reconstructPads(parameters: ReconstructPadsModuleParameters): Promise<ReconstructPadsModuleReturnType>;
 };

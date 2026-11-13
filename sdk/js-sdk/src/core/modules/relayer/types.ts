@@ -248,8 +248,8 @@ export type FetchFeaturesModuleFunction = {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * One pad of an RFC-030 pad decryption request (`PadWitness`): the per-pad
- * witness fields, the pad's label and the number of pad bits to release.
+ * The per-pad witness fields of a label (`PadWitness` in RFC-030); the shared
+ * ones (`witnessVersion`, `prfId`, `chainId`) are carried once by the request.
  */
 export type PadWitness = {
   readonly submitter: ChecksummedAddress;
@@ -260,9 +260,18 @@ export type PadWitness = {
   readonly decryptors: readonly ChecksummedAddress[];
   /** 16 bytes. */
   readonly nonce: BytesHex;
-  /** `hash(witness)`, see RFC-030. */
+};
+
+/**
+ * One requested pad of an RFC-030 pad decryption request (`PadEntry`): its
+ * label, the witness that authenticates it, and the number of pad bits to
+ * release.
+ */
+export type PadEntry = {
+  /** `hash(witness)`, see RFC-030: the pad's identity and the PRF input. */
   readonly label: Bytes32Hex;
-  /** Bits of the pad stream to release, in `[1, 2048]`. Not a witness field. */
+  readonly witness: PadWitness;
+  /** Bits of the pad stream to release, in `[1, 2048]`. */
   readonly padLength: Uint16Number;
 };
 
@@ -276,8 +285,8 @@ export type FetchPadSharesParameters = {
     readonly witnessVersion: Uint8Number;
     readonly prfId: Uint16Number;
     readonly chainId: Uint64BigInt;
-    /** One entry per pad. */
-    readonly witnesses: readonly PadWitness[];
+    /** One entry per requested pad. */
+    readonly pads: readonly PadEntry[];
   };
   readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerCommonOptions | undefined;

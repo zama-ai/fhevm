@@ -1,0 +1,41 @@
+# Pad decryption (RFC-030) against the SDK's v1.0.0 cleartext stack on anvil (chain 31337), the KMS connectors
+# mocked by pad-mock (dev/scripts/pad.sh connectors): 4 KMS nodes, t = 1, so 2t + 1 = 3 responses per pad.
+# The mocks do not check the FhevmSig; each audience is the party's KMS tx-sender (LocalHostBootstrap.kmsTxSenders).
+name: relayer-http-dev-pad
+log:
+  format: pretty
+  show_file_line: false
+  show_thread_ids: false
+  show_timestamp: true
+  show_target: false
+http:
+  endpoint: "0.0.0.0:8080"
+  max_body_bytes: 1048576               # 1 MiB, the connector's limit
+  body_read_timeout: 10s                # total time to receive a request body
+  supported_chain_ids: [31337]          # anvil
+kms_aggregator:
+  allow_insecure_http: false            # loopback http is allowed as is
+  max_concurrent_calls: 16
+  call:
+    timeout: 5s                         # the deadline of one aggregation
+    retries:
+      max_retries: 5                    # retryable connector errors only
+      delay: 200ms
+      backoff_max: 4s
+  public_decrypt:
+    threshold: 2
+  user_decrypt:
+    threshold: 3
+  pad_decrypt:
+    threshold: 3
+  auth:
+    chain_id: 31337                     # anvil
+    protocol_config: "0x0000000000000000000000000000000000000000"   # set by pad.sh run (the stack's ProtocolConfig)
+    validity: 2m
+    address: "0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0"   # the e2e test key's; pad.sh run signs with SIGNER_KEY (default: that key)
+    signer: { type: private_key, value_env: RELAYER_SIGNER_KEY }
+  endpoints:
+    - { name: kms_1, url: "http://127.0.0.1:8091", audience: "0x4c41862B9eb691CA197E97a53219E5d860d9dDbB" }
+    - { name: kms_2, url: "http://127.0.0.1:8092", audience: "0x822D412944cE9CD7C92f96F162307cF4c9f88F15" }
+    - { name: kms_3, url: "http://127.0.0.1:8093", audience: "0xA47E4a9AeaB93C7c2aC8fd5c4E4eC5cB70DD5F8f" }
+    - { name: kms_4, url: "http://127.0.0.1:8094", audience: "0xed3C9f5a6d4D8c00A375B8c79dbDF0f69BAAe547" }

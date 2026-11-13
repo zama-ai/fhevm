@@ -1,7 +1,8 @@
 //! One file per route. Each owns its wire types, their conversion to the connector DTO, its validation and its
-//! handler, which fills the request's `Summary` as it goes. Shared here: the body reader, the success envelope and
-//! the clock.
+//! handler, which fills the request's `Summary` as it goes. Shared here: the body reader, the success envelope,
+//! the clock and the SDK's integer encoding.
 
+pub mod pad_decrypt;
 pub mod public_decrypt;
 pub mod user_decrypt;
 
@@ -14,8 +15,8 @@ use axum::extract::{FromRequest, Request};
 use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::error::Category;
 use serde_path_to_error::Segment;
 use tokio::time::timeout;
@@ -187,6 +188,24 @@ impl<T: Serialize> IntoResponse for Reply<T> {
         tag(&mut response, &self.request_id);
         response.extensions_mut().insert(self.summary);
         response
+    }
+}
+
+/// The SDK sends these as decimal strings; numbers are accepted too.
+pub fn u64_from_string_or_number<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<u64, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Number(u64),
+        Text(String),
+    }
+    match Raw::deserialize(deserializer)? {
+        Raw::Number(value) => Ok(value),
+        Raw::Text(text) => text
+            .parse()
+            .map_err(|_| serde::de::Error::custom("must be a decimal integer")),
     }
 }
 

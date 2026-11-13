@@ -1,0 +1,13 @@
+# Pad decrypt: 2t + 1 nodes answer, t hang. The aggregation waits for them until the deadline (a late share can
+# replace a wrong one at reconstruction), then answers with the 9 it has.
+flow: pad_decrypt
+threshold: 9
+timeout: 5s
+nodes:
+  - { count: 9, replies: [ok] }
+  - { count: 4, replies: [hang] }
+expect:
+  outcome: ok
+  counted: 9
+  responses: 9
+  elapsed: 5s

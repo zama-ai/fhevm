@@ -32,15 +32,17 @@ use tokio_util::sync::CancellationToken;
 use crate::config::{HttpConfig, RelayerConfig};
 use crate::metrics::Metrics;
 use kms_aggregator::{
-    Aggregator, Caller, ConfigError, HttpClient, PublicDecrypt, RequestSigner, UserDecrypt,
+    Aggregator, Caller, ConfigError, HttpClient, PadDecrypt, PublicDecrypt, RequestSigner,
+    UserDecrypt,
 };
 
 /// Everything a request handler needs: the one shared state of the process. Built once in `main`, cloned per
-/// request (Arcs only). Both aggregators share one `Caller`: one HTTP client, one call semaphore.
+/// request (Arcs only). The aggregators share one `Caller`: one HTTP client, one call semaphore.
 #[derive(Clone)]
 pub struct App {
     pub user_decrypt: Arc<Aggregator<UserDecrypt>>,
     pub public_decrypt: Arc<Aggregator<PublicDecrypt>>,
+    pub pad_decrypt: Arc<Aggregator<PadDecrypt>>,
     /// Bind address, body limit, supported chain ids.
     pub http: Arc<HttpConfig>,
     /// The one registry of the process, served on `metrics.endpoint`.
@@ -51,7 +53,7 @@ pub struct App {
 }
 
 impl App {
-    /// Loads the signing key (env var or AWS KMS), builds the shared HTTP client, semaphore and both aggregators.
+    /// Loads the signing key (env var or AWS KMS), builds the shared HTTP client, semaphore and the aggregators.
     pub async fn new(
         config: &RelayerConfig,
         shutdown: CancellationToken,
@@ -68,7 +70,12 @@ impl App {
                 kms.user_decrypt.threshold,
                 kms.user_decrypt.checks,
             )),
-            public_decrypt: Arc::new(Aggregator::new(caller, kms.public_decrypt.threshold, ())),
+            public_decrypt: Arc::new(Aggregator::new(
+                caller.clone(),
+                kms.public_decrypt.threshold,
+                (),
+            )),
+            pad_decrypt: Arc::new(Aggregator::new(caller, kms.pad_decrypt_threshold(), ())),
             http: Arc::new(config.http.clone()),
             metrics,
             shutdown,

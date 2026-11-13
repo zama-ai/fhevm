@@ -83,6 +83,41 @@ make -C relayer-http/dev stop-monitoring
 - Alerts: evaluated by Prometheus, listed with their state on `:9390/alerts`; no Alertmanager, so nothing is sent.
 - Ports: uncommon on purpose; override with `RELAYER_HTTP_STACK_METRICS_PORT`, `RELAYER_HTTP_METRICS_PORT`, `RELAYER_HTTP_PROMETHEUS_PORT`, `RELAYER_HTTP_GRAFANA_PORT`, `RELAYER_HTTP_LOKI_PORT` (3310). `RELAYER_HTTP_MONITORING_HOST` (default `127.0.0.1`) is the address they listen on; a LAN address (or `0.0.0.0`) lets another machine browse them, and exposes the anonymous Grafana to that network.
 
+## Pad decryption (RFC-030), without the fhevm stack
+
+The KMS connector's endpoint accepts pad decryptions but its worker does not process them yet. `pad-mock`
+(`crates/pad-mock`, see its `docs.md`) stands in for it, on top of the SDK's v1.0.0 cleartext stack on anvil, where
+`CleartextPaddedInputter` does the KMS's work but the signatures. Four terminals, in this order:
+
+```sh
+make -C relayer-http/dev pad-stack        # anvil :8544, cleartext host contracts and FHETest deployed (sdk/js-sdk's localcleartext script)
+make -C relayer-http/dev pad-connectors   # 4 mock connectors 127.0.0.1:8091..8094, one KMS signer key each
+make -C relayer-http/dev pad-run          # the relayer with dev/config/pad-cleartext.yaml (chain 31337, pad threshold 3)
+make -C relayer-http/dev pad-decrypt      # one signed request through the relayer, every response checked
+```
+
+```
+user 0x5f7F…8aad, chain 31337, 2 pads ([64, 300] bits), 4 KMS signers
+POST /v4/pad-decrypt -> 200 OK in 17.7ms
+label 0x6bf8…5a69: 4 shares, one session, pad 64 bits ok
+label 0x36bb…fa25: 4 shares, one session, pad 300 bits ok
+pad decryption ok: 4 responses from 4 distinct KMS signers
+```
+
+The SDK's pad suites run against the same three processes, its pad shares fetched from relayer-http
+(`fetchPadShares`, the rest of the client cleartext), the round trip submitting the package on chain and decrypting
+it back:
+
+```sh
+cd sdk/js-sdk && RELAYER_HTTP_URL=http://127.0.0.1:8080 CHAIN=localcleartext_v1_0 \
+  npx vitest run --config test/fheTest/vitest.config.ts ethers-relayer-http
+```
+
+Prerequisites: foundry (`anvil`, `forge`, `cast`) and the SDK's contract dependencies (`sdk/js-sdk/contracts`). The
+contract addresses come from `sdk/js-sdk/contracts/src/v1.0.0/config/addresses.sol` (deterministic deploy), the KMS
+keys from the test mnemonic (`m/44'/60'/0'/3/i`), the user's from `m/44'/60'/0'/0/1`; `RPC_URL` and `RELAYER_URL`
+override the defaults. A mock connector answering `422 unprocessable` names the contract's revert in its message.
+
 ## Code
 
 ```sh

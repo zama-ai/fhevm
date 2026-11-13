@@ -1,0 +1,11 @@
+# Pad decrypt: 5 responses with a 64-byte transport signature are rejected; 8 remain, below 2t + 1 = 9.
+flow: pad_decrypt
+threshold: 9
+timeout: 5s
+nodes:
+  - { count: 8, replies: [ok] }
+  - { count: 5, replies: [bad_signature] }
+expect:
+  outcome: threshold_not_reached
+  counted: 8
+  elapsed: 10ms

@@ -13,7 +13,8 @@ import type { RelayerCommonOptions } from '../types/relayer.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { ExternalHandle } from '../types/encryptedTypes-p.js';
 import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/signedDecryptionPermit.js';
-import type { PadWitness } from '../modules/relayer/types.js';
+import type { FetchPadSharesReturnType, PadEntry, PadWitness } from '../modules/relayer/types.js';
+import type { ReconstructPadsModuleReturnType } from '../modules/encryptWithPad/types.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytes32ToHex, bytesToHex, concatBytes, hexToBytes } from '../base/bytes.js';
 import { encryptionBitsFromFheType, fheTypeIdFromName, fheTypeNameFromTypeName } from '../handle/FheType.js';
@@ -99,6 +100,12 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
   }
   signedPermit.assertNotExpired();
 
+  // The KMS signs pad decryption responses under the `fhevm-pad-decryption` EIP-712 domain, anchored on ProtocolConfig.
+  const protocolConfigAddress = context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined;
+  if (protocolConfigAddress === undefined) {
+    throw new Error('encryptWithPad requires the ProtocolConfig address in the chain configuration.');
+  }
+
   // 1. Pad length: every part is padded to whole bytes.
   const padLength = _computePadLength(values);
 
@@ -107,30 +114,30 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
   const expirationTimestamp = BigInt(Math.floor(Date.now() / 1000) + PAD_EXPIRATION_SECONDS) as Uint64BigInt;
   const nonce = bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
 
-  const witnessFields = {
+  const witness: PadWitness = Object.freeze({
     submitter: userAddress,
     consumer: contractAddress,
     expirationTimestamp,
-    decryptors: [] as readonly ChecksummedAddress[],
+    decryptors: Object.freeze([]),
     nonce,
-  };
+  });
 
   // 3. Label = hash(witness). The same witness bytes go into the package header,
   //    where the host contract hashes them again to check the label.
   const witnessBytes = _serializePadWitness({
     witnessVersion: PAD_WITNESS_VERSION,
-    prf: PAD_PRF_INSTANCE,
+    prfId: PAD_PRF_INSTANCE,
     chainId,
-    ...witnessFields,
+    ...witness,
   });
   const label = _computePadLabel(witnessBytes);
 
-  const witness: PadWitness = Object.freeze({ ...witnessFields, label, padLength });
+  const padEntry: PadEntry = Object.freeze({ label, witness, padLength });
 
   // 4. Fetch the pad shares (one response per KMS node) and, concurrently, the
   //    signers of the context named by the permit's extraData.
   const extraData = signedPermit.eip712.message.extraData;
-  const [padDecryptResponses, kmsSignersContext] = await Promise.all([
+  const fetchShares = (): Promise<FetchPadSharesReturnType> =>
     context.runtime.relayer.fetchPadShares(context, {
       payload: {
         kmsDecryptEip712Message: signedPermit.eip712.message,
@@ -138,11 +145,13 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
         witnessVersion: PAD_WITNESS_VERSION,
         prfId: PAD_PRF_INSTANCE,
         chainId,
-        witnesses: [witness],
+        pads: [padEntry],
       },
       fhevmContext,
       options,
-    }),
+    });
+  const [firstResponses, kmsSignersContext] = await Promise.all([
+    fetchShares(),
     readKmsSignersContextFromPermitExtraData(context, {
       kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
       protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
@@ -152,18 +161,23 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
   ]);
 
   // 5. Verify the responses against the context signers and reconstruct the pad.
-  const pads = await context.runtime.encryptWithPad.reconstructPads({
-    responses: padDecryptResponses,
-    witnesses: [witness],
-    extraData,
-    transportPublicKey: signedPermit.eip712.message.publicKey,
-    kmsSigners: kmsSignersContext.signers,
-    // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
-    // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
-    mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
-    gatewayChainId: context.chain.fhevm.gateway.id,
-    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
-  });
+  const reconstruct = (responses: FetchPadSharesReturnType): Promise<ReconstructPadsModuleReturnType> =>
+    context.runtime.encryptWithPad.reconstructPads({
+      responses,
+      pads: [padEntry],
+      extraData,
+      transportPublicKey: signedPermit.eip712.message.publicKey,
+      kmsSigners: kmsSignersContext.signers,
+      // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
+      // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
+      mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
+      // TODO(RFC-030): the spec anchors the domain on ProtocolConfig's own chain, i.e. Ethereum's. The chain
+      // configuration has no such chain id; the host chain is ProtocolConfig's (or its replica's) one here, as in a
+      // cleartext stack. Revisit once the spec settles the replica case.
+      protocolConfigChainId: context.chain.id,
+      protocolConfigAddress,
+    });
+  const pads = await reconstructWithOneRetry(firstResponses, fetchShares, reconstruct);
   const pad = pads.get(label);
   if (pad === undefined) {
     throw new Error(`No pad reconstructed for label ${label}.`);
@@ -220,13 +234,13 @@ function _computePadLength(values: readonly TypedValue[]): Uint16Number {
 
 /**
  * RFC-030 witness bytes, as they appear in the input package after `packageType`:
- *   witnessVersion ‖ prf ‖ chainId ‖ submitter ‖ consumer ‖ expirationTimestamp ‖
+ *   witnessVersion ‖ prfId ‖ chainId ‖ submitter ‖ consumer ‖ expirationTimestamp ‖
  *   decryptorCount ‖ decryptors ‖ nonce
  * Fixed-width big-endian fields; addresses are 20 bytes, the nonce 16 bytes.
  */
 function _serializePadWitness(w: {
   readonly witnessVersion: Uint8Number;
-  readonly prf: Uint16Number;
+  readonly prfId: Uint16Number;
   readonly chainId: Uint64BigInt;
   readonly submitter: ChecksummedAddress;
   readonly consumer: ChecksummedAddress;
@@ -240,7 +254,7 @@ function _serializePadWitness(w: {
   }
   return concatBytes(
     _uintToBytes(BigInt(w.witnessVersion), 1),
-    _uintToBytes(BigInt(w.prf), 2),
+    _uintToBytes(BigInt(w.prfId), 2),
     _uintToBytes(w.chainId, 8),
     hexToBytes(w.submitter),
     hexToBytes(w.consumer),
@@ -294,4 +308,24 @@ function _typedValueToBigInt(v: TypedValue): bigint {
   }
   // uintN values are numbers or bigints; addresses are 0x-prefixed hex strings.
   return BigInt(v.value);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Reconstructs from `first`; if that fails (fewer than 2t+1 consistent shares, a wrong share), fetches once more
+ * and reconstructs from the new responses, whose failure is final. The KMS connectors answer a repeated request from
+ * the same MPC run, so the retry brings the shares of the nodes that were late the first time. A failure of `fetch`
+ * itself is never retried here.
+ */
+export async function reconstructWithOneRetry<R, P>(
+  first: R,
+  fetch: () => Promise<R>,
+  reconstruct: (responses: R) => Promise<P>,
+): Promise<P> {
+  try {
+    return await reconstruct(first);
+  } catch {
+    return reconstruct(await fetch());
+  }
 }

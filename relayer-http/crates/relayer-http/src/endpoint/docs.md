@@ -1,8 +1,8 @@
 # endpoint
 
-Minimal first version of the relayer's HTTP layer: two synchronous decryption routes and the Kubernetes probes, on
+Minimal first version of the relayer's HTTP layer: three synchronous decryption routes and the Kubernetes probes, on
 one port, with raw axum. Reading order: this file, `mod.rs`, `flows/user_decrypt.rs`, `flows/public_decrypt.rs`,
-`validate.rs`, `error.rs`.
+`flows/pad_decrypt.rs`, `validate.rs`, `error.rs`.
 
 The error mapping is a first version (section 5).
 
@@ -12,6 +12,7 @@ The error mapping is a first version (section 5).
 |---|---|---|
 | `POST` | `/v4/user-decrypt` | user decryption: the KMS nodes' signcrypted shares for the caller's public key |
 | `POST` | `/v4/public-decrypt` | public decryption: the plaintexts and the KMS signatures over them |
+| `POST` | `/v4/pad-decrypt` | pad decryption (RFC-030): every KMS node's encrypted pad shares for the caller's public key |
 | `GET` | `/liveness` | the process runs |
 | `GET` | `/healthz` | the pod is ready to serve (503 while shutting down) |
 
@@ -69,6 +70,50 @@ can be added later without touching the connector DTO.
 
 Conversion: `ciphertextHandles` → `ctHandles`, `extraData` as it is.
 
+### `POST /v4/pad-decrypt`
+
+Pad decryption of tech-spec RFC-030, forwarded to the connector's `POST /v1/pad-decrypt`. The connector's endpoint
+accepts it, but its worker answers every pad request `422 unprocessable` until it can process them, so end-to-end runs
+use the mock connectors of `crates/pad-mock` (`dev/README.md`, "Pad decryption").
+
+The connector's envelope (`kms-connector-api` `PadDecryptionRequest`), with the SDK's decimal-string integers. The
+RFC-016 signed fields are those of user decryption (an existing user-decrypt signature can be reused); the pad fields
+are unsigned, the KMS authenticates each label as the hash of its witness.
+
+```json
+{
+  "attestationType": "eip712-unified-user-decrypt-v1",
+  "payload": {
+    "witnessVersion": 0,
+    "prfId": 1,
+    "chainId": "12345",
+    "pads": [
+      {
+        "label": "0x…",
+        "witness": {
+          "submitter": "0x5555555555555555555555555555555555555555",
+          "consumer": "0x3333333333333333333333333333333333333333",
+          "expirationTimestamp": "1800604800",
+          "decryptors": ["0x4444444444444444444444444444444444444444"],
+          "nonce": "0x77777777777777777777777777777777"
+        },
+        "padLength": 64
+      }
+    ],
+    "userAddress": "0x5555555555555555555555555555555555555555",
+    "publicKey": "0x20002000",
+    "allowedContracts": ["0x3333333333333333333333333333333333333333"],
+    "requestValidity": { "startTimestamp": "1799999900", "durationSeconds": "600" },
+    "extraData": "0x02…"
+  },
+  "signature": "0x6666…66"
+}
+```
+
+`chainId`, `expirationTimestamp` and the validity window are decimal strings (numbers are accepted too);
+`witnessVersion` and `prfId` are numbers, `nonce` is 16 bytes. Conversion: every field as it is, under the
+connector's names; nothing is dropped.
+
 ## 3. Validation
 
 Stateless, before any fan-out. The current relayer's rules, plus the connector's cheap handle rules (it would reject
@@ -97,12 +142,31 @@ The relayer treats `extraData` as opaque and checks only its envelope:
   and validating them is the role of the protocol (KMS connector, host contracts), not of the relayer.
 
 A failure is `400 malformed` with `"extraData: must be 0x02 + context id + epoch id"` (`payload.extraData` for user
-decrypt). A valid `extraData` is forwarded to the connectors as it is.
+and pad decrypt). A valid `extraData` is forwarded to the connectors as it is.
 
-### 3.3 Not checked
+### 3.3 Pad decrypt
+
+`attestationType`, `payload.allowedContracts`, `payload.publicKey`, `payload.requestValidity` and `payload.extraData`
+as user decrypt, then the connector's cheap pad rules (`validate_pad_decryption`), in its order: per pad, the label
+is checked for duplicates first and against its witness last.
+
+| field | rule |
+|---|---|
+| `payload.witnessVersion` | `0` (`PAD_WITNESS_VERSION`) |
+| `payload.chainId` | in `supported_chain_ids` |
+| `payload.pads` | 1 to `http.max_pads` (default 10, the connector's `max_pads`) |
+| `payload.pads[i].label` | unique in the request; `keccak256("FHE_padl" ‖ witnessVersion ‖ prfId ‖ chainId ‖ submitter ‖ consumer ‖ expirationTimestamp ‖ decryptorCount ‖ decryptors ‖ nonce)`, integers big-endian (`kms_connector_api::PadWitness::label`) |
+| `payload.pads[i].witness.submitter` | not the zero address |
+| `payload.pads[i].witness.decryptors` | at most 16 (`MAX_PAD_DECRYPTORS`), none the zero address |
+| `payload.pads[i].padLength` | `1..=2048` (`MAX_PAD_LENGTH`) |
+| `payload.pads[i].witness.expirationTimestamp` | `> now` |
+
+### 3.4 Not checked
 
 Deliberately not checked here: the user's signature (ERC-1271, connector worker), the signature length, the ACL, the
 ciphertext readiness and the content of `extraData` (connector worker; they surface as the dominant error, section 5).
+For pad decrypt: whether `prfId` is admitted and whether the user is a submitter, a decryptor or one of their
+delegates (host chain reads, the connector's).
 
 ## 4. Responses
 
@@ -123,6 +187,17 @@ Success is the current relayer's envelope, `200`:
 ```json
 { "decryptedValue": "0000…002a", "signatures": ["1a2b…", "…"], "extraData": "0x02…" }
 ```
+
+`result` for pad decrypt, every accepted node response in acceptance order, as the node sent it (`0x` hex):
+
+```json
+{ "responses": [ { "decryptionId": "0x…", "encryptedPayload": "0x…", "signature": "0x…" } ] }
+```
+
+Each response is the connector's `PadDecryptionResponse` as it is. Its `decryptionId` is the request's content hash
+(section 6, the `decryption_id` of the summary line), signed by the node with `encryptedPayload` (its transport
+signature; the KMS core calls it `requestId`), which the SDK needs to verify that signature. The relayer does not
+compare it with the request's: the SDK verifies what each node signed.
 
 Every response, success or error, carries `x-request-id: <requestId>`.
 
@@ -171,8 +246,8 @@ the server, such as arrival time.
 
 The request hash is the connector's `decryptionId`, the EIP-712 signing hash of the connector request: computed with
 the connector's crate from the request the relayer forwards (never from the body it received), so it is exactly the id
-every KMS node derives. Two identical payloads get two request ids and one hash; both are on the request's summary
-line.
+every KMS node derives. The pad nodes return it as `decryptionId` in each response (section 4). Two identical payloads get two request ids and one hash; both are on the request's
+summary line.
 
 ## 7. Shutdown
 
@@ -228,7 +303,8 @@ The rules are in `OBSERVABILITY.md`; the generated references are `monitoring/su
 - **`internal`** (a panic, or `AggregationError::Internal`) is a relayer defect: the summary line stays INFO, and one
   more ERROR line, `internal error`, carries the `request_id` and the `reason`.
 - `status` is text (`"200"`, or `none`) so that the field has one type; `contract_addresses` is the handles' contracts,
-  `allowed_contracts` the request's `allowedContracts`.
+  `allowed_contracts` the request's `allowedContracts`. Pad decrypt has no handle: `handles` lists its labels,
+  `contract_addresses` its witnesses' consumers, and `chain_id` is the request's `chainId`.
 - **Invalid request**: the list fields show at most validation's limits (`http.max_handles_per_decryption` handles
   and contracts, `http.max_allowed_contracts` `allowedContracts`), then `+N more`: a valid request is listed whole, and a request that failed validation, bounded
   only by the body limit, is cut. A DEBUG line `request invalid` carries the `field`, the `issue` and the offending
