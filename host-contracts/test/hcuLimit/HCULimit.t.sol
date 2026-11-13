@@ -20,16 +20,19 @@ contract MockHCULimit is HCULimit {
         return _getHCUForTransaction();
     }
 
+    /// Returns `handle`'s depth within this transaction.
     function getHCUForHandle(bytes32 handle) external view returns (uint256) {
-        return _getHCUForHandle(handle);
+        (uint256 depths, ) = _loadDepths(handle);
+        return uint128(depths);
     }
 
     function setHCUForTransaction(uint256 handleHCU) external {
         _setHCUForTransaction(handleHCU);
     }
 
-    function setHCUForHandle(bytes32 handle, uint256 handleHCU) external {
-        _setHCUForHandle(handle, handleHCU);
+    /// Records `depth` as `handle`'s depth within this transaction, with no carried depth.
+    function setHCUForHandle(bytes32 handle, uint256 depth) external {
+        _storeDepths(handle, depth);
     }
 
     function setHCUPerBlockUnsafeForTest(uint48 hcuPerBlock) external {
@@ -123,13 +126,14 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.5.0")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.6.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
-    function test_getHCUForHandleRevertsForZeroHandle() public {
+    function test_zeroHandleInputReverts() public {
+        vm.prank(fhevmExecutor);
         vm.expectRevert(HCULimit.InvalidZeroHandle.selector);
-        hcuLimit.getHCUForHandle(bytes32(0));
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x00, bytes32(0), mockRHS, mockResult, fhevmExecutor);
     }
 
     function test_setHCUForHandleRevertsForZeroHandle() public {
@@ -1582,7 +1586,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedHCU, 0);
     }
 
-    function test_reinitializeV5SucceedsOnUpgradePath() public {
+    function test_reinitializeV6SucceedsOnUpgradePath() public {
         address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, ())
@@ -1593,7 +1597,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, implementationWithoutInitCall, "");
 
         MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
-        upgraded.reinitializeV5();
+        upgraded.reinitializeV6();
         vm.stopPrank();
     }
 
