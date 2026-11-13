@@ -563,6 +563,30 @@ async fn deletes_expired_pending_rows_of_all_instances_without_a_live_claim() {
 }
 
 #[tokio::test]
+async fn the_gc_deletes_in_batches() {
+    let (_instance, pool) = db().await;
+    let count = rows::GC_BATCH + 5;
+    sqlx::query(
+        "INSERT INTO pads (prf_instance, label, pad_length, triggered_by, created_at, is_error)
+         SELECT $1, sha256(i::TEXT::BYTEA), 64, decode(repeat('01', 20), 'hex'),
+                NOW() - INTERVAL '1 hour', true
+           FROM generate_series(1, $2) AS i",
+    )
+    .bind(i32::from(INSTANCE))
+    .bind(count)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let deleted = rows::delete_old_outputs(&pool, Duration::from_secs(1800))
+        .await
+        .unwrap();
+
+    assert_eq!(deleted, count as u64);
+    assert_eq!(labels(&pool, INSTANCE).await.len(), 0);
+}
+
+#[tokio::test]
 async fn gives_the_age_of_the_oldest_rows_of_each_instance() {
     let (_instance, pool) = db().await;
     add_row(&pool, INSTANCE, 1, 1, 100.0).await;
@@ -571,7 +595,8 @@ async fn gives_the_age_of_the_oldest_rows_of_each_instance() {
     add_row(&pool, INSTANCE + 1, 3, 1, 300.0).await;
     set_state(&pool, INSTANCE + 1, 3, "uploaded").await;
 
-    let mut oldest = rows::oldest_rows(&pool).await.unwrap();
+    // `INSTANCE + 1` has only uploaded rows. It is in the result because it is the own instance.
+    let mut oldest = rows::oldest_rows(&pool, INSTANCE + 1).await.unwrap();
     oldest.sort_by_key(|o| o.prf_instance);
 
     let near = |age: Option<f64>, expected: f64| age.is_some_and(|a| (a - expected).abs() < 5.0);

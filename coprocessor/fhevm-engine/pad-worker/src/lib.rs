@@ -340,7 +340,7 @@ impl PadWorker {
         if old + expired + ct64 > 0 {
             info!(old, expired, ct64, "Deleted pads rows and ct64");
         }
-        metrics::set_oldest_rows(&rows::oldest_rows(&self.pool).await?);
+        metrics::set_oldest_rows(&rows::oldest_rows(&self.pool, config.prf_instance).await?);
         metrics::set_stored_ct64_bytes(rows::stored_ct64_bytes(&self.pool).await?);
         Ok(())
     }
