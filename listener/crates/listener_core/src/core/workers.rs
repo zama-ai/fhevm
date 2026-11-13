@@ -1678,3 +1678,122 @@ mod tests {
         );
     }
 }
+
+/// The reorg-abandon recovery path end to end: the walk gives up on a block the
+/// RPC no longer serves by hash, and `ReorgHandler` must still re-arm the cursor
+/// (publish `FETCH_NEW_BLOCKS` and Ack). This is the only path out of the
+/// bnb-testnet stall of 2026-11-12, so it is pinned here.
+#[cfg(test)]
+mod reorg_abandon_tests {
+    use super::*;
+    use crate::blockchain::evm::evm_block_fetcher::mock_rpc;
+    use crate::blockchain::evm::sem_evm_rpc_provider::SemEvmRpcProvider;
+    use crate::config::BlockchainConfig;
+    use crate::store::repositories::Repositories;
+    use crate::store::{BlockStatus, NewDatabaseBlock, PgClient};
+    use alloy::primitives::B256;
+    use broker::{Broker, MessageMetadata, Topic};
+    use primitives::utils::chain_id_to_namespace;
+    use sqlx::ConnectOptions;
+
+    const CHAIN_ID: u64 = 97;
+
+    #[sqlx::test(migrations = "./migrations")]
+    #[ignore = "needs Docker (Redis testcontainer); run via `make test-e2e-listener`"]
+    async fn reorg_abandon_rearms_cursor(pool: sqlx::PgPool) {
+        // RPC: eth_getBlockByHash always returns null (block replaced by a newer reorg).
+        let node = mock_rpc::start(None, true).await;
+
+        // DB: one canonical block below the reorged height.
+        let db_config = serde_json::from_value(serde_json::json!({
+            "db_url": pool.connect_options().to_url_lossy().to_string()
+        }))
+        .unwrap();
+        let client = Arc::new(PgClient::new(&db_config).await.unwrap());
+        let repositories = Repositories::new(Arc::clone(&client), CHAIN_ID as i64);
+        let below = NewDatabaseBlock {
+            block_number: node.block_number - 1,
+            block_hash: B256::repeat_byte(0xaa),
+            parent_hash: B256::repeat_byte(0xbb),
+            status: BlockStatus::Canonical,
+        };
+        repositories.blocks.insert_block(&below).await.unwrap();
+
+        // Broker: shared Redis container, logical DB 14.
+        let redis_url = format!(
+            "{}/14",
+            test_support::shared_redis_url().await.trim_end_matches('/')
+        );
+        let broker = Broker::redis(&redis_url).await.unwrap();
+        let namespace = chain_id_to_namespace(CHAIN_ID);
+        let publisher = broker.publisher(&namespace).await.unwrap();
+        let fetch_topic = Topic::new(routing::FETCH_NEW_BLOCKS).with_namespace(&namespace);
+        let fetch_len = || async {
+            broker
+                .queue_depths(&fetch_topic, None)
+                .await
+                .unwrap()
+                .principal
+        };
+        let fetch_before = fetch_len().await;
+
+        let settings: BlockchainConfig = serde_json::from_value(serde_json::json!({
+            "chain_id": CHAIN_ID,
+            "rpc_url": node.url,
+            "network": "mock",
+            "strategy": { "loop_delay_ms": 10, "reorg_not_found_max_retries": 2 }
+        }))
+        .unwrap();
+        let provider = SemEvmRpcProvider::new(node.url.clone(), 5, false, 64).unwrap();
+        let listener = EvmListener::new(
+            provider,
+            repositories.clone(),
+            broker.clone(),
+            broker.publisher_unscoped().await.unwrap(),
+            &settings,
+        );
+        let handler = ReorgHandler::new(
+            Arc::new(listener),
+            FlowLock::new(Arc::clone(&client), CHAIN_ID as i64),
+            publisher,
+        );
+
+        let event = ReorgBacktrackEvent {
+            block_number: node.block_number,
+            block_hash: node.block_hash,
+            parent_hash: B256::repeat_byte(0xcc),
+        };
+        let msg = Message {
+            payload: serde_json::to_vec(&event).unwrap(),
+            metadata: MessageMetadata::new("1-0", "backtrack-reorg", 1),
+        };
+
+        let decision = handler.call(&msg).await.expect("abandon must not error");
+
+        assert!(
+            matches!(decision, AckDecision::Ack),
+            "message must be Acked"
+        );
+        assert_eq!(
+            fetch_len().await,
+            fetch_before + 1,
+            "cursor must be re-armed with one FETCH_NEW_BLOCKS"
+        );
+        // 3 attempts (1 + 2 NotFound retries) per by-hash call; both tasks of the
+        // block_receipts strategy may hit eth_getBlockByHash, hence up to 6.
+        let calls = node.by_hash_calls.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            (3..=6).contains(&calls),
+            "walk must give up after the cap, got {calls} by-hash calls"
+        );
+        // DB untouched: the pre-existing block is still the tip, nothing added.
+        let tip = repositories
+            .blocks
+            .get_latest_canonical_block()
+            .await
+            .unwrap()
+            .expect("tip");
+        assert_eq!(tip.block_number, below.block_number);
+        assert_eq!(tip.block_hash, below.block_hash);
+    }
+}
