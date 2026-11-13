@@ -110,9 +110,7 @@ const getCleartextPadSharesMaterialAbi = [
               { name: 'rawShares', type: 'bytes', internalType: 'bytes' },
               { name: 'partyId', type: 'uint32', internalType: 'uint32' },
               { name: 'degree', type: 'uint32', internalType: 'uint32' },
-              { name: 'contextId', type: 'bytes32', internalType: 'bytes32' },
               { name: 'sessionId', type: 'bytes16', internalType: 'bytes16' },
-              { name: 'extraData', type: 'bytes', internalType: 'bytes' },
               { name: 'signature', type: 'bytes', internalType: 'bytes' },
             ],
           },
@@ -189,7 +187,7 @@ type CleartextPadResponsesMaterial = {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Cleartext mock of RFC-030 pad decryption (tech-spec#547). `CleartextPaddedInputter` does everything on-chain but
+ * Cleartext mock of RFC-030 pad decryption (tech-spec#547, #564). `CleartextPaddedInputter` does everything on-chain but
  * the signatures, which this function makes with each KMS node's key:
  *   [Flow.1] read the share digests, [Flow.2] sign them, [Flow.3] read every node's encrypted payload and transport
  *   digest, [Flow.4] sign those, giving the {@link PadDecryptResponse}s the real relayer returns.
