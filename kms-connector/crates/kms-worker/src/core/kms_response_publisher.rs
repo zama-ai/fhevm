@@ -92,7 +92,9 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
         if query_result.rows_affected() == 1 {
             info!("Successfully stored response in DB!");
         } else {
-            warn!("Unexpected query result while publishing response: {query_result:?}");
+            // Another task already stored a response for this request (e.g. it was re-picked
+            // after `under_process` timed out).
+            info!("Response already stored in DB, skipping");
         }
         Ok(())
     }
