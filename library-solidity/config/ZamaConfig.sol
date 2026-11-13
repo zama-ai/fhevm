@@ -17,8 +17,8 @@ library ZamaConfig {
     /**
      * @notice Returns the Zama coprocessor config for the current chain, routed by `block.chainid`.
      * @dev    Supports all networks where the Zama protocol is deployed: Ethereum mainnet (chainId = 1)
-     *         Polygon (chainId = 137), Sepolia (chainId = 11155111), Polygon Amoy (chainId = 80002)
-     *         and the local Hardhat/Anvil network (chainId = 31337).
+     *         Polygon (chainId = 137), Sepolia (chainId = 11155111), Polygon Amoy (chainId = 80002),
+     *         Bsc Testnet (chainId = 97) and the local Hardhat/Anvil network (chainId = 31337).
      *         Reverts with {ZamaProtocolUnsupported} on any other chain.
      */
     function getCoprocessorConfig() internal view returns (CoprocessorConfig memory config) {
@@ -28,6 +28,8 @@ library ZamaConfig {
             config = _getPolygonConfig();
         } else if (block.chainid == 11155111) {
             config = _getSepoliaConfig();
+        } else if (block.chainid == 97) {
+            config = _getBscTestnetConfig();
         } else if (block.chainid == 80002) {
             config = _getPolygonAmoyConfig();
         } else if (block.chainid == 31337) {
@@ -42,6 +44,16 @@ library ZamaConfig {
             config = _getEthereumConfig();
         } else if (block.chainid == 11155111) {
             config = _getSepoliaConfig();
+        } else if (block.chainid == 31337) {
+            config = _getLocalConfig();
+        } else {
+            revert ZamaProtocolUnsupported();
+        }
+    }
+
+    function getBscCoprocessorConfig() internal view returns (CoprocessorConfig memory config) {
+        if (block.chainid == 97) {
+            config = _getBscTestnetConfig();
         } else if (block.chainid == 31337) {
             config = _getLocalConfig();
         } else {
@@ -64,7 +76,7 @@ library ZamaConfig {
     function getConfidentialProtocolId() internal view returns (uint256) {
         if (block.chainid == 1 || block.chainid == 137) {
             return _getZamaMainnetProtocolId();
-        } else if (block.chainid == 11155111 || block.chainid == 80002) {
+        } else if (block.chainid == 11155111 || block.chainid == 80002 || block.chainid == 97) {
             return _getZamaTestnetProtocolId();
         } else if (block.chainid == 31337) {
             return _getLocalProtocolId();
@@ -72,7 +84,7 @@ library ZamaConfig {
         return 0;
     }
 
-    /// @dev chainid == 1
+    /// @dev chainid == 1 or chainid == 137
     function _getZamaMainnetProtocolId() private pure returns (uint256) {
         // Zama Mainnet protocol id is '1'
         return 1;
@@ -104,6 +116,16 @@ library ZamaConfig {
             });
     }
 
+    /// @dev chainid == 97
+    function _getBscTestnetConfig() private pure returns (CoprocessorConfig memory) {
+        return
+            CoprocessorConfig({
+                ACLAddress: 0x9Adac873Ae2f737AF011f0778305Cff0B220ac36,
+                CoprocessorAddress: 0x24f6bBCd97E2FE90E43cb9C32B89A9828d8Ece08,
+                KMSVerifierAddress: 0x1F7CAD0c05fDED5F988683AdfDB4F242b310cdcB
+            });
+    }
+
     /// @dev chainid == 80002
     function _getPolygonAmoyConfig() private pure returns (CoprocessorConfig memory) {
         return
@@ -114,7 +136,7 @@ library ZamaConfig {
             });
     }
 
-    /// @dev chainid == 1
+    /// @dev chainid == 137
     function _getPolygonConfig() private pure returns (CoprocessorConfig memory) {
         return
             CoprocessorConfig({
@@ -157,6 +179,23 @@ abstract contract ZamaEthereumConfig {
 }
 
 /**
+ * @title   ZamaBscConfig.
+ * @dev     This contract can be inherited by a contract wishing to use the FHEVM contracts provided by Zama
+ *          on the Bsc Testnet network (chainId = 97).
+ *          Other providers may offer similar contracts deployed at different addresses.
+ *          If you wish to use them, you should rely on the instructions from these providers.
+ */
+abstract contract ZamaBscConfig {
+    constructor() {
+        FHE.setCoprocessor(ZamaConfig.getBscCoprocessorConfig());
+    }
+
+    function confidentialProtocolId() public view returns (uint256) {
+        return ZamaConfig.getConfidentialProtocolId();
+    }
+}
+
+/**
  * @title   ZamaPolygonConfig.
  * @dev     This contract can be inherited by a contract wishing to use the FHEVM contracts provided by Zama
  *          on the Polygon (mainnet) network (chainId = 137) and on the Polygon amoy (testnet) network (chainId = 80002).
@@ -179,7 +218,7 @@ abstract contract ZamaPolygonConfig {
  *          on any supported network. The coprocessor configuration is selected automatically from
  *          `block.chainid` at construction time, so a single implementation can be deployed on the
  *          Ethereum (mainnet) network (chainId = 1), the Polygon (mainnet) network (chainId = 137),
- *          the Sepolia (testnet) network (chainId = 11155111),
+ *          the Sepolia (testnet) network (chainId = 11155111), the Bsc Testnet (testnet) network (chainId = 97),
  *          the Polygon Amoy (testnet) network (chainId = 80002), or a local network (chainId = 31337).
  *          Other providers may offer similar contracts deployed at different addresses.
  *          If you wish to use them, you should rely on the instructions from these providers.

@@ -1,3 +1,0 @@
-{
-  "*.{js,json,md,sol,ts,yml}": ["npm run prettier -- --write"]
-}

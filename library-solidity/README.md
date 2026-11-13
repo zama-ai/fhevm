@@ -23,7 +23,7 @@ run
 npm install
 ```
 
-To run forge tests:
+To run forge tests (in `test_forge/`):
 
 ```
 npm run forge:soldeer

@@ -2,7 +2,7 @@
 src = 'lib'
 out = 'out'
 libs = ['node_modules', 'lib', "dependencies"]
-test = 'test'
+test = 'test_forge'
 cache_path  = 'cache_forge'
 solc = '0.8.24'
 optimizer = true

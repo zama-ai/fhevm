@@ -1,8 +1,8 @@
 import { readFileSync } from 'fs';
 
-import type { FheTypeInfo } from './common';
-import { resolveTemplatePath } from './paths';
-import { removeTemplateComments } from './utils';
+import type { FheTypeInfo } from './common.js';
+import { resolveTemplatePath } from './paths.js';
+import { removeTemplateComments } from './utils.js';
 
 /**
  * Generates a Solidity enum definition from an array of FheTypeInfo objects.
@@ -25,7 +25,7 @@ export function generateSolidityFheType(fheTypeInfos: FheTypeInfo[]): string {
 }
 
 function createSolidityEnumFromFheTypes(fheTypes: FheTypeInfo[]): string {
-  return `${fheTypes
+  return fheTypes
     .map((fheType: FheTypeInfo, index: number) => `${fheType.type}${index < fheTypes.length - 1 ? ',' : ''}`)
-    .join('\n')}`;
+    .join('\n');
 }
