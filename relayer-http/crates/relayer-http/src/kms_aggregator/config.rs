@@ -32,7 +32,10 @@ pub struct KmsAggregatorConfig {
     pub call: CallConfig,
     pub user_decrypt: UserDecryptConfig,
     pub public_decrypt: PublicDecryptConfig,
-    pub pad_decrypt: PadDecryptConfig,
+    /// Optional so a config written for an older relayer-http (which rejects the key) still loads here: when
+    /// absent, the pad flow uses `user_decrypt.threshold` (both are `2t + 1`). See [`Self::pad_decrypt_threshold`].
+    #[serde(default)]
+    pub pad_decrypt: Option<PadDecryptConfig>,
     pub auth: AuthConfig,
     pub endpoints: Vec<EndpointConfig>,
 }
@@ -174,6 +177,13 @@ fn fail(message: String) -> Result<(), ConfigError> {
 }
 
 impl KmsAggregatorConfig {
+    /// `pad_decrypt.threshold`, or `user_decrypt.threshold` when the section is absent.
+    pub fn pad_decrypt_threshold(&self) -> usize {
+        self.pad_decrypt
+            .as_ref()
+            .map_or(self.user_decrypt.threshold, |pad| pad.threshold)
+    }
+
     /// Every rule names the offending field with its dotted path.
     pub fn validate(&self) -> Result<(), ConfigError> {
         let n = self.endpoints.len();
@@ -268,7 +278,7 @@ impl KmsAggregatorConfig {
         for (name, threshold) in [
             ("user_decrypt", self.user_decrypt.threshold),
             ("public_decrypt", self.public_decrypt.threshold),
-            ("pad_decrypt", self.pad_decrypt.threshold),
+            ("pad_decrypt", self.pad_decrypt_threshold()),
         ] {
             if threshold == 0 || threshold > n {
                 return fail(format!(
@@ -313,7 +323,7 @@ pub(crate) mod tests {
                 checks: UserChecks::default(),
             },
             public_decrypt: PublicDecryptConfig { threshold: 1 },
-            pad_decrypt: PadDecryptConfig { threshold: 1 },
+            pad_decrypt: Some(PadDecryptConfig { threshold: 1 }),
             auth: AuthConfig {
                 chain_id: 1,
                 protocol_config: Address::repeat_byte(0xc0),
@@ -514,10 +524,21 @@ pub(crate) mod tests {
         cfg.public_decrypt.threshold = 4;
         assert!(message(&cfg).contains("public_decrypt.threshold (4) must be within 1..=3"));
         cfg.public_decrypt.threshold = 3;
-        cfg.pad_decrypt.threshold = 0;
+        cfg.pad_decrypt = Some(PadDecryptConfig { threshold: 0 });
         assert!(message(&cfg).contains("pad_decrypt.threshold (0) must be within 1..=3"));
-        cfg.pad_decrypt.threshold = 3;
+        cfg.pad_decrypt = Some(PadDecryptConfig { threshold: 3 });
         cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn pad_decrypt_threshold_defaults_to_user_decrypt() {
+        let mut cfg = valid(3);
+        cfg.user_decrypt.threshold = 2;
+        cfg.pad_decrypt = None;
+        assert_eq!(cfg.pad_decrypt_threshold(), 2);
+        cfg.validate().unwrap();
+        cfg.pad_decrypt = Some(PadDecryptConfig { threshold: 3 });
+        assert_eq!(cfg.pad_decrypt_threshold(), 3);
     }
 
     #[test]

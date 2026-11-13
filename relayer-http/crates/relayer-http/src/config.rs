@@ -217,7 +217,7 @@ mod tests {
         assert!(config.log.show_timestamp && config.log.show_target);
         assert_eq!(config.kms_aggregator.endpoints.len(), 13);
         assert_eq!(config.kms_aggregator.user_decrypt.threshold, 9);
-        assert_eq!(config.kms_aggregator.pad_decrypt.threshold, 9);
+        assert_eq!(config.kms_aggregator.pad_decrypt_threshold(), 9);
         assert_eq!(config.kms_aggregator.public_decrypt.threshold, 5);
         assert!(!config.kms_aggregator.skip_tls_verification);
         assert_eq!(

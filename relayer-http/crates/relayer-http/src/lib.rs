@@ -75,7 +75,7 @@ impl App {
                 kms.public_decrypt.threshold,
                 (),
             )),
-            pad_decrypt: Arc::new(Aggregator::new(caller, kms.pad_decrypt.threshold, ())),
+            pad_decrypt: Arc::new(Aggregator::new(caller, kms.pad_decrypt_threshold(), ())),
             http: Arc::new(config.http.clone()),
             metrics,
             shutdown,

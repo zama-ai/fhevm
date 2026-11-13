@@ -132,7 +132,7 @@ impl MockClient {
                 checks: UserChecks::default(),
             },
             public_decrypt: PublicDecryptConfig { threshold: 1 },
-            pad_decrypt: PadDecryptConfig { threshold: 1 },
+            pad_decrypt: Some(PadDecryptConfig { threshold: 1 }),
             auth: valid(0).auth,
             endpoints: (0..n)
                 .map(|i| EndpointConfig {

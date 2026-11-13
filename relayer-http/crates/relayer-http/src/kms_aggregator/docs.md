@@ -218,7 +218,7 @@ kms_aggregator:
   user_decrypt:
     threshold: 9
     checks: { decryption_id_match: false, decryption_id_majority: false }   # optional, section 6
-  pad_decrypt: { threshold: 9 }   # 2t + 1
+  pad_decrypt: { threshold: 9 }   # 2t + 1; optional, defaults to user_decrypt.threshold
   auth:                        # FhevmSig signing, section 5
     chain_id: 1                # EIP-712 domain: Ethereum chain id ...
     protocol_config: "0x…"     # ... and ProtocolConfig address
