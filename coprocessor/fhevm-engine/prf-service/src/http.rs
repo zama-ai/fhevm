@@ -150,7 +150,7 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfE
             BodyRefusal::Connector => PrfError::ConcurrencyLimited,
             BodyRefusal::Pod => {
                 warn!(%connector, body_length = output.body_length, "No room for the body in the pod budget");
-                PrfError::Unavailable
+                PrfError::BodiesFull
             }
         })?;
     // No output: the row was deleted after the read.
