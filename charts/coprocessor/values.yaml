@@ -2021,20 +2021,18 @@ coprocessorProxy:
   # request, so a signer's limit is up to about `replicas` times this: adding replicas raises it.
   maxRequestsPerSigner: 200
 
-  # Ingress allowed from this release's proxy pods to prf-service.
+  # The only ingress to prf-service: this release's proxy pods to prfService.ports.http, and
+  # metricsFrom to prfService.ports.metrics. If prf-service runs in another release, set
+  # prfService.ports here to its pod ports.
   prfServiceNetworkPolicy:
     enabled: true
     # Labels of the prf-service pods (required when enabled): every prf-service pod in the
     # namespace. Add `app.kubernetes.io/name: <release>-prf-service` to select one release's.
     podSelector:
       app: coprocessor-prf-service
-    # prf-service pod ports, which may differ from the Service port in prfServiceAddress: its PRF
-    # port.
-    ports:
-      - {port: 8090, protocol: TCP}
-    # More ingress rules for those pods, e.g. Prometheus scraping their metrics port. Each rule
-    # must set `from`: a rule without it admits every source.
-    extraIngress: []
+    # Peers allowed to reach the metrics port, e.g. Prometheus:
+    # - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+    metricsFrom: []
 
   # Additional environment variables, e.g. COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL.
   # `coprocessor-proxy --help` lists every setting and its variable. commonConfig.env does not
