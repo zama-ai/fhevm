@@ -142,7 +142,7 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /**
      * @notice Applies a canonical context destruction.
-     * @dev Needs `n - t` signatures from the active committee. Accepts an ID that was never stored.
+     * @dev Needs `n - t` signatures from the active committee. An ID that was never stored has no effect.
      * @param destroyedContextId The context ID to destroy.
      * @param signatures The ContextDestructionConfirmation signatures.
      * @param extraData The extra data that every signature commits to.
@@ -155,7 +155,7 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /**
      * @notice Applies a canonical epoch destruction.
-     * @dev Needs `n - t` signatures from the active committee. Accepts an ID that was never stored.
+     * @dev Needs `n - t` signatures from the active committee. An ID that was never stored has no effect.
      * @param destroyedEpochId The epoch ID to destroy.
      * @param signatures The EpochDestructionConfirmation signatures.
      * @param extraData The extra data that every signature commits to.

@@ -462,8 +462,9 @@ A destruction on canonical reaches a replica through `submitKmsContextDestructio
 `submitKmsEpochDestruction` with the destruction confirmations, or through the mirror path with
 `mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction`. Rules for a submitted destruction:
 
-- The replica accepts an ID that it never stored, if the ID is below its active ID. The
-  canonical can destroy a pending context or epoch that never reached this replica.
+- A destruction of an ID that the replica never stored has no effect. It only emits the event.
+  This is the case for a pending context or epoch that canonical destroyed before it reached
+  this replica.
 - A destruction of an ID above the active ID reverts with `KmsContextDestructionAheadOfReplica`.
   Retry after the replica activates a higher ID. Without this rule, an early destruction has no
   effect, and a later submission activates the ID anyway.
@@ -475,17 +476,13 @@ A destruction on canonical reaches a replica through `submitKmsContextDestructio
   active committee. One signature from another signer reverts the call. The retry succeeds only
   if at least `n - t` signatures of the active committee remain. Else the owner uses
   `mirrorKmsContextDestruction`.
-- This rule also applies to a pending ID that canonical destroyed before a switch. Example:
-  canonical destroys the pending C2, and the C1 committee signs the destruction. Then canonical
-  switches from C1 to C3. The replica applies the destruction only after it activates C3. It
-  checks the C1 signatures against C3. So the call succeeds only if at least `n - t` C1 signers
-  are also in C3. Else the owner uses `mirrorKmsContextDestruction`.
+- Skip a pending ID that canonical destroyed before a switch. The replica never stored it, so
+  the destruction has no effect. Do not mirror it either.
 - Two signatures from the same signer revert with `DuplicateKmsSigner`.
 - `submitKmsEpochDestruction` follows the same rules, with
   `LatestActiveKmsEpochCannotBeDestroyed`, `KmsEpochDestructionAheadOfReplica` and the
   `mirrorKmsEpochDestruction` fallback. A resharing keeps the committee, so a retry after a
-  resharing succeeds. A pending epoch whose next activation is a context switch has the same
-  committee rule as a pending context.
+  resharing succeeds.
 
 `task:kmsContextSwitchStatus` is a canonical-side tool. Pointed at a replica it reports
 `idle`, because it tracks the pending/quorum path that replicas never run — that is the
@@ -496,9 +493,10 @@ expected output, not a problem.
 A canonical `destroyKmsContext` or `destroyKmsEpoch` does not reach the replicas: a mirrored
 context stays `Active` there, and `KMSVerifier` keeps accepting its signers, until the
 destruction reaches each replica. It reaches a replica through the submit path with the signed
-destruction confirmations (§5.5), or through the mirror path. For every canonical destruction,
-take the ID from canonical's `KmsContextDestroyed` / `KmsEpochDestroyed` event. No task wraps
-the destruction mirrors, so build the mirror path call by hand and send it on each replica:
+destruction confirmations (§5.5), or through the mirror path. For every canonical destruction
+of an ID that the replica stored, take the ID from canonical's `KmsContextDestroyed` /
+`KmsEpochDestroyed` event. No task wraps the destruction mirrors, so build the mirror path call
+by hand and send it on each replica:
 
 ```bash
 # Context destroyed. DAO path: put this calldata in a proposal to the replica proxy.
