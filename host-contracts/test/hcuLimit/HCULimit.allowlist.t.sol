@@ -6,6 +6,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {HCULimit} from "../../contracts/HCULimit.sol";
+import {HCULimitOperators} from "../../contracts/HCULimitOperators.sol";
 import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {ACL} from "../../contracts/ACL.sol";
@@ -696,7 +697,7 @@ contract HCULimitAllowlistTest is Test {
             // A forged dapp argument must not bypass executor-only entry points.
             (bool success, bytes memory reason) = address(hcuLimit).call(calls[i]);
             assertFalse(success);
-            assertEq(reason, abi.encodeWithSelector(HCULimit.CallerMustBeFHEVMExecutorContract.selector));
+            assertEq(reason, abi.encodeWithSelector(HCULimitOperators.CallerMustBeFHEVMExecutorContract.selector));
             hcuLimit.setHCUForTransaction(0);
             hcuLimit.setHCUForHandle(RESULT, 0);
             vm.prank(executor);
@@ -710,26 +711,26 @@ contract HCULimitAllowlistTest is Test {
 
     function _computationCalls(address caller) internal pure returns (bytes[] memory calls) {
         bytes4[20] memory binarySelectors = [
-            HCULimit.checkHCUForFheAdd.selector,
-            HCULimit.checkHCUForFheSub.selector,
-            HCULimit.checkHCUForFheMul.selector,
-            HCULimit.checkHCUForFheDiv.selector,
-            HCULimit.checkHCUForFheRem.selector,
-            HCULimit.checkHCUForFheBitAnd.selector,
-            HCULimit.checkHCUForFheBitOr.selector,
-            HCULimit.checkHCUForFheBitXor.selector,
-            HCULimit.checkHCUForFheShl.selector,
-            HCULimit.checkHCUForFheShr.selector,
-            HCULimit.checkHCUForFheRotl.selector,
-            HCULimit.checkHCUForFheRotr.selector,
-            HCULimit.checkHCUForFheEq.selector,
-            HCULimit.checkHCUForFheNe.selector,
-            HCULimit.checkHCUForFheGe.selector,
-            HCULimit.checkHCUForFheGt.selector,
-            HCULimit.checkHCUForFheLe.selector,
-            HCULimit.checkHCUForFheLt.selector,
-            HCULimit.checkHCUForFheMin.selector,
-            HCULimit.checkHCUForFheMax.selector
+            HCULimitOperators.checkHCUForFheAdd.selector,
+            HCULimitOperators.checkHCUForFheSub.selector,
+            HCULimitOperators.checkHCUForFheMul.selector,
+            HCULimitOperators.checkHCUForFheDiv.selector,
+            HCULimitOperators.checkHCUForFheRem.selector,
+            HCULimitOperators.checkHCUForFheBitAnd.selector,
+            HCULimitOperators.checkHCUForFheBitOr.selector,
+            HCULimitOperators.checkHCUForFheBitXor.selector,
+            HCULimitOperators.checkHCUForFheShl.selector,
+            HCULimitOperators.checkHCUForFheShr.selector,
+            HCULimitOperators.checkHCUForFheRotl.selector,
+            HCULimitOperators.checkHCUForFheRotr.selector,
+            HCULimitOperators.checkHCUForFheEq.selector,
+            HCULimitOperators.checkHCUForFheNe.selector,
+            HCULimitOperators.checkHCUForFheGe.selector,
+            HCULimitOperators.checkHCUForFheGt.selector,
+            HCULimitOperators.checkHCUForFheLe.selector,
+            HCULimitOperators.checkHCUForFheLt.selector,
+            HCULimitOperators.checkHCUForFheMin.selector,
+            HCULimitOperators.checkHCUForFheMax.selector
         ];
         calls = new bytes[](49);
         uint256 n;
@@ -744,8 +745,8 @@ contract HCULimitAllowlistTest is Test {
                 caller
             );
             if (
-                binarySelectors[i] != HCULimit.checkHCUForFheDiv.selector &&
-                binarySelectors[i] != HCULimit.checkHCUForFheRem.selector
+                binarySelectors[i] != HCULimitOperators.checkHCUForFheDiv.selector &&
+                binarySelectors[i] != HCULimitOperators.checkHCUForFheRem.selector
             ) {
                 calls[n++] = abi.encodeWithSelector(
                     binarySelectors[i],
@@ -758,22 +759,31 @@ contract HCULimitAllowlistTest is Test {
                 );
             }
         }
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForFheNeg, (FheType.Uint8, INPUT, RESULT, caller));
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForFheNot, (FheType.Uint8, INPUT, RESULT, caller));
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForCast, (FheType.Uint8, INPUT, RESULT, caller));
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForTrivialEncrypt, (FheType.Uint8, RESULT, caller));
+        calls[n++] = abi.encodeCall(HCULimitOperators.checkHCUForFheNeg, (FheType.Uint8, INPUT, RESULT, caller));
+        calls[n++] = abi.encodeCall(HCULimitOperators.checkHCUForFheNot, (FheType.Uint8, INPUT, RESULT, caller));
+        calls[n++] = abi.encodeCall(HCULimitOperators.checkHCUForCast, (FheType.Uint8, INPUT, RESULT, caller));
+        calls[n++] = abi.encodeCall(HCULimitOperators.checkHCUForTrivialEncrypt, (FheType.Uint8, RESULT, caller));
         calls[n++] = abi.encodeCall(
-            HCULimit.checkHCUForIfThenElse,
+            HCULimitOperators.checkHCUForIfThenElse,
             (FheType.Uint8, INPUT, INPUT, INPUT, RESULT, caller)
         );
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForFheRand, (FheType.Uint8, RESULT, caller));
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForFheRandBounded, (FheType.Uint8, RESULT, caller));
+        calls[n++] = abi.encodeCall(HCULimitOperators.checkHCUForFheRand, (FheType.Uint8, RESULT, caller));
+        calls[n++] = abi.encodeCall(HCULimitOperators.checkHCUForFheRandBounded, (FheType.Uint8, RESULT, caller));
         bytes32[] memory values = new bytes32[](2);
         values[0] = INPUT;
         values[1] = INPUT;
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForFheSum, (FheType.Uint8, values, RESULT, caller));
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForFheIsIn, (FheType.Uint8, INPUT, values, RESULT, caller));
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForFheMulDiv, (FheType.Uint8, 0x01, INPUT, INPUT, RESULT, caller));
-        calls[n++] = abi.encodeCall(HCULimit.checkHCUForFheMulDiv, (FheType.Uint8, 0x03, INPUT, INPUT, RESULT, caller));
+        calls[n++] = abi.encodeCall(HCULimitOperators.checkHCUForFheSum, (FheType.Uint8, values, RESULT, caller));
+        calls[n++] = abi.encodeCall(
+            HCULimitOperators.checkHCUForFheIsIn,
+            (FheType.Uint8, INPUT, values, RESULT, caller)
+        );
+        calls[n++] = abi.encodeCall(
+            HCULimitOperators.checkHCUForFheMulDiv,
+            (FheType.Uint8, 0x01, INPUT, INPUT, RESULT, caller)
+        );
+        calls[n++] = abi.encodeCall(
+            HCULimitOperators.checkHCUForFheMulDiv,
+            (FheType.Uint8, 0x03, INPUT, INPUT, RESULT, caller)
+        );
     }
 }
