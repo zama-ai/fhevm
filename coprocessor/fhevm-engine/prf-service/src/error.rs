@@ -25,6 +25,8 @@ pub enum PrfError {
     EvaluationFailed,
     #[error("temporarily unable to serve")]
     Unavailable,
+    #[error("the response bodies of this pod use all their memory")]
+    BodiesFull,
 }
 
 impl PrfError {
@@ -36,7 +38,7 @@ impl PrfError {
             Self::UnknownPrf => ErrorCode::UnknownPrf,
             Self::ConcurrencyLimited => ErrorCode::ConcurrencyLimited,
             Self::EvaluationFailed => ErrorCode::PrfEvaluationFailed,
-            Self::Unavailable => ErrorCode::Unavailable,
+            Self::Unavailable | Self::BodiesFull => ErrorCode::Unavailable,
         }
     }
 }
@@ -57,7 +59,7 @@ impl ResponseError for PrfError {
                 let challenge = format!("{} error=\"{}\"", fhevm_sig_auth::SCHEME, code.as_str());
                 response.insert_header((WWW_AUTHENTICATE, challenge));
             }
-            Self::ConcurrencyLimited => {
+            Self::ConcurrencyLimited | Self::BodiesFull => {
                 response.insert_header((RETRY_AFTER, "1"));
             }
             Self::NonCanonicalPath
