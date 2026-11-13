@@ -62,9 +62,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @notice Returned if hcuPerBlock < maxHCUPerTx.
     error HCUPerBlockBelowMaxPerTx();
 
-    /// @notice Returned if maxHCUPerTx < maxHCUDepthPerTx.
-    error MaxHCUPerTxBelowDepth();
-
     /// @notice Returned if a handle is the zero handle.
     /// @dev Handle slot zero is reserved for the transaction HCU accumulator.
     error InvalidZeroHandle();
@@ -556,24 +553,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /**
      * @notice Sets the per-transaction HCU depth limit.
      * @param maxHCUDepthPerTx New depth limit.
-     * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx.
+     * @dev Not compared with maxHCUPerTx, which counts work while depth counts latency.
      */
     function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) private {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.maxHCUPerTx < maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
-        $.maxHCUDepthPerTx = maxHCUDepthPerTx;
+        _getHCULimitStorage().maxHCUDepthPerTx = maxHCUDepthPerTx;
         emit MaxHCUDepthPerTxSet(maxHCUDepthPerTx);
     }
 
     /**
      * @notice Sets the per-transaction HCU limit.
      * @param maxHCUPerTx New transaction limit.
-     * @dev Enforces hcuPerBlock >= maxHCUPerTx and maxHCUPerTx >= maxHCUDepthPerTx.
+     * @dev Enforces hcuPerBlock >= maxHCUPerTx.
      */
     function _setMaxHCUPerTx(uint48 maxHCUPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.globalHCUCapPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
-        if (maxHCUPerTx < $.maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
         $.maxHCUPerTx = maxHCUPerTx;
         emit MaxHCUPerTxSet(maxHCUPerTx);
     }

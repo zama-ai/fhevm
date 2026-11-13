@@ -1430,10 +1430,14 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.stopPrank();
     }
 
-    function test_setMaxHCUDepthPerTxRevertsIfAboveMaxPerTx() public {
-        vm.prank(owner);
-        vm.expectRevert(HCULimit.MaxHCUPerTxBelowDepth.selector);
+    /// The per-transaction limits count different units, work and latency, so neither bounds the other.
+    function test_maxHCUDepthPerTxAndMaxHCUPerTxAreIndependent() public {
+        vm.startPrank(owner);
         hcuLimit.setMaxHCUDepthPerTx(20_000_001);
+        hcuLimit.setMaxHCUPerTx(1_000_000);
+        vm.stopPrank();
+        assertEq(hcuLimit.getMaxHCUDepthPerTx(), 20_000_001);
+        assertEq(hcuLimit.getMaxHCUPerTx(), 1_000_000);
     }
 
     function test_addToBlockHCUWhitelistRevertsIfAlreadyWhitelisted() public {

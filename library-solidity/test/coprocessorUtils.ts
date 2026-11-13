@@ -938,7 +938,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheAdd.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
@@ -962,7 +963,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheSub.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
@@ -986,7 +988,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheMul.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
@@ -1048,7 +1051,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheBitAnd.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1070,7 +1074,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheBitOr.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1092,7 +1097,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheBitXor.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1114,7 +1120,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheShl.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1136,7 +1143,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheShr.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1158,7 +1166,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheRotl.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1180,7 +1189,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheRotr.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1204,7 +1214,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1228,7 +1239,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheEq.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1252,7 +1264,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1276,7 +1289,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheNe.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1300,7 +1314,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheGe.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1323,7 +1338,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheGt.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1346,7 +1362,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheLe.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1369,7 +1386,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheLt.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1392,7 +1410,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheMax.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed.work;
@@ -1415,7 +1434,8 @@ export function getTxHCUFromTxReceipt(
         } else {
           hcuConsumed = (ALL_OPERATORS_PRICES.fheMin.nonScalar as Record<string, Price>)[type];
           hcuMap[handleResult] =
-            hcuConsumed.latency + Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
+            hcuConsumed.latency +
+            Math.max(readFromHCUMap(ethers.toBeHex(lhs, 32)), readFromHCUMap(ethers.toBeHex(rhs, 32)));
         }
 
         handleSet.add(handleResult);
