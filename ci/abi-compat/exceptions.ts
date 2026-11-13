@@ -8,6 +8,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     // FHEVMExecutor declarations whose only revert sites were removed as unreachable
     // dead code (see issue #1370). No deployed call path can emit these selectors.
     FHEVMExecutor: ["error InvalidByteLength(uint8,uint256)", "error SecondOperandIsNotScalar()"],
+    // maxHCUPerTx counts work and maxHCUDepthPerTx latency, so neither bounds the other and nothing raises this.
+    HCULimit: ["error MaxHCUPerTxBelowDepth()"],
     KMSVerifier: [
       "event NewContextSet(address[],uint256)",
       "function defineNewContext(address[],uint256)",
