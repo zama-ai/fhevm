@@ -3,6 +3,7 @@ name = "oft"
 version = "0.1.0"
 description = "Created with Anchor"
 edition = "2021"
+publish = false
 
 [lib]
 crate-type = ["cdylib", "lib"]

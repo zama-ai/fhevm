@@ -2,6 +2,7 @@
 name = "relayer-migrate"
 version = "0.14.0"
 edition = "2024"
+publish = false
 
 [[bin]]
 name = "down-migrate-v0_8_8-to-v0_8_7"

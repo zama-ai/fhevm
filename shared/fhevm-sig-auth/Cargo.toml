@@ -4,6 +4,7 @@ name = "fhevm-sig-auth"
 version = "0.1.0"
 edition = "2024"
 license = "BSD-3-Clause-Clear"
+publish = false
 description = "FhevmSig HTTP request authentication: EIP-712 signature over path, body digest, expiry and audience"
 
 [dependencies]

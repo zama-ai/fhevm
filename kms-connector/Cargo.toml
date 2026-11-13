@@ -6,7 +6,7 @@ members = ["crates/*"]
 authors = ["Zama"]
 edition = "2024"
 license = "BSD-3-Clause-Clear"
-publish = true
+publish = false
 version = "0.15.0"
 
 [workspace.dependencies]

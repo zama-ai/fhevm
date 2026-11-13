@@ -10,6 +10,7 @@ name = "fhevm-relayer"
 version = "0.14.0"
 license = "BSD-3-Clause-Clear"
 edition = "2021"
+publish = false
 
 [lib]
 name = "fhevm_relayer"

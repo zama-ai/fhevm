@@ -2,6 +2,7 @@
 name = "gateway-stress"
 version = "0.15.0"
 edition = "2024"
+publish = false
 
 [dependencies]
 fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false }

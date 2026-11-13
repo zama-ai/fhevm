@@ -1,5 +1,6 @@
 {
   "name": "codegen",
+  "private": true,
   "bin": "./dist/_esm/index.js",
   "dependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
