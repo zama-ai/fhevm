@@ -1,9 +1,13 @@
 //! One signed decision record per operator per upgrade attempt.
 //!
 //! An operator records `quorum` after every track reached unanimity, or
-//! `abort` after the deadline. It cuts over only after it reads `quorum` from
-//! every member, and it rolls back after it reads `abort` from one member. Both
-//! actions need a record, so a peer's silence makes this operator wait.
+//! `abort` after the deadline. It then acts only on the records it reads: it
+//! cuts over after `quorum` from [`cutover_threshold`] members and rolls back
+//! after `abort` from [`abort_threshold`] members. The two thresholds are set
+//! so that both sets cannot exist while at most [`max_faulty`] members are
+//! malicious or down (see `fleet_outcome`). Its own record is one vote among
+//! the others: an operator that recorded `abort` still cuts over with the
+//! fleet. Below both thresholds it waits.
 
 use alloy::primitives::{keccak256, Address, Signature};
 use aws_sdk_s3::error::ProvideErrorMetadata;
@@ -271,17 +275,89 @@ pub(crate) async fn get(
     Some(record)
 }
 
-/// Rules 2 and 3 over one record per member. `Abort` wins, so an operator that
-/// wrote `quorum` still rolls back. `None` means wait: an absent or unreadable
-/// record is not a decision.
-pub(crate) fn fleet_outcome(records: &[Option<Decision>]) -> Option<Decision> {
-    if records.contains(&Some(Decision::Abort)) {
+/// The fleet decision over one record per member, assuming at most
+/// [`max_faulty`] members are malicious or down.
+///
+/// A record lives in its signer's own bucket, so a malicious member can serve
+/// `quorum` to one peer and `abort` (or nothing) to another. Both thresholds
+/// therefore count signatures, and they are sized so that a cutover set and a
+/// rollback set always share an honest member, who signs only one record:
+/// `cutover_threshold + abort_threshold > n + f`. A cutover seen by one honest
+/// operator then rules out a rollback seen by another, whatever the faulty
+/// members serve to whom (fhevm-internal#2284), and `f` silent or flipped
+/// records can no longer hold the rest of the fleet in progress.
+///
+/// `None` means wait: an absent or unreadable record is not a decision.
+pub(crate) fn fleet_outcome(
+    records: &[Option<Decision>],
+    cutover_threshold: usize,
+    abort_threshold: usize,
+) -> Option<Decision> {
+    if records.is_empty() {
+        return None;
+    }
+    let count = |wanted: Decision| records.iter().filter(|r| **r == Some(wanted)).count();
+    // Both cannot hold under the assumption. If it is broken, stay on blue:
+    // a rollback can be retried, a cutover cannot be undone.
+    if count(Decision::Abort) >= abort_threshold {
         return Some(Decision::Abort);
     }
-    if !records.is_empty() && records.iter().all(|r| *r == Some(Decision::Quorum)) {
+    if count(Decision::Quorum) >= cutover_threshold {
         return Some(Decision::Quorum);
     }
     None
+}
+
+/// `f`: how many of `members` may be malicious or down. Records can be served
+/// differently to different peers, so the bound is the classic `n > 3f`:
+/// 0 of 3, 1 of 4, 1 of 5, 2 of 7.
+pub(crate) fn max_faulty(members: usize) -> usize {
+    members.saturating_sub(1) / 3
+}
+
+/// `n - f`: every honest member can reach it without the faulty ones.
+/// 3 of 3, 3 of 4, 4 of 5, 5 of 7.
+pub(crate) fn cutover_threshold(members: usize) -> usize {
+    members - max_faulty(members)
+}
+
+/// `2f + 1`: the smallest count that keeps
+/// `cutover_threshold + abort_threshold > n + f`. 1 of 3, 3 of 4, 3 of 5,
+/// 5 of 7.
+pub(crate) fn abort_threshold(members: usize) -> usize {
+    2 * max_faulty(members) + 1
+}
+
+/// The `(chain_id, block)` anchors to emit on a fleet cutover.
+///
+/// `own` holds the anchors this operator reached itself and wins per chain. An
+/// operator that recorded `abort`, or has no record, may miss some: it takes
+/// them from the `quorum` records of its peers. A peer anchor is used only
+/// when the upgrade-controller would accept it (a host block inside that
+/// chain's window, a Gateway block at or after `gw_start_block`), so a
+/// malicious record cannot feed this operator an anchor that is then dropped.
+pub(crate) fn fleet_anchors(
+    own: &[(i64, i64)],
+    peers: &[&[(i64, i64)]],
+    windows: &[(i64, i64, i64)],
+    gateway_chain_id: i64,
+    gw_start_block: Option<i64>,
+) -> Vec<(i64, i64)> {
+    let pick = |chain_id: i64, accepts: &dyn Fn(i64) -> bool| {
+        std::iter::once(own)
+            .chain(peers.iter().copied())
+            .flatten()
+            .find(|(chain, block)| *chain == chain_id && accepts(*block))
+            .copied()
+    };
+    let mut anchors: Vec<(i64, i64)> = windows
+        .iter()
+        .filter_map(|&(chain_id, start, end)| pick(chain_id, &|b| (start..=end).contains(&b)))
+        .collect();
+    anchors.extend(pick(gateway_chain_id, &|b| {
+        gw_start_block.is_some_and(|start| b >= start)
+    }));
+    anchors
 }
 
 #[cfg(test)]
@@ -421,16 +497,140 @@ mod tests {
     }
 
     #[test]
-    fn abort_beats_quorum_and_a_gap_decides_nothing() {
+    fn fleet_outcome_counts_records_against_both_thresholds() {
         use Decision::{Abort, Quorum};
-        assert_eq!(fleet_outcome(&[Some(Quorum); 3]), Some(Quorum));
+        let (q, a) = (cutover_threshold(5), abort_threshold(5));
+        assert_eq!((q, a), (4, 3));
+
+        // Every member quorum, and one silent member: both cut over.
+        assert_eq!(fleet_outcome(&[Some(Quorum); 5], q, a), Some(Quorum));
         assert_eq!(
-            fleet_outcome(&[Some(Quorum), Some(Abort), Some(Quorum)]),
+            fleet_outcome(
+                &[Some(Quorum), Some(Quorum), None, Some(Quorum), Some(Quorum)],
+                q,
+                a
+            ),
+            Some(Quorum)
+        );
+        // A member that flips to abort after a peer cut over does not hold the
+        // slower peers in progress, and does not roll them back.
+        assert_eq!(
+            fleet_outcome(
+                &[
+                    Some(Quorum),
+                    Some(Quorum),
+                    Some(Abort),
+                    Some(Quorum),
+                    Some(Quorum)
+                ],
+                q,
+                a
+            ),
+            Some(Quorum)
+        );
+        // Below both thresholds nothing is decided.
+        assert_eq!(
+            fleet_outcome(
+                &[Some(Quorum), Some(Quorum), Some(Quorum), Some(Abort), None],
+                q,
+                a
+            ),
+            None
+        );
+        assert_eq!(
+            fleet_outcome(
+                &[Some(Abort), Some(Abort), Some(Quorum), Some(Quorum), None],
+                q,
+                a
+            ),
+            None
+        );
+        assert_eq!(fleet_outcome(&[None; 5], q, a), None);
+        // The abort threshold rolls back.
+        assert_eq!(
+            fleet_outcome(
+                &[Some(Abort), Some(Abort), Some(Abort), Some(Quorum), None],
+                q,
+                a
+            ),
             Some(Abort)
         );
-        assert_eq!(fleet_outcome(&[Some(Abort), None]), Some(Abort));
-        assert_eq!(fleet_outcome(&[Some(Quorum), None]), None);
-        assert_eq!(fleet_outcome(&[None, None]), None);
-        assert_eq!(fleet_outcome(&[]), None);
+        assert_eq!(fleet_outcome(&[], q, a), None);
+    }
+
+    /// With three members no fault is tolerated: every record is needed to
+    /// cut over and one abort rolls back.
+    #[test]
+    fn three_members_need_every_quorum_and_roll_back_on_one_abort() {
+        use Decision::{Abort, Quorum};
+        let (q, a) = (cutover_threshold(3), abort_threshold(3));
+        assert_eq!(fleet_outcome(&[Some(Quorum); 3], q, a), Some(Quorum));
+        assert_eq!(
+            fleet_outcome(&[Some(Quorum), None, Some(Quorum)], q, a),
+            None
+        );
+        assert_eq!(
+            fleet_outcome(&[Some(Quorum), Some(Abort), Some(Quorum)], q, a),
+            Some(Abort)
+        );
+    }
+
+    #[test]
+    fn thresholds_follow_n_greater_than_3f() {
+        // (members, f, cutover, abort)
+        for (n, f, q, a) in [
+            (1, 0, 1, 1),
+            (2, 0, 2, 1),
+            (3, 0, 3, 1),
+            (4, 1, 3, 3),
+            (5, 1, 4, 3),
+            (6, 1, 5, 3),
+            (7, 2, 5, 5),
+            (10, 3, 7, 7),
+        ] {
+            assert_eq!(max_faulty(n), f, "f for {n}");
+            assert_eq!(cutover_threshold(n), q, "cutover for {n}");
+            assert_eq!(abort_threshold(n), a, "abort for {n}");
+        }
+        assert_eq!(max_faulty(0), 0);
+        // A cutover set and a rollback set always share an honest member, and
+        // the honest members alone reach either threshold.
+        for n in 1..=50 {
+            let f = max_faulty(n);
+            assert!(cutover_threshold(n) + abort_threshold(n) > n + f);
+            assert!(cutover_threshold(n) <= n - f);
+            assert!(abort_threshold(n) <= n - f);
+        }
+    }
+
+    #[test]
+    fn fleet_anchors_fill_missing_chains_from_peer_quorum_records() {
+        let windows = [(1, 100, 200), (2, 300, 400)];
+        let (gw, gw_start) = (9, Some(50));
+        let honest: &[(i64, i64)] = &[(1, 150), (2, 310), (9, 60)];
+
+        // Own anchors win; a chain this operator never anchored comes from a peer.
+        assert_eq!(
+            fleet_anchors(&[(1, 120)], &[honest], &windows, gw, gw_start),
+            vec![(1, 120), (2, 310), (9, 60)]
+        );
+        // An operator with no anchors of its own follows the peer record.
+        assert_eq!(
+            fleet_anchors(&[], &[honest], &windows, gw, gw_start),
+            honest.to_vec()
+        );
+        // Anchors the controller would drop are skipped: a host block outside
+        // its window, a Gateway block below gw_start_block, an unknown chain.
+        let bad: &[(i64, i64)] = &[(1, 99), (2, 401), (9, 49), (7, 1)];
+        assert_eq!(
+            fleet_anchors(&[], &[bad, honest], &windows, gw, gw_start),
+            honest.to_vec()
+        );
+        assert!(fleet_anchors(&[], &[bad], &windows, gw, gw_start).is_empty());
+        // No gw_start_block: the Gateway anchor cannot be checked, so none.
+        assert_eq!(
+            fleet_anchors(&[], &[honest], &windows, gw, None),
+            vec![(1, 150), (2, 310)]
+        );
     }
 }

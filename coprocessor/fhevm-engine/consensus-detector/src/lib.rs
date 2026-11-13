@@ -621,7 +621,7 @@ fn usable_member_url(url: &str) -> anyhow::Result<()> {
 /// One pass over every host-chain track plus the Gateway track: resets tracks on
 /// a window-set change, polls each chain's + the Gateway's candidates, records
 /// this operator's decision once the tracks anchor or the deadline passes, and
-/// acts only on the records every member wrote.
+/// acts only on the decision records it reads from the members.
 async fn consensus_pass<P>(
     pool: &Pool<Postgres>,
     http: &reqwest::Client,
@@ -846,13 +846,20 @@ where
         }
     }
 
-    // Cut over only on `quorum` from every member, roll back on `abort` from any
-    // member. An unreadable record counts as neither, so this operator waits.
+    // Act on the records only. Cut over on `quorum` from `cutover_threshold`
+    // members, roll back on `abort` from `abort_threshold` members. With at
+    // most `max_faulty` malicious or silent members the two cannot both
+    // happen, so a member that serves `quorum` to some peers and `abort` or
+    // nothing to others can neither split the fleet nor hold it in progress
+    // (fhevm-internal#2284). Below both thresholds this operator waits.
     let addresses = members
         .iter()
         .map(|m| m.address.as_str())
         .collect::<Vec<_>>();
-    let mut decisions = Vec::with_capacity(members.len());
+    let cutover_threshold = decision::cutover_threshold(members.len());
+    let abort_threshold = decision::abort_threshold(members.len());
+    let (mut quorums, mut aborts) = (0usize, 0usize);
+    let mut records = Vec::with_capacity(members.len());
     for member in &members {
         let record = match &own {
             // Our own record is already in hand. Do not fetch it twice.
@@ -874,19 +881,44 @@ where
                 );
             }
         }
-        decisions.push(
-            record
-                .filter(|r| r.payload.addresses() == addresses)
-                .map(|r| r.payload.decision),
-        );
+        let record = record.filter(|r| r.payload.addresses() == addresses);
+        // Every abort read this pass is logged, so the trail names which
+        // members fed an abort tally even when it stays below the threshold.
+        match record.as_ref().map(|r| r.payload.decision) {
+            Some(decision::Decision::Quorum) => quorums += 1,
+            Some(decision::Decision::Abort) => {
+                aborts += 1;
+                info!(
+                    member = member.address,
+                    proposal_block,
+                    aborts,
+                    abort_threshold,
+                    remaining_to_threshold = abort_threshold.saturating_sub(aborts),
+                    "member decision record reads abort"
+                );
+            }
+            None => {}
+        }
+        records.push(record);
     }
+    let decisions: Vec<Option<decision::Decision>> = records
+        .iter()
+        .map(|r| r.as_ref().map(|r| r.payload.decision))
+        .collect();
 
-    match decision::fleet_outcome(&decisions) {
+    // Our own published record is one vote like any other. It no longer
+    // decides alone: with a cutover threshold below the member count, a
+    // cutover can exist without our signature.
+    let own_decision = own.as_ref().map(|r| r.payload.decision);
+    match decision::fleet_outcome(&decisions, cutover_threshold, abort_threshold) {
         Some(decision::Decision::Abort) => {
             warn!(
                 chains = windows.len(),
                 max_end_block = max_end,
-                "a member decided abort — emitting event_unanimity_consensus_timeout"
+                aborts,
+                abort_threshold,
+                own_decision = ?own_decision,
+                "rollback decided - emitting event_unanimity_consensus_timeout"
             );
             notify_unanimity(
                 pool,
@@ -902,16 +934,37 @@ where
             .await?;
         }
         // Re-emit each anchor every pass so a controller that missed the NOTIFY still
-        // latches. The anchors come from this operator's own record, so a restart
-        // finishes the cutover without re-deriving them from the state hashes.
+        // latches. An operator that recorded `quorum` takes the anchors from its own
+        // record, so a restart finishes the cutover without re-deriving them from the
+        // state hashes. An operator that recorded `abort`, or has no record, follows
+        // the fleet: it fills the anchors it never reached from its peers' `quorum`
+        // records.
         Some(decision::Decision::Quorum) => {
-            let anchors = own
-                .map(|r| r.payload.anchors)
-                .unwrap_or_else(|| unanimity_notifications(host_tracks, gateway));
+            let anchors = match own.filter(|_| own_decision == Some(decision::Decision::Quorum)) {
+                Some(record) => record.payload.anchors,
+                None => {
+                    let peers: Vec<&[(i64, i64)]> = records
+                        .iter()
+                        .flatten()
+                        .filter(|r| r.payload.decision == decision::Decision::Quorum)
+                        .map(|r| r.payload.anchors.as_slice())
+                        .collect();
+                    decision::fleet_anchors(
+                        &unanimity_notifications(host_tracks, gateway),
+                        &peers,
+                        &windows,
+                        gateway.chain_id,
+                        state_hash::gw_start_block(pool).await?,
+                    )
+                }
+            };
             info!(
                 members = members.len(),
+                quorums,
+                cutover_threshold,
+                own_decision = ?own_decision,
                 anchors = anchors.len(),
-                "every member decided quorum — emitting event_unanimity_consensus"
+                "the fleet decided quorum - emitting event_unanimity_consensus"
             );
             for (chain_id, block) in anchors {
                 notify_unanimity(
@@ -935,7 +988,14 @@ where
                 .filter(|(_, decision)| decision.is_none())
                 .map(|(member, _)| member.address.as_str())
                 .collect();
-            info!(waiting = ?waiting, "waiting for a decision from every member");
+            info!(
+                waiting = ?waiting,
+                quorums,
+                cutover_threshold,
+                aborts,
+                abort_threshold,
+                "waiting for a fleet decision"
+            );
         }
     }
 
