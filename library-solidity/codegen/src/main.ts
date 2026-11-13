@@ -248,7 +248,7 @@ export async function commandGenerateAllFiles(options: any) {
   }
 
   if (config.noHostContracts !== true) {
-    const hcuCode = generateSolidityHCULimitOperators(ALL_OPERATORS_PRICES);
+    const hcuCode = generateSolidityHCULimitOperators(ALL_OPERATORS_PRICES, ALL_FHE_TYPE_INFOS);
     // host contracts directory must exist.
     // Generate Host contracts contract files.
     await formatAndWriteFile(`${hcuLimitOperatorsDotSol}`, hcuCode);

@@ -317,31 +317,31 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      * @notice Checks the HCU depth for an operation with no ciphertext operands.
      */
     function _adjustAndCheckFheTransactionLimitZeroOp(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
-        if (opHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+        if (_latency(opCost) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
 
-        _setHCUForHandle(result, opHCU);
+        _setHCUForHandle(result, _latency(opCost));
     }
 
     /**
      * @notice Adjusts the sequential HCU for the transaction.
      */
     function _adjustAndCheckFheTransactionLimitOneOp(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 op1,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
-        uint256 totalHCU = opHCU + _getHCUForHandle(op1);
+        uint256 totalHCU = _latency(opCost) + _getHCUForHandle(op1);
         if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
@@ -353,15 +353,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      * @notice Adjusts the current HCU for the transaction.
      */
     function _adjustAndCheckFheTransactionLimitTwoOps(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 op1,
         bytes32 op2,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
-        uint256 totalHCU = opHCU + _max(_getHCUForHandle(op1), _getHCUForHandle(op2));
+        uint256 totalHCU = _latency(opCost) + _max(_getHCUForHandle(op1), _getHCUForHandle(op2));
         if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
@@ -373,16 +373,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      * @notice Adjusts the current HCU for the transaction.
      */
     function _adjustAndCheckFheTransactionLimitThreeOps(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 op1,
         bytes32 op2,
         bytes32 op3,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
-        uint256 totalHCU = opHCU + _max(_getHCUForHandle(op1), _max(_getHCUForHandle(op2), _getHCUForHandle(op3)));
+        uint256 totalHCU = _latency(opCost) +
+            _max(_getHCUForHandle(op1), _max(_getHCUForHandle(op2), _getHCUForHandle(op3)));
 
         if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
@@ -395,12 +396,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      * @notice Adjusts the current HCU for an operation on an array of handles.
      */
     function _adjustAndCheckFheTransactionLimitArray(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32[] calldata values,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
         uint256 maxInputDepth = 0;
         for (uint256 i = 0; i < values.length; i++) {
@@ -410,7 +411,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
             }
         }
 
-        uint256 totalHCU = opHCU + maxInputDepth;
+        uint256 totalHCU = _latency(opCost) + maxInputDepth;
         if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
@@ -421,13 +422,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      * @notice Adjusts the current HCU for an operation on a handle and an array of handles.
      */
     function _adjustAndCheckFheTransactionLimitValueAndArray(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 value,
         bytes32[] calldata values,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
         uint256 maxInputDepth = _getHCUForHandle(value);
         for (uint256 i = 0; i < values.length; i++) {
@@ -437,7 +438,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
             }
         }
 
-        uint256 totalHCU = opHCU + maxInputDepth;
+        uint256 totalHCU = _latency(opCost) + maxInputDepth;
         if (totalHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
@@ -446,17 +447,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
 
     /**
      * @notice Updates and verifies the HCU transaction limit.
-     * @param opHCU The HCU for the operation.
+     * @param opWork The operation's work, charged to the block meter and the transaction.
      * @param caller Original dapp caller address for allowlist and block-level checks.
      */
-    function _updateAndVerifyHCUTransactionLimit(uint256 opHCU, address caller) internal virtual {
+    function _updateAndVerifyHCUTransactionLimit(uint256 opWork, address caller) internal virtual {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.isAllowlistActivated && !$.isAllowlisted[caller]) {
             revert CallerNotAllowlisted(caller);
         }
-        _updateAndVerifyHCUBlockLimit(opHCU, caller);
+        _updateAndVerifyHCUBlockLimit(opWork, caller);
 
-        uint256 transactionHCU = opHCU + _getHCUForTransaction();
+        uint256 transactionHCU = opWork + _getHCUForTransaction();
         if (transactionHCU > uint256($.maxHCUPerTx)) {
             revert HCUTransactionLimitExceeded();
         }
@@ -466,10 +467,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /**
      * @notice Updates and enforces the public block HCU cap for one operation.
      * @dev No-op if caller is whitelisted.
-     * @param opHCU HCU cost of the current operation.
+     * @param opWork Work of the current operation.
      * @param caller Original dapp caller address from FHEVMExecutor.
      */
-    function _updateAndVerifyHCUBlockLimit(uint256 opHCU, address caller) internal virtual {
+    function _updateAndVerifyHCUBlockLimit(uint256 opWork, address caller) internal virtual {
         HCULimitStorage storage $ = _getHCULimitStorage();
 
         if ($.blockHCUWhitelist[caller]) {
@@ -482,7 +483,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
             storedHCU = 0;
         }
 
-        uint256 nextHCU = uint256(storedHCU) + opHCU;
+        uint256 nextHCU = uint256(storedHCU) + opWork;
         if (nextHCU > uint256($.globalHCUCapPerBlock)) {
             revert HCUBlockLimitExceeded();
         }

@@ -36,6 +36,23 @@ contract MockHCULimit is HCULimit {
         HCULimitStorage storage $ = _getHCULimitStorage();
         $.globalHCUCapPerBlock = hcuPerBlock;
     }
+
+    /// Calls metering function `hook` (0 ZeroOp, 1 OneOp, 2 TwoOps, 3 ThreeOps, 4 Array, 5 ValueAndArray).
+    function meterForTest(
+        uint256 hook,
+        uint256 opCost,
+        address caller,
+        bytes32[] calldata inputs,
+        bytes32 result
+    ) external {
+        if (hook == 0) _adjustAndCheckFheTransactionLimitZeroOp(opCost, caller, result);
+        else if (hook == 1) _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, inputs[0], result);
+        else if (hook == 2) _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, inputs[0], inputs[1], result);
+        else if (hook == 3)
+            _adjustAndCheckFheTransactionLimitThreeOps(opCost, caller, inputs[0], inputs[1], inputs[2], result);
+        else if (hook == 4) _adjustAndCheckFheTransactionLimitArray(opCost, caller, inputs, result);
+        else _adjustAndCheckFheTransactionLimitValueAndArray(opCost, caller, inputs[0], inputs[1:], result);
+    }
 }
 
 contract HCULimitTest is Test, SupportedTypesConstants {
@@ -814,6 +831,38 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.prank(randomAccount);
         vm.expectRevert(HCULimitOperators.CallerMustBeFHEVMExecutorContract.selector);
         hcuLimit.checkHCUForFheRandBounded(FheType.Uint8, mockResult, fhevmExecutor);
+    }
+
+    /// @dev The cost rows give slots to FheType values below 64 only.
+    function test_typesFromSixtyFourHaveNoPrice() public {
+        FheType[2] memory types = [FheType(64), FheType.Int248];
+        for (uint256 i = 0; i < types.length; i++) {
+            vm.expectRevert(HCULimitOperators.UnsupportedOperation.selector);
+            vm.prank(fhevmExecutor);
+            hcuLimit.checkHCUForFheAdd(types[i], 0x00, mockLHS, mockRHS, mockResult, fhevmExecutor);
+        }
+    }
+
+    /// Every metering function charges work and adds latency to the depth. The depth limit sits between the two,
+    /// so a function that swapped them would revert or record the wrong values.
+    function test_meteringChargesWorkAndAddsLatencyToDepth() public {
+        uint256 work = 300_000;
+        uint256 latency = 100_000;
+        vm.prank(owner);
+        hcuLimit.setMaxHCUDepthPerTx(150_000);
+        bytes32[] memory inputs = new bytes32[](3);
+        for (uint256 i = 0; i < inputs.length; i++) {
+            inputs[i] = bytes32(i + 1);
+        }
+        for (uint256 hook = 0; hook < 6; hook++) {
+            bytes32 result = bytes32(0x100 + hook);
+            hcuLimit.setHCUForTransaction(0);
+            hcuLimit.meterForTest(hook, (work << 32) | latency, address(0x1234), inputs, result);
+            assertEq(hcuLimit.getHCUForTransaction(), work);
+            assertEq(hcuLimit.getHCUForHandle(result), latency);
+        }
+        (, uint48 used) = hcuLimit.getBlockMeter();
+        assertEq(used, 6 * work);
     }
 
     function test_checkHCUForFheAddRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
