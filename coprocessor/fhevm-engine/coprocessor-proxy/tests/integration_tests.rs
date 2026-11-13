@@ -9,11 +9,13 @@ use alloy::{
 };
 use axum::http::Version;
 use common::{
-    ACCEPTED, FakeRpc, KmsContext, StubPrfService, TestProxy, UNKNOWN_SIGNER, auth_header,
-    auth_header_expiring, auth_header_for, now, prf_path, rate_limited_path, sender,
+    ACCEPTED, FakeRpc, KmsContext, LARGE_BODY_BYTES, StubPrfService, TestProxy, UNKNOWN_SIGNER,
+    auth_header, auth_header_expiring, auth_header_for, now, prf_path, rate_limited_path, sender,
     stub_attestation, stub_output,
 };
-use coprocessor_proxy::core::{CLIENT_IDLE_TIMEOUT, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT};
+use coprocessor_proxy::core::{
+    CLIENT_IDLE_TIMEOUT, CLIENT_WRITE_TIMEOUT, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT,
+};
 use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
 use std::{
@@ -470,6 +472,37 @@ async fn test_prf_service_failure_mid_body_cuts_the_answer_short() {
     };
     assert_eq!(received, stub_output(&path)[..32]);
     assert!(end.is_err(), "{end:?}");
+}
+
+#[tokio::test]
+async fn test_disconnects_a_client_that_stops_reading() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let t = TestProxy::start(StubPrfService::start().await).await;
+    let path = prf_path(1);
+    let addr = t.addr;
+    let auth = auth_header(&sender(), &path, b"").await;
+    let mut stream = t.tls.connect(t.addr).await;
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\nx-stub-large-body: 1\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+
+    // The client reads nothing for longer than the write timeout, then reads what is left.
+    tokio::time::sleep(CLIENT_WRITE_TIMEOUT + Duration::from_secs(3)).await;
+    let mut received = 0;
+    let mut buffer = vec![0u8; 1 << 16];
+    let read_all = async {
+        loop {
+            match stream.read(&mut buffer).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => received += n,
+            }
+        }
+    };
+    let ended = tokio::time::timeout(Duration::from_secs(30), read_all).await;
+    assert!(ended.is_ok(), "the connection stayed open");
+    assert!(received < LARGE_BODY_BYTES, "{received}");
 }
 
 #[tokio::test]
