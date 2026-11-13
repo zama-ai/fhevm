@@ -1,0 +1,32 @@
+{
+  "name": "@fhevm/solidity",
+  "description": "A Solidity library for interacting with fhevm protocol",
+  "version": "{{version}}",
+  "files": [
+    "lib/**/*.sol",
+    "config/**/*.sol",
+    "!lib/bridge/**"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/fhevm.git"
+  },
+  "keywords": [
+    "solidity",
+    "ethereum",
+    "smart",
+    "contracts",
+    "security",
+    "fhe",
+    "fhevm"
+  ],
+  "author": "",
+  "license": "BSD-3-Clause-Clear",
+  "bugs": {
+    "url": "https://github.com/zama-ai/fhevm/issues"
+  },
+  "homepage": "https://github.com/zama-ai/fhevm",
+  "dependencies": {
+    "encrypted-types": "^0.0.4"
+  }
+}
