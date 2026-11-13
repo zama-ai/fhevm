@@ -70,27 +70,37 @@ impl BodyBudget {
                 _ => return Err(BodyRefusal::Connector),
             }
         }
+        // From here, a timeout or a dropped request gives the share back.
+        let share = ConnectorShare {
+            budget: self.clone(),
+            connector,
+            bytes,
+        };
         match timeout(self.wait, self.pod.clone().acquire_many_owned(bytes)).await {
             Ok(Ok(pod)) => Ok(BodyPermit {
-                budget: self.clone(),
-                connector,
-                bytes,
+                _share: share,
                 _pod: pod,
             }),
             // The semaphore is never closed: this is a timeout.
-            Ok(Err(_)) | Err(_) => {
-                self.release(connector, bytes);
-                Err(BodyRefusal::Pod)
-            }
+            Ok(Err(_)) | Err(_) => Err(BodyRefusal::Pod),
         }
     }
+}
 
-    fn release(&self, connector: Address, bytes: u32) {
-        let mut held = self.held.lock().expect("held lock");
-        if let Some(connector_bytes) = held.get_mut(&connector) {
-            *connector_bytes -= bytes;
+/// Bytes of a connector in `held`. On drop, they go back to the connector.
+struct ConnectorShare {
+    budget: Arc<BodyBudget>,
+    connector: Address,
+    bytes: u32,
+}
+
+impl Drop for ConnectorShare {
+    fn drop(&mut self) {
+        let mut held = self.budget.held.lock().expect("held lock");
+        if let Some(connector_bytes) = held.get_mut(&self.connector) {
+            *connector_bytes -= self.bytes;
             if *connector_bytes == 0 {
-                held.remove(&connector);
+                held.remove(&self.connector);
             }
         }
     }
@@ -98,16 +108,8 @@ impl BodyBudget {
 
 /// Bytes reserved for one body. On drop, they go back to the pod and to the connector.
 pub struct BodyPermit {
-    budget: Arc<BodyBudget>,
-    connector: Address,
-    bytes: u32,
+    _share: ConnectorShare,
     _pod: OwnedSemaphorePermit,
-}
-
-impl Drop for BodyPermit {
-    fn drop(&mut self) {
-        self.budget.release(self.connector, self.bytes);
-    }
 }
 
 /// A response body. It keeps its permit until it is sent or its connection closes.
@@ -191,10 +193,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_request_dropped_while_it_waits_gives_its_share_back() {
+        let budget = BodyBudget::new(nz(100), nz(60), Duration::from_secs(60));
+        let _full = budget.reserve(CONNECTOR, 60).await.unwrap();
+        let _other = budget.reserve(OTHER_CONNECTOR, 40).await.unwrap();
+        let waiting = tokio::spawn({
+            let budget = budget.clone();
+            async move { budget.reserve(THIRD_CONNECTOR, 10).await.is_ok() }
+        });
+        while !budget.held.lock().unwrap().contains_key(&THIRD_CONNECTOR) {
+            tokio::task::yield_now().await;
+        }
+
+        // A client disconnect drops the request while it waits for the pod.
+        waiting.abort();
+        let _ = waiting.await;
+
+        assert!(!budget.held.lock().unwrap().contains_key(&THIRD_CONNECTOR));
+    }
+
+    #[tokio::test]
     async fn a_body_larger_than_the_share_is_served_alone() {
         let budget = BodyBudget::new(nz(100), nz(60), WAIT);
         let permit = budget.reserve(CONNECTOR, 1_000).await.unwrap();
-        assert_eq!(permit.bytes, 60);
+        assert_eq!(permit._share.bytes, 60);
         assert_eq!(
             budget.reserve(CONNECTOR, 1).await.err(),
             Some(BodyRefusal::Connector)
