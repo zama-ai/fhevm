@@ -1999,7 +1999,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=7c36c344514c0e069c140f493dac8a81e7007f48#7c36c344514c0e069c140f493dac8a81e7007f48"
+source = "git+https://github.com/zama-ai/kms.git?rev=f4caf6aa742b66eb57e023284363a324b8786205#f4caf6aa742b66eb57e023284363a324b8786205"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -4365,7 +4365,7 @@ dependencies = [
 [[package]]
 name = "kms-grpc"
 version = "0.16.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=7c36c344514c0e069c140f493dac8a81e7007f48#7c36c344514c0e069c140f493dac8a81e7007f48"
+source = "git+https://github.com/zama-ai/kms.git?rev=f4caf6aa742b66eb57e023284363a324b8786205#f4caf6aa742b66eb57e023284363a324b8786205"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5206,12 +5206,6 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
-
-[[package]]
-name = "pin-utils"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pingora"
@@ -7571,7 +7565,7 @@ dependencies = [
 [[package]]
 name = "threshold-hashing"
 version = "0.16.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=7c36c344514c0e069c140f493dac8a81e7007f48#7c36c344514c0e069c140f493dac8a81e7007f48"
+source = "git+https://github.com/zama-ai/kms.git?rev=f4caf6aa742b66eb57e023284363a324b8786205#f4caf6aa742b66eb57e023284363a324b8786205"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -7584,7 +7578,7 @@ dependencies = [
 [[package]]
 name = "threshold-types"
 version = "0.16.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=7c36c344514c0e069c140f493dac8a81e7007f48#7c36c344514c0e069c140f493dac8a81e7007f48"
+source = "git+https://github.com/zama-ai/kms.git?rev=f4caf6aa742b66eb57e023284363a324b8786205#f4caf6aa742b66eb57e023284363a324b8786205"
 dependencies = [
  "aes",
  "anyhow",
@@ -8483,14 +8477,14 @@ dependencies = [
 
 [[package]]
 name = "wasmtimer"
-version = "0.4.3"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c598d6b99ea013e35844697fc4670d08339d5cda15588f193c6beedd12f644b"
+checksum = "c62b7f338e4397a45d054c15a2b36a93d57cccdda7be11a7d7b045d47b5e70ce"
 dependencies = [
  "futures",
  "js-sys",
  "parking_lot",
- "pin-utils",
+ "pin-project-lite",
  "slab",
  "wasm-bindgen",
 ]
