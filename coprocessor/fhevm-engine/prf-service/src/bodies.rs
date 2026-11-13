@@ -41,7 +41,7 @@ pub enum BodyRefusal {
 }
 
 impl BodyBudget {
-    /// A body larger than `max_per_connector` or `pod_bytes` counts as that size, so it is served.
+    /// A body counts with its true size, at most `pod_bytes`: a larger body is served alone.
     pub fn new(pod_bytes: NonZeroU32, max_per_connector: NonZeroU32, wait: Duration) -> Arc<Self> {
         Arc::new(Self {
             pod: Arc::new(Semaphore::new(pod_bytes.get() as usize)),
@@ -52,8 +52,8 @@ impl BodyBudget {
         })
     }
 
-    /// Reserves `bytes` for a body of `connector`. Refuses at once above the share of the
-    /// connector. Waits up to `wait` for room in the pod.
+    /// Reserves `bytes` for a body of `connector`. Refuses at once above the share of the connector,
+    /// except for one body when it holds none. Waits up to `wait` for room in the pod.
     pub async fn reserve(
         self: &Arc<Self>,
         connector: Address,
@@ -61,12 +61,14 @@ impl BodyBudget {
     ) -> Result<BodyPermit, BodyRefusal> {
         let bytes = u32::try_from(bytes)
             .unwrap_or(u32::MAX)
-            .clamp(1, self.max_per_connector.min(self.pod_bytes));
+            .clamp(1, self.pod_bytes);
         {
             let mut held = self.held.lock().expect("held lock");
             let connector_bytes = held.entry(connector).or_default();
             match connector_bytes.checked_add(bytes) {
-                Some(total) if total <= self.max_per_connector => *connector_bytes = total,
+                Some(total) if total <= self.max_per_connector || *connector_bytes == 0 => {
+                    *connector_bytes = total
+                }
                 _ => return Err(BodyRefusal::Connector),
             }
         }
@@ -213,10 +215,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_body_larger_than_the_share_is_served_alone() {
+    async fn a_body_larger_than_the_share_counts_its_true_size_and_is_served_alone() {
         let budget = BodyBudget::new(nz(100), nz(60), WAIT);
-        let permit = budget.reserve(CONNECTOR, 1_000).await.unwrap();
-        assert_eq!(permit._share.bytes, 60);
+        let permit = budget.reserve(CONNECTOR, 80).await.unwrap();
+        assert_eq!(permit._share.bytes, 80);
+        assert_eq!(budget.pod.available_permits(), 20);
         assert_eq!(
             budget.reserve(CONNECTOR, 1).await.err(),
             Some(BodyRefusal::Connector)
@@ -224,6 +227,14 @@ mod tests {
         drop(permit);
         assert!(budget.held.lock().unwrap().is_empty());
         assert_eq!(budget.pod.available_permits(), 100);
+    }
+
+    #[tokio::test]
+    async fn a_body_larger_than_the_pod_budget_counts_as_the_budget() {
+        let budget = BodyBudget::new(nz(100), nz(60), WAIT);
+        let permit = budget.reserve(CONNECTOR, 1_000).await.unwrap();
+        assert_eq!(permit._share.bytes, 100);
+        assert_eq!(budget.pod.available_permits(), 0);
     }
 
     #[tokio::test]

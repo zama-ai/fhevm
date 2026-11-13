@@ -1765,7 +1765,8 @@ prfService:
     maxConcurrentPerConnector: 16384
     # Requests in progress of one connector in one pod.
     maxInFlightPerConnector: 256
-    # Bytes of response bodies in memory for one connector, in one pod. Above it: `429`.
+    # Bytes of response bodies in memory for one connector, in one pod. Above it: `429`. One larger
+    # body is served alone.
     maxBodyBytesPerConnector: 16777216
     # Bytes of all response bodies in memory, in one pod. Keep `resources.limits.memory` above it.
     maxBodyBytes: 67108864

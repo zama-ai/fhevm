@@ -56,7 +56,8 @@ struct Args {
     #[arg(long, env = "PRF_MAX_BODY_BYTES", default_value = "67108864")]
     max_body_bytes: NonZeroU32,
 
-    /// Bytes of response bodies in memory for one connector, in this pod. Above it: `429`.
+    /// Bytes of response bodies in memory for one connector, in this pod. Above it: `429`. One larger
+    /// body is served alone.
     #[arg(
         long,
         env = "PRF_MAX_BODY_BYTES_PER_CONNECTOR",
