@@ -341,7 +341,7 @@ describe('EncryptedERC20:HCU', function () {
           hcuLimit.getMaxHCUDepthPerTx(),
           hcuLimit.isBlockHCUWhitelisted(this.contractAddress),
         ]);
-        // Narrowest-first when lowering: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
+        // Narrowest-first when lowering: hcuPerBlock >= maxHCUPerTx
         const ownerHcuLimit = hcuLimit.connect(deployer);
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
         await (await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX)).wait();
