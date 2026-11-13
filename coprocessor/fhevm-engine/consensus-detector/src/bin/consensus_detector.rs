@@ -169,8 +169,9 @@ struct Args {
     #[arg(long, value_enum, default_value = "private-key")]
     signer_type: SignerType,
 
-    /// Manifest signing key when `--signer-type private-key` is selected.
-    #[arg(long)]
+    /// Manifest signing key when `--signer-type private-key` is selected. Prefer the env var: a
+    /// flag value is visible in the process list.
+    #[arg(long, env = "TX_SENDER_PRIVATE_KEY", hide_env_values = true)]
     private_key: Option<String>,
 
     #[arg(
