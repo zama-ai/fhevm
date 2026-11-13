@@ -1,3 +1,4 @@
+pub mod bodies;
 mod error;
 mod http;
 pub mod in_flight;
@@ -10,11 +11,17 @@ pub use http::SIGNER_HEADER;
 
 use actix_web::web;
 use anyhow::{bail, Context};
+use bodies::BodyBudget;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use in_flight::InFlight;
 use pads::Admissions;
 use sqlx::PgPool;
-use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    num::{NonZeroU32, NonZeroUsize},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -22,6 +29,8 @@ use waiter::PadWaiter;
 
 /// The same limit as the database check of `HealthStatus`.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+/// The wait for room in the body budget of the pod, before `503`.
+const BODY_WAIT: Duration = Duration::from_secs(5);
 
 pub struct Config {
     pub http_endpoint: SocketAddr,
@@ -33,6 +42,10 @@ pub struct Config {
     pub max_adds_per_connector: NonZeroUsize,
     /// Interval of the read that finds a lost `pad_ready`.
     pub pad_poll_interval: Duration,
+    /// Bytes of response bodies in memory, in this pod (`PRF_MAX_BODY_BYTES`).
+    pub max_body_bytes: NonZeroU32,
+    /// Bytes of response bodies in memory for each connector (`PRF_MAX_BODY_BYTES_PER_CONNECTOR`).
+    pub max_body_bytes_per_connector: NonZeroU32,
 }
 
 /// The internal PRF output endpoint. Only the proxy calls it.
@@ -63,6 +76,11 @@ impl PrfService {
                 config.max_adds_per_connector,
             ),
             waiter: waiter.clone(),
+            bodies: BodyBudget::new(
+                config.max_body_bytes,
+                config.max_body_bytes_per_connector,
+                BODY_WAIT,
+            ),
         });
         let server = http::run_server(config.http_endpoint, state, cancel_token.clone())?;
         info!("HTTP server listening at: {}", config.http_endpoint);
