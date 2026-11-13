@@ -15,11 +15,12 @@ import {EmptyUUPSProxyACL} from "@fhevm-host-contracts/contracts/emptyProxyACL/E
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
+import {CiphertextRoots} from "@fhevm-host-contracts/contracts/CiphertextRoots.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, EXTRA_DATA_V2} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd, ciphertextRootsAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -311,6 +312,30 @@ abstract contract HostContractsDeployerTestUtils is Test {
         );
 
         kmsGenerationProxy = KMSGeneration(kmsGenerationAdd);
+    }
+
+    function _deployCiphertextRoots(
+        address owner
+    ) internal returns (CiphertextRoots ciphertextRootsProxy, address ciphertextRootsImplementation) {
+        address emptyProxyImplementation = address(new EmptyUUPSProxy());
+
+        deployCodeTo(
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            ciphertextRootsAdd
+        );
+        vm.label(ciphertextRootsAdd, "CiphertextRoots Proxy");
+
+        ciphertextRootsImplementation = address(new CiphertextRoots());
+        vm.label(ciphertextRootsImplementation, "CiphertextRoots Implementation");
+
+        vm.prank(owner);
+        EmptyUUPSProxy(ciphertextRootsAdd).upgradeToAndCall(
+            ciphertextRootsImplementation,
+            abi.encodeCall(CiphertextRoots.initializeFromEmptyProxy, ())
+        );
+
+        ciphertextRootsProxy = CiphertextRoots(ciphertextRootsAdd);
     }
 
     function _deployPauserSet() internal returns (PauserSet pauserSet) {

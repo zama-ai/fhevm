@@ -74,8 +74,14 @@ type ProtocolConfigSource = (typeof PROTOCOL_CONFIG_SOURCES)[number];
 task('task:deployAllHostContracts')
   .addParam(
     'withKmsGeneration',
-    'Whether to deploy canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
+    'Whether to deploy the canonical-host-only KMSGeneration. Required: true for canonical host, false for non-canonical host.',
     undefined,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'withCiphertextRoots',
+    'Whether to deploy CiphertextRoots (default: false). Canonical host only: requires --with-kms-generation true.',
+    false,
     types.boolean,
   )
   .addOptionalParam(
@@ -87,13 +93,20 @@ task('task:deployAllHostContracts')
   .setAction(async function (
     {
       withKmsGeneration,
+      withCiphertextRoots,
       protocolConfigSource,
     }: {
       withKmsGeneration: boolean;
+      withCiphertextRoots: boolean;
       protocolConfigSource: string;
     },
     hre,
   ) {
+    if (withCiphertextRoots && !withKmsGeneration) {
+      throw new Error(
+        'CiphertextRoots runs on the canonical host only: --with-ciphertext-roots true requires --with-kms-generation true.',
+      );
+    }
     if (!PROTOCOL_CONFIG_SOURCES.includes(protocolConfigSource as ProtocolConfigSource)) {
       throw new Error(
         `Invalid --protocol-config-source "${protocolConfigSource}". Allowed values: ${PROTOCOL_CONFIG_SOURCES.join(
@@ -133,6 +146,9 @@ task('task:deployAllHostContracts')
     }
     if (withKmsGeneration) {
       await hre.run('task:deployKMSGeneration');
+    }
+    if (withCiphertextRoots) {
+      await hre.run('task:deployCiphertextRoots');
     }
     await hre.run('task:deployKMSVerifier');
     await hre.run('task:deployInputVerifier');
@@ -181,7 +197,7 @@ export async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: Ha
 task('task:deployEmptyUUPSProxies')
   .addParam(
     'withKmsGeneration',
-    'Whether to deploy the canonical-host-only KMSGeneration proxy. Required: true for canonical host, false for non-canonical host.',
+    'Whether to deploy the canonical-host-only KMSGeneration proxy, and to reserve the CiphertextRoots proxy address. Required: true for canonical host, false for non-canonical host.',
     undefined,
     types.boolean,
   )
@@ -229,6 +245,12 @@ task('task:deployEmptyUUPSProxies')
       // Set KMSGeneration Address
       const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
+
+      // Set CiphertextRoots Address. The proxy is always reserved on the canonical host, so that the
+      // addresses of later contracts do not depend on whether CiphertextRoots is deployed; its
+      // implementation is deployed only with --with-ciphertext-roots true.
+      const ciphertextRootsAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+      await run('task:setCiphertextRootsAddress', { address: ciphertextRootsAddress });
     }
 
     // ConfidentialBridge is opt-in. We provision its empty proxy when a bridge is intended on this
@@ -878,6 +900,27 @@ task('task:deployKMSGeneration').setAction(async function (taskArguments: TaskAr
 });
 
 ////////////////////////////////////////////////////////////////////////////////
+// CiphertextRoots
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployCiphertextRoots').setAction(async function (taskArguments: TaskArguments, hre) {
+  const { ethers, upgrades } = hre;
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('CiphertextRoots', deployer);
+  const parsedEnv = readHostEnv();
+  const proxyAddress = parsedEnv.CIPHERTEXT_ROOTS_CONTRACT_ADDRESS;
+  // CiphertextRoots only runs on the canonical host, which needs the full ProtocolConfig, not a replica.
+  await assertContractMatchesVersionPrefix(hre, parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS, 'ProtocolConfig');
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: { fn: 'initializeFromEmptyProxy' },
+  });
+  console.log('CiphertextRoots code set successfully at address:', proxyAddress);
+});
+
+////////////////////////////////////////////////////////////////////////////////
 // Setup ACL Address
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1092,6 +1135,33 @@ address constant kmsGenerationAdd = ${taskArguments.address};\n`;
     try {
       writeHostAddressesSol(solidityTemplate, 'a');
       console.log(`${HOST_ADDRESSES_FILE} appended with kmsGenerationAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup CiphertextRoots Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setCiphertextRootsAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    ensureAddressesDirectoryExists();
+    const content = `CIPHERTEXT_ROOTS_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`CiphertextRoots address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write CiphertextRoots address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant ciphertextRootsAdd = ${taskArguments.address};\n`;
+
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with ciphertextRootsAdd successfully!`);
     } catch (error) {
       throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
     }

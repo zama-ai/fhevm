@@ -191,6 +191,7 @@ jobs:
               HCULimit) proxy_address="$HCU_LIMIT_CONTRACT_ADDRESS" ;;
               ProtocolConfig) proxy_address="$PROTOCOL_CONFIG_CONTRACT_ADDRESS" ;;
               KMSGeneration) proxy_address="$KMS_GENERATION_CONTRACT_ADDRESS" ;;
+              CiphertextRoots) proxy_address="$CIPHERTEXT_ROOTS_CONTRACT_ADDRESS" ;;
               *)
                 echo "::error::Unsupported host upgrade manifest entry: $name"
                 exit 1
@@ -298,6 +299,8 @@ jobs:
           ProtocolConfig_ADDR=$PROTOCOL_CONFIG_CONTRACT_ADDRESS
           # shellcheck disable=SC2034
           KMSGeneration_ADDR=$KMS_GENERATION_CONTRACT_ADDRESS
+          # shellcheck disable=SC2034
+          CiphertextRoots_ADDR=$CIPHERTEXT_ROOTS_CONTRACT_ADDRESS
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do
             addr_var="${name}_ADDR"

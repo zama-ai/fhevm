@@ -55,6 +55,7 @@ contract_info() { # <dir> <Contract>
     host-contracts/HCULimit)             echo "hcu_limit.address HCU_LIMIT_CONTRACT_ADDRESS" ;;
     host-contracts/InputVerifier)        echo "input_verifier.address INPUT_VERIFIER_CONTRACT_ADDRESS" ;;
     host-contracts/KMSGeneration)        echo "kms_generation.address KMS_GENERATION_CONTRACT_ADDRESS" ;;
+    host-contracts/CiphertextRoots)      echo "ciphertext_roots.address CIPHERTEXT_ROOTS_CONTRACT_ADDRESS" ;;
     host-contracts/KMSVerifier)          echo "kms_verifier.address KMS_VERIFIER_CONTRACT_ADDRESS" ;;
     host-contracts/ProtocolConfig)       echo "protocol_config.address PROTOCOL_CONFIG_CONTRACT_ADDRESS" ;;
     gateway-contracts/CiphertextCommits) echo "ciphertext_commits.address CIPHERTEXT_COMMITS_ADDRESS" ;;
@@ -64,7 +65,7 @@ contract_info() { # <dir> <Contract>
     *) return 1 ;;
   esac
 }
-contracts_of() { case "$1" in host-contracts) echo "ACL FHEVMExecutor HCULimit InputVerifier KMSGeneration KMSVerifier ProtocolConfig" ;; gateway-contracts) echo "CiphertextCommits Decryption GatewayConfig InputVerification" ;; esac; }
+contracts_of() { case "$1" in host-contracts) echo "ACL CiphertextRoots FHEVMExecutor HCULimit InputVerifier KMSGeneration KMSVerifier ProtocolConfig" ;; gateway-contracts) echo "CiphertextCommits Decryption GatewayConfig InputVerification" ;; esac; }
 
 releases=()
 for rel in host-contracts host-contracts-polygon gateway-contracts; do
