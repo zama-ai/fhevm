@@ -3,13 +3,13 @@
 import { AbiCoder, TypedDataEncoder, keccak256, solidityPacked } from 'ethers';
 import type { Signer, TypedDataDomain, TypedDataField } from 'ethers';
 
-import type { ProtocolConfig } from '../../typechain-types';
+import type { ProtocolConfig } from '../../typechain-types/index.js';
 import type {
   IProtocolConfig,
   KmsNodeParamsStruct,
   KmsThresholdsStruct,
   ProtocolConfigInterface,
-} from '../../typechain-types/fhevmTemp/contracts/ProtocolConfig';
+} from '../../typechain-types/fhevmTemp/contracts/ProtocolConfig.js';
 
 const CONFIRMATION_TYPES = {
   ContextCreationConfirmation: {

@@ -1,5 +1,6 @@
-import { config, ethers } from 'hardhat';
 import type { Signer } from 'ethers';
+
+import { ethers, networkName } from './hardhat.js';
 
 export interface Signers {
   alice: Signer & { address: string };
@@ -29,7 +30,7 @@ function _isHardhatParallel(): boolean {
 export async function initSigners(quantity: number): Promise<void> {
   const q = _isHardhatParallel() ? Math.min(quantity, 5) : 5;
   if (!signers) {
-    if (_isHardhatParallel() && config.defaultNetwork === 'local') {
+    if (_isHardhatParallel() && networkName === 'local') {
       signers = {
         alice: ethers.Wallet.createRandom().connect(ethers.provider),
         bob: ethers.Wallet.createRandom().connect(ethers.provider),
@@ -50,7 +51,7 @@ export async function initSigners(quantity: number): Promise<void> {
       throw new Error("Can't run parallel mode if network is not 'local'");
     }
 
-    if (config.defaultNetwork === 'local') {
+    if (networkName === 'local') {
       const faucetP: Array<Promise<void>> = [];
       for (let i = 0; i < q; i += 1) {
         const account = signers[signerNames[i]];

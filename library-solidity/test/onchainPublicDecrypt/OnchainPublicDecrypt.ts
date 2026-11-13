@@ -1,20 +1,21 @@
 import { expect } from 'chai';
 import dotenv from 'dotenv';
-import * as fs from 'fs';
-import { ethers } from 'hardhat';
-import { awaitCoprocessor, coprocDbReadCleartext } from '../coprocessorUtils';
-import { getSigners, initSigners } from '../signers';
-import { getDecryptionEip712Domain, HOST_ADDRESSES_ENV_PATH } from '../utils';
-import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
-import { activateDefinedKmsContext, defineNewKmsContext } from './protocolConfigEip712';
-import { ProtocolConfig__factory } from '../../typechain-types';
+import type { ContractTransactionReceipt, Signer } from 'ethers';
+import * as fs from 'node:fs';
+
+import { getRequiredEnvVar } from '../../tasks/env.js';
 import type {
   KmsNodeParamsStruct,
   KmsThresholdsStruct,
-} from '../../typechain-types/fhevmTemp/contracts/ProtocolConfig';
-import type { OnchainPublicDecrypt, ProtocolConfig } from '../../typechain-types';
-import type { Signers } from '../signers';
-import type { ContractTransactionReceipt, Signer } from 'ethers';
+} from '../../typechain-types/fhevmTemp/contracts/ProtocolConfig.js';
+import type { OnchainPublicDecrypt, ProtocolConfig } from '../../typechain-types/index.js';
+import { ProtocolConfig__factory } from '../../typechain-types/index.js';
+import { awaitCoprocessor, coprocDbReadCleartext } from '../coprocessorUtils.js';
+import { ethers } from '../hardhat.js';
+import { getSigners, initSigners } from '../signers.js';
+import type { Signers } from '../signers.js';
+import { HOST_ADDRESSES_ENV_PATH, getDecryptionEip712Domain } from '../utils.js';
+import { activateDefinedKmsContext, defineNewKmsContext } from './protocolConfigEip712.js';
 
 describe('OnchainPublicDecrypt', function () {
   let contract: OnchainPublicDecrypt;

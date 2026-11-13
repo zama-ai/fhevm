@@ -4,7 +4,7 @@ import { createRequire } from 'module';
 import * as path from 'path';
 import * as prettier from 'prettier';
 
-import { assertRelative } from './paths';
+import { assertRelative } from './paths.js';
 
 export type UserSolidityTestGroup = {
   outDir: string;
@@ -12,9 +12,16 @@ export type UserSolidityTestGroup = {
   imports?: Array<string | [string, string]>;
 };
 
+/**
+ * Hardhat version the generated TypeScript tests target. 2 (the default) keeps the HH2 output unchanged; 3 generates
+ * ESM tests for HH3 (see `generateTypeScriptTestCode`).
+ */
+export type HardhatVersion = 2 | 3;
+
 export type UserTypescriptTestGroup = {
   outDir: string;
   imports?: Array<string | [string, string]>;
+  hardhatVersion?: HardhatVersion;
 };
 
 export type TestGroup = {
@@ -26,7 +33,9 @@ export type SolidityTestGroup = TestGroup & {
   parentContractName?: string;
 };
 
-export type TypescriptTestGroup = TestGroup;
+export type TypescriptTestGroup = TestGroup & {
+  hardhatVersion: HardhatVersion;
+};
 
 export type UserConfig = {
   baseDir?: string;
@@ -286,9 +295,17 @@ function resolveSolidityTestGroup(userTestGroup: UserSolidityTestGroup): Solidit
 }
 
 function resolveTypescriptTestGroup(userTestGroup: UserTypescriptTestGroup): TypescriptTestGroup {
+  // Runtime check: the config is hand-written JSON, so the value may not match its static type.
+  const hardhatVersion: unknown = userTestGroup.hardhatVersion ?? 2;
+  if (hardhatVersion !== 2 && hardhatVersion !== 3) {
+    throw new Error(
+      `Invalid codegen config: "tests.typescript.hardhatVersion" must be 2 or 3, got ${JSON.stringify(hardhatVersion)}.`,
+    );
+  }
   return {
     outDir: userTestGroup.outDir,
     ...(userTestGroup.imports ? { imports: userTestGroup.imports } : {}),
+    hardhatVersion,
   };
 }
 

@@ -1,9 +1,10 @@
 import { expect } from 'chai';
-import { ethers, network } from 'hardhat';
-import { getSigners, initSigners } from '../signers';
-import type { TestEthereumCoprocessorConfig } from '../../typechain-types';
-import type { Signers } from '../signers';
-import type { CoprocessorConfigStructOutput } from '../../typechain-types/examples/TestEthereumCoprocessorConfig';
+
+import type { CoprocessorConfigStructOutput } from '../../typechain-types/examples/TestEthereumCoprocessorConfig.js';
+import type { TestEthereumCoprocessorConfig } from '../../typechain-types/index.js';
+import { chainId, ethers } from '../hardhat.js';
+import { getSigners, initSigners } from '../signers.js';
+import type { Signers } from '../signers.js';
 
 describe('TestEthereumCoprocessorConfig', function () {
   let contract: TestEthereumCoprocessorConfig;
@@ -23,13 +24,13 @@ describe('TestEthereumCoprocessorConfig', function () {
   it('test local confidentialProtocolId', async function () {
     const confidentialProtocolId = await contract.connect(signers.carol).confidentialProtocolId();
     // chainid === 31337
-    expect(network.config.chainId).to.equal(31337);
+    expect(chainId).to.equal(31337);
     expect(confidentialProtocolId).to.equal(0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn);
   });
 
   it('test local CoprocessorConfig', async function () {
     // chainid === 31337
-    expect(network.config.chainId).to.equal(31337);
+    expect(chainId).to.equal(31337);
     const cfg: CoprocessorConfigStructOutput = await contract.connect(signers.carol).getCoprocessorConfig();
     // ACL
     expect(cfg[0]).to.eq('0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D');
