@@ -54,7 +54,7 @@ Error bodies are JSON `{code, message, retryable}`, with `Cache-Control: no-stor
 |---|---|---|
 | 8090 | `--http-endpoint` (`PRF_HTTP_ENDPOINT`) | The endpoint, HTTP/1.1. Only the proxy calls it |
 | 8080 | `--health-check-port` | `/healthz`, `/liveness` and `/version` for Kubernetes |
-| 9100 | `--metrics-addr` | `coprocessor_prf_service_requests_total{method, status}`, `coprocessor_prf_service_request_duration_seconds{method, status}` |
+| 9100 | `--metrics-addr` | `coprocessor_prf_service_requests_total{method, status}`, `coprocessor_prf_service_request_duration_seconds{method, status}`, `coprocessor_prf_service_body_refusals_total{reason}`, `coprocessor_prf_service_body_bytes_held` |
 
 ## Database
 
