@@ -1,23 +1,24 @@
 import dotenv from 'dotenv';
 import type { ethers as EthersT } from 'ethers';
-import * as fs from 'fs';
-import { ethers, network } from 'hardhat';
+import * as fs from 'node:fs';
 
-import { awaitCoprocessor, getClearText } from './coprocessorUtils';
-import { createEncryptedInputMocked, userDecryptRequestMocked } from './fhevmjsMocked';
-import type { FhevmInstances } from './types';
-import type { Signers } from './signers';
-import type { FhevmInstance, PublicDecryptResults, PublicParams } from './legacyRelayerSdk/types';
-import { createEIP712Mocked } from './legacyRelayerSdk/eip712';
+import { getRequiredEnvVar } from '../tasks/env.js';
+import { awaitCoprocessor, coprocDbReadCleartext } from './coprocessorUtils.js';
+import { createEncryptedInputMocked, userDecryptRequestMocked } from './fhevmjsMocked.js';
+import { chainId as networkChainId, ethers, isInProcessNetwork, networkName } from './hardhat.js';
+import { createEIP712Mocked } from './legacyRelayerSdk/eip712.js';
+import type { FhevmInstance, PublicDecryptResults, PublicParams } from './legacyRelayerSdk/types.js';
+import type { Signers } from './signers.js';
+import type { FhevmInstances } from './types.js';
+import { HOST_ADDRESSES_ENV_PATH } from './utils.js';
 
 const abiAcl = [
   'function delegateForUserDecryption(address,address,uint64)',
   'function revokeDelegationForUserDecryption(address,address)',
 ];
 
-const parsedEnv = dotenv.parse(fs.readFileSync('./fhevmTemp/addresses/.env.host'));
+const parsedEnv = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
 const aclAdd = parsedEnv.ACL_CONTRACT_ADDRESS;
-const verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS!;
 
 export const delegateUserDecryption = async (
   delegator: EthersT.Signer,
@@ -38,7 +39,12 @@ export const revokeUserDecryptionDelegation = async (
   return aclContract.revokeDelegationForUserDecryption(delegate, contractAddress);
 };
 
+// eslint-disable-next-line @typescript-eslint/require-await
 const createInstanceMocked = async (): Promise<FhevmInstance> => {
+  const chainId = networkChainId;
+  if (chainId === undefined) {
+    throw new Error(`No chainId configured for network "${networkName}" in hardhat.config.ts`);
+  }
   const instance: FhevmInstance = {
     userDecrypt: userDecryptRequestMocked,
     createEncryptedInput: createEncryptedInputMocked,
@@ -49,11 +55,11 @@ const createInstanceMocked = async (): Promise<FhevmInstance> => {
       publicKey: ethers.hexlify(ethers.randomBytes(32)).slice(2),
       privateKey: ethers.hexlify(ethers.randomBytes(32)).slice(2),
     }),
-    createEIP712: createEIP712Mocked(verifyingContractAddressDecryption, network.config.chainId!),
-    publicDecrypt: function (handles: (string | Uint8Array)[]): Promise<PublicDecryptResults> {
+    createEIP712: createEIP712Mocked(getRequiredEnvVar('DECRYPTION_ADDRESS'), chainId),
+    publicDecrypt: function (_handles: Array<string | Uint8Array>): Promise<PublicDecryptResults> {
       throw new Error('Function not implemented in mock mode.');
     },
-    getPublicParams: function (bits: keyof PublicParams): { publicParams: Uint8Array; publicParamsId: string } | null {
+    getPublicParams: function (_bits: keyof PublicParams): { publicParams: Uint8Array; publicParamsId: string } | null {
       throw new Error('Function not implemented in mock mode.');
     },
   };
@@ -63,14 +69,14 @@ const createInstanceMocked = async (): Promise<FhevmInstance> => {
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
   // Create instance
   const instances: FhevmInstances = {} as FhevmInstances;
-  if (network.name === 'hardhat') {
+  if (isInProcessNetwork) {
     await Promise.all(
       Object.keys(accounts).map(async (k) => {
         instances[k as keyof FhevmInstances] = await createInstanceMocked();
       }),
     );
   } else {
-    throw new Error(`network.name ${network.name} is not supported`);
+    throw new Error(`network ${networkName} is not supported`);
   }
   return instances;
 };
@@ -84,11 +90,11 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
  * @returns {bool}
  */
 export const decryptBool = async (handle: string): Promise<boolean> => {
-  if (network.name === 'hardhat') {
+  if (isInProcessNetwork) {
     await awaitCoprocessor();
-    return (await getClearText(handle)) === '1';
+    return (await coprocDbReadCleartext(handle)) === '1';
   } else {
-    throw new Error(`network.name ${network.name} is not supported`);
+    throw new Error(`network ${networkName} is not supported`);
   }
 };
 
@@ -101,11 +107,11 @@ export const decryptBool = async (handle: string): Promise<boolean> => {
  * @returns {bigint}
  */
 export const decrypt8 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
+  if (isInProcessNetwork) {
     await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
+    return BigInt(await coprocDbReadCleartext(handle));
   } else {
-    throw new Error(`network.name ${network.name} is not supported`);
+    throw new Error(`network ${networkName} is not supported`);
   }
 };
 
@@ -118,11 +124,11 @@ export const decrypt8 = async (handle: string): Promise<bigint> => {
  * @returns {bigint}
  */
 export const decrypt16 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
+  if (isInProcessNetwork) {
     await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
+    return BigInt(await coprocDbReadCleartext(handle));
   } else {
-    throw new Error(`network.name ${network.name} is not supported`);
+    throw new Error(`network ${networkName} is not supported`);
   }
 };
 
@@ -135,11 +141,11 @@ export const decrypt16 = async (handle: string): Promise<bigint> => {
  * @returns {bigint}
  */
 export const decrypt32 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
+  if (isInProcessNetwork) {
     await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
+    return BigInt(await coprocDbReadCleartext(handle));
   } else {
-    throw new Error(`network.name ${network.name} is not supported`);
+    throw new Error(`network ${networkName} is not supported`);
   }
 };
 
@@ -152,11 +158,11 @@ export const decrypt32 = async (handle: string): Promise<bigint> => {
  * @returns {bigint}
  */
 export const decrypt64 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
+  if (isInProcessNetwork) {
     await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
+    return BigInt(await coprocDbReadCleartext(handle));
   } else {
-    throw new Error(`network.name ${network.name} is not supported`);
+    throw new Error(`network ${networkName} is not supported`);
   }
 };
 
@@ -169,11 +175,11 @@ export const decrypt64 = async (handle: string): Promise<bigint> => {
  * @returns {bigint}
  */
 export const decrypt128 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
+  if (isInProcessNetwork) {
     await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
+    return BigInt(await coprocDbReadCleartext(handle));
   } else {
-    throw new Error(`network.name ${network.name} is not supported`);
+    throw new Error(`network ${networkName} is not supported`);
   }
 };
 
@@ -186,11 +192,11 @@ export const decrypt128 = async (handle: string): Promise<bigint> => {
  * @returns {bigint}
  */
 export const decrypt256 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
+  if (isInProcessNetwork) {
     await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
+    return BigInt(await coprocDbReadCleartext(handle));
   } else {
-    throw new Error(`network.name ${network.name} is not supported`);
+    throw new Error(`network ${networkName} is not supported`);
   }
 };
 
@@ -203,12 +209,12 @@ export const decrypt256 = async (handle: string): Promise<bigint> => {
  * @returns {string}
  */
 export const decryptAddress = async (handle: string): Promise<string> => {
-  if (network.name === 'hardhat') {
+  if (isInProcessNetwork) {
     await awaitCoprocessor();
-    const bigintAdd = BigInt(await getClearText(handle));
+    const bigintAdd = BigInt(await coprocDbReadCleartext(handle));
     const handleStr = ('0x' + bigintAdd.toString(16).padStart(40, '0')) as `0x${string}`;
     return handleStr;
   } else {
-    throw new Error(`network.name ${network.name} is not supported`);
+    throw new Error(`network ${networkName} is not supported`);
   }
 };

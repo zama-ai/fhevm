@@ -14,13 +14,21 @@ export type PublicDecryptResults = {
 };
 
 export type TFHEType = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   default?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TFHEInput?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TfheCompactPublicKey: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   CompactPkeCrs: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   initThreadPool?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   init_panic_hook: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   CompactCiphertextList: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ZkComputeLoad: any;
 };
 
@@ -109,7 +117,7 @@ export type FhevmInstance = {
     startTimestamp: string | number,
     durationDays: string | number,
   ) => EIP712;
-  publicDecrypt: (handles: (string | Uint8Array)[]) => Promise<PublicDecryptResults>;
+  publicDecrypt: (handles: Array<string | Uint8Array>) => Promise<PublicDecryptResults>;
   userDecrypt: (
     handles: HandleContractPair[],
     privateKey: string,
@@ -189,11 +197,10 @@ export type EIP712 = {
     verifyingContract: string;
     version: string;
   };
-  message: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  message: Record<string, any>;
   primaryType: string;
-  types: {
-    [key: string]: EIP712Type[];
-  };
+  types: Record<string, EIP712Type[]>;
 };
 
 export type EIP712Type = {
