@@ -32,14 +32,10 @@ use super::call::{CallError, CallResult};
 use super::client::AttemptError;
 use crate::metrics::{Metrics, Outcome};
 
-/// The `last_code` log field: the node's last answer, `none` when it never answered.
-fn last_code_str(last_code: Option<ErrorCode>) -> &'static str {
-    last_code.map_or("none", ErrorCode::as_str)
-}
-
-/// The `code` label of an exclusion: the node's last answer, `cancelled` when it never answered (a value the
-/// label already has for an attempt cut in flight).
-fn last_code_label(last_code: Option<ErrorCode>) -> &'static str {
+/// The node's last answer during a call, as the `last_code` log field and the `code` label of an exclusion
+/// render it: the code, or `cancelled` when the node never answered before the cut (a value the label already has
+/// for an attempt cut in flight).
+pub(super) fn last_code_label(last_code: Option<ErrorCode>) -> &'static str {
     last_code.map_or("cancelled", ErrorCode::as_str)
 }
 
@@ -107,12 +103,15 @@ enum NodeState {
     Probing { since: Instant },
 }
 
-/// Which nodes one aggregation calls and which ones it probes, as indices into the endpoint list. `generation`
-/// is echoed back by the outcomes of that aggregation, so that a `reset()` in between drops them.
+/// Which nodes one aggregation calls and which ones it probes, as indices into the endpoint list, with the names
+/// of the nodes left out and probed for the `aggregation started` line. `generation` is echoed back by the
+/// outcomes of that aggregation, so that a `reset()` in between drops them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
     pub included: Vec<usize>,
     pub probes: Vec<usize>,
+    pub excluded: Vec<String>,
+    pub probed: Vec<String>,
     pub generation: u64,
 }
 
@@ -205,12 +204,16 @@ impl CircuitBreakers {
             return Selection {
                 included: (0..self.nodes).collect(),
                 probes: Vec::new(),
+                excluded: Vec::new(),
+                probed: Vec::new(),
                 generation: 0,
             };
         };
         let mut selection = Selection {
             included: Vec::with_capacity(self.nodes),
             probes: Vec::new(),
+            excluded: Vec::new(),
+            probed: Vec::new(),
             generation: state.generation,
         };
         for (index, (name, node)) in state.nodes.iter_mut().enumerate() {
@@ -219,13 +222,48 @@ impl CircuitBreakers {
                 NodeState::Open { since, until } if until <= now => {
                     *node = NodeState::Probing { since };
                     selection.probes.push(index);
+                    selection.probed.push(name.clone());
+                    selection.excluded.push(name.clone());
                     debug!(kms_node = %name, excluded_ms = ms(now - since), "node probed");
                 }
                 // Still inside its window, or a probe already in flight: left out.
-                NodeState::Open { .. } | NodeState::Probing { .. } => {}
+                NodeState::Open { .. } | NodeState::Probing { .. } => {
+                    selection.excluded.push(name.clone());
+                }
             }
         }
         selection
+    }
+
+    /// Opens `switch` for a window: the state, the gauge, the exclusion counter and one WARN line, `message`.
+    /// `closed_after` is how many nodes stay in use.
+    #[allow(clippy::too_many_arguments)]
+    fn open_for_window(
+        &self,
+        switch: &mut NodeState,
+        node: &str,
+        since: Instant,
+        now: Instant,
+        exclude_for: Duration,
+        last_code: Option<ErrorCode>,
+        closed_after: usize,
+        message: &'static str,
+    ) {
+        // `exclude_for` is validated to be at most an hour: this cannot overflow.
+        *switch = NodeState::Open {
+            since,
+            until: now + exclude_for,
+        };
+        self.metrics.node_excluded(node, true);
+        self.metrics
+            .node_exclusion(node, last_code_label(last_code));
+        warn!(
+            kms_node = node,
+            last_code = last_code_label(last_code),
+            excluded_for_ms = ms(exclude_for),
+            closed_nodes = closed_after,
+            "{message}"
+        );
     }
 
     /// After a called node's outcome: `Unhealthy` opens it for `exclude_for`, unless that would leave fewer than
@@ -249,26 +287,21 @@ impl CircuitBreakers {
         }
         // The floor: opening this node must leave at least `min_nodes` in use.
         if closed > min_nodes {
-            // `exclude_for` is validated to be at most an hour: this cannot overflow.
-            *switch = NodeState::Open {
-                since: now,
-                until: now + exclude_for,
-            };
-            self.metrics.node_excluded(node, true);
-            self.metrics
-                .node_exclusion(node, last_code_label(*last_code));
-            warn!(
-                kms_node = node,
-                last_code = last_code_str(*last_code),
-                excluded_for_ms = ms(exclude_for),
-                closed_nodes = closed - 1,
-                "node excluded"
+            self.open_for_window(
+                switch,
+                node,
+                now,
+                now,
+                exclude_for,
+                *last_code,
+                closed - 1,
+                "node excluded",
             );
         } else {
             self.metrics.floor_hit(node);
             warn!(
                 kms_node = node,
-                last_code = last_code_str(*last_code),
+                last_code = last_code_label(*last_code),
                 min_nodes,
                 closed_nodes = closed,
                 "node kept: floor reached"
@@ -290,7 +323,7 @@ impl CircuitBreakers {
         let NodeState::Probing { since } = *switch else {
             return;
         };
-        *switch = match verdict {
+        match verdict {
             Verdict::Answered => {
                 self.metrics.node_excluded(node, false);
                 self.metrics.node_probe(node, Outcome::Succeeded);
@@ -300,30 +333,27 @@ impl CircuitBreakers {
                     closed_nodes = closed + 1,
                     "node included"
                 );
-                NodeState::Closed
+                *switch = NodeState::Closed;
             }
             Verdict::Unhealthy { last_code } => {
                 self.metrics.node_probe(node, Outcome::Failed);
-                self.metrics
-                    .node_exclusion(node, last_code_label(*last_code));
-                warn!(
-                    kms_node = node,
-                    last_code = last_code_str(*last_code),
-                    excluded_for_ms = ms(exclude_for),
-                    closed_nodes = closed,
-                    "probe failed: node excluded"
-                );
-                NodeState::Open {
+                self.open_for_window(
+                    switch,
+                    node,
                     since,
-                    until: now + exclude_for,
-                }
+                    now,
+                    exclude_for,
+                    *last_code,
+                    closed,
+                    "probe failed: node excluded",
+                );
             }
             // Nothing is known: the next aggregation probes again.
             Verdict::Ignored => {
                 self.metrics.node_probe(node, Outcome::Cancelled);
-                NodeState::Open { since, until: now }
+                *switch = NodeState::Open { since, until: now };
             }
-        };
+        }
     }
 
     /// Closes every node and starts a new generation: the outcomes of calls and probes started before are

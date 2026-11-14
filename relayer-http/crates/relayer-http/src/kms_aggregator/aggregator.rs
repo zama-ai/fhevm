@@ -11,7 +11,7 @@ use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, debug, error, instrument, warn};
 
-use super::breaker::Verdict;
+use super::breaker::{Verdict, last_code_label};
 use super::call::{CallError, Caller};
 use super::client::Endpoint;
 use super::flows::Flow;
@@ -150,20 +150,6 @@ impl<F: Flow> Aggregator<F> {
         // The fan-out, the threshold, the retry policy and the breakers' choice, so one request's log is
         // self-describing. The node lists are rendered as text, like the waits.
         let call = self.caller.call_config();
-        let names = |indices: &[usize]| -> String {
-            let names: Vec<&str> = self
-                .caller
-                .endpoints()
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| indices.contains(index))
-                .map(|(_, endpoint)| endpoint.name.as_str())
-                .collect();
-            format!("{names:?}")
-        };
-        let excluded: Vec<usize> = (0..self.caller.endpoints().len())
-            .filter(|index| !selection.included.contains(index))
-            .collect();
         debug!(
             nodes,
             threshold,
@@ -172,8 +158,8 @@ impl<F: Flow> Aggregator<F> {
             rate_limit_max = call.rate_limit.max_retries,
             rate_limit_initial_delay_ms = call.rate_limit.initial_delay.as_millis() as u64,
             circuit_breaker = if breakers.is_enabled() { "on" } else { "off" },
-            excluded_nodes = names(&excluded),
-            probed_nodes = names(&selection.probes),
+            excluded_nodes = ?selection.excluded,
+            probed_nodes = ?selection.probed,
             "aggregation started"
         );
 
@@ -293,7 +279,7 @@ impl<F: Flow> Aggregator<F> {
                     Err(CallError::Cancelled) => {
                         tally.cancelled.push(call.node.clone());
                         // Still running at the deadline: too slow, or hung. Otherwise fail fast cut it. The
-                        // node's last answer (`none` when it never answered) says whether the node or the
+                        // node's last answer (`cancelled` when it never answered) says whether the node or the
                         // request was slow.
                         let cause = if deadline_hit {
                             "deadline"
@@ -305,7 +291,7 @@ impl<F: Flow> Aggregator<F> {
                             attempts = call.attempts,
                             elapsed_ms,
                             cause,
-                            last_code = call.last_code.map_or("none", ErrorCode::as_str),
+                            last_code = last_code_label(call.last_code),
                             "call cut"
                         );
                     }
@@ -1207,7 +1193,7 @@ mod tests {
         assert_eq!(excluded.len(), 1);
         assert_eq!(excluded[0]["level"], "WARN");
         let fields = &excluded[0]["fields"];
-        assert_eq!(fields["last_code"], "none");
+        assert_eq!(fields["last_code"], "cancelled");
         assert_eq!(fields["excluded_for_ms"], 30_000);
         assert_eq!(fields["closed_nodes"], 12);
         let probed = lines_of(&lines, "node probed");
@@ -1217,7 +1203,7 @@ mod tests {
         let failed = lines_of(&lines, "probe failed: node excluded");
         assert_eq!(failed.len(), 1);
         assert_eq!(failed[0]["level"], "WARN");
-        assert_eq!(failed[0]["fields"]["last_code"], "none");
+        assert_eq!(failed[0]["fields"]["last_code"], "cancelled");
         assert_eq!(failed[0]["fields"]["closed_nodes"], 12);
         // The second aggregation names what it left out and what it probed.
         let started = lines_of(&lines, "aggregation started");
@@ -1242,7 +1228,7 @@ mod tests {
         let fields = &kept[0]["fields"];
         assert_eq!(fields["min_nodes"], 11);
         assert_eq!(fields["closed_nodes"], 11);
-        assert_eq!(fields["last_code"], "none");
+        assert_eq!(fields["last_code"], "cancelled");
 
         let lines = capture_runs(&["node included", "breakers reset"], || async {
             let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
@@ -1288,7 +1274,7 @@ mod tests {
                 .map(|l| l["fields"]["last_code"].clone())
                 .unwrap()
         };
-        assert_eq!(last_code("node-11"), "none");
+        assert_eq!(last_code("node-11"), "cancelled");
         assert_eq!(last_code("node-12"), "ciphertext_not_found");
     }
 
