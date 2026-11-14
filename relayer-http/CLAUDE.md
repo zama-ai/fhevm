@@ -59,13 +59,19 @@ unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`; a list is one comma-separated
 signed for that endpoint's `audience`; the signing key is never in the file: `kms_aggregator.auth.signer` names the env
 var holding it, or an AWS KMS key, and startup fails unless that key has the address `kms_aggregator.auth.address` and signs a test message. Local variants go to `config/*.local.yaml`, ignored by git.
 
-The configuration does not live in this directory only. A change to it (key added, renamed, removed, default
-changed) lands in the same change in every carrier: `config/config.yaml`, the local stack's template
-`test-suite/fhevm/templates/config/relayer-http.yaml` (rendered by `test-suite/fhevm/src/generate/config.ts`, which
-passes the untouched sections through verbatim, so a stale template fails the in-stack relayer at startup) and its
-test, the preview-env values and the chart values once relayer-http is deployed there. Before merging and after
-every rebase, grep the repository for the old keys; an in-flight integration branch (preview-env, e2e) is rebased
-onto the new keys, never left on the old ones.
+The configuration does not live in this directory only, and a configuration must run against an image built from
+the same tree. A change to it (key added, renamed, removed, default changed) lands in the same change in every
+carrier: `config/config.yaml`; the stack template `test-suite/fhevm/templates/config/relayer-http.yaml` and its
+renderer test (`test-suite/fhevm/src/config.test.ts`), read by the local stack (`test-suite/fhevm/src/generate/config.ts`
+passes the untouched sections through verbatim) and by the preview env (`ci/preview-env/scripts/deploy/deploy-relayer.sh`
+merges it under `ci/preview-env/relayer/values-relayer-http-e2e.yaml`, the overlay to touch for a preview-only
+value); the chart values once relayer-http is deployed there. Each stack gets its image its own way: the local stack
+pulls the bundle's image unless `--override relayer-http` builds it (`dev/README.md`; the js-sdk definition-of-done
+always passes it); the preview env builds it when the PR changes `relayer-http/**`, its path dependencies or the
+template (the filter of `.github/workflows/relayer-http-docker-build.yml`) and deploys the base commit's image
+otherwise, main's for a PR stacked on an unmerged branch (pin the parent's build with `relayer_http_version`).
+Before merging and after every rebase, grep the repository for the old keys; an in-flight integration branch
+(preview-env, e2e) is rebased onto the new keys, never left on the old ones.
 
 ## Commands
 

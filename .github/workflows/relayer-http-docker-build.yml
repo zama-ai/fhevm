@@ -73,6 +73,10 @@ jobs:
           - kms-connector/crates/api/**
           - kms-connector/Cargo.toml
           - shared/fhevm-sig-auth/**
+          # The stack template the preview env merges into the image's configuration
+          # (ci/preview-env/scripts/deploy/deploy-relayer.sh): a key added or renamed there must run
+          # against an image that knows it.
+          - test-suite/fhevm/templates/config/relayer-http.yaml
 
   build:
     needs: [is-latest-commit, check-changes]
