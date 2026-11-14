@@ -94,8 +94,10 @@ stateDiagram-v2
 
 ## 4. How an aggregation runs (`Aggregator::run`)
 
-1. Serialise the request once. Spawn one task per node (`Caller::call`) sharing the body bytes, the deadline and a
-   cancellation token of its own.
+1. Serialise the request once. Ask the circuit breakers which nodes to call and which excluded ones to probe
+   (section 7; every node and no probe while the breakers are off). Spawn one task per selected node
+   (`Caller::call`) sharing the body bytes, the deadline and a cancellation token of its own, and one detached probe
+   per probed node, which the aggregation never waits for.
 2. Loop on the next finished call or the deadline timer (the deadline is checked first).
 3. A `200` goes through `Flow::check` and is accepted or rejected. A failed call is counted with its connector code. A
    cancelled call is counted.
@@ -191,22 +193,103 @@ wait each time, so a sustained 429 backs off instead of hammering.
 **The deadline bounds both.** A wait that would end after `call.timeout` is skipped and the call gives up
 (`give_up_reason: deadline`), so no call outlives the aggregation. The deadline itself is at least 1 s. Startup
 refuses a list, or a rate-limit budget, whose waits alone cannot all start before the deadline, and names the first
-retry that could never run (section 9).
+retry that could never run (section 10).
 
 **Cost.** Every retry is one more request to that node, counted by its proxy against the sender's 100 per second.
 With the default list a decryption that keeps failing costs up to 6 requests per node (13 nodes: 78), spread over
 2.8 s, so a burst of about 40 such decryptions in one second saturates a node's window. The relayer checks neither
-the ACL nor the ciphertext before the fan-out (section 13), so a decryption that is not ready pays the whole list on
+the ACL nor the ciphertext before the fan-out (section 14), so a decryption that is not ready pays the whole list on
 every node. A longer list buys coverage of the deadline at that price; `relayer_http_kms_attempts` shows what calls
 actually use.
 
 **Observing it.** Each failed attempt is one WARN line with its decision: `retry_class`, `retry_in_ms` (null when
 the call gives up), `retry_after_ms`, `give_up_reason`; `call failed` carries `transient_retries` and
-`rate_limit_retries`, and `aggregation started` (debug) the policy itself (section 11). The scenarios
+`rate_limit_retries`, and `aggregation started` (debug) the policy itself (section 12). The scenarios
 `transient_waits_are_the_list`, `rate_limit_waits_one_window`, `rate_limit_honors_retry_after`,
-`rate_limit_backoff_then_success` and `mixed_classes_on_one_call` pin the timings under virtual time (section 12).
+`rate_limit_backoff_then_success` and `mixed_classes_on_one_call` pin the timings under virtual time (section 13).
 
-## 7. Response checks (`flows/`)
+## 7. Circuit breaker (`breaker.rs`)
+
+Off by default (`circuit_breaker.enabled`); with the flag off the code path is section 4's. In plain words:
+
+Every KMS node has a switch. Closed means the node is used, open means it is skipped.
+
+1. A request is sent to the closed nodes only.
+2. When a node's call ends, it is judged once. Unhealthy means the node could not be reached, answered 502, 503 or
+   504, or gave no answer at all before the deadline. Anything else means healthy, including a request error such as
+   `ciphertext_not_found` or `acl_denied`, even when the deadline cut the last retry.
+3. An unhealthy node is opened for `exclude_for` (30 s), unless that would leave fewer than `min_nodes` closed nodes.
+   Then it stays in use and the requests stay slow.
+4. After the window, the next request is also sent to the opened node, as a probe. The request does not wait for the
+   probe. If the probe answers, the node is closed again. If not, it is opened for another window.
+5. `Caller::reset_circuit_breakers()` closes every node.
+
+Seen from outside: only the request that detects an outage is slow, once per pod per outage. Every request after
+it runs at healthy speed with one share fewer, the probing one included, since nothing ever waits for a probe. With
+more unhealthy nodes than the floor allows, requests are slow again, as without a breaker. With no traffic nothing
+happens: there is no timer and no health call of its own.
+
+**Verdict** (`Verdict::of`, one pure function on a finished call, after the retries of section 6 are spent):
+
+| verdict | final outcome of the call | reading |
+|---|---|---|
+| `Unhealthy { last_code }` | `Failed` with code `upstream_transient` (a transport error, a bare status, the proxy without a healthy backend, the endpoint's storage or stream, the worker's transient failures), `overloaded` (503, the endpoint's in-flight cap) or `timeout` (504); `Cancelled` at the deadline with no answer during the call, or whose last answer was one of those three codes | the node, or the path to it, could not serve for the whole call |
+| `Answered` | any other answer: accepted or rejected `200`; `ciphertext_not_found`, `acl_denied`, `copro_consensus_failed`, `kms_context_*`, `user_*`, `malformed`, `unsupported_attestation_type`, `unprocessable`, `unknown`; `rate_limited` and a bare 429 (our send rate); `sender_authentication_failed`, `auth_expired` (our signature or clock); an unreadable or oversized 2xx body; `Cancelled` at the deadline whose last answer was one of these | the node is up: the request, the ciphertext, the ACL or our side was the problem; an answer the relayer cannot classify never excludes a node |
+| `Ignored` | `Cancelled` by fail fast; a signing failure (nothing was sent); a node task panic; a `client_closed` cut (never reaches the aggregator) | nothing is known about the node |
+
+Why the deadline alone is not a signal: a healthy node answering `ciphertext_not_found` is retried until its next
+wait does not fit before the deadline; if its last attempt is still in flight when the deadline fires, the call ends
+`Cancelled` exactly like a hung node's. `CallResult::last_code`, the code of the node's last answer during the call
+(`None` when it never answered), tells them apart; `call cut` logs it as `last_code`.
+
+**States and transitions** (`CircuitBreakers`, one per `Caller`, so one set for both flows: a node excluded
+because of a user-decrypt call is excluded for public decrypt too):
+
+```mermaid
+stateDiagram-v2
+  [*] --> closed
+  closed --> open: Unhealthy, floor allows (until = now + exclude_for)
+  closed --> closed: Unhealthy, floor reached (kept)
+  open --> probing: until elapsed, the next aggregation sends it the request as a probe
+  probing --> closed: probe Answered
+  probing --> open: probe Unhealthy (until = now + exclude_for)
+  probing --> open: probe Ignored (until = now, the next aggregation probes again)
+  open --> closed: reset()
+  probing --> closed: reset()
+```
+
+- `select(now)`: before the fan-out, the closed nodes to call and the open nodes whose window has elapsed to probe;
+  each probed node becomes `probing`, so concurrent aggregations send it one probe at a time. Half-open is not a
+  state: it is an open node whose `until` has passed, seen by the next `select`. There is no timer.
+- `on_call_outcome`: `Unhealthy` opens a closed node when `closed − 1 >= min_nodes` (open and probing nodes do not
+  count), else keeps it; `Answered` and `Ignored` change nothing; an outcome for a node another aggregation opened
+  meanwhile, or of a call started before a `reset()` (the selection's `generation` is echoed back), is dropped.
+- `on_probe_outcome`: `Answered` closes; `Unhealthy` opens for another window; `Ignored` sets `until = now`.
+- `reset()`: every node closed, generation bumped. For the dynamic configuration, when the endpoint list is
+  refreshed; a committee change (node count or thresholds) rebuilds the `Caller`, since the floor's bounds depend on
+  both.
+- The probe (`Caller::probe`): the same body sent by a detached task with the aggregation's deadline and its own
+  cancellation token; cut at that deadline, so a hung node ends it `Cancelled` with no answer, judged by the same
+  function. Its call runs as a child task, so a panic inside it is a `JoinError` and the verdict `Ignored`, never a
+  node left probing. Observe-only: no channel back to the aggregation, nothing to join; fail fast, the end of the
+  aggregation and a client that hangs up do not cancel it. Its attempts are recorded in the node metrics under the
+  request's flow.
+
+**Concurrency.** One `std::sync::Mutex` for the set, taken for two short critical sections per aggregation
+(`select` once, `on_call_outcome` once per outcome) and never held across an await. The floor is checked and applied
+in the same critical section: with k concurrent unhealthy outcomes and room for one more exclusion, exactly one node
+opens. A node's fan-out is fixed by its own `select`: exclusion and re-inclusion take effect for the aggregations that
+start afterwards, no node is added to or removed from a running one. Re-inclusion only raises the closed count, so it
+never crosses the floor. At most `n − min_nodes` probes are in flight per pod, each holding one call permit like any
+node call.
+
+**Cost and trade-off.** A node that is out cannot rescue a request: with one node out the fan-out is 12 for a
+threshold of 9, so four failures fail fast where five were needed; with two out, three. The floor bounds the loss, and
+a request that fails fast is answered at once instead of at the deadline. Per pod, in memory: replicas disagree
+during a window and probe independently. The probed node does fresh work for the probe (or serves its stored result,
+section 5); the probe's share is dropped.
+
+## 8. Response checks (`flows/`)
 
 Always on:
 
@@ -230,10 +313,10 @@ version.
 
 **Trust boundary.** Version 1 verifies no signature: the KMS core signs each response and the SDK verifies the
 signatures against the KMS signer set client-side. A byzantine node can therefore place a garbage 65-byte signature
-next to the honest public result, or a bogus user share among the counted ones; the SDK detects both. See section 13
+next to the honest public result, or a bogus user share among the counted ones; the SDK detects both. See section 14
 for the optional verification that could be added later.
 
-## 8. Outputs
+## 9. Outputs
 
 Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 
@@ -244,7 +327,7 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 { "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x02…" }
 ```
 
-## 9. Configuration → behaviour
+## 10. Configuration → behaviour
 
 ```yaml
 kms_aggregator:
@@ -255,14 +338,14 @@ kms_aggregator:
     timeout: 5000ms            # the deadline (1s..=60s); the whole section is optional, these are the defaults
     retries: { waits: [200ms, 300ms, 500ms, 800ms, 1s] }   # transient errors: the wait before each retry, section 6
     rate_limit: { max_retries: 1, initial_delay: 1s }  # rate_limited: retry k waits max(initial_delay, Retry-After) * 2^(k-1)
-  circuit_breaker:             # per-node circuit breaker (`breaker.rs`); the whole section is optional and off by default
+  circuit_breaker:             # per-node circuit breaker, section 7; the whole section is optional and off by default
     enabled: false             # off: today's behaviour, nothing is tracked
     exclude_for: 30s           # an unhealthy node is left out this long, then the next request probes it (1s..=1h)
     min_nodes: 11              # never exclude when fewer than this many nodes would stay in use (max(thresholds)..=n)
   public_decrypt: { threshold: 5 }
   user_decrypt:
     threshold: 9
-    checks: { decryption_id_match: false, decryption_id_majority: false }   # optional, section 7
+    checks: { decryption_id_match: false, decryption_id_majority: false }   # optional, section 8
   auth:                        # FhevmSig signing, section 5
     chain_id: 1                # EIP-712 domain: Ethereum chain id ...
     protocol_config: "0x…"     # ... and ProtocolConfig address
@@ -312,7 +395,7 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
   for one wait, an empty value for a single attempt.
 - TLS uses the platform trust store: the container image needs CA certificates.
 
-## 10. Cancellation and shutdown
+## 11. Cancellation and shutdown
 
 - **Deadline or fail fast**: the aggregation cancels its token; every pending call returns `Cancelled` immediately with
   its attempt count and elapsed time, so the final log line accounts for every node.
@@ -323,7 +406,7 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
   stops the server accepting and turns `/healthz` to 503; a running aggregation ends by its own threshold, fail fast or
   deadline (`call.timeout`).
 
-## 11. Logging and metrics
+## 12. Logging and metrics
 
 The rules are in `OBSERVABILITY.md`. The aggregator logs nothing at INFO: the request's one INFO line is the summary
 line of the endpoint, which reports the aggregation through the `Tally` that `run` fills (`counted`, `threshold`, and
@@ -351,7 +434,7 @@ records none: the aggregator counts it as `code="panic"`). The slot wait starts 
 attempt: it counts in `relayer_http_signer_errors_total{flow}`, and a call that made no attempt is not observed in
 `relayer_http_kms_attempts`; the node stays in `failed_kms_nodes`, which names the nodes that gave no response.
 
-## 12. Testing
+## 13. Testing
 
 - Unit tests next to every function (`cargo nextest run -p relayer-http`).
 - Wire tests of the HTTP client against a `wiremock` server (headers, body, statuses, redirects, body cap).
@@ -400,7 +483,7 @@ cargo nextest run --workspace
 make -C dev test-aws      # when the AWS signer or the AWS dependencies change
 ```
 
-## 13. Version 1 scope, and later
+## 14. Version 1 scope, and later
 
 Version 1 is the fan-out and the aggregation only.
 

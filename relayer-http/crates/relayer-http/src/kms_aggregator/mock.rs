@@ -81,28 +81,45 @@ pub enum Fixed {
 }
 
 pub struct MockClient {
-    scripts: Vec<Vec<Reply>>,
-    delay: Duration,
+    /// Per node, replaceable between runs (`set_script`).
+    scripts: Mutex<Vec<Vec<Reply>>>,
+    /// Per node, the time before each reply (`set_delay`).
+    delays: Mutex<Vec<Duration>>,
     attempts: Mutex<Vec<u32>>,
     /// The `Authorization` value of every attempt, per node.
     authorizations: Mutex<Vec<Vec<HeaderValue>>>,
 }
 
 impl MockClient {
-    /// `scripts[node]` = replies per attempt (the last one repeats). Endpoint names are `node-<i>`.
+    /// `scripts[node]` = replies per attempt (the last one repeats), `delay` before each reply for every node.
+    /// Endpoint names are `node-<i>`.
     pub fn new(scripts: Vec<Vec<Reply>>, delay: Duration) -> Arc<Self> {
-        let attempts = Mutex::new(vec![0; scripts.len()]);
-        let authorizations = Mutex::new(vec![Vec::new(); scripts.len()]);
+        let nodes = scripts.len();
         Arc::new(Self {
-            scripts,
-            delay,
-            attempts,
-            authorizations,
+            scripts: Mutex::new(scripts),
+            delays: Mutex::new(vec![delay; nodes]),
+            attempts: Mutex::new(vec![0; nodes]),
+            authorizations: Mutex::new(vec![Vec::new(); nodes]),
         })
+    }
+
+    /// How many nodes are scripted.
+    pub fn nodes(&self) -> usize {
+        self.attempts.lock().unwrap().len()
     }
 
     pub fn attempts(&self, node: usize) -> u32 {
         self.attempts.lock().unwrap()[node]
+    }
+
+    /// Replaces node `node`'s script for its next attempts (the attempt index keeps counting).
+    pub fn set_script(&self, node: usize, script: Vec<Reply>) {
+        self.scripts.lock().unwrap()[node] = script;
+    }
+
+    /// The time before each of node `node`'s replies from now on.
+    pub fn set_delay(&self, node: usize, delay: Duration) {
+        self.delays.lock().unwrap()[node] = delay;
     }
 
     /// The `Authorization` values `node` received, one per attempt.
@@ -164,9 +181,30 @@ impl MockClient {
         call: CallConfig,
         signer: Arc<RequestSigner>,
     ) -> Arc<Caller> {
-        let cfg = Self::config(self.scripts.len(), call);
+        let cfg = Self::config(self.nodes(), call);
         let metrics = Arc::new(Metrics::new().unwrap());
         Arc::new(Caller::new(&cfg, self, signer, metrics).unwrap())
+    }
+
+    /// A `Caller` over this mock with the circuit breakers on (`min_nodes`, `exclude_for`), both thresholds at
+    /// `threshold` (the floor's lower bound), signing with `test_signer()`.
+    pub fn caller_with_breakers(
+        self: Arc<Self>,
+        call: CallConfig,
+        threshold: usize,
+        min_nodes: usize,
+        exclude_for: Duration,
+    ) -> Arc<Caller> {
+        let mut cfg = Self::config(self.nodes(), call);
+        cfg.user_decrypt.threshold = threshold;
+        cfg.public_decrypt.threshold = threshold;
+        cfg.circuit_breaker = CircuitBreakerConfig {
+            enabled: true,
+            exclude_for,
+            min_nodes,
+        };
+        let metrics = Arc::new(Metrics::new().unwrap());
+        Arc::new(Caller::new(&cfg, self, test_signer(), metrics).unwrap())
     }
 }
 
@@ -190,13 +228,17 @@ impl ConnectorClient for MockClient {
             attempts[node] - 1
         };
         self.authorizations.lock().unwrap()[node].push(authorization.clone());
-        let script = &self.scripts[node];
-        let reply = script
-            .get(attempt as usize)
-            .or(script.last())
-            .copied()
-            .unwrap_or(Reply::Fixed(Fixed::Refused));
-        sleep(self.delay).await;
+        let reply = {
+            let scripts = self.scripts.lock().unwrap();
+            let script = &scripts[node];
+            script
+                .get(attempt as usize)
+                .or(script.last())
+                .copied()
+                .unwrap_or(Reply::Fixed(Fixed::Refused))
+        };
+        let delay = self.delays.lock().unwrap()[node];
+        sleep(delay).await;
         match reply {
             Reply::Fixed(Fixed::Hang) => std::future::pending().await,
             Reply::Fixed(Fixed::Panic) => panic!("mock: the node task panics"),
@@ -449,5 +491,36 @@ mod tests {
         }
         assert_eq!(seen, vec![429, 200, 200]);
         assert_eq!(mock.attempts(0), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_replaced_script_and_delay_apply_to_the_next_attempt() {
+        let mock = MockClient::new(
+            vec![vec![Reply::Fixed(Fixed::Refused)]],
+            Duration::from_millis(10),
+        );
+        let endpoint = Endpoint {
+            name: "node-0".into(),
+            url: Url::parse("http://localhost:3000/0").unwrap(),
+            audience: audience(0),
+        };
+        let body = Bytes::from_static(USER_REQUEST_JSON.as_bytes());
+        let auth = HeaderValue::from_static("FhevmSig expires=1, sig=0x00");
+        let started = tokio::time::Instant::now();
+        let first = mock
+            .post(&endpoint, USER_DECRYPTION_ROUTE, body.clone(), &auth)
+            .await;
+        assert!(matches!(first, Err(AttemptError::Transport(_))));
+        assert_eq!(started.elapsed(), Duration::from_millis(10));
+        mock.set_script(0, vec![Reply::Fixed(Fixed::Ok)]);
+        mock.set_delay(0, Duration::from_millis(300));
+        let started = tokio::time::Instant::now();
+        let second = mock
+            .post(&endpoint, USER_DECRYPTION_ROUTE, body, &auth)
+            .await
+            .unwrap();
+        assert_eq!(second.status, 200);
+        assert_eq!(started.elapsed(), Duration::from_millis(300));
+        assert_eq!(mock.attempts(0), 2);
     }
 }

@@ -11,7 +11,9 @@ use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, debug, error, instrument, warn};
 
+use super::breaker::Verdict;
 use super::call::{CallError, Caller};
+use super::client::Endpoint;
 use super::flows::Flow;
 use crate::metrics::PANIC_CODE;
 
@@ -118,7 +120,6 @@ impl<F: Flow> Aggregator<F> {
         request: F::Request,
         tally: &mut Tally,
     ) -> Result<F::Output, AggregationError> {
-        let nodes = self.caller.endpoints().len();
         let threshold = self.threshold;
         let timeout = self.caller.timeout();
         let started = Instant::now();
@@ -128,10 +129,21 @@ impl<F: Flow> Aggregator<F> {
         let body = serde_json::to_vec(&request)
             .map(Bytes::from)
             .map_err(|e| AggregationError::Internal(format!("serialise request: {e}")))?;
-        tally.threshold = threshold;
-        tally.pending = self
+        // The circuit breakers decide which nodes this aggregation calls, and which open ones it probes beside
+        // itself (`breaker.rs`); with the breakers off that is every node and no probe.
+        let breakers = self.caller.circuit_breakers();
+        let selection = breakers.select(started);
+        let included: Vec<&Endpoint> = self
             .caller
             .endpoints()
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| selection.included.contains(index))
+            .map(|(_, endpoint)| endpoint)
+            .collect();
+        let nodes = included.len();
+        tally.threshold = threshold;
+        tally.pending = included
             .iter()
             .map(|endpoint| endpoint.name.clone())
             .collect();
@@ -147,11 +159,24 @@ impl<F: Flow> Aggregator<F> {
             "aggregation started"
         );
 
+        // A probe is the same request sent to a node whose exclusion window has elapsed; this aggregation never
+        // waits for it, its outcome alone decides whether the next ones call that node again.
+        for &index in &selection.probes {
+            self.caller.probe::<F::Response>(
+                F::NAME,
+                index,
+                F::ROUTE,
+                body.clone(),
+                deadline,
+                selection.generation,
+            );
+        }
+
         // One task per node; all of them share the body bytes, the deadline and the cancellation token.
         let mut pending = JoinSet::new();
         // A task that panics returns no result: its id says which node it was.
         let mut task_nodes: HashMap<tokio::task::Id, (String, PanicSlot)> = HashMap::new();
-        for endpoint in self.caller.endpoints() {
+        for endpoint in included {
             // The task must own its endpoint: it outlives this borrow.
             let endpoint = endpoint.clone();
             let name = endpoint.name.clone();
@@ -218,6 +243,13 @@ impl<F: Flow> Aggregator<F> {
             // A panicked task has no result to account for, but it still counts against the threshold.
             if let Some(call) = call {
                 tally.pending.retain(|name| *name != call.node);
+                // What this outcome says about the node's health, for the next aggregations.
+                breakers.on_call_outcome(
+                    &call.node,
+                    &Verdict::of(&call, deadline_hit),
+                    Instant::now(),
+                    selection.generation,
+                );
                 let elapsed_ms = call.elapsed.as_millis() as u64;
                 match call.result {
                     Ok(response) => match F::check(&self.checks, &request, &accepted, &response) {
@@ -322,8 +354,10 @@ mod tests {
 
     use kms_connector_api::{PublicDecryptionRequest, UserDecryptionRequest};
 
+    use tokio::time::sleep;
+
     use super::*;
-    use crate::kms_aggregator::config::UserChecks;
+    use crate::kms_aggregator::config::{CallConfig, UserChecks};
     use crate::kms_aggregator::flows::public_decrypt::PublicDecrypt;
     use crate::kms_aggregator::flows::user_decrypt::UserDecrypt;
     use crate::kms_aggregator::mock::{
@@ -340,9 +374,14 @@ mod tests {
     const PANIC: Reply = Reply::Fixed(Fixed::Panic);
     const BAD_SIGNATURE: Reply = Reply::Fixed(Fixed::BadSignature);
     const NOT_FOUND: Reply = Reply::Error(ErrorCode::CiphertextNotFound);
+    const MALFORMED: Reply = Reply::Error(ErrorCode::Malformed);
 
     fn ms(v: u64) -> Duration {
         Duration::from_millis(v)
+    }
+
+    fn secs(v: u64) -> Duration {
+        Duration::from_secs(v)
     }
 
     /// Node groups → one script per node, in order.
@@ -885,5 +924,191 @@ mod tests {
             .to_string(),
             "deadline reached with 7 of 9 responses"
         );
+    }
+
+    // Circuit breaker: sequential runs over one aggregator (`breaker.rs`; docs.md, Circuit breaker). 13 nodes
+    // answering `groups`, 300 ms per attempt, the production retry policy under a 5 s deadline, user threshold
+    // 9, `min_nodes 11`, `exclude_for 30s`: the issue's example.
+
+    fn breaking(groups: &[(usize, Reply)]) -> (Arc<MockClient>, Aggregator<UserDecrypt>) {
+        let mock = MockClient::new(nodes(groups), ms(300));
+        let caller = mock
+            .clone()
+            .caller_with_breakers(CallConfig::default(), 9, 11, secs(30));
+        (mock, Aggregator::new(caller, 9, UserChecks::default()))
+    }
+
+    /// One user-decrypt run: the shares returned (or the error) and how long it took.
+    async fn run_once(
+        aggregator: &Aggregator<UserDecrypt>,
+    ) -> (Result<usize, AggregationError>, Duration) {
+        let started = Instant::now();
+        let result = aggregator
+            .run("req-breaker", user_request(), &mut Tally::default())
+            .await
+            .map(|output| output.result.len());
+        (result, started.elapsed())
+    }
+
+    fn excluded(aggregator: &Aggregator<UserDecrypt>) -> Vec<String> {
+        aggregator.caller.circuit_breakers().excluded_names()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_example_table_reproduces() {
+        let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
+        // 1st request: node 12 is cut at the deadline with no answer. 5 s, 12 shares, then it is out.
+        assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
+        assert_eq!(excluded(&aggregator), ["node-12"]);
+        // Within the window: 12 nodes, healthy speed, node 12 not called.
+        sleep(secs(1)).await;
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
+        assert_eq!(mock.attempts(12), 1);
+        // After the window: node 12 is probed beside the request, which does not wait for it.
+        sleep(secs(30)).await;
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
+        assert_eq!(mock.attempts(12), 2);
+        // While that probe hangs: neither called nor probed again.
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
+        assert_eq!(mock.attempts(12), 2);
+        // The probe is cut at its deadline: out for another window, then probed again.
+        sleep(secs(5)).await;
+        assert_eq!(excluded(&aggregator), ["node-12"]);
+        sleep(secs(30)).await;
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
+        assert_eq!(mock.attempts(12), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_probe_that_answers_closes_the_node() {
+        let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
+        assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
+        mock.set_script(12, vec![OK]);
+        sleep(secs(31)).await;
+        // The probing request still returns 12 shares: the probe's share is observed, not counted.
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
+        sleep(secs(1)).await;
+        assert!(excluded(&aggregator).is_empty());
+        assert_eq!(run_once(&aggregator).await, (Ok(13), ms(300)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn three_hung_nodes_keep_the_floor() {
+        let (_, aggregator) = breaking(&[(10, OK), (3, HANG)]);
+        // Two are out, the third is kept: every run waits for the deadline with 10 shares, as without a breaker.
+        for _ in 0..2 {
+            assert_eq!(run_once(&aggregator).await, (Ok(10), secs(5)));
+            assert_eq!(excluded(&aggregator).len(), 2);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn overloaded_after_the_retries_trips_and_rate_limited_does_not() {
+        let (mock, aggregator) = breaking(&[(12, OK), (1, Reply::Error(ErrorCode::Overloaded))]);
+        // Six attempts of 300 ms and 2.8 s of waits: the node spent the budget still overloaded, it is out.
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(6 * 300 + 2800)));
+        assert_eq!(mock.attempts(12), 6);
+        assert_eq!(excluded(&aggregator), ["node-12"]);
+
+        let (mock, aggregator) = breaking(&[(12, OK), (1, Reply::Error(ErrorCode::RateLimited))]);
+        // Our own send rate: one window, then the call fails; the node is up and stays in use.
+        assert_eq!(run_once(&aggregator).await.0, Ok(12));
+        assert!(excluded(&aggregator).is_empty());
+        assert_eq!(run_once(&aggregator).await.0, Ok(12));
+        assert_eq!(mock.attempts(12), 4);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ciphertext_not_found_cut_at_the_deadline_does_not_trip() {
+        let (mock, aggregator) = breaking(&[(12, OK), (1, NOT_FOUND)]);
+        // Five legitimate answers, then the sixth attempt is still in flight at the deadline.
+        mock.set_script(12, vec![NOT_FOUND; 5].into_iter().chain([HANG]).collect());
+        assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
+        assert_eq!(mock.attempts(12), 6);
+        assert!(excluded(&aggregator).is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fail_fast_comes_earlier_with_a_reduced_fan_out() {
+        // 13 nodes: four final failures leave 9, enough.
+        let (_, aggregator) = breaking(&[(4, MALFORMED), (9, OK)]);
+        assert_eq!(run_once(&aggregator).await, (Ok(9), ms(300)));
+        // With node 12 out, the same four failures leave 8: fail fast at once, no deadline waited.
+        let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
+        assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
+        for node in 0..4 {
+            mock.set_script(node, vec![MALFORMED]);
+        }
+        let (result, elapsed) = run_once(&aggregator).await;
+        assert!(
+            matches!(
+                result,
+                Err(AggregationError::ThresholdNotReached { counted: 8, .. })
+            ),
+            "{result:?}"
+        );
+        assert_eq!(elapsed, ms(300));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reset_reincludes_for_the_next_run_only() {
+        let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
+        let aggregator = Arc::new(aggregator);
+        assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
+        let in_flight = tokio::spawn({
+            let aggregator = aggregator.clone();
+            async move { run_once(&aggregator).await }
+        });
+        tokio::task::yield_now().await;
+        assert_eq!(aggregator.caller.reset_circuit_breakers(), 1);
+        // The run in flight keeps the 12 nodes it selected.
+        assert_eq!(in_flight.await.unwrap(), (Ok(12), ms(300)));
+        assert_eq!(mock.attempts(12), 1);
+        // The next run calls node 12 again, and pays the deadline since it still hangs.
+        assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
+        assert_eq!(mock.attempts(12), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_probe_survives_fail_fast_and_the_end_of_its_aggregation() {
+        let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
+        assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
+        sleep(secs(31)).await;
+        // Five failures make the threshold unreachable: fail fast at 300 ms; the probe to node 12 goes on.
+        for node in 0..5 {
+            mock.set_script(node, vec![MALFORMED]);
+        }
+        let (result, elapsed) = run_once(&aggregator).await;
+        assert!(matches!(
+            result,
+            Err(AggregationError::ThresholdNotReached { .. })
+        ));
+        assert_eq!(elapsed, ms(300));
+        assert_eq!(mock.attempts(12), 2);
+        // The probe is cut at the aggregation's deadline, not at its end: out for another window.
+        sleep(secs(5)).await;
+        assert_eq!(excluded(&aggregator), ["node-12"]);
+        sleep(secs(24)).await;
+        let _ = run_once(&aggregator).await;
+        assert_eq!(mock.attempts(12), 2, "still inside the window");
+        sleep(secs(6)).await;
+        let _ = run_once(&aggregator).await;
+        assert_eq!(mock.attempts(12), 3, "probed again after the window");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_panicking_probe_leaves_the_node_open_not_probing() {
+        let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
+        assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
+        mock.set_script(12, vec![PANIC]);
+        sleep(secs(31)).await;
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
+        sleep(secs(1)).await;
+        // The probe's task panicked: nothing is known, so the next request probes again.
+        mock.set_script(12, vec![OK]);
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
+        assert_eq!(mock.attempts(12), 3);
+        sleep(secs(1)).await;
+        assert_eq!(run_once(&aggregator).await, (Ok(13), ms(300)));
     }
 }

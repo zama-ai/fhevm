@@ -43,7 +43,7 @@ pub struct KmsAggregatorConfig {
 }
 
 /// Sized for ~200 decryptions/s with 13 nodes: λ × Σ(per-node hold time) × 1.5, a hold time being the node's
-/// latency (~1 s) or the deadline for a hung node. See `kms_aggregator/docs.md` §9.
+/// latency (~1 s) or the deadline for a hung node. See `kms_aggregator/docs.md` §10.
 fn default_max_concurrent_calls() -> usize {
     4096
 }

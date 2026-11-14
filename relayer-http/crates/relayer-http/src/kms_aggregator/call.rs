@@ -8,11 +8,11 @@ use kms_connector_api::ErrorCode;
 use reqwest::header::HeaderValue;
 use serde::de::DeserializeOwned;
 use tokio::sync::Semaphore;
-use tokio::time::{Duration, Instant, sleep};
+use tokio::time::{Duration, Instant, sleep, sleep_until};
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
+use tracing::{Instrument, warn};
 
-use super::breaker::CircuitBreakers;
+use super::breaker::{CircuitBreakers, Verdict};
 use super::client::{AttemptError, ConnectorClient, Endpoint, decode};
 use super::config::{CallConfig, ConfigError, KmsAggregatorConfig, RetryClass};
 use super::signer::RequestSigner;
@@ -240,6 +240,60 @@ impl Caller {
     /// many nodes were out.
     pub fn reset_circuit_breakers(&self) -> usize {
         self.breakers.reset()
+    }
+
+    /// Sends `body` to the endpoint at `index` beside an aggregation, as a probe of an open circuit breaker:
+    /// detached from the aggregation, cut at `deadline`, its verdict goes to the breakers and its answer is
+    /// dropped. The aggregation never waits for it; nothing else cancels it.
+    pub fn probe<R: DeserializeOwned + Send + 'static>(
+        self: &Arc<Self>,
+        flow: FlowName,
+        index: usize,
+        route: &'static str,
+        body: Bytes,
+        deadline: Instant,
+        generation: u64,
+    ) {
+        let caller = self.clone();
+        tokio::spawn(
+            async move {
+                let Some(endpoint) = caller.endpoints().get(index).cloned() else {
+                    return;
+                };
+                let cancel = CancellationToken::new();
+                // The call runs as a child task: a panic inside it is a `JoinError` here, never a node left
+                // probing forever.
+                let mut call = tokio::spawn({
+                    let (caller, endpoint, cancel) =
+                        (caller.clone(), endpoint.clone(), cancel.clone());
+                    async move {
+                        caller
+                            .call::<R>(flow, &endpoint, route, body, deadline, cancel)
+                            .await
+                    }
+                    .in_current_span()
+                });
+                let joined = tokio::select! {
+                    biased;
+                    () = sleep_until(deadline) => {
+                        cancel.cancel();
+                        (&mut call).await
+                    }
+                    joined = &mut call => joined,
+                };
+                let verdict = match joined {
+                    Ok(call) => Verdict::of(&call, true),
+                    Err(_) => Verdict::Ignored,
+                };
+                caller.breakers.on_probe_outcome(
+                    &endpoint.name,
+                    &verdict,
+                    Instant::now(),
+                    generation,
+                );
+            }
+            .in_current_span(),
+        );
     }
 
     /// The transient waits as logged by `aggregation started`, in milliseconds.
