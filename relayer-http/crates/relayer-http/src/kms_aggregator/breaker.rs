@@ -1,25 +1,7 @@
 //! Per-node circuit breaker: which KMS nodes an aggregation calls, judged from the outcome of their last call.
-//!
-//! Every KMS node has a switch. Closed means the node is used, open means it is skipped.
-//!
-//! 1. A request is sent to the closed nodes only.
-//! 2. When a node's call ends, it is judged once. Unhealthy means the node could not be reached, answered 502,
-//!    503 or 504, or gave no answer at all before the deadline. Anything else means healthy, including a request
-//!    error such as `ciphertext_not_found` or `acl_denied`, even when the deadline cut the last retry.
-//! 3. An unhealthy node is opened for `exclude_for`, unless that would leave fewer than `min_nodes` closed nodes.
-//!    Then it stays in use and the requests stay slow.
-//! 4. After the window, the next request is also sent to the opened node, as a probe. The request does not wait
-//!    for the probe. If the probe answers, the node is closed again. If not, it is opened for another window.
-//! 5. `reset()` closes every node.
-//!
-//! Only the request that detects an outage is slow, once per pod per outage. No request ever waits for an open
-//! node or for a probe.
-//!
-//! Why the deadline alone is not a signal: a healthy node answering `ciphertext_not_found` is retried until its
-//! next wait does not fit before the deadline; if its last attempt is still in flight when the deadline fires, the
-//! call ends cancelled exactly like a hung node's. The two are told apart by the node's last answer during the
-//! call (`CallResult::last_code`): no answer at all, or a last answer saying the node cannot serve, is unhealthy;
-//! any other last answer means the node is up and the retries were legitimate.
+//! Every node has a switch (closed: used; open: skipped for a window, then probed by the next request, which
+//! never waits for the probe) and a floor keeps at least `min_nodes` in use. The algorithm in plain words, the
+//! verdict table and the diagrams: `docs.md`, section 7.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;

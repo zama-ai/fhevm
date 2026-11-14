@@ -230,6 +230,26 @@ it runs at healthy speed with one share fewer, the probing one included, since n
 more unhealthy nodes than the floor allows, requests are slow again, as without a breaker. With no traffic nothing
 happens: there is no timer and no health call of its own.
 
+The same five steps as one request goes through them, with node C open and its window elapsed. Steps 1 and 4 are
+the selection, step 2 the verdicts, step 3 the floor; the probe runs beside the aggregation and only its verdict is
+kept:
+
+```mermaid
+flowchart TD
+  R[request arrives] --> S["1. select: closed nodes A, B, D … are called;<br/>C, open and past its window, is probed"]
+  S --> F[fan-out to the closed nodes]
+  S --> P[probe to C, detached, same body, same deadline]
+  F --> O["2. each call ends: judged once<br/>(unhealthy / answered / ignored)"]
+  O --> X{"3. unhealthy and<br/>closed − 1 ≥ min_nodes?"}
+  X -- yes --> E[node opened for exclude_for]
+  X -- no --> K[node kept in use, floor hit]
+  O --> A[answer to the client: shares of the closed nodes, at the deadline or when every call ended]
+  P --> V["4. probe ends: judged by the same rule"]
+  V -- answered --> C1[C closed: in use for the next request]
+  V -- unhealthy --> C2[C open for another window]
+  V -- ignored --> C3[C open, probed again by the next request]
+```
+
 **Verdict** (`Verdict::of`, one pure function on a finished call, after the retries of section 6 are spent):
 
 | verdict | final outcome of the call | reading |
