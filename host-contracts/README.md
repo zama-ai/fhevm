@@ -44,8 +44,14 @@ npx hardhat task:setFHEVMExecutorAddress --address <executor-proxy>
 npx hardhat task:setKMSVerifierAddress --address <kms>
 npx hardhat task:setInputVerifierAddress --address <input-verifier>
 npx hardhat task:setHCULimitAddress --address <hcu-limit>
+npx hardhat task:setHCUConfiguratorAddress --address <hcu-configurator>
 npx hardhat task:setPauserSetAddress --address <pauser-set>
 ```
+
+When the deployed release has no `HCUConfigurator`, run `npx hardhat task:deployEmptyProxyForHCUConfigurator`
+in place of its setter: it deploys the empty proxy and writes its address. The proposal must then upgrade that
+proxy with the call from `task:prepareUpgradeHCUConfigurator` before upgrading `HCULimit`, whose
+`reinitializeV6` reverts until `HCUConfigurator` runs.
 
 Those commands generate:
 
@@ -83,6 +89,12 @@ Notes:
 
 - `KMSVerifier.NewContextSet(uint256,address[],uint256)` -> `ProtocolConfig.NewKmsContext(uint256,uint256,KmsNodeParams[],KmsThresholds,string,PcrValues[])`
 - `KMSVerifier.KMSContextDestroyed(uint256)` -> `ProtocolConfig.KmsContextDestroyed(uint256)`
+
+`HCULimit` no longer emits its settings' events. `HCUConfigurator`, at `hcuConfiguratorAdd`, emits them with the
+same signatures:
+
+- `HCULimit.MaxHCUPerTxSet(uint48)` -> `HCUConfigurator.MaxHCUPerTxSet(uint48)`
+- `HCULimit.MaxHCUDepthPerTxSet(uint48)` -> `HCUConfigurator.MaxHCUDepthPerTxSet(uint48)`
 
 ## Host Deployment Role
 

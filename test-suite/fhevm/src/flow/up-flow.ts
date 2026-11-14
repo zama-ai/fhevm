@@ -185,6 +185,7 @@ import {
   CONNECTOR_VERSION_KEYS,
   CONTRACT_VERSION_KEYS,
   GATEWAY_CONTRACT_UPGRADES,
+  HCU_CONFIGURATOR_BOOTSTRAP_COMMAND,
   HOST_CONTRACT_UPGRADES,
   LISTENER_CORE_VERSION_KEYS,
   RELAYER_VERSION_KEYS,
@@ -2325,6 +2326,20 @@ export const upgradeBootstrappedStack = async (state: State, steps: readonly Upg
         runContractTask("gateway-sc", "gateway-sc-deploy", contractUpgradeCommand(task, contract)),
       );
     }
+    await once("host:HCUConfigurator", () =>
+      runContractTask("host-sc", "host-sc-deploy", HCU_CONFIGURATOR_BOOTSTRAP_COMMAND),
+    );
+    for (const chain of extraHostChains(state)) {
+      await once(`host:HCUConfigurator@${chain.key}`, () =>
+        runContractTask("host-sc", `${chain.sc}-deploy`, HCU_CONFIGURATOR_BOOTSTRAP_COMMAND, {
+          envComponent: chain.sc,
+          composeFile: composePath(chain.sc),
+        }),
+      );
+    }
+    // Keep the bootstrapped addresses when the runtime is generated again.
+    const discovery = await ensureDiscovery(state);
+    discovery.hosts = { ...discovery.hosts, ...(await discoverContracts(state)).hosts };
     for (const [task, contract] of CANONICAL_HOST_CONTRACT_UPGRADES) {
       await once(`host:${contract}`, () =>
         runContractTask("host-sc", "host-sc-deploy", contractUpgradeCommand(task, contract)),

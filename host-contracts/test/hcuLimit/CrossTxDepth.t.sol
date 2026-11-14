@@ -4,9 +4,10 @@ pragma solidity ^0.8.24;
 import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {HCULimit} from "../../contracts/HCULimit.sol";
+import {HCUConfigurator} from "../../contracts/HCUConfigurator.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuConfiguratorAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 /// @dev A contract that keeps one encrypted value and extends it by one addition per transaction.
 contract DepthUser {
@@ -80,15 +81,18 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     ACL internal acl;
     HCULimit internal hcu;
+    HCUConfigurator internal hcuConfigurator;
     DepthUser internal alice;
     DepthUser internal bob;
 
     function setUp() public {
         _deployACL(owner);
         _deployHCULimit(owner);
+        _deployHCUConfigurator(owner);
         _deployFHEVMExecutor(owner);
         acl = ACL(aclAdd);
         hcu = HCULimit(hcuLimitAdd);
+        hcuConfigurator = HCUConfigurator(hcuConfiguratorAdd);
         alice = new DepthUser();
         bob = new DepthUser();
     }
@@ -96,7 +100,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     function test_SmallChainedTransactionsAccumulateUntilTheLimit() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setLimit(start + 3 * step, 1);
 
         alice.addOne(alice.value());
@@ -115,7 +119,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     function test_CarriedDepthDecaysWithBlocks() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         // One block of decay falls one short of the excess, so the reported wait rounds up to two blocks.
         _setLimit(start + 2 * step, step - 1);
         alice.addOne(alice.value());
@@ -185,7 +189,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         }
         alice.share(address(bob));
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(start + 2 * step);
+        hcuConfigurator.setMaxHCUDepthPerTx(start + 2 * step);
 
         // The stored handle carries more depth, but the new chain is deeper within this transaction.
         bytes32 stored = alice.value();
@@ -228,7 +232,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     function test_TransactionDepthLimitIgnoresCarriedDepth() public {
         (, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         for (uint256 i = 0; i < 4; i++) {
             alice.addOne(alice.value());
         }
@@ -254,21 +258,21 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     function test_LimitAndDecayMustBeBothSetOrBothZero() public {
         vm.startPrank(owner);
-        vm.expectRevert(HCULimit.InvalidCrossTxDepthLimit.selector);
-        hcu.setCrossTxDepthLimit(1_000_000, 0);
-        vm.expectRevert(HCULimit.InvalidCrossTxDepthLimit.selector);
-        hcu.setCrossTxDepthLimit(0, 1);
+        vm.expectRevert(HCUConfigurator.InvalidCrossTxDepthLimit.selector);
+        hcuConfigurator.setCrossTxDepthLimit(1_000_000, 0);
+        vm.expectRevert(HCUConfigurator.InvalidCrossTxDepthLimit.selector);
+        hcuConfigurator.setCrossTxDepthLimit(0, 1);
         vm.stopPrank();
     }
 
     function test_LimitCoversTransactionDepthLimitFromBothSetters() public {
         uint48 maxDepthPerTx = hcu.getMaxHCUDepthPerTx();
         vm.startPrank(owner);
-        vm.expectRevert(HCULimit.CrossTxDepthBelowMaxDepthPerTx.selector);
-        hcu.setCrossTxDepthLimit(maxDepthPerTx - 1, 1);
-        hcu.setCrossTxDepthLimit(maxDepthPerTx, 1);
-        vm.expectRevert(HCULimit.CrossTxDepthBelowMaxDepthPerTx.selector);
-        hcu.setMaxHCUDepthPerTx(maxDepthPerTx + 1);
+        vm.expectRevert(HCUConfigurator.CrossTxDepthBelowMaxDepthPerTx.selector);
+        hcuConfigurator.setCrossTxDepthLimit(maxDepthPerTx - 1, 1);
+        hcuConfigurator.setCrossTxDepthLimit(maxDepthPerTx, 1);
+        vm.expectRevert(HCUConfigurator.CrossTxDepthBelowMaxDepthPerTx.selector);
+        hcuConfigurator.setMaxHCUDepthPerTx(maxDepthPerTx + 1);
         vm.stopPrank();
     }
 
@@ -277,15 +281,15 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         vm.mockCallRevert(aclAdd, abi.encodeWithSelector(ACL.getStoredDepth.selector), "");
         vm.startPrank(owner);
         vm.expectRevert();
-        hcu.setCrossTxDepthLimit(20_000_000, 10_000_000);
-        hcu.setCrossTxDepthLimit(0, 0);
+        hcuConfigurator.setCrossTxDepthLimit(20_000_000, 10_000_000);
+        hcuConfigurator.setCrossTxDepthLimit(0, 0);
         vm.stopPrank();
     }
 
     function test_StoredDepthLimitRefusesADeepGrant() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setStoredDepthLimit(DEFAULT_QUOTA, start + 2 * step);
 
         alice.addOne(alice.value());
@@ -308,7 +312,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         alice.addOne(alice.value());
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setStoredDepthLimit(DEFAULT_QUOTA, start + step);
         bytes memory refused = abi.encodeWithSelector(
             HCULimit.HCUStoredDepthExceeded.selector,
@@ -331,7 +335,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     function test_StoredDepthLimitLeavesTheExecutorsTransientGrantsUnchecked() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setStoredDepthLimit(DEFAULT_QUOTA, start + step);
         // FHEVMExecutor hands the deeper result to alice; only a grant by alice would be checked.
         alice.compute(alice.value());
@@ -340,7 +344,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     function test_StoredDepthLimitIsOffWhileTheDepthLimitIsOff() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setStoredDepthLimit(DEFAULT_QUOTA, start + step);
         _setLimit(0, 0);
         alice.addOne(alice.value());
@@ -349,11 +353,11 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     function test_EachQuotaGrantsUpToItsOwnStoredDepthLimit() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
-        hcu.setMaxHCUDepthPerTx(step);
+        hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setStoredDepthLimit(DEFAULT_QUOTA, start + step);
         vm.startPrank(owner);
-        hcu.setQuota(PARTNER_QUOTA, type(uint48).max, type(uint48).max);
-        hcu.assignQuota(PARTNER_QUOTA, address(bob));
+        hcuConfigurator.setQuota(PARTNER_QUOTA, type(uint48).max, type(uint48).max);
+        hcuConfigurator.assignQuota(PARTNER_QUOTA, address(bob));
         vm.stopPrank();
         _setStoredDepthLimit(PARTNER_QUOTA, start + 3 * step);
 
@@ -377,43 +381,43 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         _setLimit(20_000_000, 1);
         vm.startPrank(owner);
         // Quotas 1 and 2 take no limit.
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidMaxStoredDepth.selector, uint16(1)));
-        hcu.setQuotaMaxStoredDepth(1, 6_000_000);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidMaxStoredDepth.selector, uint16(2)));
-        hcu.setQuotaMaxStoredDepth(2, 0);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMaxStoredDepth.selector, uint16(1)));
+        hcuConfigurator.setQuotaMaxStoredDepth(1, 6_000_000);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMaxStoredDepth.selector, uint16(2)));
+        hcuConfigurator.setQuotaMaxStoredDepth(2, 0);
         // A limit lies between maxHCUDepthPerTx and maxDepth.
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidMaxStoredDepth.selector, DEFAULT_QUOTA));
-        hcu.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 4_999_999);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidMaxStoredDepth.selector, DEFAULT_QUOTA));
-        hcu.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 20_000_001);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMaxStoredDepth.selector, DEFAULT_QUOTA));
+        hcuConfigurator.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 4_999_999);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMaxStoredDepth.selector, DEFAULT_QUOTA));
+        hcuConfigurator.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 20_000_001);
         // Another quota's limit needs the default quota's first, and is not below it; its 0 is always accepted.
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidMaxStoredDepth.selector, PARTNER_QUOTA));
-        hcu.setQuotaMaxStoredDepth(PARTNER_QUOTA, 10_000_000);
-        hcu.setQuotaMaxStoredDepth(PARTNER_QUOTA, 0);
-        hcu.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 8_000_000);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidMaxStoredDepth.selector, PARTNER_QUOTA));
-        hcu.setQuotaMaxStoredDepth(PARTNER_QUOTA, 7_999_999);
-        hcu.setQuotaMaxStoredDepth(PARTNER_QUOTA, 8_000_000);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMaxStoredDepth.selector, PARTNER_QUOTA));
+        hcuConfigurator.setQuotaMaxStoredDepth(PARTNER_QUOTA, 10_000_000);
+        hcuConfigurator.setQuotaMaxStoredDepth(PARTNER_QUOTA, 0);
+        hcuConfigurator.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 8_000_000);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMaxStoredDepth.selector, PARTNER_QUOTA));
+        hcuConfigurator.setQuotaMaxStoredDepth(PARTNER_QUOTA, 7_999_999);
+        hcuConfigurator.setQuotaMaxStoredDepth(PARTNER_QUOTA, 8_000_000);
         // maxHCUDepthPerTx stays at most the default quota's limit, so a transaction on fresh inputs can grant its
         // results.
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidMaxStoredDepth.selector, DEFAULT_QUOTA));
-        hcu.setMaxHCUDepthPerTx(8_000_001);
-        hcu.setMaxHCUDepthPerTx(8_000_000);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMaxStoredDepth.selector, DEFAULT_QUOTA));
+        hcuConfigurator.setMaxHCUDepthPerTx(8_000_001);
+        hcuConfigurator.setMaxHCUDepthPerTx(8_000_000);
         vm.stopPrank();
         assertEq(hcu.getQuotaMaxStoredDepth(PARTNER_QUOTA), 8_000_000);
     }
 
     function test_StoredDepthLimitNeedsTheDepthLimit() public {
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidMaxStoredDepth.selector, DEFAULT_QUOTA));
-        hcu.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 5_000_000);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMaxStoredDepth.selector, DEFAULT_QUOTA));
+        hcuConfigurator.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 5_000_000);
     }
 
     function _setStoredDepthLimit(uint16 quotaId, uint48 maxStoredDepth) internal {
-        vm.expectEmit(address(hcu));
-        emit HCULimit.QuotaMaxStoredDepthSet(quotaId, maxStoredDepth, owner);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.QuotaMaxStoredDepthSet(quotaId, maxStoredDepth, owner);
         vm.prank(owner);
-        hcu.setQuotaMaxStoredDepth(quotaId, maxStoredDepth);
+        hcuConfigurator.setQuotaMaxStoredDepth(quotaId, maxStoredDepth);
     }
 
     /// @dev Enables the limit without bound, starts `user`'s chain and returns its starting depth and the depth one addition adds.
@@ -427,7 +431,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     function _setLimit(uint48 maxDepth, uint48 decayPerBlock) internal {
         vm.prank(owner);
-        hcu.setCrossTxDepthLimit(maxDepth, decayPerBlock);
+        hcuConfigurator.setCrossTxDepthLimit(maxDepth, decayPerBlock);
     }
 
     function _storedDepth(DepthUser user) internal view returns (uint48 depth) {

@@ -48,10 +48,23 @@ const HCU_LIMIT_ABI = [
   'function getVersion() view returns (string)',
   'function getQuota(uint16) view returns (uint48, uint48, uint48)',
   'function getContractQuota(address) view returns (uint16)',
-  'function getQuotaAdmin(uint16) view returns (address)',
   'function isQuotaPaused(uint16) view returns (bool)',
   'function getMaxHCUPerTx() view returns (uint48)',
   'function getMaxHCUDepthPerTx() view returns (uint48)',
+  'function getHCUConfiguratorAddress() view returns (address)',
+  'function checkHCUForTrivialEncrypt(uint8,bytes32,address)',
+  'function checkHCUForFheRand(uint8,bytes32,address)',
+  'error HCUQuotaStopped(address,uint16)',
+  'error HCUQuotaPaused(address,uint16)',
+  'error HCUQuotaExceeded(address,uint16,uint256)',
+  'error HCUTransactionLimitExceeded()',
+  'error HCUTransactionDepthLimitExceeded()',
+  'error CallerMustBeFHEVMExecutorContract()',
+];
+
+// HCULimit accepts its settings from HCUConfigurator only.
+const HCU_CONFIGURATOR_ABI = [
+  'function getQuotaAdmin(uint16) view returns (address)',
   'function setQuota(uint16,uint48,uint48)',
   'function assignQuota(uint16,address)',
   'function setQuotaAdmin(uint16,address)',
@@ -61,8 +74,6 @@ const HCU_LIMIT_ABI = [
   'function unpauseQuota(uint16)',
   'function setMaxHCUPerTx(uint48)',
   'function setMaxHCUDepthPerTx(uint48)',
-  'function checkHCUForTrivialEncrypt(uint8,bytes32,address)',
-  'function checkHCUForFheRand(uint8,bytes32,address)',
   'event QuotaAdminSet(uint16 indexed quotaId, address indexed admin)',
   'event ContractQuotaAssigned(uint16 indexed quotaId, address indexed account, address indexed setBy)',
   'error NotHostOwner(address)',
@@ -70,15 +81,9 @@ const HCU_LIMIT_ABI = [
   'error NotQuotaAdmin(uint16,address)',
   'error QuotaMembershipPaused(uint16)',
   'error DefaultQuotaNotStopped()',
-  'error HCUQuotaStopped(address,uint16)',
-  'error HCUQuotaPaused(address,uint16)',
-  'error HCUQuotaExceeded(address,uint16,uint256)',
-  'error HCUTransactionLimitExceeded()',
-  'error HCUTransactionDepthLimitExceeded()',
-  'error CallerMustBeFHEVMExecutorContract()',
 ];
 
-const hcuLimitInterface = new ethers.Interface(HCU_LIMIT_ABI);
+const hcuInterface = new ethers.Interface([...HCU_LIMIT_ABI, ...HCU_CONFIGURATOR_ABI]);
 
 const DEFAULT_QUOTA = 0;
 // Quotas 1 and 2 replaced the allowlist; 3 belongs to the EncryptedERC20 HCU suite.
@@ -122,13 +127,8 @@ const errorStrings = (value: unknown, seen = new Set<unknown>(), depth = 0): str
   );
 };
 
-const expectHcuLimitRevert = async (
-  action: Promise<unknown>,
-  errorName: string,
-  args: unknown[] = [],
-  label = 'call',
-) => {
-  const expectedData = hcuLimitInterface.encodeErrorResult(errorName, args).slice(2).toLowerCase();
+const expectHcuRevert = async (action: Promise<unknown>, errorName: string, args: unknown[] = [], label = 'call') => {
+  const expectedData = hcuInterface.encodeErrorResult(errorName, args).slice(2).toLowerCase();
   let error: unknown;
   try {
     await action;
@@ -147,6 +147,8 @@ const expectHcuLimitRevert = async (
 describe('HCU quotas', function () {
   let hcuLimit: ReturnType<typeof hcuLimitAs>;
   let hcuLimitAddress: string;
+  let hcuConfigurator: ReturnType<typeof hcuConfiguratorAs>;
+  let hcuConfiguratorAddress: string;
   let owner: Wallet;
   let alice: Account;
   let admin: Account;
@@ -161,10 +163,14 @@ describe('HCU quotas', function () {
     return new ethers.Contract(hcuLimitAddress, HCU_LIMIT_ABI, runner);
   }
 
+  function hcuConfiguratorAs(runner: Signer) {
+    return new ethers.Contract(hcuConfiguratorAddress, HCU_CONFIGURATOR_ABI, runner);
+  }
+
   const eventsOf = (receipt: TransactionReceipt, name: string): unknown[][] =>
     receipt.logs
-      .filter((log) => log.address.toLowerCase() === hcuLimitAddress.toLowerCase())
-      .map((log) => hcuLimitInterface.parseLog(log))
+      .filter((log) => log.address.toLowerCase() === hcuConfiguratorAddress.toLowerCase())
+      .map((log) => hcuInterface.parseLog(log))
       .filter((parsed) => parsed?.name === name)
       .map((parsed) => [...parsed!.args]);
 
@@ -173,8 +179,9 @@ describe('HCU quotas', function () {
     return usedHCU;
   };
 
-  const stopDefaultQuota = () => mined(hcuLimit.setQuota(DEFAULT_QUOTA, 0, 0));
-  const reopenDefaultQuota = () => mined(hcuLimit.setQuota(DEFAULT_QUOTA, initialDefaultMax, initialDefaultDecay));
+  const stopDefaultQuota = () => mined(hcuConfigurator.setQuota(DEFAULT_QUOTA, 0, 0));
+  const reopenDefaultQuota = () =>
+    mined(hcuConfigurator.setQuota(DEFAULT_QUOTA, initialDefaultMax, initialDefaultDecay));
 
   const deployDapp = async (): Promise<HCUQuotaDapp> => {
     const factory = await ethers.getContractFactory('HCUQuotaDapp');
@@ -223,6 +230,8 @@ describe('HCU quotas', function () {
     if (Number(major) === 0 && Number(minor) < 6) {
       this.skip();
     }
+    hcuConfiguratorAddress = await hcuLimit.getHCUConfiguratorAddress();
+    hcuConfigurator = hcuConfiguratorAs(owner);
     [initialDefaultMax, initialDefaultDecay] = await hcuLimit.getQuota(DEFAULT_QUOTA);
     initialHCUPerTx = await hcuLimit.getMaxHCUPerTx();
     initialDepthPerTx = await hcuLimit.getMaxHCUDepthPerTx();
@@ -245,21 +254,21 @@ describe('HCU quotas', function () {
       await reopenDefaultQuota();
     }
     if ((await hcuLimit.getMaxHCUPerTx()) !== initialHCUPerTx) {
-      await mined(hcuLimit.setMaxHCUPerTx(initialHCUPerTx));
+      await mined(hcuConfigurator.setMaxHCUPerTx(initialHCUPerTx));
     }
     if ((await hcuLimit.getMaxHCUDepthPerTx()) !== initialDepthPerTx) {
-      await mined(hcuLimit.setMaxHCUDepthPerTx(initialDepthPerTx));
+      await mined(hcuConfigurator.setMaxHCUDepthPerTx(initialDepthPerTx));
     }
     for (const quotaId of SUITE_QUOTAS) {
       if (await hcuLimit.isQuotaPaused(quotaId)) {
-        await mined(hcuLimit.unpauseQuota(quotaId));
+        await mined(hcuConfigurator.unpauseQuota(quotaId));
       }
-      if ((await hcuLimit.getQuotaAdmin(quotaId)) !== ethers.ZeroAddress) {
-        await mined(hcuLimit.setQuotaAdmin(quotaId, ethers.ZeroAddress));
+      if ((await hcuConfigurator.getQuotaAdmin(quotaId)) !== ethers.ZeroAddress) {
+        await mined(hcuConfigurator.setQuotaAdmin(quotaId, ethers.ZeroAddress));
       }
       const [maxHCU] = await hcuLimit.getQuota(quotaId);
       if (maxHCU !== 0n) {
-        await mined(hcuLimit.setQuota(quotaId, 0, 0));
+        await mined(hcuConfigurator.setQuota(quotaId, 0, 0));
       }
     }
   });
@@ -307,7 +316,7 @@ describe('HCU quotas', function () {
         ['mulDiv', () => dapp.mulDivStored.staticCall(3, 2)],
       ];
       for (const [label, call] of refused) {
-        await expectHcuLimitRevert(call(), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA], label);
+        await expectHcuRevert(call(), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA], label);
       }
 
       await expectMinedRejection(dapp);
@@ -319,8 +328,8 @@ describe('HCU quotas', function () {
       const dappAddress = await dapp.getAddress();
       await storeInput(this, dapp, 7n);
 
-      await mined(hcuLimit.setQuota(DAPP_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
-      const receipt = await mined(hcuLimit.assignQuota(DAPP_QUOTA, dappAddress));
+      await mined(hcuConfigurator.setQuota(DAPP_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
+      const receipt = await mined(hcuConfigurator.assignQuota(DAPP_QUOTA, dappAddress));
       assert.deepEqual(eventsOf(receipt, 'ContractQuotaAssigned'), [[BigInt(DAPP_QUOTA), dappAddress, owner.address]]);
       await stopDefaultQuota();
       expect(await hcuLimit.getContractQuota(dappAddress)).to.eq(BigInt(DAPP_QUOTA));
@@ -393,7 +402,7 @@ describe('HCU quotas', function () {
       // Results computed before the stop stay decryptable.
       expect(await publicDecrypt(this, computedBeforeStop)).to.eq(23n);
 
-      await expectHcuLimitRevert(dapp.addScalarToStored.staticCall(1), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA]);
+      await expectHcuRevert(dapp.addScalarToStored.staticCall(1), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA]);
     });
 
     // Rollout order: assign, stop the default quota, send one dapp back, reopen, stop again.
@@ -406,26 +415,20 @@ describe('HCU quotas', function () {
       const strangerAddress = await stranger.getAddress();
 
       // Assignment while the default quota is open changes nothing for the others.
-      await mined(hcuLimit.setQuota(DAPP_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
-      await mined(hcuLimit.assignQuota(DAPP_QUOTA, memberAddress));
-      await mined(hcuLimit.assignQuota(DAPP_QUOTA, removedAddress));
+      await mined(hcuConfigurator.setQuota(DAPP_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
+      await mined(hcuConfigurator.assignQuota(DAPP_QUOTA, memberAddress));
+      await mined(hcuConfigurator.assignQuota(DAPP_QUOTA, removedAddress));
       await mined(stranger.trivialEncrypt(1));
 
       await stopDefaultQuota();
       await mined(member.trivialEncrypt(1));
       await mined(removed.trivialEncrypt(1));
-      await expectHcuLimitRevert(stranger.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [
-        strangerAddress,
-        DEFAULT_QUOTA,
-      ]);
+      await expectHcuRevert(stranger.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [strangerAddress, DEFAULT_QUOTA]);
 
       // Sending a dapp back to the default quota takes effect immediately.
-      await mined(hcuLimit.assignQuota(DEFAULT_QUOTA, removedAddress));
+      await mined(hcuConfigurator.assignQuota(DEFAULT_QUOTA, removedAddress));
       expect(await hcuLimit.getContractQuota(removedAddress)).to.eq(BigInt(DEFAULT_QUOTA));
-      await expectHcuLimitRevert(removed.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [
-        removedAddress,
-        DEFAULT_QUOTA,
-      ]);
+      await expectHcuRevert(removed.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [removedAddress, DEFAULT_QUOTA]);
       await expectMinedRejection(removed);
 
       // Reopening the default quota restores access for everyone and keeps the assignments.
@@ -439,38 +442,32 @@ describe('HCU quotas', function () {
       await stopDefaultQuota();
       await mined(member.addTrivialValues(5, 6));
       expect(await publicDecrypt(this, await member.result())).to.eq(11n);
-      await expectHcuLimitRevert(removed.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [
-        removedAddress,
-        DEFAULT_QUOTA,
-      ]);
-      await expectHcuLimitRevert(stranger.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [
-        strangerAddress,
-        DEFAULT_QUOTA,
-      ]);
+      await expectHcuRevert(removed.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [removedAddress, DEFAULT_QUOTA]);
+      await expectHcuRevert(stranger.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [strangerAddress, DEFAULT_QUOTA]);
     });
 
     // A quota is not an exemption from the depth and transaction HCU limits.
     it('should keep a dapp in a quota subject to the HCU limits', async function () {
       const dapp = await deployDapp();
       const dappAddress = await dapp.getAddress();
-      await mined(hcuLimit.setQuota(DAPP_QUOTA, NO_CAP, NO_CAP));
-      await mined(hcuLimit.assignQuota(DAPP_QUOTA, dappAddress));
+      await mined(hcuConfigurator.setQuota(DAPP_QUOTA, NO_CAP, NO_CAP));
+      await mined(hcuConfigurator.assignQuota(DAPP_QUOTA, dappAddress));
       await stopDefaultQuota();
 
       // Depth limit: the two trivial encryptions fit, the addition on top of them does not.
-      await mined(hcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX));
-      await expectHcuLimitRevert(dapp.addTrivialValues.staticCall(1, 2), 'HCUTransactionDepthLimitExceeded');
+      await mined(hcuConfigurator.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX));
+      await expectHcuRevert(dapp.addTrivialValues.staticCall(1, 2), 'HCUTransactionDepthLimitExceeded');
       await mined(dapp.trivialEncrypt(1));
 
       // Transaction limit: an unmetered quota leaves only the transaction limit to refuse a second encryption.
-      await mined(hcuLimit.setMaxHCUDepthPerTx(ONE_TRIVIAL_ENCRYPTION_HCU));
-      await mined(hcuLimit.setMaxHCUPerTx(ONE_TRIVIAL_ENCRYPTION_HCU));
-      await expectHcuLimitRevert(dapp.trivialEncryptTwice.staticCall(1, 2), 'HCUTransactionLimitExceeded');
+      await mined(hcuConfigurator.setMaxHCUDepthPerTx(ONE_TRIVIAL_ENCRYPTION_HCU));
+      await mined(hcuConfigurator.setMaxHCUPerTx(ONE_TRIVIAL_ENCRYPTION_HCU));
+      await expectHcuRevert(dapp.trivialEncryptTwice.staticCall(1, 2), 'HCUTransactionLimitExceeded');
       await mined(dapp.trivialEncrypt(1));
 
       // Quota limit, checked before the transaction limit: the second encryption needs one block of decay.
-      await mined(hcuLimit.setQuota(DAPP_QUOTA, ONE_TRIVIAL_ENCRYPTION_HCU, ONE_TRIVIAL_ENCRYPTION_HCU));
-      await expectHcuLimitRevert(dapp.trivialEncryptTwice.staticCall(1, 2), 'HCUQuotaExceeded', [
+      await mined(hcuConfigurator.setQuota(DAPP_QUOTA, ONE_TRIVIAL_ENCRYPTION_HCU, ONE_TRIVIAL_ENCRYPTION_HCU));
+      await expectHcuRevert(dapp.trivialEncryptTwice.staticCall(1, 2), 'HCUQuotaExceeded', [
         dappAddress,
         DAPP_QUOTA,
         1,
@@ -482,8 +479,8 @@ describe('HCU quotas', function () {
     it('should only accept HCU checks from the FHEVMExecutor', async function () {
       const dapp = await deployDapp();
       const stranger = await deployDapp();
-      await mined(hcuLimit.setQuota(DAPP_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
-      await mined(hcuLimit.assignQuota(DAPP_QUOTA, await dapp.getAddress()));
+      await mined(hcuConfigurator.setQuota(DAPP_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
+      await mined(hcuConfigurator.assignQuota(DAPP_QUOTA, await dapp.getAddress()));
       await stopDefaultQuota();
 
       // The executor check comes first, whatever the quota of the reported dapp.
@@ -491,14 +488,11 @@ describe('HCU quotas', function () {
         for (const reported of [dapp, stranger]) {
           const args = [FHE_TYPE_UINT64, ethers.ZeroHash, await reported.getAddress()];
           const asSigner = hcuLimitAs(signer);
-          await expectHcuLimitRevert(
+          await expectHcuRevert(
             asSigner.checkHCUForTrivialEncrypt.staticCall(...args),
             'CallerMustBeFHEVMExecutorContract',
           );
-          await expectHcuLimitRevert(
-            asSigner.checkHCUForFheRand.staticCall(...args),
-            'CallerMustBeFHEVMExecutorContract',
-          );
+          await expectHcuRevert(asSigner.checkHCUForFheRand.staticCall(...args), 'CallerMustBeFHEVMExecutorContract');
         }
       }
     });
@@ -511,10 +505,10 @@ describe('HCU quotas', function () {
       const unmetered = await deployDapp();
       const cappedAddress = await capped.getAddress();
       const unmeteredAddress = await unmetered.getAddress();
-      await mined(hcuLimit.setQuota(DAPP_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
-      await mined(hcuLimit.setQuota(UNMETERED_QUOTA, NO_CAP, NO_CAP));
-      await mined(hcuLimit.assignQuota(DAPP_QUOTA, cappedAddress));
-      await mined(hcuLimit.assignQuota(UNMETERED_QUOTA, unmeteredAddress));
+      await mined(hcuConfigurator.setQuota(DAPP_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
+      await mined(hcuConfigurator.setQuota(UNMETERED_QUOTA, NO_CAP, NO_CAP));
+      await mined(hcuConfigurator.assignQuota(DAPP_QUOTA, cappedAddress));
+      await mined(hcuConfigurator.assignQuota(UNMETERED_QUOTA, unmeteredAddress));
       await stopDefaultQuota();
 
       const cappedReceipt = await mined(capped.addTrivialValues(1, 2));
@@ -526,10 +520,10 @@ describe('HCU quotas', function () {
         [DAPP_QUOTA, capped, cappedAddress],
         [UNMETERED_QUOTA, unmetered, unmeteredAddress],
       ] as const) {
-        await mined(hcuLimit.pauseQuota(quotaId));
-        await expectHcuLimitRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaPaused', [address, quotaId]);
+        await mined(hcuConfigurator.pauseQuota(quotaId));
+        await expectHcuRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaPaused', [address, quotaId]);
         await expectMinedRejection(dapp);
-        await mined(hcuLimit.unpauseQuota(quotaId));
+        await mined(hcuConfigurator.unpauseQuota(quotaId));
         await mined(dapp.trivialEncrypt(1));
       }
     });
@@ -540,20 +534,20 @@ describe('HCU quotas', function () {
     it('should let a quota admin move contracts into and out of its quota and nothing else', async function () {
       const dapp = await deployDapp();
       const dappAddress = await dapp.getAddress();
-      const asAdmin = hcuLimitAs(admin);
-      await mined(hcuLimit.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
+      const asAdmin = hcuConfiguratorAs(admin);
+      await mined(hcuConfigurator.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
 
-      await expectHcuLimitRevert(asAdmin.grantQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotQuotaAdmin', [
+      await expectHcuRevert(asAdmin.grantQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotQuotaAdmin', [
         ADMIN_QUOTA,
         admin.address,
       ]);
-      const naming = await mined(hcuLimit.setQuotaAdmin(ADMIN_QUOTA, admin.address));
+      const naming = await mined(hcuConfigurator.setQuotaAdmin(ADMIN_QUOTA, admin.address));
       assert.deepEqual(eventsOf(naming, 'QuotaAdminSet'), [[BigInt(ADMIN_QUOTA), admin.address]]);
 
       // An admin adds contracts only while the default quota is stopped.
-      await expectHcuLimitRevert(asAdmin.grantQuota.staticCall(ADMIN_QUOTA, dappAddress), 'DefaultQuotaNotStopped');
+      await expectHcuRevert(asAdmin.grantQuota.staticCall(ADMIN_QUOTA, dappAddress), 'DefaultQuotaNotStopped');
       await stopDefaultQuota();
-      await expectHcuLimitRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA]);
+      await expectHcuRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA]);
 
       const grant = await mined(asAdmin.grantQuota(ADMIN_QUOTA, dappAddress));
       assert.deepEqual(eventsOf(grant, 'ContractQuotaAssigned'), [[BigInt(ADMIN_QUOTA), dappAddress, admin.address]]);
@@ -562,37 +556,37 @@ describe('HCU quotas', function () {
 
       // Everything else stays with the ACL owner, and other quotas with their admins.
       const notOwner = [admin.address];
-      await expectHcuLimitRevert(asAdmin.setQuota.staticCall(ADMIN_QUOTA, 1, 1), 'NotHostOwner', notOwner);
-      await expectHcuLimitRevert(asAdmin.assignQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotHostOwner', notOwner);
-      await expectHcuLimitRevert(asAdmin.setQuotaAdmin.staticCall(DAPP_QUOTA, admin.address), 'NotHostOwner', notOwner);
-      await expectHcuLimitRevert(asAdmin.unpauseQuota.staticCall(ADMIN_QUOTA), 'NotHostOwner', notOwner);
-      await expectHcuLimitRevert(asAdmin.pauseQuota.staticCall(ADMIN_QUOTA), 'NotPauser', notOwner);
-      await expectHcuLimitRevert(asAdmin.grantQuota.staticCall(DAPP_QUOTA, dappAddress), 'NotQuotaAdmin', [
+      await expectHcuRevert(asAdmin.setQuota.staticCall(ADMIN_QUOTA, 1, 1), 'NotHostOwner', notOwner);
+      await expectHcuRevert(asAdmin.assignQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotHostOwner', notOwner);
+      await expectHcuRevert(asAdmin.setQuotaAdmin.staticCall(DAPP_QUOTA, admin.address), 'NotHostOwner', notOwner);
+      await expectHcuRevert(asAdmin.unpauseQuota.staticCall(ADMIN_QUOTA), 'NotHostOwner', notOwner);
+      await expectHcuRevert(asAdmin.pauseQuota.staticCall(ADMIN_QUOTA), 'NotPauser', notOwner);
+      await expectHcuRevert(asAdmin.grantQuota.staticCall(DAPP_QUOTA, dappAddress), 'NotQuotaAdmin', [
         DAPP_QUOTA,
         admin.address,
       ]);
 
       await mined(asAdmin.revokeQuota(ADMIN_QUOTA, dappAddress));
-      await expectHcuLimitRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA]);
+      await expectHcuRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA]);
     });
 
     // While a quota is paused, its admin cannot move its contracts; the owner can.
     it("should freeze a paused quota's members for its admin", async function () {
       const dapp = await deployDapp();
       const dappAddress = await dapp.getAddress();
-      const asAdmin = hcuLimitAs(admin);
-      await mined(hcuLimit.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
-      await mined(hcuLimit.setQuotaAdmin(ADMIN_QUOTA, admin.address));
+      const asAdmin = hcuConfiguratorAs(admin);
+      await mined(hcuConfigurator.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
+      await mined(hcuConfigurator.setQuotaAdmin(ADMIN_QUOTA, admin.address));
       await stopDefaultQuota();
       await mined(asAdmin.grantQuota(ADMIN_QUOTA, dappAddress));
 
-      await mined(hcuLimit.pauseQuota(ADMIN_QUOTA));
-      await expectHcuLimitRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaPaused', [dappAddress, ADMIN_QUOTA]);
-      await expectHcuLimitRevert(asAdmin.revokeQuota.staticCall(ADMIN_QUOTA, dappAddress), 'QuotaMembershipPaused', [
+      await mined(hcuConfigurator.pauseQuota(ADMIN_QUOTA));
+      await expectHcuRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaPaused', [dappAddress, ADMIN_QUOTA]);
+      await expectHcuRevert(asAdmin.revokeQuota.staticCall(ADMIN_QUOTA, dappAddress), 'QuotaMembershipPaused', [
         ADMIN_QUOTA,
       ]);
 
-      await mined(hcuLimit.unpauseQuota(ADMIN_QUOTA));
+      await mined(hcuConfigurator.unpauseQuota(ADMIN_QUOTA));
       await mined(dapp.trivialEncrypt(1));
     });
 
@@ -602,54 +596,51 @@ describe('HCU quotas', function () {
       const second = await deployDapp();
       const firstAddress = await first.getAddress();
       const secondAddress = await second.getAddress();
-      const asAdmin = hcuLimitAs(admin);
-      await mined(hcuLimit.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
-      await mined(hcuLimit.setQuotaAdmin(ADMIN_QUOTA, admin.address));
+      const asAdmin = hcuConfiguratorAs(admin);
+      await mined(hcuConfigurator.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
+      await mined(hcuConfigurator.setQuotaAdmin(ADMIN_QUOTA, admin.address));
       await stopDefaultQuota();
       await mined(asAdmin.grantQuota(ADMIN_QUOTA, firstAddress));
 
-      const removal = await mined(hcuLimit.setQuotaAdmin(ADMIN_QUOTA, ethers.ZeroAddress));
+      const removal = await mined(hcuConfigurator.setQuotaAdmin(ADMIN_QUOTA, ethers.ZeroAddress));
       assert.deepEqual(eventsOf(removal, 'QuotaAdminSet'), [[BigInt(ADMIN_QUOTA), ethers.ZeroAddress]]);
-      await expectHcuLimitRevert(asAdmin.grantQuota.staticCall(ADMIN_QUOTA, secondAddress), 'NotQuotaAdmin', [
+      await expectHcuRevert(asAdmin.grantQuota.staticCall(ADMIN_QUOTA, secondAddress), 'NotQuotaAdmin', [
         ADMIN_QUOTA,
         admin.address,
       ]);
-      await expectHcuLimitRevert(asAdmin.revokeQuota.staticCall(ADMIN_QUOTA, firstAddress), 'NotQuotaAdmin', [
+      await expectHcuRevert(asAdmin.revokeQuota.staticCall(ADMIN_QUOTA, firstAddress), 'NotQuotaAdmin', [
         ADMIN_QUOTA,
         admin.address,
       ]);
 
       await mined(first.addTrivialValues(4, 4));
       expect(await publicDecrypt(this, await first.result())).to.eq(8n);
-      await expectHcuLimitRevert(second.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [
-        secondAddress,
-        DEFAULT_QUOTA,
-      ]);
+      await expectHcuRevert(second.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [secondAddress, DEFAULT_QUOTA]);
     });
 
     // An account with no role gets the authorization error of each function.
     it('should reserve quota administration to the ACL owner', async function () {
       const dapp = await deployDapp();
       const dappAddress = await dapp.getAddress();
-      const asOutsider = hcuLimitAs(outsider);
+      const asOutsider = hcuConfiguratorAs(outsider);
       const notOwner = [outsider.address];
-      await mined(hcuLimit.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
-      await mined(hcuLimit.setQuotaAdmin(ADMIN_QUOTA, admin.address));
+      await mined(hcuConfigurator.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
+      await mined(hcuConfigurator.setQuotaAdmin(ADMIN_QUOTA, admin.address));
 
-      await expectHcuLimitRevert(asOutsider.setQuota.staticCall(DEFAULT_QUOTA, 0, 0), 'NotHostOwner', notOwner);
-      await expectHcuLimitRevert(asOutsider.assignQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotHostOwner', notOwner);
-      await expectHcuLimitRevert(
+      await expectHcuRevert(asOutsider.setQuota.staticCall(DEFAULT_QUOTA, 0, 0), 'NotHostOwner', notOwner);
+      await expectHcuRevert(asOutsider.assignQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotHostOwner', notOwner);
+      await expectHcuRevert(
         asOutsider.setQuotaAdmin.staticCall(ADMIN_QUOTA, outsider.address),
         'NotHostOwner',
         notOwner,
       );
-      await expectHcuLimitRevert(asOutsider.unpauseQuota.staticCall(ADMIN_QUOTA), 'NotHostOwner', notOwner);
-      await expectHcuLimitRevert(asOutsider.pauseQuota.staticCall(ADMIN_QUOTA), 'NotPauser', notOwner);
-      await expectHcuLimitRevert(asOutsider.grantQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotQuotaAdmin', [
+      await expectHcuRevert(asOutsider.unpauseQuota.staticCall(ADMIN_QUOTA), 'NotHostOwner', notOwner);
+      await expectHcuRevert(asOutsider.pauseQuota.staticCall(ADMIN_QUOTA), 'NotPauser', notOwner);
+      await expectHcuRevert(asOutsider.grantQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotQuotaAdmin', [
         ADMIN_QUOTA,
         outsider.address,
       ]);
-      await expectHcuLimitRevert(asOutsider.revokeQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotQuotaAdmin', [
+      await expectHcuRevert(asOutsider.revokeQuota.staticCall(ADMIN_QUOTA, dappAddress), 'NotQuotaAdmin', [
         ADMIN_QUOTA,
         outsider.address,
       ]);
@@ -676,9 +667,9 @@ describe('HCU quotas', function () {
       factory = await contractFactory.connect(alice).deploy();
       await factory.waitForDeployment();
       factoryAddress = await factory.getAddress();
-      await mined(hcuLimit.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
-      await mined(hcuLimit.setQuotaAdmin(ADMIN_QUOTA, admin.address));
-      await mined(hcuLimit.assignQuota(ADMIN_QUOTA, factoryAddress));
+      await mined(hcuConfigurator.setQuota(ADMIN_QUOTA, ROOMY_QUOTA, ROOMY_QUOTA));
+      await mined(hcuConfigurator.setQuotaAdmin(ADMIN_QUOTA, admin.address));
+      await mined(hcuConfigurator.assignQuota(ADMIN_QUOTA, factoryAddress));
       await stopDefaultQuota();
     });
 
@@ -690,9 +681,9 @@ describe('HCU quotas', function () {
       const dappAddress = deployedDapp(await mined(factory.deployDapp()));
       const dapp = (await ethers.getContractAt('HCUQuotaDapp', dappAddress, alice)) as unknown as HCUQuotaDapp;
       expect(await hcuLimit.getContractQuota(dappAddress)).to.eq(BigInt(DEFAULT_QUOTA));
-      await expectHcuLimitRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA]);
+      await expectHcuRevert(dapp.trivialEncrypt.staticCall(1), 'HCUQuotaStopped', [dappAddress, DEFAULT_QUOTA]);
 
-      await mined(hcuLimitAs(admin).grantQuota(ADMIN_QUOTA, dappAddress));
+      await mined(hcuConfiguratorAs(admin).grantQuota(ADMIN_QUOTA, dappAddress));
       await mined(dapp.addTrivialValues(8, 9));
       expect(await publicDecrypt(this, await dapp.result())).to.eq(17n);
     });
@@ -702,7 +693,7 @@ describe('HCU quotas', function () {
       const salt = ethers.hexlify(ethers.randomBytes(32));
       const predicted = await factory.predictConstructorDapp(salt, 77);
 
-      await expectHcuLimitRevert(factory.deployConstructorDapp.staticCall(salt, 77), 'HCUQuotaStopped', [
+      await expectHcuRevert(factory.deployConstructorDapp.staticCall(salt, 77), 'HCUQuotaStopped', [
         predicted,
         DEFAULT_QUOTA,
       ]);
@@ -711,7 +702,7 @@ describe('HCU quotas', function () {
       expect(await ethers.provider.getCode(predicted)).to.eq('0x');
 
       // The predicted address is granted before any code exists at it.
-      const grant = await mined(hcuLimitAs(admin).grantQuota(ADMIN_QUOTA, predicted));
+      const grant = await mined(hcuConfiguratorAs(admin).grantQuota(ADMIN_QUOTA, predicted));
       assert.deepEqual(eventsOf(grant, 'ContractQuotaAssigned'), [[BigInt(ADMIN_QUOTA), predicted, admin.address]]);
 
       expect(deployedDapp(await mined(factory.deployConstructorDapp(salt, 77)))).to.eq(predicted);

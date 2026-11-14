@@ -144,6 +144,8 @@ export async function deployEmptyHostProxies(
     // library-solidity is a canonical host: KMSGeneration is always deployed (HH2: --with-kms-generation true).
     ['KMS_GENERATION_CONTRACT_ADDRESS', 'kmsGenerationAdd'],
     ['CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS', 'confidentialBridgeAdd'],
+    // Last, so the proxies above keep the addresses they had before HCUConfigurator existed.
+    ['HCU_CONFIGURATOR_CONTRACT_ADDRESS', 'hcuConfiguratorAdd'],
   ];
   for (const [envVarName, solidityConstantName] of emptyProxies) {
     const proxy = await upgradesApi.deployProxy(emptyFactory, { initializer: 'initialize', kind: 'uups' });
@@ -295,6 +297,8 @@ export async function upgradeHostProxies(hre: HardhatRuntimeEnvironment, connect
       getRequiredEnvVar('COPROCESSOR_THRESHOLD'),
     ],
   );
+  // HCULimit takes its settings from HCUConfigurator only.
+  await upgradeToRealImplementation('HCU_CONFIGURATOR_CONTRACT_ADDRESS', 'HCUConfigurator', []);
   await upgradeToRealImplementation('HCU_LIMIT_CONTRACT_ADDRESS', 'HCULimit', [...HCU_LIMIT_INITIAL_VALUES]);
 }
 
