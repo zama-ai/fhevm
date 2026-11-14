@@ -23,6 +23,10 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "function getBlockMeter() returns (uint48,uint48)",
       "function getGlobalHCUCapPerBlock() returns (uint48)",
       "function isBlockHCUWhitelisted(address) returns (bool)",
+      // HCUConfigurator checks the per-transaction limits and emits these events, with the same signatures; HCULimit
+      // only stores the limits. Nothing in this repository subscribes to them on HCULimit's address.
+      "event MaxHCUDepthPerTxSet(uint48)",
+      "event MaxHCUPerTxSet(uint48)",
     ],
     KMSVerifier: [
       "event NewContextSet(address[],uint256)",
