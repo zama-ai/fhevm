@@ -43,6 +43,7 @@ fn last_code_label(last_code: Option<ErrorCode>) -> &'static str {
     last_code.map_or("cancelled", ErrorCode::as_str)
 }
 
+/// A duration as the `*_ms` log fields carry it.
 fn ms(duration: Duration) -> u64 {
     duration.as_millis() as u64
 }
@@ -185,6 +186,7 @@ impl CircuitBreakers {
         }
     }
 
+    /// Whether `circuit_breaker.enabled` was set: off, nothing is tracked and every node is always called.
     pub fn is_enabled(&self) -> bool {
         self.state.is_some()
     }
@@ -340,7 +342,8 @@ impl CircuitBreakers {
         out
     }
 
-    /// The names of the nodes currently out (open or probing).
+    /// Test only: the names of the nodes currently out (open or probing).
+    #[cfg(test)]
     pub fn excluded_names(&self) -> Vec<String> {
         self.lock().map_or_else(Vec::new, |state| {
             state
@@ -714,6 +717,59 @@ mod tests {
         breakers.on_call_outcome("node-10", &unhealthy(), now, generation);
         breakers.on_call_outcome("node-12", &unhealthy(), now, generation);
         assert_eq!(included(&breakers).len(), 11);
+    }
+
+    #[test]
+    fn concurrent_outcomes_from_threads_never_cross_the_floor() {
+        // Thirteen threads report their node unhealthy at once, twice over; exactly two nodes open, every time.
+        let breakers = breakers();
+        for _ in 0..2 {
+            let generation = breakers.select(Instant::now()).generation;
+            std::thread::scope(|scope| {
+                for name in names() {
+                    let breakers = &breakers;
+                    scope.spawn(move || {
+                        breakers.on_call_outcome(&name, &unhealthy(), Instant::now(), generation);
+                    });
+                }
+            });
+            assert_eq!(breakers.excluded_names().len(), N - MIN_NODES);
+            assert_eq!(breakers.select(Instant::now()).included.len(), MIN_NODES);
+        }
+        // Thirteen threads select at once with every open node expired: each node is probed exactly once.
+        std::thread::sleep(Duration::from_millis(1));
+        let later = Instant::now() + WINDOW;
+        let probes: Vec<usize> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..N)
+                .map(|_| scope.spawn(|| breakers.select(later).probes))
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().unwrap())
+                .collect()
+        });
+        let mut probes = probes;
+        probes.sort_unstable();
+        assert_eq!(probes.len(), N - MIN_NODES);
+        probes.dedup();
+        assert_eq!(probes.len(), N - MIN_NODES, "one probe per node");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn two_probes_answering_at_the_same_instant_close_both_nodes() {
+        let breakers = breakers();
+        let generation = breakers.select(Instant::now()).generation;
+        for node in ["node-11", "node-12"] {
+            breakers.on_call_outcome(node, &unhealthy(), Instant::now(), generation);
+        }
+        advance(WINDOW).await;
+        let selection = breakers.select(Instant::now());
+        assert_eq!(selection.probes, vec![11, 12]);
+        let now = Instant::now();
+        for node in ["node-11", "node-12"] {
+            breakers.on_probe_outcome(node, &Verdict::Answered, now, selection.generation);
+        }
+        assert_eq!(included(&breakers).len(), 13);
     }
 
     #[tokio::test(start_paused = true)]

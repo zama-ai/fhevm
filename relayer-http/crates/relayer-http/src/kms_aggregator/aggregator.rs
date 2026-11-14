@@ -984,9 +984,23 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_example_table_reproduces() {
         let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
+        let metrics = aggregator.caller.metrics().clone();
+        let node_12 = [("kms_node", "node-12")];
         // 1st request: node 12 is cut at the deadline with no answer. 5 s, 12 shares, then it is out.
         assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
         assert_eq!(excluded(&aggregator), ["node-12"]);
+        assert_eq!(
+            value(&metrics, "relayer_http_kms_node_excluded", &node_12),
+            Some(1)
+        );
+        assert_eq!(
+            value(
+                &metrics,
+                "relayer_http_kms_exclusions_total",
+                &[("kms_node", "node-12"), ("code", "cancelled")]
+            ),
+            Some(1)
+        );
         // Within the window: 12 nodes, healthy speed, node 12 not called.
         sleep(secs(1)).await;
         assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
@@ -1001,9 +1015,21 @@ mod tests {
         // The probe is cut at its deadline: out for another window, then probed again.
         sleep(secs(5)).await;
         assert_eq!(excluded(&aggregator), ["node-12"]);
+        assert_eq!(
+            value(
+                &metrics,
+                "relayer_http_kms_probes_total",
+                &[("kms_node", "node-12"), ("outcome", "failed")]
+            ),
+            Some(1)
+        );
         sleep(secs(30)).await;
         assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
         assert_eq!(mock.attempts(12), 3);
+        assert_eq!(
+            value(&metrics, "relayer_http_kms_node_excluded", &node_12),
+            Some(1)
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -1060,21 +1086,52 @@ mod tests {
         // 13 nodes: four final failures leave 9, enough.
         let (_, aggregator) = breaking(&[(4, MALFORMED), (9, OK)]);
         assert_eq!(run_once(&aggregator).await, (Ok(9), ms(300)));
-        // With node 12 out, the same four failures leave 8: fail fast at once, no deadline waited.
+        // With node 12 out, the same four failures leave 8: fail fast cuts the hung node 11 at once instead of
+        // waiting for the deadline (a `ThresholdNotReached`, not a `Timeout`, at the healthy latency).
         let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
         assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
         for node in 0..4 {
             mock.set_script(node, vec![MALFORMED]);
         }
+        mock.set_script(11, vec![HANG]);
         let (result, elapsed) = run_once(&aggregator).await;
         assert!(
             matches!(
                 result,
-                Err(AggregationError::ThresholdNotReached { counted: 8, .. })
+                Err(AggregationError::ThresholdNotReached { counted: 7, .. })
             ),
             "{result:?}"
         );
         assert_eq!(elapsed, ms(300));
+        // Fail fast cut a call, it did not judge node 11: only the deadline or a final failure does.
+        assert_eq!(excluded(&aggregator), ["node-12"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_outcome_from_an_earlier_fan_out_does_not_extend_the_window() {
+        // Two aggregations overlap on the hung node 12: the first opens it at 5 s, the second's outcome at 6 s
+        // finds it open and changes nothing, so the window ends at 35 s, not 36 s.
+        let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
+        let aggregator = Arc::new(aggregator);
+        let first = tokio::spawn({
+            let aggregator = aggregator.clone();
+            async move { run_once(&aggregator).await }
+        });
+        sleep(secs(1)).await;
+        let second = tokio::spawn({
+            let aggregator = aggregator.clone();
+            async move { run_once(&aggregator).await }
+        });
+        assert_eq!(first.await.unwrap(), (Ok(12), secs(5)));
+        assert_eq!(second.await.unwrap(), (Ok(12), secs(5)));
+        assert_eq!(mock.attempts(12), 2);
+        sleep(ms(29_500)).await;
+        let _ = run_once(&aggregator).await;
+        assert_eq!(
+            mock.attempts(12),
+            3,
+            "probed at 35.5 s: the window was not extended"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -1101,10 +1158,12 @@ mod tests {
         let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
         assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
         sleep(secs(31)).await;
-        // Five failures make the threshold unreachable: fail fast at 300 ms; the probe to node 12 goes on.
+        // Five failures make the threshold unreachable: fail fast cuts the hung node 11 at 300 ms; the probe to
+        // node 12 goes on.
         for node in 0..5 {
             mock.set_script(node, vec![MALFORMED]);
         }
+        mock.set_script(11, vec![HANG]);
         let (result, elapsed) = run_once(&aggregator).await;
         assert!(matches!(
             result,
