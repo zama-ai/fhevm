@@ -111,10 +111,12 @@ enum Stage {
 }
 
 /// How far a call got: the attempts that reached the node pool (signing failures excluded), the retries of each
-/// class it used (signing failures included: the policy counts them), and where the current attempt stands.
+/// class it used (signing failures included: the policy counts them), the node's last answer, and where the
+/// current attempt stands.
 struct Progress {
     attempts: u32,
     retries: Retries,
+    last_code: Option<ErrorCode>,
     stage: Stage,
 }
 
@@ -161,6 +163,9 @@ pub struct CallResult<R> {
     pub attempts: u32,
     pub retries: Retries,
     pub elapsed: Duration,
+    /// The code of the node's last answer during the call; `None` when it never answered (a signing failure is
+    /// not an answer). Tells a hung node from a legitimate retry cut at the deadline (`breaker.rs`).
+    pub last_code: Option<ErrorCode>,
     pub result: Result<R, CallError>,
 }
 
@@ -254,6 +259,7 @@ impl Caller {
             progress: Progress {
                 attempts: 0,
                 retries: Retries::default(),
+                last_code: None,
                 stage: Stage::Idle,
             },
         };
@@ -267,6 +273,7 @@ impl Caller {
             attempts: record.progress.attempts,
             retries: record.progress.retries,
             elapsed: started.elapsed(),
+            last_code: record.progress.last_code,
             result,
         }
     }
@@ -337,9 +344,12 @@ impl Caller {
             };
             match failure {
                 AttemptError::Signer(_) => self.metrics.signer_error(flow),
-                _ => self
-                    .metrics
-                    .attempt_error(&endpoint.name, flow, failure.code().as_str()),
+                _ => {
+                    // The node answered, or the path to it failed: its last answer for the breaker's verdict.
+                    progress.last_code = Some(failure.code());
+                    self.metrics
+                        .attempt_error(&endpoint.name, flow, failure.code().as_str());
+                }
             }
             // Expired at the node: sign again on the next attempt.
             if failure.code() == ErrorCode::AuthExpired {
@@ -1022,6 +1032,42 @@ pub(crate) mod tests {
         // Nor is it the node's latency.
         let node = histogram_sum(metrics, "relayer_http_kms_attempt_duration_seconds");
         assert!((node - 0.01).abs() < 1e-9, "{node}");
+    }
+
+    /// One call to a node scripted with `script`, cut by its caller after `cut_after`.
+    async fn run_cut_after(
+        script: Vec<Reply>,
+        cut_after: Duration,
+    ) -> CallResult<UserDecryptionResponse> {
+        let mock = MockClient::new(vec![script], ms(10));
+        let caller = mock.clone().caller(secs(5), 1);
+        let cancel = CancellationToken::new();
+        let cut = cancel.clone();
+        tokio::spawn(async move {
+            sleep(cut_after).await;
+            cut.cancel();
+        });
+        call_node(&caller, 0, secs(5), &cancel).await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn last_code_is_the_last_answer_and_ignores_signing_failures() {
+        // Answered `acl_denied`, then hung on the retry and cut: the last answer stays.
+        let result = run_cut_after(vec![ACL, HANG], secs(1)).await;
+        assert!(matches!(result.result, Err(CallError::Cancelled)));
+        assert_eq!(result.last_code, Some(ErrorCode::AclDenied));
+        // Cut before any answer: nothing.
+        let result = run_cut_after(vec![HANG], secs(1)).await;
+        assert_eq!(result.last_code, None);
+        // A final failure is the last answer; a connection refused counts as the path's `upstream_transient`.
+        let (_, result) = run(vec![MALFORMED], 1).await;
+        assert_eq!(result.last_code, Some(ErrorCode::Malformed));
+        let (_, result) = run(vec![REFUSED], 0).await;
+        assert_eq!(result.last_code, Some(ErrorCode::UpstreamTransient));
+        // A signing failure never reached the node: not an answer.
+        let signer = TestSigner::new(Duration::ZERO, true);
+        let (_, _, result) = run_signed_by(&signer, vec![OK], 1).await;
+        assert_eq!(result.last_code, None);
     }
 
     #[tokio::test(start_paused = true)]
