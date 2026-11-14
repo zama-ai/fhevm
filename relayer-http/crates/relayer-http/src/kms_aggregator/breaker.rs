@@ -26,9 +26,19 @@ use std::time::Duration;
 
 use kms_connector_api::ErrorCode;
 use tokio::time::Instant;
+use tracing::{debug, info, warn};
 
 use super::call::{CallError, CallResult};
 use super::client::AttemptError;
+
+/// The `last_code` log field: the node's last answer, `none` when it never answered.
+fn last_code_str(last_code: Option<ErrorCode>) -> &'static str {
+    last_code.map_or("none", ErrorCode::as_str)
+}
+
+fn ms(duration: Duration) -> u64 {
+    duration.as_millis() as u64
+}
 
 /// What one finished call says about its node.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,12 +189,13 @@ impl CircuitBreakers {
             probes: Vec::new(),
             generation: state.generation,
         };
-        for (index, (_, node)) in state.nodes.iter_mut().enumerate() {
+        for (index, (name, node)) in state.nodes.iter_mut().enumerate() {
             match *node {
                 NodeState::Closed => selection.included.push(index),
                 NodeState::Open { since, until } if until <= now => {
                     *node = NodeState::Probing { since };
                     selection.probes.push(index);
+                    debug!(kms_node = %name, excluded_ms = ms(now - since), "node probed");
                 }
                 // Still inside its window, or a probe already in flight: left out.
                 NodeState::Open { .. } | NodeState::Probing { .. } => {}
@@ -198,7 +209,10 @@ impl CircuitBreakers {
     /// node another aggregation opened meanwhile, changes nothing.
     pub fn on_call_outcome(&self, node: &str, verdict: &Verdict, now: Instant, generation: u64) {
         let Some(mut state) = self.lock() else { return };
-        if state.generation != generation || !matches!(verdict, Verdict::Unhealthy { .. }) {
+        let Verdict::Unhealthy { last_code } = verdict else {
+            return;
+        };
+        if state.generation != generation {
             return;
         }
         let (closed, min_nodes, exclude_for) =
@@ -209,6 +223,7 @@ impl CircuitBreakers {
         if *switch != NodeState::Closed {
             return;
         }
+        let last_code = last_code_str(*last_code);
         // The floor: opening this node must leave at least `min_nodes` in use.
         if closed > min_nodes {
             // `exclude_for` is validated to be at most an hour: this cannot overflow.
@@ -216,6 +231,21 @@ impl CircuitBreakers {
                 since: now,
                 until: now + exclude_for,
             };
+            warn!(
+                kms_node = node,
+                last_code,
+                excluded_for_ms = ms(exclude_for),
+                closed_nodes = closed - 1,
+                "node excluded"
+            );
+        } else {
+            warn!(
+                kms_node = node,
+                last_code,
+                min_nodes,
+                closed_nodes = closed,
+                "node kept: floor reached"
+            );
         }
     }
 
@@ -226,7 +256,7 @@ impl CircuitBreakers {
         if state.generation != generation {
             return;
         }
-        let exclude_for = state.exclude_for;
+        let (closed, exclude_for) = (state.closed_count(), state.exclude_for);
         let Some(switch) = state.node_mut(node) else {
             return;
         };
@@ -234,11 +264,29 @@ impl CircuitBreakers {
             return;
         };
         *switch = match verdict {
-            Verdict::Answered => NodeState::Closed,
-            Verdict::Unhealthy { .. } => NodeState::Open {
-                since,
-                until: now + exclude_for,
-            },
+            Verdict::Answered => {
+                info!(
+                    kms_node = node,
+                    excluded_ms = ms(now - since),
+                    closed_nodes = closed + 1,
+                    "node included"
+                );
+                NodeState::Closed
+            }
+            Verdict::Unhealthy { last_code } => {
+                warn!(
+                    kms_node = node,
+                    last_code = last_code_str(*last_code),
+                    excluded_for_ms = ms(exclude_for),
+                    closed_nodes = closed,
+                    "probe failed: node excluded"
+                );
+                NodeState::Open {
+                    since,
+                    until: now + exclude_for,
+                }
+            }
+            // Nothing is known: the next aggregation probes again.
             Verdict::Ignored => NodeState::Open { since, until: now },
         };
     }
@@ -254,6 +302,7 @@ impl CircuitBreakers {
             *switch = NodeState::Closed;
         }
         state.generation += 1;
+        info!(closed = out, "breakers reset");
         out
     }
 

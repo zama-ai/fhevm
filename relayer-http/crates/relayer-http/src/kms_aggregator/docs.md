@@ -408,21 +408,26 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
 
 ## 12. Logging and metrics
 
-The rules are in `OBSERVABILITY.md`. The aggregator logs nothing at INFO: the request's one INFO line is the summary
-line of the endpoint, which reports the aggregation through the `Tally` that `run` fills (`counted`, `threshold`, and
-the node names that failed, were rejected or were cut, and when the threshold was reached). Span `aggregation{request_id}` wraps `run`; the node tasks run
-inside it, so their lines carry the request id; lines about one node carry its configured name as `kms_node`.
-Events:
+The rules are in `OBSERVABILITY.md`. The aggregator logs nothing at INFO about a request: the request's one INFO line
+is the summary line of the endpoint, which reports the aggregation through the `Tally` that `run` fills (`counted`,
+`threshold`, and the node names that failed, were rejected or were cut, and when the threshold was reached). The
+two INFO lines of the circuit breaker (`node included`, `breakers reset`) are about the node set, not a request.
+Span `aggregation{request_id}` wraps `run`; the node tasks and the probes run inside it, so their lines carry the
+request id; lines about one node carry its configured name as `kms_node`. Events:
 
 | event | level | fields |
 |---|---|---|
 | `attempt failed` | warn | kms_node, attempt, elapsed_ms (this attempt), error, code, retry_class (`transient` or `rate_limit`), retry_in_ms (`null` when the call gives up), retry_after_ms (the node's parsed `Retry-After`, when sent), give_up_reason (`auth`, `non_retryable`, `budget_exhausted`, `deadline`, else `null`): one line per failed attempt, retried or final, so also the skipped retries |
 | `signing failed` | warn | kms_node, attempt, elapsed_ms, error, retry_class, retry_in_ms, give_up_reason: signing the call failed, nothing reached the node (the relayer's key, not the node, is at fault); the retry is in the transient budget |
 | `call failed` | warn | kms_node, attempts, transient_retries, rate_limit_retries, elapsed_ms, error: the node's outcome after its last attempt and how much of each retry budget it used |
-| `call cut` | warn | kms_node, attempts, elapsed_ms, cause: `deadline` (too slow or hung), or `fail_fast`; a client hangup is reported by the endpoint's `Guard` (cause `client_closed`) |
+| `call cut` | warn | kms_node, attempts, elapsed_ms, cause: `deadline` (too slow or hung), or `fail_fast`; last_code: the node's last answer during the call, `none` when it never answered (section 7); a client hangup is reported by the endpoint's `Guard` (cause `client_closed`) |
 | `response rejected` | warn | kms_node, elapsed_ms, error: a check refused a 200 response |
 | `node task panicked` | error | kms_node, location: a panic inside a node task (no panic text), the panic's only ERROR line; the node is counted as failed, and the fail-fast check still runs |
-| `aggregation started`, `response accepted`, `deadline reached`, `threshold unreachable` | debug | nodes, threshold, timeout_ms, retries_waits_ms (the list, as text), rate_limit_max, rate_limit_initial_delay_ms (the fan-out and the retry policy, so one request's log is self-describing) / kms_node, attempts, elapsed_ms, counted / pending |
+| `node excluded`, `probe failed: node excluded` | warn | kms_node, last_code, excluded_for_ms, closed_nodes: the circuit breaker opened the node (section 7), after a call or after a probe; the `call cut` or `call failed` line before it, same request id and node, says why |
+| `node kept: floor reached` | warn | kms_node, last_code, min_nodes, closed_nodes: unhealthy, but excluding it would leave fewer than `min_nodes` in use |
+| `node included` | info | kms_node, excluded_ms, closed_nodes: a probe answered, the node is in use again |
+| `breakers reset` (outside any span) | info | closed: how many nodes were out; `Caller::reset_circuit_breakers()` was called |
+| `aggregation started`, `node probed`, `response accepted`, `deadline reached`, `threshold unreachable` | debug | nodes, threshold, timeout_ms, retries_waits_ms (the list, as text), rate_limit_max, rate_limit_initial_delay_ms, circuit_breaker (`on` / `off`), excluded_nodes, probed_nodes (the lists, as text): the fan-out, the retry policy and the breakers' choice, so one request's log is self-describing / kms_node, excluded_ms: this aggregation sends the open node a probe / kms_node, attempts, elapsed_ms, counted / pending |
 
 `error` is a digest: for a KMS node's error response, its code and message truncated to `MAX_LOGGED_NODE_MESSAGE`
 characters; for a 2xx body that does not parse, `bad body: <kind>, <n> bytes` (`AttemptError::Body` keeps the kind
