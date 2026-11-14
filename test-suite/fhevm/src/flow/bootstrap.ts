@@ -114,6 +114,19 @@ export const contractUpgradeCommand = (task: string, contract: string) => {
   ].join("\n");
 };
 
+/**
+ * Deploys HCUConfigurator on a host chain whose snapshot predates it, or exits cleanly. Every host task compiles
+ * HCULimit, which needs HCUConfigurator's address, and HCULimit's reinitializeV6 reverts until HCUConfigurator runs.
+ */
+export const HCU_CONFIGURATOR_BOOTSTRAP_COMMAND = [
+  "if [ -f previous-contracts/HCUConfigurator.sol ]; then",
+  '  echo "[bootstrap] HCUConfigurator: already in the snapshot; nothing to deploy"; exit 0',
+  "fi",
+  "npx hardhat task:deployEmptyProxyForHCUConfigurator",
+  "npx hardhat compile:specific --contract contracts",
+  "npx hardhat task:deployHCUConfigurator",
+].join("\n");
+
 /** Every gateway contract with an upgrade task, consumers before the contract they read. */
 export const GATEWAY_CONTRACT_UPGRADES = [
   ["task:upgradeDecryption", "Decryption"],

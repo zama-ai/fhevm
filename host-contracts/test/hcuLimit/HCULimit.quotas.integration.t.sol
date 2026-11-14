@@ -2,11 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {fhevmExecutorAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {fhevmExecutorAdd, hcuConfiguratorAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
 import {FHEEvents} from "@fhevm-host-contracts/contracts/FHEEvents.sol";
 import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
 import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
+import {HCUConfigurator} from "@fhevm-host-contracts/contracts/HCUConfigurator.sol";
 import {HANDLE_VERSION} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {FheType} from "@fhevm-host-contracts/contracts/shared/FheType.sol";
 
@@ -32,6 +33,7 @@ contract HCULimitQuotasIntegrationTest is HostContractsDeployerTestUtils {
 
     ACL private acl;
     HCULimit private hcuLimit;
+    HCUConfigurator private constant hcuConfigurator = HCUConfigurator(hcuConfiguratorAdd);
     QuotaExecutorDapp private dapp;
     bytes32 private input;
 
@@ -39,20 +41,21 @@ contract HCULimitQuotasIntegrationTest is HostContractsDeployerTestUtils {
         (acl, ) = _deployACL(OWNER);
         _deployFHEVMExecutor(OWNER);
         (hcuLimit, ) = _deployHCULimit(OWNER);
+        _deployHCUConfigurator(OWNER);
         dapp = new QuotaExecutorDapp();
         input = bytes32(uint256(uint8(FheType.Uint8)) << 8);
 
         vm.prank(OWNER);
-        hcuLimit.setQuota(DEFAULT_QUOTA, 0, 0);
+        hcuConfigurator.setQuota(DEFAULT_QUOTA, 0, 0);
     }
 
     function test_fheAddRefusesADappInAStoppedQuotaWithoutSideEffectsThenSucceeds() public {
         vm.prank(fhevmExecutorAdd);
         acl.allowTransient(input, address(dapp));
         vm.prank(OWNER);
-        hcuLimit.setMaxHCUDepthPerTx(ADD_HCU);
+        hcuConfigurator.setMaxHCUDepthPerTx(ADD_HCU);
         vm.prank(OWNER);
-        hcuLimit.setMaxHCUPerTx(ADD_HCU);
+        hcuConfigurator.setMaxHCUPerTx(ADD_HCU);
         bytes32 expectedResult = _addResult();
         assertFalse(acl.isAllowed(expectedResult, address(dapp)));
 
@@ -74,9 +77,9 @@ contract HCULimitQuotasIntegrationTest is HostContractsDeployerTestUtils {
 
     function test_fheRandRefusesADappInAStoppedQuotaWithoutSideEffectsThenSucceeds() public {
         vm.prank(OWNER);
-        hcuLimit.setMaxHCUDepthPerTx(RAND_HCU);
+        hcuConfigurator.setMaxHCUDepthPerTx(RAND_HCU);
         vm.prank(OWNER);
-        hcuLimit.setMaxHCUPerTx(RAND_HCU);
+        hcuConfigurator.setMaxHCUPerTx(RAND_HCU);
         uint256 counterBefore = uint256(vm.load(fhevmExecutorAdd, EXECUTOR_STORAGE_SLOT));
         bytes16 expectedSeed = _seed(counterBefore);
         bytes32 expectedResult = _withMetadata(
@@ -104,8 +107,8 @@ contract HCULimitQuotasIntegrationTest is HostContractsDeployerTestUtils {
 
     function _admitDapp() private {
         vm.startPrank(OWNER);
-        hcuLimit.setQuota(DAPP_QUOTA, 1_000_000, 1_000_000);
-        hcuLimit.assignQuota(DAPP_QUOTA, address(dapp));
+        hcuConfigurator.setQuota(DAPP_QUOTA, 1_000_000, 1_000_000);
+        hcuConfigurator.assignQuota(DAPP_QUOTA, address(dapp));
         vm.stopPrank();
     }
 

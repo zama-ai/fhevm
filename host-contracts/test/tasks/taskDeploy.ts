@@ -479,3 +479,15 @@ describe('canonical snapshot env (buildCanonicalSnapshotEnv / readCanonicalSnaps
     );
   });
 });
+
+describe('task:deployHCUConfigurator', function () {
+  it('does nothing when HCUConfigurator already runs, so a failed upgrade can be retried', async function () {
+    const hcuConfigurator = await ethers.getContractAt(
+      'HCUConfigurator',
+      readHostAddress('HCU_CONFIGURATOR_CONTRACT_ADDRESS'),
+    );
+    const version = await hcuConfigurator.getVersion();
+    await run('task:deployHCUConfigurator');
+    expect(await hcuConfigurator.getVersion()).to.equal(version);
+  });
+});
