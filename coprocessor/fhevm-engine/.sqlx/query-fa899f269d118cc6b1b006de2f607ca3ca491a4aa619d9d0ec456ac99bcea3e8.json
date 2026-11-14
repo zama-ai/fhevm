@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT (\n                EXISTS (\n                    SELECT 1 FROM host_chain_blocks_valid\n                     WHERE chain_id = $1 AND block_status = 'finalized'\n                       AND block_number > $2\n                ) AND NOT EXISTS (\n                    SELECT 1 FROM host_chain_blocks_valid\n                     WHERE chain_id = $1 AND block_status = 'finalized'\n                       AND block_number BETWEEN $2 - 1 AND $2 + 1\n                )\n            ) AS \"in_pruned_history!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "in_pruned_history!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fa899f269d118cc6b1b006de2f607ca3ca491a4aa619d9d0ec456ac99bcea3e8"
+}

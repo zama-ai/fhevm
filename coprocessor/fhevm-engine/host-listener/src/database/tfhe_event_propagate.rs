@@ -35,7 +35,7 @@ use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -193,6 +193,11 @@ const BLOCKS_VALID_RETENTION: i64 = 10_000;
 const BLOCKS_VALID_MIN_AGE_SECS: i64 = 7 * 24 * 3600;
 /// Upper bound of rows removed per pruning pass; keeps each pass short.
 const BLOCKS_VALID_PRUNE_BATCH: i64 = 1_000;
+/// A spaced prune waits this many times its previous duration before running
+/// again, so pruning takes at most ~10 % of the caller's time.
+const PRUNE_SPACING_FACTOR: u32 = 10;
+/// Longest wait between spaced prunes, whatever one run took.
+const PRUNE_SPACING_CAP: Duration = Duration::from_secs(180);
 const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
 const SLOW_LANE_RESET_BATCH_SIZE: i64 = 5_000;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
@@ -269,6 +274,12 @@ fn apply_connection_options_gcs(options: PgConnectOptions) -> PgConnectOptions {
     ])
 }
 
+/// Wait before the next spaced prune, given how long the last one took.
+fn prune_spacing(took: Duration) -> Duration {
+    took.saturating_mul(PRUNE_SPACING_FACTOR)
+        .min(PRUNE_SPACING_CAP)
+}
+
 fn slow_lane_reset_advisory_lock_key(chain_id: ChainId) -> i64 {
     SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE.saturating_add(chain_id.as_i64())
 }
@@ -307,6 +318,8 @@ pub struct Database {
     pub consumed_boundaries: ConsumedBoundaryGuard,
     pub sealed_chains: SealedChainGuard,
     pub tick: HeartBeat,
+    /// When [`Database::prune_finalized_block_history_spaced`] may run again.
+    prune_not_before: Arc<std::sync::Mutex<Option<Instant>>>,
     pub(crate) verified_history:
         Arc<tokio::sync::Mutex<super::history_verification::VerifiedHistory>>,
     stack_mode: Arc<StackMode>,
@@ -431,6 +444,7 @@ impl Database {
             consumed_boundaries,
             sealed_chains,
             tick: HeartBeat::default(),
+            prune_not_before: Default::default(),
             verified_history: Default::default(),
             stack_mode,
         };
@@ -1869,27 +1883,39 @@ impl Database {
         tx: &mut Transaction<'_>,
         last_block_max: i64,
         chain_id: ChainId,
+        finalized_tip: Option<i64>,
     ) -> Result<HashSet<i64>, SqlxError> {
         // Most of the time there is only 1 block pending. Under a backlog,
         // take the OLDEST pending blocks: finalization must progress
         // oldest-first so each block's parent-linkage check anchors on a
         // finalized predecessor instead of passing vacuously.
-        let blocks_number = sqlx::query!(
+        // Below the finalized tip, only rows with retained history: a pending
+        // row with no finalized row at its height or next to it is an old
+        // block redelivered after its neighbours were pruned. It has nothing
+        // left to be checked against and would otherwise head every batch,
+        // stopping it at its missing link. Rows next to retained history
+        // still go through the neighbour checks that contain contradictions.
+        let blocks_number = sqlx::query_scalar!(
             r#"
-            SELECT block_number FROM host_chain_blocks_valid
-            WHERE block_status = 'pending' AND block_number <= $1 AND chain_id = $2
-            ORDER BY block_number ASC
+            SELECT p.block_number FROM host_chain_blocks_valid p
+            WHERE p.block_status = 'pending' AND p.block_number <= $1
+              AND p.chain_id = $2
+              AND ($3::BIGINT IS NULL OR p.block_number >= $3 OR EXISTS (
+                  SELECT 1 FROM host_chain_blocks_valid n
+                   WHERE n.chain_id = p.chain_id
+                     AND n.block_status = 'finalized'
+                     AND n.block_number BETWEEN p.block_number - 1
+                                            AND p.block_number + 1))
+            ORDER BY p.block_number ASC
             LIMIT 10
             "#,
             last_block_max,
             chain_id.as_i64(),
+            finalized_tip,
         )
         .fetch_all(tx.deref_mut())
         .await?;
-        Ok(blocks_number
-            .into_iter()
-            .map(|record| record.block_number)
-            .collect())
+        Ok(blocks_number.into_iter().collect())
     }
 
     /// Prunes old, unreferenced, finalized `host_chain_blocks_valid` rows.
@@ -1960,6 +1986,39 @@ impl Database {
         .await?
         .rows_affected();
         Ok(deleted)
+    }
+
+    /// [`Self::prune_finalized_block_history`], skipped (returning 0) until
+    /// [`PRUNE_SPACING_FACTOR`] times its previous duration has elapsed,
+    /// capped at [`PRUNE_SPACING_CAP`]. Callers run it after every
+    /// finalization step, and its scan reads every recent finalized row: over
+    /// a second per call on a fast chain. The window is per process and chain.
+    pub async fn prune_finalized_block_history_spaced(
+        &self,
+        last_finalized_block: i64,
+    ) -> Result<u64, SqlxError> {
+        let started = Instant::now();
+        {
+            let mut not_before = self
+                .prune_not_before
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if not_before.is_some_and(|at| started < at) {
+                return Ok(0);
+            }
+            // Concurrent callers of this process skip while it runs.
+            *not_before = Some(started + PRUNE_SPACING_CAP);
+        }
+        let result = self
+            .prune_finalized_block_history(last_finalized_block)
+            .await;
+        let finished = Instant::now();
+        *self
+            .prune_not_before
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(finished + prune_spacing(finished - started));
+        result
     }
 
     pub async fn poller_get_last_caught_up_block(
@@ -3081,6 +3140,26 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         | AclContractEvents::BlockedAccount(_)
         | AclContractEvents::UnblockedAccount(_)
         | AclContractEvents::DecryptionSignaturesInvalidated(_) => vec![],
+    }
+}
+
+#[cfg(test)]
+mod prune_spacing_tests {
+    use super::*;
+
+    #[test]
+    fn spacing_is_ten_times_the_last_run_capped_at_three_minutes() {
+        assert_eq!(prune_spacing(Duration::ZERO), Duration::ZERO);
+        assert_eq!(
+            prune_spacing(Duration::from_millis(5)),
+            Duration::from_millis(50)
+        );
+        assert_eq!(
+            prune_spacing(Duration::from_millis(1500)),
+            Duration::from_secs(15)
+        );
+        assert_eq!(prune_spacing(Duration::from_secs(30)), PRUNE_SPACING_CAP);
+        assert_eq!(prune_spacing(Duration::MAX), PRUNE_SPACING_CAP);
     }
 }
 

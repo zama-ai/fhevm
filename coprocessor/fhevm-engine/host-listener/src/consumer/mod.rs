@@ -608,7 +608,9 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
             db.tick.update();
             if finalized {
                 if let Err(error) = db
-                    .prune_finalized_block_history(block_summary.number as i64)
+                    .prune_finalized_block_history_spaced(
+                        block_summary.number as i64,
+                    )
                     .await
                 {
                     warn!(%error, "Could not prune finalized block history");
