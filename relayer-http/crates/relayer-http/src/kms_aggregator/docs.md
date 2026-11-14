@@ -296,6 +296,38 @@ stateDiagram-v2
   aggregation and a client that hangs up do not cancel it. Its attempts are recorded in the node metrics under the
   request's flow.
 
+**State.** One mutex per pod around `State`: the switches, the two settings and a generation counter.
+
+| concept | scope | what it is |
+|---|---|---|
+| switch | per node | `closed`, `open { since, until }` or `probing { since }`; one per endpoint, in endpoint order |
+| `until` | per node | the instant the node was opened plus `exclude_for`; the only thing `select` reads |
+| `since` | per node | when the node was first opened; kept through a failed probe; reported as `excluded_ms` |
+| `exclude_for`, `min_nodes` | shared | the two settings; a window is never global, each node starts its own when opened |
+| closed count | derived | counted from the switches at each outcome, never stored; an open or probing node is not closed |
+| `generation` | shared | bumped only by `reset()`; copied into each `Selection` and echoed back by its outcomes, so a call started before a reset changes nothing; unrelated to time and to nodes |
+| time | passed in | `select` gets the aggregation's start, the outcomes get the instant the call or probe ended: a hung node is opened at the deadline, a refused one at once |
+
+No timer and no global window: a node whose window ended is probed by the first request that arrives afterwards,
+not at that instant.
+
+**Two exclusions, one second apart** (13 nodes, `min_nodes` 11, `exclude_for` 30 s):
+
+| when | event | closed |
+|---|---|---|
+| t | node 1 unhealthy, 13 > 11: opened until t+30 | 12 |
+| t+1 | node 2 unhealthy, 12 > 11: opened until t+31 | 11 |
+| t+2 | node 3 unhealthy, 11 is not > 11: kept, `node kept: floor reached` | 11 |
+| t+10 | a request: both windows running, fan-out to 11 nodes, no probe | 11 |
+| t+30.5 | first request after t+30: node 1 probing, one detached probe; node 2 still open | 11 |
+| t+30.7 | a request during the probe: node 1 still out, no second probe | 11 |
+| t+31.2 | node 1's probe answers (any answer): closed, `node included` | 12 |
+| t+31.5 | first request after t+31: node 1 called, node 2 probing | 12 |
+| t+32 | node 2's probe is refused: opened until t+62, `since` still t+1, `probe failed: node excluded` | 12 |
+
+One request at t+40 with none before probes both nodes at once. Between t+30.5 and t+31.2 node 3 could not be
+opened: a probing node is not closed, so the floor was still reached.
+
 **Concurrency.** One `std::sync::Mutex` for the set, taken for two short critical sections per aggregation
 (`select` once, `on_call_outcome` once per outcome) and never held across an await. The floor is checked and applied
 in the same critical section: with k concurrent unhealthy outcomes and room for one more exclusion, exactly one node
