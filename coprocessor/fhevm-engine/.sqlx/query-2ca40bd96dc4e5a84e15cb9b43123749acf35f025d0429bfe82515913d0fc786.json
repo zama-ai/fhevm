@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(SUM(OCTET_LENGTH(ciphertext64)), 0)::BIGINT AS \"bytes!\"\n             FROM pads WHERE ciphertext64 IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bytes!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2ca40bd96dc4e5a84e15cb9b43123749acf35f025d0429bfe82515913d0fc786"
+}

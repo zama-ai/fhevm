@@ -44,6 +44,11 @@ const KMS_CONNECTOR_KMS_GENERATION_READY =
 /** Number of KMS connector instances: one per party. */
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
 
+/** The object store container: it has curl, which the coprocessor images do not have. */
+const OBJECT_STORE_CONTAINER = "fhevm-object-store";
+/** The pad-worker log line once it listens for rows. */
+const PAD_WORKER_READY = /Pad-worker ready/;
+
 /** The default `/healthz` port of coprocessor-proxy and prf-service. */
 const COPROCESSOR_PROXY_HEALTHCHECK_PORT = 8080;
 
@@ -166,7 +171,7 @@ export const waitForLog = async (container: string, pattern: RegExp) => {
 
 /**
  * Waits until the `service` of a coprocessor answers 200 on `/healthz`. The images have no HTTP
- * client, so the probe runs in the PRF output seeder of the coprocessor.
+ * client, so the probe runs in the object store, on the same network.
  */
 const waitForHealthz = async (prefix: string, service: "prf-service" | "proxy") => {
   const container = `${prefix}${service}`;
@@ -176,7 +181,7 @@ const waitForHealthz = async (prefix: string, service: "prf-service" | "proxy") 
     if (inspect && containerFailure(inspect)) {
       throw new ContainerCrashed(container, inspect.State.ExitCode || -1, "");
     }
-    const probe = await run(["docker", "exec", `${prefix}prf-output-seed`, "wget", "-qO-", url], {
+    const probe = await run(["docker", "exec", OBJECT_STORE_CONTAINER, "curl", "-fsS", "-o", "/dev/null", url], {
       allowFailure: true,
       timeoutMs: 10_000,
     });
@@ -385,8 +390,8 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
       await waitForContainer(`${prefix}prf-service`, "running");
     }
     if (includeProxy) {
-      await waitForContainer(`${prefix}prf-output-seed`, "healthy");
       await waitForHealthz(prefix, "prf-service");
+      await waitForLog(`${prefix}pad-worker`, PAD_WORKER_READY);
       await waitForHealthz(prefix, "proxy");
     }
     if (state.scenario.kind === "blue-green" && !state.scenario.gcs.deferredStart) {

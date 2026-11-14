@@ -23,6 +23,7 @@ import {
   supportsConsensusDetector,
   supportsCoprocessorProxy,
   supportsHostListenerConsumer,
+  supportsPadWorker,
   supportsPrfService,
   supportsUpgradeController,
 } from "./compat";
@@ -185,7 +186,8 @@ const main = async () => {
           (name !== "coprocessor-consensus-detector" || supportsConsensusDetector(state)) &&
           (name !== "coprocessor-upgrade-controller" || supportsUpgradeController(state)) &&
           (name !== "coprocessor-proxy" || supportsCoprocessorProxy(state)) &&
-          (name !== "coprocessor-prf-service" || supportsPrfService(state)),
+          (name !== "coprocessor-prf-service" || supportsPrfService(state)) &&
+          (name !== "coprocessor-pad-worker" || supportsPadWorker(state)),
       ),
       "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter(
         (name) =>

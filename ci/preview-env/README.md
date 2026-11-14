@@ -532,23 +532,22 @@ skipped with a warning. The in-cluster test-suite still calls
 
 Except on blue-green stacks and with a `coprocessor_version` pin (a pinned release may predate
 `pads`), each `coprocessor-<i>` release also runs the coprocessor-proxy and the prf-service
-behind it (`values-coprocessor-proxy-e2e.yaml`), one replica each. Without them, the
-`Coprocessor proxy` suite skips. `scripts/deploy/deploy-coprocessor.sh` provides what the
-chart does not:
+behind it (`values-coprocessor-proxy-e2e.yaml`), one replica each. A pad release
+`coprocessor-<i>-pads` runs the pad-worker of PRF instance 0, with the mock evaluator
+(`values-coprocessor-pads-e2e.yaml`). Without them, the `Coprocessor proxy` suite
+skips. `scripts/deploy/deploy-coprocessor.sh` provides what the chart does not:
 
-- **The `prf_service` role**: created in party i's Postgres before the release, from
-  `prfService.databaseUser` and `databasePassword`, so the migration grants it its rights on
-  `pads`.
-- **The PRF output**: no pad-worker runs yet, so once the migration is done, a pod of the
-  test-suite image runs `test-suite/e2e/scripts/seed-prf-output.ts`, which writes the output the
-  suite requests into party i's database, signed with the party's coprocessor key (its derived
-  wallet, as the sns-worker signs). The suite checks that attestation as a KMS connector will.
-  The script and its `prfOutput.ts` module come from the checkout (ConfigMap `prf-output-seed`),
-  so a pinned test-suite image that predates them still runs them.
+- **The `prf_service` and `pad_worker` roles**: created in party i's Postgres before the
+  release, from `databaseUser` and `databasePassword` of `prfService` and `padWorkerShared`, so
+  the migration grants their rights.
+- **The pad-worker start**: the script waits until the pad-worker of every party is ready. The
+  pad-worker signs its outputs with the party's coprocessor key (its derived wallet, as the
+  sns-worker signs), and the suite checks that attestation as a KMS connector will.
 - **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,
   with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
-- **Per party**: the image tags (`coprocessor_proxy` and `coprocessor_prf_service` in
-  resolve-tags), the signer (the derived coprocessor wallet) and the NetworkPolicy's
+- **Per party**: the image tags (`coprocessor_proxy`, `coprocessor_prf_service` and
+  `coprocessor_pad_worker` in resolve-tags),
+  the signer (the derived coprocessor wallet) and the NetworkPolicy's
   podSelector, which selects only that party's prf-service and lets test-suite pods
   (`app: fhevm-test-suite`) reach its metrics port 9100 only.
 - **Test-suite wiring**: the ConfigMap **`coprocessor-proxy`** (`urls`,
@@ -563,8 +562,6 @@ listener is up and the KMS tx-senders have been read), and restarts every proxy 
 steady load of signed requests from a test-suite pod, which stops once every old
 proxy pod is gone: no request may fail. It also checks the NetworkPolicy: that
 test-suite pod must reach each prf-service's metrics port 9100 and no prf-service's PRF port 8090.
-
-When the pad-worker deploys here, it writes the outputs, and the seed pod goes.
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 

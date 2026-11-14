@@ -185,6 +185,7 @@ const COPROCESSOR_BUILD_TARGETS: Record<string, string> = {
   "coprocessor-upgrade-controller": "upgrade-controller",
   "coprocessor-proxy": "coprocessor-proxy",
   "coprocessor-prf-service": "prf-service",
+  "coprocessor-pad-worker": "pad-worker",
 };
 
 const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
@@ -887,7 +888,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         adjusted.profiles = ["legacy-host-listeners"];
       }
       // The proxy pair and prf-service keep the bundle's images unless built locally: an older
-      // registry tag may not have them, and the seeder runs the test-suite image.
+      // registry tag may not have them.
       if (locallyBuilt || !(COPROCESSOR_PROXY_SERVICES.has(name) || name === "coprocessor-prf-service")) {
         applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       }

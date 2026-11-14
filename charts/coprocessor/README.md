@@ -177,3 +177,28 @@ Before you enable it:
   `prfService.ports.http`.
 - With `prfService.serviceMonitor.enabled`, add an ingress rule for the metrics port to
   `coprocessorProxy.prfServiceNetworkPolicy.extraIngress`. The NetworkPolicy admits only the proxy.
+
+## Pad workers
+
+`padWorkers` deploys one pad-worker for each PRF instance, `<release>-pad-worker-<prfId>`. A
+pad-worker runs outside the blue and green fleets, for the life of its instance. Deploy the
+pad-workers in a separate pad release of the operator, for example `coprocessor-<party>-pads`, with
+`dbMigration.enabled` and `tfheWorker.enabled` set to `false` and no other component. Leave
+`padWorkers` empty in the fleet releases. `ci/pad-workers-values.yaml` is an example.
+
+Before you add a pad-worker:
+
+- Create the database role `pad_worker` with `LOGIN`, and `GRANT rds_iam TO pad_worker` for IAM
+  authentication. Set `padWorkerShared.databaseUser` (required), and
+  `padWorkerShared.databasePassword` for password authentication. `commonConfig.databaseUrl` must
+  use `$(DATABASE_USER)`. The migration job of the fleet release gives the table rights.
+- Set `padWorkerShared.config.s3BucketName` to the bucket of the operator, and
+  `padWorkerShared.wallet` to the coprocessor signer.
+- Set `padWorkerShared.config.outputMaxAgeSeconds` (required) from measured data. The GC deletes
+  uploaded and failed rows older than it. Set the S3 lifecycle rule on `pads/` to the same age.
+
+A pad-worker keeps its image (`padWorkers[].image`) for the life of its instance. An image that
+changes the bytes of the outputs needs a new `prfId`.
+
+The pad-worker has no Service except the metrics one, and `padWorkerShared.serviceMonitor.enabled`
+adds a ServiceMonitor: nothing calls a pad-worker.

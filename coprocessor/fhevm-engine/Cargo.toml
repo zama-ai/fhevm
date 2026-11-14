@@ -15,6 +15,7 @@ members = [
     "coprocessor-proxy",
     "prf-service",
     "coprocessor-api",
+    "pad-worker",
 ]
 
 [workspace.package]

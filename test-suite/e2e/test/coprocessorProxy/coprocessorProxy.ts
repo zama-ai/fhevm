@@ -2,73 +2,34 @@
 // real pad-connector e2e when it lands. kms-context-switch and preview rollout checks invoke this
 // suite and must switch to that client too, removing the proxy-only env and party-1 key mapping.
 import { expect } from 'chai';
-import { type BaseWallet, Signature, Wallet, concat, toBeHex } from 'ethers';
-import { existsSync, readFileSync } from 'node:fs';
-import type { IncomingHttpHeaders } from 'node:http';
-import https from 'node:https';
+import { type BaseWallet, Signature, Wallet, concat, keccak256, toBeHex, toUtf8Bytes } from 'ethers';
+import { existsSync } from 'node:fs';
 
 import { fhevmSigHeader } from '../sdk/connector/connectorHttp';
+import { type Reply, envList, metric, request } from './client';
 import {
   type PrfOutputAttestation,
   type PrfOutputRef,
-  SEEDED_BODY,
-  SEEDED_CIPHERTEXT_DIGEST,
-  SEEDED_REF,
   attestationDigest,
   prfPath,
   signPrfOutput,
   verifyPrfOutput,
 } from './prfOutput';
 
-// scripts/seed-prf-output.ts writes this output into each coprocessor's database.
-const PRF_PATH = prfPath(SEEDED_REF);
+// The pad-worker of instance 0 computes this output at the first request.
+const PRF_REF: PrfOutputRef = { prfId: 0, label: `0x${'01'.repeat(32)}`, padLength: 1 };
+const PRF_PATH = prfPath(PRF_REF);
 // Order of the secp256k1 group: `s` and `n - s` both sign the same message.
 const SECP256K1_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 
-const envList = (name: string): string[] =>
-  (process.env[name] ?? '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-interface Sent {
-  status: number;
-  headers: IncomingHttpHeaders;
-  body: Buffer;
+interface Sent extends Reply {
   /** The PRF requests that prf-service answered during this request. */
   forwarded: number;
   where: string;
 }
 
-/** A request over TLS, trusting the proxies' self-signed test certificate. */
-function request(
-  method: 'GET' | 'HEAD',
-  url: string,
-  authorization: string,
-): Promise<Omit<Sent, 'forwarded' | 'where'>> {
-  const ca = readFileSync(process.env.COPROCESSOR_PROXY_CA_CERT!);
-  return new Promise((resolve, reject) => {
-    const req = https
-      .request(url, { method, ca, headers: { authorization }, signal: AbortSignal.timeout(30_000) }, (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('end', () =>
-          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
-        );
-      })
-      .on('error', (err) => reject(new Error(`${err.message}${req.reusedSocket ? ' on a reused connection' : ''}`)));
-    req.end();
-  });
-}
-
 /** The sum of the `coprocessor_prf_service_requests_total` series of prf-service. */
-async function prfRequests(metricsUrl: string): Promise<number> {
-  const resp = await fetch(metricsUrl, { signal: AbortSignal.timeout(10_000) });
-  return (await resp.text())
-    .split('\n')
-    .filter((line) => line.startsWith('coprocessor_prf_service_requests_total{'))
-    .reduce((sum, line) => sum + Number(line.split(' ').pop()), 0);
-}
+const prfRequests = (metricsUrl: string) => metric(metricsUrl, 'coprocessor_prf_service_requests_total');
 
 /** Timestamp of the finalized block applied to the proxy's signer set. */
 async function signersBlockTimestamp(metricsUrl: string): Promise<number> {
@@ -96,11 +57,11 @@ function withHighS(header: string): string {
   return `${params}sig=${concat([r, toBeHex(SECP256K1_N - BigInt(s), 32), toBeHex(v === 27 ? 28 : 27, 1)])}`;
 }
 
-/** The answer of prf-service, passed through: the seeded output, as coprocessor `signer` attested it. */
+/** The answer of prf-service, passed through: the output of `PRF_REF`, as coprocessor `signer` attested it. */
 function expectForwarded(sent: Sent, signer: string) {
   expect(sent.status, sent.where).to.equal(200);
   const attestation = JSON.parse(String(sent.headers['x-prf-attestation'])) as PrfOutputAttestation;
-  expect(verifyPrfOutput(attestation, SEEDED_REF, sent.body, signer), sent.where).to.deep.equal([]);
+  expect(verifyPrfOutput(attestation, PRF_REF, sent.body, signer), sent.where).to.deep.equal([]);
   expect(sent.forwarded, sent.where).to.equal(1);
 }
 
@@ -202,21 +163,22 @@ describe('Coprocessor proxy', function () {
 
     it('refuses another output, another body or another coprocessor', function () {
       const coprocessor = Wallet.createRandom();
-      const attestation = signPrfOutput(coprocessor.privateKey, SEEDED_REF, SEEDED_CIPHERTEXT_DIGEST, SEEDED_BODY);
+      const body = Uint8Array.from({ length: 256 }, (_, i) => i);
+      const attestation = signPrfOutput(coprocessor.privateKey, PRF_REF, keccak256(toUtf8Bytes('ct64')), body);
       // The first word of each problem names the check that refused.
       const refusals = (ref: PrfOutputRef, body: Uint8Array, signer: string) =>
         verifyPrfOutput(attestation, ref, body, signer).map((problem) => problem.split(' ')[0]);
-      expect(refusals(SEEDED_REF, SEEDED_BODY, coprocessor.address)).to.deep.equal([]);
+      expect(refusals(PRF_REF, body, coprocessor.address)).to.deep.equal([]);
       const others = [
-        { ...SEEDED_REF, prfId: 1 },
-        { ...SEEDED_REF, label: `0x${'02'.repeat(32)}` },
-        { ...SEEDED_REF, padLength: 2 },
+        { ...PRF_REF, prfId: 1 },
+        { ...PRF_REF, label: `0x${'02'.repeat(32)}` },
+        { ...PRF_REF, padLength: 2 },
       ];
       for (const ref of others) {
-        expect(refusals(ref, SEEDED_BODY, coprocessor.address), prfPath(ref)).to.deep.equal(['signature']);
+        expect(refusals(ref, body, coprocessor.address), prfPath(ref)).to.deep.equal(['signature']);
       }
-      expect(refusals(SEEDED_REF, SEEDED_BODY.subarray(1), coprocessor.address)).to.deep.equal(['body']);
-      expect(refusals(SEEDED_REF, SEEDED_BODY, Wallet.createRandom().address)).to.deep.equal(['signer']);
+      expect(refusals(PRF_REF, body.subarray(1), coprocessor.address)).to.deep.equal(['body']);
+      expect(refusals(PRF_REF, body, Wallet.createRandom().address)).to.deep.equal(['signer']);
     });
   });
 

@@ -309,29 +309,33 @@ services:
       coprocessor-db-migration:
         condition: service_completed_successfully
 
-  # Writes the suite's PRF output in place of the pad-worker, signed with this coprocessor's
-  # TX_SENDER_PRIVATE_KEY as its sns-worker signs, then stays up for the readiness probes, because
-  # prf-service and the proxy have no HTTP client. The script and its module are mounted: any image
-  # tag works.
-  coprocessor-prf-output-seed:
-    container_name: coprocessor-prf-output-seed
-    image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
+  # The pad-worker of PRF instance 0, which the "Coprocessor proxy" suite requests. Mock evaluator:
+  # the key ID is a placeholder. Its env file is the coprocessor's, with DATABASE_URL as the
+  # pad_worker role.
+  coprocessor-pad-worker:
+    container_name: coprocessor-pad-worker
+    image: ghcr.io/zama-ai/fhevm/coprocessor/pad-worker:${COPROCESSOR_PAD_WORKER_VERSION}
     platform: linux/amd64
-    init: true
+    restart: "on-failure:10"
     env_file:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
-    working_dir: /app/test-suite/e2e
-    entrypoint:
-      - sh
-      - -c
-      - npx ts-node --transpile-only scripts/seed-prf-output.ts && touch /tmp/seeded && exec tail -f /dev/null
-    volumes:
-      - ../../e2e/scripts/seed-prf-output.ts:/app/test-suite/e2e/scripts/seed-prf-output.ts:ro
-      - ../../e2e/test/coprocessorProxy/prfOutput.ts:/app/test-suite/e2e/test/coprocessorProxy/prfOutput.ts:ro
-    healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/seeded"]
-      interval: 1s
-      retries: 120
+      - path: ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor-pad-worker.env
+        required: false
+    command:
+      - pad-worker
+      - --prf-instance=0
+      - --prf-key-id=0x01
+      - --s3-bucket=${BUCKET_NAME}
+      # The key comes from TX_SENDER_PRIVATE_KEY in the env file.
+      - --signer-type=private-key
+      # e2e limits, short so the "PRF endpoint" suite reaches them; the same ages as prf-service.
+      - --pending-max-age=60s
+      - --output-max-age=300s
+      - --ct64-max-age=30s
+      - --gc-interval=5s
+      # 4 rows at once, fewer than the 8 requests in progress: the fairness test needs this.
+      - --max-concurrent=4
+      # Keeps a row pending for 2 s, so the suite can test the budgets.
+      - --mock-extra-latency=2s
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -352,14 +356,14 @@ services:
       COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS: ${PROTOCOL_CONFIG_ADDRESS}
       COPROCESSOR_PROXY_TLS_CERT_PATH: /etc/coprocessor-proxy/tls/tls.crt
       COPROCESSOR_PROXY_TLS_KEY_PATH: /etc/coprocessor-proxy/tls/tls.key
+      # e2e limit, low so the "PRF endpoint" suite reaches it.
+      COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER: "20"
     volumes:
       - ../static/config/coprocessor-proxy:/etc/coprocessor-proxy/tls:ro
     # The proxy resolves the prf-service hostname once, at startup.
     depends_on:
       coprocessor-prf-service:
         condition: service_started
-      coprocessor-prf-output-seed:
-        condition: service_healthy
 
   # Its own env file, generated only for stacks that run it: DATABASE_URL logs in as the prf_service
   # role, which can only read and add pads rows, and the coprocessor's secrets stay out.
@@ -374,6 +378,10 @@ services:
     command:
       - prf-service
       - --http-endpoint=0.0.0.0:8090
+      # e2e limits: 2,048 pending bits and 8 requests in progress for each connector.
+      - --max-concurrent-per-connector=2048
+      - --max-in-flight-per-connector=8
+      - --pad-pending-max-age=60s
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully

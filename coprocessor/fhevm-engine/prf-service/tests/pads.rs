@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 const LIMIT: i64 = 100;
 const MAX_ADDS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
+const PENDING_MAX_AGE: Duration = Duration::from_secs(600);
 const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
 
 /// A database and an admin pool.
@@ -39,7 +40,12 @@ async fn admin_db() -> (DBInstance, PgPool) {
 async fn test_db() -> (DBInstance, PgPool, PgPool, Arc<Admissions>) {
     let (instance, pool) = admin_db().await;
     let service = common::prf_service_pool(&pool, instance.db_url(), 16).await;
-    let admissions = Arc::new(Admissions::new(service.clone(), LIMIT, MAX_ADDS));
+    let admissions = Arc::new(Admissions::new(
+        service.clone(),
+        LIMIT,
+        MAX_ADDS,
+        PENDING_MAX_AGE,
+    ));
     (instance, pool, service, admissions)
 }
 
@@ -135,7 +141,7 @@ async fn concurrent_requests_of_a_connector_stay_in_its_budget() {
 #[tokio::test]
 async fn requests_on_two_pods_stay_in_the_budget() {
     let (_instance, _pool, service, pod_a) = test_db().await;
-    let pod_b = Arc::new(Admissions::new(service, LIMIT, MAX_ADDS));
+    let pod_b = Arc::new(Admissions::new(service, LIMIT, MAX_ADDS, PENDING_MAX_AGE));
     let requests: Vec<_> = (0..10)
         .map(|label| {
             let pod = if label % 2 == 0 {
@@ -255,6 +261,39 @@ async fn budget_counts_the_pending_pad_bits_of_each_connector() {
         Admission::Existing(PadState::Failed)
     );
     assert_eq!(admit(path(3, 64), CONNECTOR).await, Admission::Created);
+}
+
+#[tokio::test]
+async fn expired_pending_rows_do_not_count_in_the_budget() {
+    let (_instance, pool, _service, admissions) = test_db().await;
+    assert_eq!(
+        admissions.admit(&path(1, 64), CONNECTOR).await.unwrap(),
+        Admission::Created
+    );
+    assert_eq!(
+        admissions.admit(&path(2, 64), CONNECTOR).await.unwrap(),
+        Admission::OverBudget
+    );
+
+    // No pad-worker computed the first row in time.
+    sqlx::query("UPDATE pads SET created_at = NOW() - make_interval(secs => $1)")
+        .bind(PENDING_MAX_AGE.as_secs_f64() + 1.0)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        admissions.admit(&path(2, 64), CONNECTOR).await.unwrap(),
+        Admission::Created
+    );
+    // A request for the expired row does not wait on it.
+    assert_eq!(
+        admissions
+            .admit(&path(1, 64), OTHER_CONNECTOR)
+            .await
+            .unwrap(),
+        Admission::Expired
+    );
 }
 
 #[tokio::test]
@@ -433,6 +472,29 @@ async fn trigger_wakes_the_request_of_each_row() {
 }
 
 #[tokio::test]
+async fn a_new_row_wakes_the_pad_worker_of_its_instance() {
+    let (_instance, pool, _service, admissions) = test_db().await;
+    let mut listener = sqlx::postgres::PgListener::connect_with(&pool)
+        .await
+        .unwrap();
+    listener.listen("pad_work_available").await.unwrap();
+
+    let row = path(1, 64);
+    admissions.admit(&row, CONNECTOR).await.unwrap();
+    let notification = timeout(DEADLINE, listener.recv()).await.unwrap().unwrap();
+    assert_eq!(notification.payload(), row.prf_id.to_string());
+
+    // A request that joins the row adds no row, so it wakes nobody.
+    admissions
+        .admit(&path(1, 64), OTHER_CONNECTOR)
+        .await
+        .unwrap();
+    assert!(timeout(Duration::from_millis(500), listener.recv())
+        .await
+        .is_err());
+}
+
+#[tokio::test]
 async fn poll_wakes_a_request_without_notification() {
     let (_instance, pool, service, admissions) = test_db().await;
     let row = path(1, 64);
@@ -573,8 +635,13 @@ const INSERT_PAD: &str = "INSERT INTO pads (prf_instance, label, pad_length, tri
 
 /// Runs `sql` as `prf_service` in a transaction, then rolls the transaction back.
 async fn as_prf_service(pool: &PgPool, sql: &str) -> Result<(), sqlx::Error> {
+    as_role(pool, "prf_service", sql).await
+}
+
+/// Runs `sql` as `role` in a transaction, then rolls the transaction back.
+async fn as_role(pool: &PgPool, role: &str, sql: &str) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
-    sqlx::raw_sql("SET LOCAL ROLE prf_service")
+    sqlx::raw_sql(&format!("SET LOCAL ROLE {role}"))
         .execute(&mut *tx)
         .await?;
     let result = sqlx::raw_sql(sql).execute(&mut *tx).await.map(|_| ());
@@ -591,7 +658,7 @@ fn assert_denied(result: Result<(), sqlx::Error>, sql: &str) {
 #[tokio::test]
 async fn grants_skip_a_missing_role() {
     let (_instance, pool) = admin_db().await;
-    sqlx::raw_sql("DROP ROLE IF EXISTS prf_service")
+    sqlx::raw_sql("DROP ROLE IF EXISTS prf_service; DROP ROLE IF EXISTS pad_worker")
         .execute(&pool)
         .await
         .unwrap();
@@ -626,4 +693,64 @@ async fn prf_service_role_writes_only_the_queue() {
     ] {
         assert_denied(as_prf_service(&pool, denied).await, denied);
     }
+}
+
+#[tokio::test]
+async fn pad_worker_role_writes_only_outputs() {
+    let (_instance, pool) = admin_db().await;
+    sqlx::raw_sql(
+        "DO $$ BEGIN CREATE ROLE pad_worker NOLOGIN;
+         EXCEPTION WHEN duplicate_object THEN NULL; END $$",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+    sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+
+    for allowed in [
+        "SELECT 1 FROM pads WHERE signature IS NULL FOR UPDATE SKIP LOCKED",
+        "UPDATE pads SET claimed_at = NOW(), attempts = attempts + 1, error_message = 'e',
+             is_error = true, s3_verified_at = NOW()",
+        "UPDATE pads SET ciphertext128 = NULL, ciphertext_digest = NULL, ciphertext128_digest = NULL,
+             signer = NULL, signature = NULL, attestation_version = NULL, ciphertext64 = NULL",
+        "DELETE FROM pads",
+        "SELECT 1 FROM keys",
+    ] {
+        as_role(&pool, "pad_worker", allowed).await.expect(allowed);
+    }
+
+    for denied in [
+        "SELECT 1 FROM computations",
+        "SELECT 1 FROM ciphertexts",
+        INSERT_PAD,
+        "UPDATE pads SET triggered_by = triggered_by",
+        "UPDATE pads SET label = label",
+    ] {
+        assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
+    }
+}
+
+#[tokio::test]
+async fn pad_worker_grants_keep_newer_rights_and_drop_forbidden_ones() {
+    let (_instance, pool) = admin_db().await;
+    sqlx::raw_sql(
+        "DO $$ BEGIN CREATE ROLE pad_worker NOLOGIN;
+         EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+         ALTER TABLE pads ADD COLUMN future_output BYTEA NULL;
+         GRANT UPDATE (future_output) ON pads TO pad_worker;
+         GRANT UPDATE (triggered_by) ON pads TO pad_worker;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // An older copy of the file does not know `future_output`: the pad-worker keeps that right.
+    sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+
+    as_role(&pool, "pad_worker", "UPDATE pads SET future_output = NULL")
+        .await
+        .expect("a newer right stays");
+    let denied = "UPDATE pads SET triggered_by = triggered_by";
+    assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
 }

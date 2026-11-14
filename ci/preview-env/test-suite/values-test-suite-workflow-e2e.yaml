@@ -503,6 +503,8 @@ additionalResources:
                   valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: signer-addresses, optional: true}}
                 - name: PRF_SERVICE_METRICS_URLS
                   valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: prf-service-metrics-urls, optional: true}}
+                - name: PAD_WORKER_METRICS_URLS
+                  valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: pad-worker-metrics-urls, optional: true}}
                 - name: COPROCESSOR_PROXY_METRICS_URLS
                   valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: metrics-urls, optional: true}}
                 - name: COPROCESSOR_PROXY_CA

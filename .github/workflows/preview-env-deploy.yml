@@ -1507,6 +1507,20 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: ${{ steps.e2e_report_combined.outputs.report_path || steps.e2e_report.outputs.report_path }}
 
+      - name: Fail on failed e2e tests
+        # After the report and its PR comment: the Argo DAG continues on a failed test, so only this
+        # step makes the run fail.
+        if: >-
+          !cancelled() && env.AUTOMATED_TESTS == 'true' &&
+          (steps.e2e_report.outputs.failed != '0' ||
+           (steps.e2e_report_green.outputs.failed != '' && steps.e2e_report_green.outputs.failed != '0'))
+        env:
+          FAILED: ${{ steps.e2e_report.outputs.failed }}
+          FAILED_GREEN: ${{ steps.e2e_report_green.outputs.failed }}
+        run: |
+          echo "::error::e2e tests failed: ${FAILED:-unknown} in the first run, ${FAILED_GREEN:-0} after the cutover"
+          exit 1
+
       ######################################################################
       # DIAGNOSTICS + PR COMMENT
       ######################################################################

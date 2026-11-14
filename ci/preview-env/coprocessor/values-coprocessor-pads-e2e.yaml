@@ -1,0 +1,39 @@
+# Pad release of party i, `coprocessor-<i>-pads`: the pad-workers and no other component.
+# scripts/deploy/deploy-coprocessor.sh applies it with the per-party values, except on blue-green
+# stacks.
+commonConfig:
+  databaseAuthMode: password
+  databaseUrl: postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e
+
+dbMigration:
+  enabled: false
+tfheWorker:
+  enabled: false
+
+# The instance of the "Coprocessor proxy" suite. Mock evaluator: the key ID is a placeholder.
+padWorkers:
+  - prfId: 0
+    keyId: "0x01"
+
+padWorkerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/pad-worker, tag: latest}
+  # deploy-coprocessor.sh creates this role. The migration of the coprocessor-<i> release grants
+  # its rights.
+  databaseUser: {value: pad_worker}
+  databasePassword: {value: pad_worker}
+  # e2e limits, short so the "PRF endpoint" suite reaches them; the same ages as prf-service.
+  config:
+    s3BucketName:
+      valueFrom: {configMapKeyRef: {name: coprocessor, key: S3_BUCKET_NAME}}
+    pendingMaxAgeSeconds: 60
+    outputMaxAgeSeconds: 300
+    ct64MaxAgeSeconds: 30
+  # Keeps a row pending for 2 s, so the suite can test the budgets.
+  env:
+    - {name: PAD_MOCK_EXTRA_LATENCY, value: 2s}
+  extraArgs:
+    - --gc-interval=5s
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}

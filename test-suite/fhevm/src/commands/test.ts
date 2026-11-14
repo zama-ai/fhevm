@@ -171,6 +171,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Run the three connector-http-* suites (public decrypt, user decrypt, negative) in one go.",
   "coprocessor-proxy":
     "Sign as KMS party 1's connector against every coprocessor-proxy and the prf-service behind it.",
+  "prf-endpoint":
+    "Sign as the KMS connectors against the PRF endpoint of every coprocessor: outputs, budgets and proxy limits.",
   random: "Run random generation coverage.",
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
@@ -738,15 +740,17 @@ const assertMatchedTests = (output: string, label: string) => {
   }
 };
 
+/** The profiles that need coprocessor-proxy, prf-service and the pad-worker. */
+const PRF_PROFILES = new Set(["coprocessor-proxy", "prf-endpoint"]);
+
 /**
- * Throws unless the run of profile `name` executed its tests. The coprocessor-proxy suite skips
- * itself when it finds no proxy URL, so its tests all end pending; the CLI only runs the profile on
- * a stack with proxies, so such a run must fail rather than pass.
+ * Throws unless the run of profile `name` executed its tests. A PRF suite with no proxy URL skips
+ * itself, but the CLI runs these profiles only on stacks with proxies: such a run must fail.
  */
 export const assertProfileRanTests = (name: string, output: string, label: string) => {
   assertMatchedTests(output, label);
-  if (name === "coprocessor-proxy" && !SOME_PASSING_RE.test(output)) {
-    throw new PreflightError(`${label}: no coprocessor-proxy test passed; the suite skips itself without COPROCESSOR_PROXY_URLS`);
+  if (PRF_PROFILES.has(name) && !SOME_PASSING_RE.test(output)) {
+    throw new PreflightError(`${label}: no ${name} test passed; the suite skips itself without COPROCESSOR_PROXY_URLS`);
   }
 };
 
@@ -2255,7 +2259,7 @@ const runTest = async (testName: string | undefined, options: TestOptions) => {
     }
     return state.scenario.kind === "blue-green"
       ? "blue-green stacks run without coprocessor-proxy"
-      : "COPROCESSOR_PROXY_VERSION or COPROCESSOR_PRF_SERVICE_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
+      : "COPROCESSOR_PROXY_VERSION, COPROCESSOR_PRF_SERVICE_VERSION or COPROCESSOR_PAD_WORKER_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
   };
 
   const dbStateRevertSkipReason = () =>
@@ -2655,7 +2659,7 @@ const runTest = async (testName: string | undefined, options: TestOptions) => {
         throw new PreflightError(`${name}: ${precondition}`);
       }
     }
-    if (name === "coprocessor-proxy") {
+    if (PRF_PROFILES.has(name)) {
       const precondition = coprocessorProxySkipReason();
       if (precondition) {
         throw new PreflightError(`${name}: ${precondition}`);
@@ -2740,7 +2744,7 @@ const runTest = async (testName: string | undefined, options: TestOptions) => {
             continue;
           }
         }
-        if (profile === "coprocessor-proxy") {
+        if (PRF_PROFILES.has(profile)) {
           const skipReason = coprocessorProxySkipReason();
           if (skipReason) {
             console.log(`[test] skipping ${profile}: ${skipReason}`);

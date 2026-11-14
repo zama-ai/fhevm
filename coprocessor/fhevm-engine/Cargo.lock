@@ -6211,6 +6211,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "pad-worker"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "aws-config",
+ "aws-sdk-s3",
+ "base64 0.22.1",
+ "ciphertext-attestation",
+ "clap",
+ "coprocessor-api",
+ "fhevm-engine-common",
+ "futures-util",
+ "hex",
+ "humantime",
+ "prometheus",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "test-harness",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "parity-scale-codec"
 version = "3.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

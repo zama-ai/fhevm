@@ -9,6 +9,7 @@ use std::{
     collections::HashMap,
     num::NonZeroUsize,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
@@ -40,6 +41,8 @@ pub enum Admission {
     Existing(PadState),
     /// The connector has no budget for this row.
     OverBudget,
+    /// The row is pending and expired: no pad-worker computes it.
+    Expired,
 }
 
 /// Admits requests in one pod.
@@ -47,16 +50,24 @@ pub struct Admissions {
     pool: PgPool,
     max_pending_bits: i64,
     max_adds_per_connector: NonZeroUsize,
+    /// Pending rows older than this do not count in the budget.
+    pending_max_age: Duration,
     /// One semaphore for each connector with an add in progress in this pod.
     adds: Adds,
 }
 
 impl Admissions {
-    pub fn new(pool: PgPool, max_pending_bits: i64, max_adds_per_connector: NonZeroUsize) -> Self {
+    pub fn new(
+        pool: PgPool,
+        max_pending_bits: i64,
+        max_adds_per_connector: NonZeroUsize,
+        pending_max_age: Duration,
+    ) -> Self {
         Self {
             pool,
             max_pending_bits,
             max_adds_per_connector,
+            pending_max_age,
             adds: Adds::default(),
         }
     }
@@ -68,16 +79,24 @@ impl Admissions {
         path: &PrfOutputRef,
         connector: Address,
     ) -> anyhow::Result<Admission> {
-        if let Some(state) = read(&self.pool, path).await? {
-            return Ok(Admission::Existing(state));
+        let row = read_for_admission(&self.pool, path, self.pending_max_age).await?;
+        match row.state {
+            Some(PadState::Pending) if row.expired => return Ok(Admission::Expired),
+            Some(state) => return Ok(Admission::Existing(state)),
+            None => {}
         }
         // Wait in memory: a request that waits for the lock in Postgres holds a connection.
         let slot = self.add_slot(connector).await;
-        let (pool, max_pending_bits, path) = (self.pool.clone(), self.max_pending_bits, *path);
+        let (pool, max_pending_bits, pending_max_age, path) = (
+            self.pool.clone(),
+            self.max_pending_bits,
+            self.pending_max_age,
+            *path,
+        );
         // In a task, so a cancelled request keeps its slot until its connection is free.
         tokio::spawn(async move {
             let _slot = slot;
-            add(&pool, max_pending_bits, &path, connector).await
+            add(&pool, max_pending_bits, pending_max_age, &path, connector).await
         })
         .await?
     }
@@ -126,6 +145,7 @@ impl Drop for AddSlot {
 async fn add(
     pool: &PgPool,
     max_pending_bits: i64,
+    pending_max_age: Duration,
     path: &PrfOutputRef,
     connector: Address,
 ) -> anyhow::Result<Admission> {
@@ -138,8 +158,10 @@ async fn add(
     let pending = sqlx::query_scalar!(
         r#"SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS "pending!"
                  FROM pads
-                WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error"#,
+                WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error
+                  AND created_at > NOW() - make_interval(secs => $2)"#,
         connector.as_slice(),
+        pending_max_age.as_secs_f64(),
     )
     .fetch_one(tx.as_mut())
     .await?;
@@ -172,6 +194,56 @@ async fn add(
     })
 }
 
+/// The row of a request.
+struct AdmissionRow {
+    state: Option<PadState>,
+    /// The row is older than `pending_max_age`.
+    expired: bool,
+}
+
+/// Reads the row of `path` and its age, in one query.
+async fn read_for_admission(
+    pool: &PgPool,
+    path: &PrfOutputRef,
+    pending_max_age: Duration,
+) -> anyhow::Result<AdmissionRow> {
+    let row = sqlx::query!(
+        r#"SELECT p.is_error AS "is_error?", OCTET_LENGTH(p.ciphertext128) AS body_length,
+                  p.attestation_version AS "attestation_version?",
+                  p.ciphertext_digest AS "ciphertext_digest?",
+                  p.ciphertext128_digest AS "ciphertext128_digest?", p.signer AS "signer?",
+                  p.signature AS "signature?",
+                  COALESCE(p.created_at <= NOW() - make_interval(secs => $4), FALSE) AS "expired!"
+             FROM (VALUES (1)) AS one
+             LEFT JOIN pads p
+               ON p.prf_instance = $1 AND p.label = $2 AND p.pad_length = $3"#,
+        i32::from(path.prf_id),
+        path.label.as_slice(),
+        i32::from(path.pad_length),
+        pending_max_age.as_secs_f64(),
+    )
+    .fetch_one(pool)
+    .await?;
+    let state = match row.is_error {
+        None => None,
+        Some(is_error) => Some(pad_state(
+            is_error,
+            row.body_length,
+            attestation(
+                row.attestation_version,
+                row.ciphertext_digest,
+                row.ciphertext128_digest,
+                row.signer,
+                row.signature,
+            )?,
+        )?),
+    };
+    Ok(AdmissionRow {
+        state,
+        expired: row.expired,
+    })
+}
+
 /// Reads the row of `path`, if it exists, without its body.
 pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<PadState>> {
     let Some(row) = sqlx::query!(
@@ -189,9 +261,6 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
         return Ok(None);
     };
 
-    if row.is_error {
-        return Ok(Some(PadState::Failed));
-    }
     let attestation = attestation(
         row.attestation_version,
         row.ciphertext_digest,
@@ -199,13 +268,24 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
         row.signer,
         row.signature,
     )?;
-    let (Some(body_length), Some(attestation)) = (row.body_length, attestation) else {
-        return Ok(Some(PadState::Pending));
+    pad_state(row.is_error, row.body_length, attestation).map(Some)
+}
+
+fn pad_state(
+    is_error: bool,
+    body_length: Option<i32>,
+    attestation: Option<PrfOutputAttestation>,
+) -> anyhow::Result<PadState> {
+    if is_error {
+        return Ok(PadState::Failed);
+    }
+    let (Some(body_length), Some(attestation)) = (body_length, attestation) else {
+        return Ok(PadState::Pending);
     };
-    Ok(Some(PadState::Complete(PadOutput {
+    Ok(PadState::Complete(PadOutput {
         body_length: u64::try_from(body_length).context("body_length")?,
         attestation,
-    })))
+    }))
 }
 
 /// Reads the attestation and the body of the row of `path` in one SELECT, so they match.
@@ -278,7 +358,12 @@ mod tests {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://localhost/unused")
             .unwrap();
-        Admissions::new(pool, 64, NonZeroUsize::new(2).unwrap())
+        Admissions::new(
+            pool,
+            64,
+            NonZeroUsize::new(2).unwrap(),
+            Duration::from_secs(600),
+        )
     }
 
     #[tokio::test]

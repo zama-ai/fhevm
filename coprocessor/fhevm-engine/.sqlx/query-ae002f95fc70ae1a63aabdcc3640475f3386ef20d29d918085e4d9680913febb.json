@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pads SET claimed_at = NOW()\n            WHERE (prf_instance, label, pad_length) IN (\n                  SELECT prf_instance, label, pad_length\n                    FROM pads\n                   WHERE prf_instance = $1 AND signature IS NOT NULL AND s3_verified_at IS NULL\n                     AND (claimed_at IS NULL OR claimed_at <= NOW() - make_interval(secs => $2))\n                   ORDER BY created_at\n                   LIMIT $3\n                     FOR UPDATE SKIP LOCKED)\n        RETURNING label, pad_length, ciphertext128 AS \"ciphertext128!\",\n                  ciphertext_digest AS \"ciphertext_digest!\",\n                  ciphertext128_digest AS \"ciphertext128_digest!\", signer AS \"signer!\",\n                  signature AS \"signature!\", attestation_version AS \"attestation_version!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "label",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "pad_length",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext128!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext_digest!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ciphertext128_digest!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "signer!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "signature!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "attestation_version!",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ae002f95fc70ae1a63aabdcc3640475f3386ef20d29d918085e4d9680913febb"
+}
