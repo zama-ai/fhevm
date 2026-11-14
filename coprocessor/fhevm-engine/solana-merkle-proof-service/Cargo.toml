@@ -46,7 +46,7 @@ solana-sdk = "3.0"
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
 kms-context = { path = "../../../shared/kms-context" }
-request-authorization = { path = "../../../shared/request-authorization" }
+fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth" }
 solana-host-follower = { path = "../solana-host-follower" }
 # Leaf commitments and MMR of the leaf record, shared with the on-chain host.
 zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }

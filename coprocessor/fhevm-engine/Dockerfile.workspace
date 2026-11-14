@@ -112,7 +112,6 @@ COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY solana ./solana
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY shared/block-manifest ./shared/block-manifest
-COPY shared/request-authorization ./shared/request-authorization
 COPY shared/kms-context ./shared/kms-context
 COPY shared/fhevm-sig-auth ./shared/fhevm-sig-auth
 

@@ -58,7 +58,6 @@ jobs:
             - shared/ciphertext-attestation/**
             - shared/fhevm-sig-auth/**
             - shared/user-decryption-signature/**
-            - shared/request-authorization/**
             - shared/kms-context/**
 
   lint-connector:

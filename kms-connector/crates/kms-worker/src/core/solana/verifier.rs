@@ -24,7 +24,6 @@ use connector_utils::{
     },
 };
 use kms_connector_api::ErrorCode;
-use request_authorization::KeyRegistry;
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
@@ -81,10 +80,10 @@ impl SolanaDecryptionVerifier {
                         &solana.proof_servers,
                         proof_client.clone(),
                         wallet.clone(),
-                        KeyRegistry {
-                            chain_id: config.ethereum_chain_id,
-                            contract: config.protocol_config_contract.address,
-                        },
+                        fhevm_sig_auth::domain(
+                            config.ethereum_chain_id,
+                            config.protocol_config_contract.address,
+                        ),
                         config.host_rpc_call_timeout,
                     ),
                 };
