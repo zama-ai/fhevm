@@ -253,3 +253,85 @@ tests:
       - eval_time: 25m
         alertname: RelayerHttpCallSlotWaitHigh
         exp_alerts: []
+
+  # The floor counter starts at 0 with the process (`announce_nodes`), so a first hit is an increase.
+  - name: unhealthy nodes beyond the floor fire the floor alert alone while requests are under 4 s
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_kms_floor_hits_total{kms_node="kms_02"}'
+        values: '0+3x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="4"}'
+        values: '0+60x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="5"}'
+        values: '0+60x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="+Inf"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: RelayerHttpKmsFloorReached
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: RelayerHttpKmsFloorReached
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "relayer-http's circuit breaker is at its floor: more KMS nodes are unhealthy than it may exclude"
+              description: "30 time(s) in the last 10 minutes an unhealthy KMS node was kept in use because excluding it would leave fewer than circuit_breaker.min_nodes: requests wait for the deadline again. relayer_http_kms_node_excluded says which nodes are out, RelayerHttpKmsNodeFailing which one is failing."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpkmsfloorreached"
+      - eval_time: 25m
+        alertname: RelayerHttpKmsFloorReachedAndSlow
+        exp_alerts: []
+
+  - name: unhealthy nodes beyond the floor with requests at the deadline fire both floor alerts
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_kms_floor_hits_total{kms_node="kms_02"}'
+        values: '0+3x30'
+      # Every request lands in the (4 s, 5 s] bucket: p95 is just under 5 s.
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="4"}'
+        values: '0+0x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="5"}'
+        values: '0+60x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="+Inf"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpKmsFloorReached
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "relayer-http's circuit breaker is at its floor: more KMS nodes are unhealthy than it may exclude"
+              description: "30 time(s) in the last 10 minutes an unhealthy KMS node was kept in use because excluding it would leave fewer than circuit_breaker.min_nodes: requests wait for the deadline again. relayer_http_kms_node_excluded says which nodes are out, RelayerHttpKmsNodeFailing which one is failing."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpkmsfloorreached"
+      - eval_time: 25m
+        alertname: RelayerHttpKmsFloorReachedAndSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "relayer-http's circuit breaker is at its floor and requests wait for the deadline"
+              description: "More than one KMS node is slow or down: the circuit breaker kept an unhealthy node in use 30 time(s) in the last 10 minutes and the 95th percentile of requests is above 4 s. The relayer serves, at the deadline; the KMS operators are the ones to call."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpkmsfloorreachedandslow"
+
+  - name: one excluded node fires neither floor alert
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_kms_node_excluded{kms_node="kms_02"}'
+        values: '1+0x30'
+      - series: 'relayer_http_kms_floor_hits_total{kms_node="kms_02"}'
+        values: '0+0x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="4"}'
+        values: '0+0x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="5"}'
+        values: '0+60x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="+Inf"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpKmsFloorReached
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: RelayerHttpKmsFloorReachedAndSlow
+        exp_alerts: []

@@ -42,7 +42,7 @@
       "type": "stat", "id": 101, "title": "Alerts firing",
       "description": "relayer-http alerts firing now (monitoring/alerts.yaml), from Prometheus' ALERTS series. Click for the list.",
       "datasource": {"type": "prometheus", "uid": "${prometheus}"},
-      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 3},
+      "gridPos": {"h": 4, "w": 3, "x": 0, "y": 3},
       "links": [{"title": "relayer-http alerts", "url": "/alerting/list?search=RelayerHttp"}],
       "targets": [{"expr": "count(ALERTS{alertstate=\"firing\", alertname=~\"RelayerHttp.*\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
       "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
@@ -52,7 +52,7 @@
       "type": "stat", "id": 102, "title": "Internal errors",
       "description": "Requests answered `internal` in the range, both flows: a relayer defect (an internal error or a panic). Any is a bug. Click to list them in the lookup.",
       "datasource": {"type": "prometheus", "uid": "${prometheus}"},
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 3},
+      "gridPos": {"h": 4, "w": 3, "x": 3, "y": 3},
       "links": [{"title": "Internal errors in the lookup", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&var-search=%22code%22%3A%22internal%22"}],
       "targets": [{"expr": "sum(increase(relayer_http_requests_total{instance=~\"$instance\", code=\"internal\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
       "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
@@ -62,7 +62,7 @@
       "type": "stat", "id": 103, "title": "Signer errors",
       "description": "Failed attempts to sign a connector call in the range: the signing key (AWS KMS) unreachable or refusing.",
       "datasource": {"type": "prometheus", "uid": "${prometheus}"},
-      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 3},
+      "gridPos": {"h": 4, "w": 3, "x": 6, "y": 3},
       "targets": [{"expr": "sum(increase(relayer_http_signer_errors_total{instance=~\"$instance\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
       "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
       "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
@@ -71,16 +71,25 @@
       "type": "stat", "id": 104, "title": "KMS nodes failing",
       "description": "KMS nodes with more than half of their attempts failing in the range for a reason that blames the node, both flows: the RelayerHttpKmsNodeFailing alert's exclusions.",
       "datasource": {"type": "prometheus", "uid": "${prometheus}"},
-      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 3},
+      "gridPos": {"h": 4, "w": 3, "x": 9, "y": 3},
       "targets": [{"expr": "count((sum by (kms_node) (increase(relayer_http_kms_attempt_errors_total{instance=~\"$instance\", code!~\"malformed|unsupported_attestation_type|acl_denied|user_signature_rejected|user_decryption_expired|ciphertext_not_found|unprocessable|cancelled|panic\"}[$__range])) / sum by (kms_node) (increase(relayer_http_kms_attempts_sum{instance=~\"$instance\"}[$__range]))) > 0.5)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
       "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 107, "title": "KMS nodes excluded",
+      "description": "KMS nodes the circuit breaker leaves out right now (open, or being probed), both flows; 0 while it is off or every node is in use. One is routine: the floor alerts (RelayerHttpKmsFloorReached) say when more nodes are unhealthy than it may exclude.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 3, "x": 12, "y": 3},
+      "targets": [{"expr": "sum(relayer_http_kms_node_excluded{instance=~\"$instance\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}, "overrides": []},
       "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
     },
     {
       "type": "stat", "id": 105, "title": "Requests by flow",
       "description": "Requests answered in the range, by flow; `none` is a request answered before its flow was known (unknown route or method).",
       "datasource": {"type": "prometheus", "uid": "${prometheus}"},
-      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 3},
+      "gridPos": {"h": 4, "w": 5, "x": 15, "y": 3},
       "targets": [{"expr": "sum by (flow) (increase(relayer_http_requests_total{instance=~\"$instance\"}[$__range]))", "legendFormat": "{{flow}}", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
       "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
       "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "orientation": "horizontal", "text": {"titleSize": 13, "valueSize": 18}}
@@ -510,6 +519,42 @@
           "gridPos": {"h": 8, "w": 12, "x": 12, "y": 68},
           "targets": [{"expr": "sum by (fields_kms_node) (count_over_time({app=\"$app\", instance=~\"$instance\"} | json | level=\"WARN\" | fields_kms_node!=\"\" [$__interval]))", "legendFormat": "{{fields_kms_node}}", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
           "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries", "id": 403, "title": "Excluded KMS nodes",
+          "description": "1 while the circuit breaker leaves the node out (open, or being probed), 0 while it is in use. One node out is routine; several at once, see the floor alerts.",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 76},
+          "targets": [{"expr": "max by (kms_node) (relayer_http_kms_node_excluded{instance=~\"$instance\", kms_node=~\"$kms_node\"})", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries", "id": 404, "title": "Exclusions by KMS node and code",
+          "description": "Exclusions by the circuit breaker, after a call or a failed probe; the code is the node's last answer (upstream_transient, overloaded, timeout), or cancelled when it never answered before the deadline.",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 76},
+          "targets": [{"expr": "sum by (kms_node, code) (rate(relayer_http_kms_exclusions_total{instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval]))", "legendFormat": "{{kms_node}} {{code}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries", "id": 405, "title": "Probes by KMS node and outcome",
+          "description": "Probes of excluded nodes that ended: succeeded (in use again), failed (excluded for another window), cancelled (nothing known, probed again by the next request).",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 84},
+          "targets": [{"expr": "sum by (kms_node, outcome) (rate(relayer_http_kms_probes_total{instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval]))", "legendFormat": "{{kms_node}} {{outcome}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries", "id": 406, "title": "Floor hits by KMS node",
+          "description": "Unhealthy nodes kept in use because excluding them would leave fewer than circuit_breaker.min_nodes: the requests wait for the deadline again (RelayerHttpKmsFloorReached).",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 84},
+          "targets": [{"expr": "sum by (kms_node) (rate(relayer_http_kms_floor_hits_total{instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval]))", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
           "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
         }
       ]

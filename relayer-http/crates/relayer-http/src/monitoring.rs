@@ -120,10 +120,11 @@ fn check_used(context: &str, used: &Used) {
 /// The fields every other line about a request carries when they apply: its `request_id`, and the `kms_node` when it
 /// concerns one; then the fields of the KMS node lines that the lookup's node table reads (`attempt`, `attempts`,
 /// `error`, `cause`, the retry decision of a failed attempt: `retry_class`, `retry_in_ms`, `retry_after_ms`,
-/// `give_up_reason`, and the budgets a failed call used: `transient_retries`, `rate_limit_retries`; `code` and
-/// `elapsed_ms` are also summary fields). `request_id` is a `fields` entry on the lines the endpoint emits and
-/// `span.request_id` on those emitted inside the `aggregation` span; `kms_node` is always a `fields` entry.
-const OTHER_LINE_FIELDS: [&str; 12] = [
+/// `give_up_reason`, the budgets a failed call used: `transient_retries`, `rate_limit_retries`, and the circuit
+/// breaker's: `last_code` (also on `call cut`), `excluded_ms`, `excluded_for_ms`, `closed_nodes`, `min_nodes`;
+/// `code` and `elapsed_ms` are also summary fields). `request_id` is a `fields` entry on the lines the endpoint
+/// emits and `span.request_id` on those emitted inside the `aggregation` span; `kms_node` is always a `fields` entry.
+const OTHER_LINE_FIELDS: [&str; 17] = [
     "request_id",
     "kms_node",
     "attempt",
@@ -136,6 +137,11 @@ const OTHER_LINE_FIELDS: [&str; 12] = [
     "give_up_reason",
     "transient_retries",
     "rate_limit_retries",
+    "last_code",
+    "excluded_ms",
+    "excluded_for_ms",
+    "closed_nodes",
+    "min_nodes",
 ];
 
 /// Fails unless every `fields_<name>` a LogQL query reads is a log field, and the message it compares is the summary

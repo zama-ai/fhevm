@@ -48,6 +48,21 @@ Signing a connector call fails: the relayer's signing key (a local key, or an AW
 1. Logs: WARN `signing failed` lines carry the `error` of the signer (for AWS KMS: the permission or network error) and the `kms_node` whose call it was.
 2. Check the signing key: for AWS KMS the pod's role and the key policy, and the endpoint's reachability. The relayer's requests fail with `unknown` while it lasts; they show in `failed_kms_nodes` of the summary line.
 
+## RelayerHttpKmsFloorReached
+
+The circuit breaker (`kms_aggregator/docs.md`, Circuit breaker) leaves an unhealthy KMS node out for a window unless that would leave fewer than `circuit_breaker.min_nodes` in use. It reached that floor: more nodes are unhealthy than it may exclude, so the extra ones stay in use and the requests wait for the deadline again. One excluded node is routine and never alerts.
+
+1. Operator dashboard, "KMS nodes excluded" (Service row) and, in the Pod row, "Excluded KMS nodes" and "Exclusions by KMS node and code": which nodes are out and what they last answered (`upstream_transient`, `overloaded`, `timeout`, or `cancelled` for no answer at all). "Floor hits by KMS node" names the node kept in use.
+2. "<flow>: KMS node health" and RelayerHttpKmsNodeFailing say which nodes are failing; a hung node shows in "<flow>: attempt latency p95 by KMS node". Contact their operators with a `decryption_id` from the lookup.
+3. Logs: `node excluded` and `node kept: floor reached` (WARN) carry the `kms_node`, its `last_code` and `closed_nodes`; the `call cut` or `call failed` line before them, same `request_id`, says what happened. `node included` (INFO) marks the recovery.
+
+## RelayerHttpKmsFloorReachedAndSlow
+
+The floor is reached (RelayerHttpKmsFloorReached) and the 95th percentile of the requests is above 0.8 x the call timeout: more than one KMS node is slow or down. The relayer itself serves, at the deadline.
+
+1. Follow RelayerHttpKmsFloorReached: the KMS operators of the excluded and kept nodes are the ones to call.
+2. If the floor was raised on purpose (`min_nodes` close to the node count), the breaker cannot help: lower it within `max(thresholds)..=n`, or accept the latency until the nodes recover.
+
 ## Incident debugging
 
 Not an alert: how to get more detail from the logs.
