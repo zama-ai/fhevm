@@ -13,7 +13,7 @@ mod scenarios;
 mod signer;
 
 pub use aggregator::{AggregationError, Aggregator, Tally, note_node_panic};
-pub use breaker::{CircuitBreakers, Selection, Verdict};
+pub use breaker::CircuitBreakers;
 pub use call::{CallError, CallResult, Caller};
 pub use client::{
     AttemptError, ConnectorClient, Endpoint, HttpClient, HttpReply, MAX_RESPONSE_BYTES,

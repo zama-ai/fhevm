@@ -78,10 +78,10 @@
     },
     {
       "type": "stat", "id": 107, "title": "KMS nodes excluded",
-      "description": "KMS nodes the circuit breaker leaves out right now (open, or being probed), both flows; 0 while it is off or every node is in use. One is routine: the floor alerts (RelayerHttpKmsFloorReached) say when more nodes are unhealthy than it may exclude.",
+      "description": "KMS nodes the circuit breaker leaves out right now on at least one pod (open, or being probed; the pods decide independently), both flows; 0 while it is off or every node is in use. One is routine: the floor alerts (RelayerHttpKmsFloorReached) say when more nodes are unhealthy than it may exclude.",
       "datasource": {"type": "prometheus", "uid": "${prometheus}"},
       "gridPos": {"h": 4, "w": 3, "x": 12, "y": 3},
-      "targets": [{"expr": "sum(relayer_http_kms_node_excluded{instance=~\"$instance\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "targets": [{"expr": "count(max by (kms_node) (relayer_http_kms_node_excluded{instance=~\"$instance\"}) == 1)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
       "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}, "overrides": []},
       "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
     },

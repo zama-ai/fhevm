@@ -181,7 +181,7 @@ pub const LABELS: &[Label] = &[
     },
     Label {
         name: "outcome",
-        meaning: "how a request ended: by status class, or `cancelled` when the client closed the connection first",
+        meaning: "how a request ended: by status class, or `cancelled` when the client closed the connection first; for a probe of an excluded KMS node, how it ended (`succeeded`: in use again, `failed`: excluded again, `cancelled`: nothing known)",
         values: Values::Enumerated(|| Outcome::ALL.map(|o| o.as_str().to_owned()).to_vec()),
     },
     Label {
@@ -294,7 +294,8 @@ const WAIT_AFTER_THRESHOLD: MetricDef = MetricDef {
     help: "One aggregation that reached its threshold: seconds from reaching it to the answer, spent waiting for the remaining KMS nodes (until every node finished or the deadline). Buckets 5 ms to 5 s.",
 };
 
-// The circuit breaker (`kms_aggregator/breaker.rs`): the four exist only while it is enabled.
+// The circuit breaker (`kms_aggregator/breaker.rs`) records these while it is enabled; the floor counter starts at 0
+// for every node either way (`announce_nodes`).
 const NODE_EXCLUDED: MetricDef = MetricDef {
     name: "relayer_http_kms_node_excluded",
     kind: Kind::Gauge,
