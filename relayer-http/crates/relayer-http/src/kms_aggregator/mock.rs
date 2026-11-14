@@ -19,8 +19,8 @@ use super::call::Caller;
 use super::client::{AttemptError, ConnectorClient, Endpoint, HttpReply};
 use super::config::tests::{audience, valid};
 use super::config::{
-    CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RateLimitConfig,
-    RetryConfig, UserChecks, UserDecryptConfig,
+    CallConfig, CircuitBreakerConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig,
+    RateLimitConfig, RetryConfig, UserChecks, UserDecryptConfig,
 };
 use super::signer::RequestSigner;
 use super::signer::tests::test_signer;
@@ -131,6 +131,7 @@ impl MockClient {
             skip_tls_verification: false,
             max_concurrent_calls: n.max(1),
             call,
+            circuit_breaker: CircuitBreakerConfig::default(),
             user_decrypt: UserDecryptConfig {
                 threshold: 1,
                 checks: UserChecks::default(),

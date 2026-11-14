@@ -27,6 +27,10 @@ kms_aggregator:
     rate_limit:
       max_retries: 1
       initial_delay: 1s
+  circuit_breaker:   # off: the production values are not validated against the stack's committee while disabled
+    enabled: false
+    exclude_for: 30s
+    min_nodes: 11
   public_decrypt:
     threshold: 1
   user_decrypt:

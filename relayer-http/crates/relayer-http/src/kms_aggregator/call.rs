@@ -12,6 +12,7 @@ use tokio::time::{Duration, Instant, sleep};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
+use super::breaker::CircuitBreakers;
 use super::client::{AttemptError, ConnectorClient, Endpoint, decode};
 use super::config::{CallConfig, ConfigError, KmsAggregatorConfig, RetryClass};
 use super::signer::RequestSigner;
@@ -169,8 +170,8 @@ pub struct CallResult<R> {
     pub result: Result<R, CallError>,
 }
 
-/// Shared by every aggregation: the HTTP client, the signer, the endpoints, the call semaphore, the retry policy
-/// and the metrics every attempt and call records.
+/// Shared by every aggregation: the HTTP client, the signer, the endpoints, the call semaphore, the retry policy,
+/// the circuit breakers and the metrics every attempt and call records.
 pub struct Caller {
     client: Arc<dyn ConnectorClient>,
     signer: Arc<RequestSigner>,
@@ -180,6 +181,8 @@ pub struct Caller {
     /// The transient waits in milliseconds, rendered once for the `aggregation started` line (`[200, 300]`).
     retries_waits_ms: String,
     permits: Semaphore,
+    /// One switch per endpoint, shared by both flows (`breaker.rs`).
+    breakers: CircuitBreakers,
 }
 
 impl Caller {
@@ -206,6 +209,16 @@ impl Caller {
             .iter()
             .map(|wait| wait.as_millis() as u64)
             .collect();
+        let breaker = &cfg.circuit_breaker;
+        let breakers = CircuitBreakers::new(
+            breaker.enabled,
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.name.clone())
+                .collect(),
+            breaker.min_nodes,
+            breaker.exclude_for,
+        );
         Ok(Self {
             client,
             signer,
@@ -214,7 +227,19 @@ impl Caller {
             cfg: cfg.call.clone(),
             retries_waits_ms: format!("{waits_ms:?}"),
             permits,
+            breakers,
         })
+    }
+
+    /// The per-node circuit breakers (`breaker.rs`), consulted by every aggregation.
+    pub fn circuit_breakers(&self) -> &CircuitBreakers {
+        &self.breakers
+    }
+
+    /// Closes every circuit breaker: for the dynamic configuration, after a refreshed endpoint list. Returns how
+    /// many nodes were out.
+    pub fn reset_circuit_breakers(&self) -> usize {
+        self.breakers.reset()
     }
 
     /// The transient waits as logged by `aggregation started`, in milliseconds.

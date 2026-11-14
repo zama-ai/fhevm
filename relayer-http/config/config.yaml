@@ -27,6 +27,10 @@ kms_aggregator:
     rate_limit:                # rate_limited (429) only: the proxy counts requests per sender over a 1 s window
       max_retries: 1           # one window, then give up (the client retries); the waits must fit before call.timeout
       initial_delay: 1s        # retry k waits max(initial_delay, Retry-After) * 2^(k-1)
+  circuit_breaker:             # per-node circuit breaker, see kms_aggregator/docs.md; optional, off by default
+    enabled: false             # off: today's behaviour, nothing is tracked
+    exclude_for: 30s           # an unhealthy node (unreachable, hung, 502/503/504) is left out this long, then the next request probes it (1s..=1h)
+    min_nodes: 11              # never exclude when fewer than this many nodes would stay in use (max(thresholds)..=n; validated only when enabled)
   public_decrypt:
     threshold: 5               # identical (decryptedResult, extraData) answers needed; protocol config value (5 at n = 13) (t + 1)
   user_decrypt:

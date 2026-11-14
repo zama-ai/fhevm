@@ -34,6 +34,8 @@ pub struct KmsAggregatorConfig {
     pub max_concurrent_calls: usize,
     #[serde(default)]
     pub call: CallConfig,
+    #[serde(default)]
+    pub circuit_breaker: CircuitBreakerConfig,
     pub user_decrypt: UserDecryptConfig,
     pub public_decrypt: PublicDecryptConfig,
     pub auth: AuthConfig,
@@ -123,6 +125,37 @@ impl Default for RateLimitConfig {
         Self {
             max_retries: 1,
             initial_delay: Duration::from_secs(1),
+        }
+    }
+}
+
+/// Shortest exclusion window: below one second a probe would follow the exclusion at once.
+pub const MIN_EXCLUDE_FOR: Duration = Duration::from_secs(1);
+
+/// Longest exclusion window: an hour without a probe is an operator's decision, not a breaker's.
+pub const MAX_EXCLUDE_FOR: Duration = Duration::from_secs(3600);
+
+/// The per-node circuit breaker (`docs.md`, Circuit breaker). Off by default; validated only when enabled, so a
+/// file can carry the production values for a smaller committee.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CircuitBreakerConfig {
+    /// Feature flag: off is today's behaviour, nothing is tracked.
+    pub enabled: bool,
+    /// How long an unhealthy node is left out before the next request probes it. Fixed, no growth.
+    #[serde(with = "humantime_serde")]
+    pub exclude_for: Duration,
+    /// Never exclude a node when fewer than this many would remain in use. Required when enabled: within
+    /// `max(thresholds)..=endpoints.len()`; equal to the node count, it excludes nothing.
+    pub min_nodes: usize,
+}
+
+impl Default for CircuitBreakerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            exclude_for: Duration::from_secs(30),
+            min_nodes: 0,
         }
     }
 }
@@ -370,6 +403,25 @@ impl KmsAggregatorConfig {
                 ));
             }
         }
+        let breaker = &self.circuit_breaker;
+        if breaker.enabled {
+            if breaker.exclude_for < MIN_EXCLUDE_FOR || breaker.exclude_for > MAX_EXCLUDE_FOR {
+                return fail(
+                    "kms_aggregator.circuit_breaker.exclude_for must be within 1s..=1h".to_owned(),
+                );
+            }
+            // An aggregation always has at least `threshold` candidates, and a floor at `n` excludes nothing.
+            let floor = self
+                .user_decrypt
+                .threshold
+                .max(self.public_decrypt.threshold);
+            if breaker.min_nodes < floor || breaker.min_nodes > n {
+                return fail(format!(
+                    "kms_aggregator.circuit_breaker.min_nodes ({}) must be within {floor}..={n}",
+                    breaker.min_nodes
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -399,6 +451,7 @@ pub(crate) mod tests {
             skip_tls_verification: false,
             max_concurrent_calls: 64.max(n),
             call: CallConfig::default(),
+            circuit_breaker: CircuitBreakerConfig::default(),
             user_decrypt: UserDecryptConfig {
                 threshold: 1,
                 checks: UserChecks::default(),
@@ -695,6 +748,77 @@ pub(crate) mod tests {
         assert!(message(&cfg).contains("public_decrypt.threshold (4) must be within 1..=3"));
         cfg.public_decrypt.threshold = 3;
         cfg.validate().unwrap();
+    }
+
+    /// `valid(13)` with the breaker on, mainnet thresholds (9 and 5) and the given window and floor.
+    fn with_breaker(exclude_for: Duration, min_nodes: usize) -> KmsAggregatorConfig {
+        let mut cfg = valid(13);
+        cfg.user_decrypt.threshold = 9;
+        cfg.public_decrypt.threshold = 5;
+        cfg.circuit_breaker = CircuitBreakerConfig {
+            enabled: true,
+            exclude_for,
+            min_nodes,
+        };
+        cfg
+    }
+
+    #[test]
+    fn circuit_breaker_defaults_off() {
+        let section: CircuitBreakerConfig = serde_json::from_str("{}").unwrap();
+        assert!(!section.enabled);
+        assert_eq!(section.exclude_for, Duration::from_secs(30));
+        assert_eq!(section.min_nodes, 0);
+        // An enabled section needs its floor; the window has a default; unknown keys are refused.
+        let on: CircuitBreakerConfig =
+            serde_json::from_str(r#"{"enabled": true, "min_nodes": 11}"#).unwrap();
+        assert!(on.enabled);
+        assert_eq!(
+            (on.exclude_for, on.min_nodes),
+            (Duration::from_secs(30), 11)
+        );
+        let err = serde_json::from_str::<CircuitBreakerConfig>(r#"{"half_open": "5s"}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("half_open"), "{err}");
+    }
+
+    #[test]
+    fn circuit_breaker_is_not_validated_while_disabled() {
+        // The stack template carries the mainnet values with 4 endpoints: fine while off.
+        let mut cfg = valid(4);
+        cfg.circuit_breaker = CircuitBreakerConfig {
+            enabled: false,
+            exclude_for: Duration::ZERO,
+            min_nodes: 11,
+        };
+        cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn circuit_breaker_exclude_for_bounds() {
+        let at = "kms_aggregator.circuit_breaker.exclude_for must be within 1s..=1h";
+        assert!(message(&with_breaker(Duration::from_millis(999), 11)).contains(at));
+        assert!(message(&with_breaker(Duration::from_secs(3601), 11)).contains(at));
+        with_breaker(Duration::from_secs(1), 11).validate().unwrap();
+        with_breaker(Duration::from_secs(3600), 11)
+            .validate()
+            .unwrap();
+    }
+
+    #[test]
+    fn circuit_breaker_min_nodes_bounds() {
+        let window = Duration::from_secs(30);
+        assert!(
+            message(&with_breaker(window, 0))
+                .contains("kms_aggregator.circuit_breaker.min_nodes (0) must be within 9..=13")
+        );
+        assert!(message(&with_breaker(window, 8)).contains("min_nodes (8) must be within 9..=13"));
+        assert!(
+            message(&with_breaker(window, 14)).contains("min_nodes (14) must be within 9..=13")
+        );
+        with_breaker(window, 9).validate().unwrap();
+        with_breaker(window, 13).validate().unwrap();
     }
 
     #[test]
