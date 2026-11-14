@@ -3,7 +3,7 @@
 flow: user_decrypt
 threshold: 10
 timeout: 5s
-max_retries: 3
+retries: { waits: [200ms, 400ms, 600ms] }
 nodes:
   - { count: 9, replies: [ok] }
   - { count: 4, replies: [unsupported_attestation_type, ok] }

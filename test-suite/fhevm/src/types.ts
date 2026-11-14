@@ -26,6 +26,7 @@ export const OVERRIDE_GROUPS = [
   "kms-connector",
   "listener-core",
   "relayer",
+  "relayer-http",
   "gateway-contracts",
   "host-contracts",
   "test-suite",

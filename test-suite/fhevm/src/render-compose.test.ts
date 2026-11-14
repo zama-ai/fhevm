@@ -89,6 +89,11 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
+const relayerHttpOverrideState: State = {
+  ...state,
+  overrides: [{ group: "relayer-http" }],
+};
+
 const listenerCoreOverrideState: State = {
   ...state,
   overrides: [{ group: "listener-core" }],
@@ -763,6 +768,29 @@ instances:
       );
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
+    });
+  });
+
+  test("builds relayer-http from the working tree when its group is overridden", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(relayerHttpOverrideState, stackSpecForState(relayerHttpOverrideState));
+      const doc = YAML.parse(await readFile(composePath("relayer-http"), "utf8")) as {
+        services: Record<
+          string,
+          { image?: string; platform?: string; build?: { context?: string; dockerfile?: string; args?: Record<string, string> } }
+        >;
+      };
+      const service = doc.services["relayer-http"];
+      expect(service?.image).toBe("ghcr.io/zama-ai/fhevm/relayer-http:fhevm-local");
+      // The template pins linux/amd64 for the registry image; the local build targets the host.
+      expect(service?.platform).toBe(process.arch === "arm64" ? "linux/arm64" : "linux/amd64");
+      // Built from the repository root: the crate depends on kms-connector/crates/api by path.
+      expect(service?.build?.context).toBe(path.resolve(import.meta.dir, "../../.."));
+      expect(service?.build?.dockerfile).toBe("relayer-http/Dockerfile");
+      expect(service?.build?.args?.RUST_IMAGE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
     });
   });
 

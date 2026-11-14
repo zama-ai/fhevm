@@ -1,8 +1,8 @@
-# Four nodes rate-limit twice: backoff 500 ms then 1 s, third attempt succeeds at 1.53 s.
+# Four nodes rate-limit twice: the retries wait one window (1 s) then two, the third attempt succeeds at 3.03 s.
 flow: user_decrypt
 threshold: 9
 timeout: 5s
-max_retries: 3
+rate_limit: { max_retries: 2 }
 nodes:
   - { count: 9, replies: [ok] }
   - { count: 4, replies: [rate_limited, rate_limited, ok] }
@@ -10,5 +10,5 @@ expect:
   outcome: ok
   counted: 13
   responses: 13
-  elapsed: 1530ms
+  elapsed: 3030ms
   attempts: 21

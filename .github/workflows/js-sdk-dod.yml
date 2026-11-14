@@ -25,6 +25,8 @@ on:
       - main
     paths:
       - "sdk/js-sdk/**"
+      # Documentation alone does not need the stack.
+      - "!sdk/js-sdk/**/*.md"
       - ".github/workflows/js-sdk-dod.yml"
   workflow_dispatch:
     inputs:
@@ -220,9 +222,12 @@ jobs:
         run: |
           echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
           echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
+      # Build relayer-http from this checkout: the bundle's image (main) may not match this tree's code or its
+      # config template (the Chainguard login above covers its base image).
       - name: Run localstack suite (${{ matrix.name }})
         env:
           LOCALSTACK_SCRIPT: ${{ matrix.script }}
+          FHEVM_CLI_UP_ARGS: --override relayer-http
         run: |
           ulimit -n 65536
           npm run "${LOCALSTACK_SCRIPT}"

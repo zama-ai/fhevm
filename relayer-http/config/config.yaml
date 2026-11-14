@@ -19,11 +19,14 @@ kms_aggregator:
   skip_tls_verification: false # local/devnet only: accepts any connector TLS certificate (no CA, expiry or hostname check)
   max_concurrent_calls: 4096   # HTTP calls in flight at once, all aggregations together (>= number of endpoints); ~200 decryptions/s with 13 nodes, see kms_aggregator/docs.md
   call:
-    timeout: 5000ms            # the deadline: one aggregation, and every call in it, ends by then
-    retries:                   # retryable connector errors only; a retry never starts past the deadline
-      max_retries: 5           # retries after the first attempt; 0 = single attempt; the deadline is the real bound
-      delay: 200ms             # retry k waits min(delay * 2^(k-1), backoff_max)
-      backoff_max: 4s          # cap of the exponential delay; <= call.timeout
+    timeout: 5000ms            # the deadline (1s..=60s): one aggregation, and every call in it, ends by then
+    retries:                   # retryable connector errors other than a rate limit; a retry never starts past the deadline
+      waits: [200ms, 300ms, 500ms, 800ms, 1s]   # the wait before each retry, in order; [] = single attempt; short first for a
+                               # jitter, long after to reach the deadline; every retry is one more request to the node, see
+                               # kms_aggregator/docs.md section 6; the waits must all start before call.timeout
+    rate_limit:                # rate_limited (429) only: the proxy counts requests per sender over a 1 s window
+      max_retries: 1           # one window, then give up (the client retries); the waits must fit before call.timeout
+      initial_delay: 1s        # retry k waits max(initial_delay, Retry-After) * 2^(k-1)
   public_decrypt:
     threshold: 5               # identical (decryptedResult, extraData) answers needed; protocol config value (5 at n = 13) (t + 1)
   user_decrypt:

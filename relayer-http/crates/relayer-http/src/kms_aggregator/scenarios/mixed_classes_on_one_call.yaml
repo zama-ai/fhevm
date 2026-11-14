@@ -1,0 +1,19 @@
+# One call meets both classes: a 429 (one window) then an acl_denied (the one configured wait); each budget is used once,
+# so the share lands at 1.23 s with three attempts.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+retries: { waits: [200ms] }
+rate_limit: { max_retries: 1, initial_delay: 1s }
+nodes:
+  - { count: 9, replies: [ok] }
+  - { count: 4, replies: [rate_limited, acl_denied, ok] }
+expect:
+  outcome: ok
+  counted: 13
+  responses: 13
+  elapsed: 1230ms
+  attempts: 21
+  metrics:
+    answered: 21
+    errors: { rate_limited: 4, acl_denied: 4 }

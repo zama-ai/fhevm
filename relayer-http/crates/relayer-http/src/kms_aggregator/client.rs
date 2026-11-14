@@ -7,11 +7,11 @@ use alloy::primitives::Address;
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use kms_connector_api::{ErrorCode, ErrorResponse};
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, RETRY_AFTER};
 use serde::de::DeserializeOwned;
 use url::Url;
 
-use super::config::{ConfigError, EndpointConfig, KmsAggregatorConfig};
+use super::config::{ConfigError, EndpointConfig, KmsAggregatorConfig, MAX_TIMEOUT, RetryClass};
 
 /// Response bodies above this are dropped. One user-decrypt share is ~1.4 KiB per handle, hex-encoded in JSON;
 /// the 2048-bit budget allows 1024 handles, so the largest valid answer is ~2.8 MiB.
@@ -50,6 +50,8 @@ impl fmt::Debug for Endpoint {
 pub struct HttpReply {
     pub status: u16,
     pub body: Bytes,
+    /// The `Retry-After` header, when readable (see `retry_after`).
+    pub retry_after: Option<Duration>,
 }
 
 impl fmt::Debug for HttpReply {
@@ -105,6 +107,17 @@ impl AttemptError {
             Self::Status(status) => matches!(status, 408 | 429) || (500..600).contains(status),
             Self::Transport(_) | Self::Signer(_) => true,
             Self::Body { .. } | Self::TooLarge(_) => false,
+        }
+    }
+
+    /// Which retry budget a retryable failure consumes: a rate limit (`rate_limited`, a bare 429) has its own.
+    pub fn retry_class(&self) -> RetryClass {
+        match self {
+            Self::Api { error, .. } if error.code == ErrorCode::RateLimited => {
+                RetryClass::RateLimit
+            }
+            Self::Status(429) => RetryClass::RateLimit,
+            _ => RetryClass::Transient,
         }
     }
 
@@ -244,6 +257,7 @@ impl ConnectorClient for HttpClient {
             .await
             .map_err(transport)?;
         let status = response.status().as_u16();
+        let retry_after = retry_after(response.headers());
         if let Some(len) = response
             .content_length()
             .filter(|len| *len > MAX_RESPONSE_BYTES as u64)
@@ -261,8 +275,26 @@ impl ConnectorClient for HttpClient {
         Ok(HttpReply {
             status,
             body: buf.freeze(),
+            retry_after,
         })
     }
+}
+
+/// `Retry-After` as delta-seconds (the form the connector proxy sends), at most `MAX_TIMEOUT`. Any other value
+/// (an HTTP date, garbage, a huge number) is ignored: the configured floor applies. The raw header is never logged;
+/// the parsed wait is what the call reports as `retry_after_ms`.
+fn retry_after(headers: &HeaderMap) -> Option<Duration> {
+    let value = headers.get(RETRY_AFTER)?;
+    let seconds = value
+        .to_str()
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .filter(|d| *d <= MAX_TIMEOUT);
+    if seconds.is_none() {
+        tracing::debug!("retry-after header ignored: not delta-seconds within {MAX_TIMEOUT:?}");
+    }
+    seconds
 }
 
 /// `https://host:8443` + `/v1/user-decrypt` → `https://host:8443/v1/user-decrypt` (a base path is kept).
@@ -351,6 +383,7 @@ mod tests {
         let garbage = HttpReply {
             status: 200,
             body: Bytes::from(format!("\"{}\"", "x".repeat(10_000))),
+            retry_after: None,
         };
         // A string where an object is expected: the schema is wrong, and the text keeps none of the 10 000 bytes.
         let error = decode::<UserDecryptionResponse>(garbage).unwrap_err();
@@ -366,6 +399,7 @@ mod tests {
             let reply = HttpReply {
                 status: 200,
                 body: Bytes::from(body),
+                retry_after: None,
             };
             let AttemptError::Body { kind: got, .. } =
                 decode::<UserDecryptionResponse>(reply).unwrap_err()
@@ -382,12 +416,67 @@ mod tests {
             let reply = HttpReply {
                 status,
                 body: Bytes::from(body),
+                retry_after: None,
             };
             assert_eq!(
                 decode::<UserDecryptionResponse>(reply).unwrap_err(),
                 AttemptError::Status(status)
             );
         }
+    }
+
+    #[test]
+    fn retry_class_is_rate_limit_for_429_only() {
+        for code in connector_codes() {
+            let expected = if code == ErrorCode::RateLimited {
+                RetryClass::RateLimit
+            } else {
+                RetryClass::Transient
+            };
+            assert_eq!(api(code, true).retry_class(), expected, "{code:?}");
+        }
+        assert_eq!(
+            AttemptError::Status(429).retry_class(),
+            RetryClass::RateLimit
+        );
+        for status in [401, 408, 500, 503] {
+            assert_eq!(
+                AttemptError::Status(status).retry_class(),
+                RetryClass::Transient
+            );
+        }
+        assert_eq!(
+            AttemptError::Transport("x".into()).retry_class(),
+            RetryClass::Transient
+        );
+        assert_eq!(
+            AttemptError::Signer("x".into()).retry_class(),
+            RetryClass::Transient
+        );
+    }
+
+    #[test]
+    fn retry_after_reads_delta_seconds_only() {
+        let parse = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(RETRY_AFTER, HeaderValue::from_str(value).unwrap());
+            retry_after(&headers)
+        };
+        assert_eq!(parse("3"), Some(Duration::from_secs(3)));
+        assert_eq!(parse(" 1 "), Some(Duration::from_secs(1)));
+        assert_eq!(parse("0"), Some(Duration::ZERO));
+        assert_eq!(parse("60"), Some(MAX_TIMEOUT));
+        for ignored in [
+            "61",
+            "-1",
+            "abc",
+            "",
+            "1.5",
+            "Wed, 21 Oct 2015 07:28:00 GMT",
+        ] {
+            assert_eq!(parse(ignored), None, "{ignored:?}");
+        }
+        assert_eq!(retry_after(&HeaderMap::new()), None);
     }
 
     #[test]
@@ -507,6 +596,7 @@ mod tests {
         let reply = HttpReply {
             status: 200,
             body: Bytes::from_static(b"secret share bytes"),
+            retry_after: None,
         };
         assert_eq!(
             format!("{reply:?}"),
@@ -613,6 +703,42 @@ mod tests {
         let err = decode::<UserDecryptionResponse>(post(&server).await.unwrap()).unwrap_err();
         assert_eq!(err.code(), ErrorCode::AclDenied);
         assert!(err.is_retryable());
+    }
+
+    #[tokio::test]
+    async fn wire_retry_after_is_read_on_a_429_and_ignored_elsewhere() {
+        let server = MockServer::start().await;
+        let error = mock::error_reply(
+            kms_connector_api::USER_DECRYPTION_ROUTE,
+            mock::USER_REQUEST_JSON.as_bytes(),
+            ErrorCode::RateLimited,
+        );
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .insert_header("retry-after", "2")
+                    .set_body_bytes(error.body.to_vec()),
+            )
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).insert_header("retry-after", "2"))
+            .mount(&server)
+            .await;
+        let limited = post(&server).await.unwrap();
+        assert_eq!(
+            (limited.status, limited.retry_after),
+            (429, Some(Duration::from_secs(2)))
+        );
+        let err = decode::<UserDecryptionResponse>(limited).unwrap_err();
+        assert_eq!(err.retry_class(), RetryClass::RateLimit);
+        // The header is read whatever the status; what to do with it is the caller's decision.
+        let ok = post(&server).await.unwrap();
+        assert_eq!(
+            (ok.status, ok.retry_after),
+            (200, Some(Duration::from_secs(2)))
+        );
     }
 
     #[tokio::test]

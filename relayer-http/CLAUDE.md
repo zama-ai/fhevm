@@ -53,10 +53,19 @@ configuration → behaviour). The implementation plans live outside the reposito
 
 One YAML file (`config/config.yaml` is the example), five sections: `name`, `log` (optional, defaults to JSON
 lines), `http` (bind address, body limit, body read timeout, supported chain ids, optional request limits defaulting to the connector's), `metrics` (optional: `endpoint`, default `0.0.0.0:9898`, the Prometheus listener on its own port) and `kms_aggregator` (deadline,
-retries, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
-unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). Every connector call carries an `FhevmSig` header (RFC-038)
+two retry budgets: `call.retries.waits`, the explicit list of waits for transient errors, and `call.rate_limit` for
+rate limits, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
+unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`; a list is one comma-separated value). Every connector call carries an `FhevmSig` header (RFC-038)
 signed for that endpoint's `audience`; the signing key is never in the file: `kms_aggregator.auth.signer` names the env
 var holding it, or an AWS KMS key, and startup fails unless that key has the address `kms_aggregator.auth.address` and signs a test message. Local variants go to `config/*.local.yaml`, ignored by git.
+
+The configuration does not live in this directory only. A change to it (key added, renamed, removed, default
+changed) lands in the same change in every carrier: `config/config.yaml`, the local stack's template
+`test-suite/fhevm/templates/config/relayer-http.yaml` (rendered by `test-suite/fhevm/src/generate/config.ts`, which
+passes the untouched sections through verbatim, so a stale template fails the in-stack relayer at startup) and its
+test, the preview-env values and the chart values once relayer-http is deployed there. Before merging and after
+every rebase, grep the repository for the old keys; an in-flight integration branch (preview-env, e2e) is rebased
+onto the new keys, never left on the old ones.
 
 ## Commands
 
@@ -69,18 +78,22 @@ cargo nextest run --workspace
 cargo nextest run -p relayer-http yaml_scenarios   # the aggregator scenarios only
 make -C dev test-aws      # the AWS KMS signer as deployed (IRSA credentials), against Floci (an AWS emulator); needs Docker
 cargo run -p relayer-http -- config/config.yaml    # needs the signing key env var named in auth.signer (RELAYER_SIGNER_KEY)
+typos                     # from the repository root: the spell check CI runs (crate-ci/typos, `typos.toml`); `cargo install typos-cli --locked`
 ```
 
 `make -C dev references` regenerates `monitoring/{summary_log,metrics,labels}.md` after a change to the summary fields, the
 metrics or the labels (a test fails while they differ); `make -C dev check-alerts` runs `promtool` on the alert rules
 and their unit tests (Docker).
 
-Every change must pass the first three; a change to the AWS signer or the AWS dependencies also `make -C dev test-aws`.
+Every change must pass the first three and `typos`; a change to the AWS signer or the AWS dependencies also `make -C dev test-aws`.
+The PR title is linted by commitlint (`.github/config/commitlint.config.js`): a conventional type and a scope from its
+list (`relayer` for this directory, `test-suite`, `common`, …), e.g. `feat(relayer): …`; commit subjects follow the same shape.
 Tests that need an external service are `#[ignore = "<why>"]` and grouped in one module per service, run by name with
 `--run-ignored only -E 'test(/<module>/)'` once the service is up (never an env var that silently skips). Check exit codes strictly (a grep on the output hides a failing build).
 
-Against the local fhevm stack: `./fhevm-cli up` runs relayer-http in the stack (`fhevm-relayer-http`, :3002);
-`make -C dev run` runs it on the host instead (:4002, the stack's config); `make -C dev public-decrypt` / `user-decrypt`
+Against the local fhevm stack: `./fhevm-cli up` runs relayer-http in the stack (`fhevm-relayer-http`, :3002) from the
+published image; `--override relayer-http` builds it from the working tree instead (`upgrade relayer-http` rebuilds and
+restarts it after an edit); `make -C dev run` runs it on the host instead (:4002, the stack's config); `make -C dev public-decrypt` / `user-decrypt`
 (one flow each, from the e2e container); `make -C dev check` (the three commands above). See `dev/README.md`.
 
 ## Container image
@@ -113,8 +126,8 @@ being the reference.
 
 **No unexpected panic.** A panicking handler still answers `500 internal` (`CatchPanicLayer`). Both crate roots deny `clippy::unwrap_used`, `expect_used`, `indexing_slicing` and `panic`
 (allowed in tests). Every failure is a typed error returned to the caller. Configuration validation bounds every value
-the runtime arithmetic relies on (`call.timeout <= 60s`, `backoff_max <= call.timeout`, semaphore size capped) so that no
-arithmetic can overflow later. A panic inside a spawned task is counted as a failure, never propagated.
+the runtime arithmetic relies on (`1s <= call.timeout <= 60s`, every retry wait starts before `call.timeout`, semaphore size
+capped) so that no arithmetic can overflow later. A panic inside a spawned task is counted as a failure, never propagated.
 
 **Fail fast.** Never wait for something that cannot change the outcome: when `counted + pending < threshold` the
 remaining calls are cancelled at once. One deadline per request, no queue, no ETA; the client retries.
@@ -151,4 +164,7 @@ a file.
 behaviour change, plus a one-line doc comment on every item. The error code table in `endpoint/docs.md` (every code,
 its status, when it happens, how aggregation errors map to it) is updated in the same change as any change to that
 mapping. This `CLAUDE.md` is updated the same way: new rules and
-changed descriptions land with the feature that motivates them.
+changed descriptions land with the feature that motivates them. Spelling is American (`typos.toml` is `en-us`; only
+the British words it lists, such as `behaviour` or `serialise`, are accepted), in prose, identifiers and file names
+alike (`honors`, `favor`, `canceled`-class words as `typos` accepts them); a new British word is either avoided or
+added to `typos.toml` on purpose, never left for CI to find.

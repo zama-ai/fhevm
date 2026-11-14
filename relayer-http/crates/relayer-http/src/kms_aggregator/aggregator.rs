@@ -135,10 +135,15 @@ impl<F: Flow> Aggregator<F> {
             .iter()
             .map(|endpoint| endpoint.name.clone())
             .collect();
+        // The fan-out, the threshold and the retry policy, so one request's log is self-describing.
+        let call = self.caller.call_config();
         debug!(
             nodes,
             threshold,
             timeout_ms = timeout.as_millis() as u64,
+            retries_waits_ms = self.caller.retries_waits_ms(),
+            rate_limit_max = call.rate_limit.max_retries,
+            rate_limit_initial_delay_ms = call.rate_limit.initial_delay.as_millis() as u64,
             "aggregation started"
         );
 
@@ -248,7 +253,16 @@ impl<F: Flow> Aggregator<F> {
                     Err(CallError::Failed(failure)) => {
                         tally.failed.push(call.node.clone());
                         codes.push(failure.code());
-                        warn!(kms_node = %call.node, attempts = call.attempts, elapsed_ms, error = %failure.digest(), "call failed");
+                        // The node's outcome after its last attempt, with how much of each retry budget it used.
+                        warn!(
+                            kms_node = %call.node,
+                            attempts = call.attempts,
+                            transient_retries = call.retries.transient,
+                            rate_limit_retries = call.retries.rate_limit,
+                            elapsed_ms,
+                            error = %failure.digest(),
+                            "call failed"
+                        );
                     }
                 }
             }
@@ -456,6 +470,48 @@ mod tests {
         for line in cut {
             assert_eq!(line["fields"]["cause"], "deadline");
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn started_and_call_failed_lines_carry_the_retry_policy_and_counters() {
+        // One node keeps answering 429: one rate-limit retry (the fixture has no transient budget), then it fails.
+        let lines = logged(
+            &[(1, Reply::Error(ErrorCode::RateLimited)), (12, OK)],
+            9,
+            &["aggregation started", "call failed"],
+        )
+        .await;
+        let started = lines_of(&lines, "aggregation started");
+        assert_eq!(started.len(), 1, "{started:?}");
+        assert_eq!(started[0]["level"], "DEBUG");
+        let fields = &started[0]["fields"];
+        assert_eq!(
+            (fields["nodes"].as_u64(), fields["threshold"].as_u64()),
+            (Some(13), Some(9))
+        );
+        assert_eq!(fields["timeout_ms"], 5000);
+        // The fixture has no transient budget; the list is rendered as text by the JSON layer.
+        assert_eq!(fields["retries_waits_ms"], "[]");
+        assert_eq!(
+            (
+                fields["rate_limit_max"].as_u64(),
+                fields["rate_limit_initial_delay_ms"].as_u64()
+            ),
+            (Some(1), Some(1000))
+        );
+        let failed = lines_of(&lines, "call failed");
+        assert_eq!(failed.len(), 1, "{failed:?}");
+        assert_eq!(failed[0]["level"], "WARN");
+        let fields = &failed[0]["fields"];
+        assert_eq!(fields["kms_node"], "node-0");
+        assert_eq!(
+            (
+                fields["attempts"].as_u64(),
+                fields["transient_retries"].as_u64()
+            ),
+            (Some(2), Some(0))
+        );
+        assert_eq!(fields["rate_limit_retries"], 1);
     }
 
     #[tokio::test(start_paused = true)]

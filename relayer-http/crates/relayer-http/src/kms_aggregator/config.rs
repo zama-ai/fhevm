@@ -12,6 +12,9 @@ use crate::metrics::MAX_KMS_NODES;
 /// Upper bound of every configured duration: keeps deadline arithmetic trivially safe.
 pub const MAX_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Lower bound of the deadline: below one second no retry list is useful and the deadline becomes noise.
+pub const MIN_TIMEOUT: Duration = Duration::from_secs(1);
+
 /// Invalid configuration; the message names the offending field with its dotted path.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
@@ -29,6 +32,7 @@ pub struct KmsAggregatorConfig {
     /// HTTP calls in flight at once, all aggregations together (one semaphore per process).
     #[serde(default = "default_max_concurrent_calls")]
     pub max_concurrent_calls: usize,
+    #[serde(default)]
     pub call: CallConfig,
     pub user_decrypt: UserDecryptConfig,
     pub public_decrypt: PublicDecryptConfig,
@@ -37,59 +41,148 @@ pub struct KmsAggregatorConfig {
 }
 
 /// Sized for ~200 decryptions/s with 13 nodes: λ × Σ(per-node hold time) × 1.5, a hold time being the node's
-/// latency (~1 s) or the deadline for a hung node. See `kms_aggregator/docs.md` §8.
+/// latency (~1 s) or the deadline for a hung node. See `kms_aggregator/docs.md` §9.
 fn default_max_concurrent_calls() -> usize {
     4096
 }
 
+/// The deadline and the two retry budgets of one node call. Every field has a default: an empty `call:` is valid.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct CallConfig {
     /// The deadline: one aggregation, and every call in it, ends by then.
     #[serde(with = "humantime_serde")]
     pub timeout: Duration,
-    #[serde(default)]
+    /// Retryable errors other than a rate limit: an explicit list of waits.
     pub retries: RetryConfig,
+    /// `rate_limited` and bare 429: exponential waits from a floor.
+    pub rate_limit: RateLimitConfig,
 }
 
+impl Default for CallConfig {
+    fn default() -> Self {
+        Self {
+            timeout: Duration::from_secs(5),
+            retries: RetryConfig::default(),
+            rate_limit: RateLimitConfig::default(),
+        }
+    }
+}
+
+/// The transient retry budget: the wait before each retry, in order. The list is the budget: `[]` is a single
+/// attempt, `waits[k-1]` is the wait before retry `k`. Short waits first catch a jitter, longer ones after reach the
+/// deadline (`docs.md` section 6); the deadline (`call.timeout`) stays the real bound, a wait that does not fit before
+/// it is skipped.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct RetryConfig {
-    /// Retries after the first attempt, retryable errors only. 0 = one attempt. Any value: the deadline
-    /// (`call.timeout`) is the real bound, a retry whose delay does not fit before it is skipped.
-    #[serde(default)]
-    pub max_retries: u32,
-    /// Delay before the first retry; retry `k` waits `min(delay * 2^(k-1), backoff_max)`.
-    #[serde(with = "humantime_serde", default = "default_delay")]
-    pub delay: Duration,
-    /// Cap of the exponential delay, at most `call.timeout`.
-    #[serde(with = "humantime_serde", default = "default_backoff_max")]
-    pub backoff_max: Duration,
-}
-
-fn default_delay() -> Duration {
-    Duration::from_millis(500)
-}
-
-fn default_backoff_max() -> Duration {
-    Duration::from_secs(4)
+    #[serde(deserialize_with = "durations")]
+    pub waits: Vec<Duration>,
 }
 
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
-            max_retries: 0,
-            delay: default_delay(),
-            backoff_max: default_backoff_max(),
+            waits: [200, 300, 500, 800, 1000]
+                .into_iter()
+                .map(Duration::from_millis)
+                .collect(),
         }
     }
 }
 
-impl RetryConfig {
-    /// Delay before retry number `retry` (1-based): `min(delay * 2^(retry-1), backoff_max)`, saturating.
-    pub fn delay_for(&self, retry: u32) -> Duration {
-        let factor = 2u32.saturating_pow(retry.saturating_sub(1));
-        self.delay.saturating_mul(factor).min(self.backoff_max)
+/// A list of durations with units (`[200ms, 1s]`; the `humantime_serde` adapter covers one duration only).
+/// Entries are trimmed and empty ones dropped, so the one value an environment override can carry
+/// (`200ms, 500ms`, `200ms,`, or nothing at all for a single attempt) parses like the YAML list.
+fn durations<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<Duration>, D::Error> {
+    use serde::de::{Error, IntoDeserializer};
+    let entries: Vec<String> = Deserialize::deserialize(deserializer)?;
+    entries
+        .iter()
+        .map(|entry| entry.trim())
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            humantime_serde::deserialize::<Duration, _>(entry.into_deserializer())
+                .map_err(|e: serde::de::value::Error| D::Error::custom(format!("{entry:?}: {e}")))
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RateLimitConfig {
+    /// Retries after a rate limit. 0 = give up at the first 429. Default 1: one window, then the client retries.
+    pub max_retries: u32,
+    /// Retry `k` waits `max(initial_delay, Retry-After) * 2^(k-1)`. Default 1 s: the connector proxy's window.
+    #[serde(with = "humantime_serde")]
+    pub initial_delay: Duration,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 1,
+            initial_delay: Duration::from_secs(1),
+        }
+    }
+}
+
+/// The retry budget a failure consumes (`AttemptError::retry_class`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryClass {
+    /// Every retryable error except a rate limit.
+    Transient,
+    /// `rate_limited`, or a bare 429.
+    RateLimit,
+}
+
+impl RetryClass {
+    /// The configuration section's name, as logged.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Transient => "transient",
+            Self::RateLimit => "rate_limit",
+        }
+    }
+}
+
+impl CallConfig {
+    /// The retry budget of `class`: the length of the transient list, the rate-limit count.
+    pub fn max_retries(&self, class: RetryClass) -> u32 {
+        match class {
+            RetryClass::Transient => u32::try_from(self.retries.waits.len()).unwrap_or(u32::MAX),
+            RetryClass::RateLimit => self.rate_limit.max_retries,
+        }
+    }
+
+    /// The wait before retry `k` (1-based) of `class`. Transient: the k-th wait of the list (zero past its end: the
+    /// budget is checked first, so that value is never slept). Rate limit: exponential from the floor, saturating;
+    /// `retry_after` only raises that floor.
+    pub fn delay_for(&self, class: RetryClass, k: u32, retry_after: Option<Duration>) -> Duration {
+        match class {
+            RetryClass::Transient => {
+                let index = usize::try_from(k.saturating_sub(1)).unwrap_or(usize::MAX);
+                self.retries.waits.get(index).copied().unwrap_or_default()
+            }
+            RetryClass::RateLimit => self
+                .rate_limit
+                .initial_delay
+                .max(retry_after.unwrap_or_default())
+                .saturating_mul(2u32.saturating_pow(k.saturating_sub(1))),
+        }
+    }
+
+    /// The first retry of `class` whose waits alone reach the deadline, with its start. Stops at that retry, so a
+    /// huge rate-limit `max_retries` is cheap to check.
+    fn first_retry_past_deadline(&self, class: RetryClass) -> Option<(u32, Duration)> {
+        let mut start = Duration::ZERO;
+        for k in 1..=self.max_retries(class) {
+            start = start.saturating_add(self.delay_for(class, k, None));
+            if start >= self.timeout {
+                return Some((k, start));
+            }
+        }
+        None
     }
 }
 
@@ -223,21 +316,31 @@ impl KmsAggregatorConfig {
             ));
         }
         let call = &self.call;
-        if call.timeout.is_zero() || call.timeout > MAX_TIMEOUT {
+        if call.timeout < MIN_TIMEOUT || call.timeout > MAX_TIMEOUT {
             return fail(format!(
-                "kms_aggregator.call.timeout must be within 1ms..={MAX_TIMEOUT:?}"
+                "kms_aggregator.call.timeout must be within {MIN_TIMEOUT:?}..={MAX_TIMEOUT:?}"
             ));
         }
-        let retries = &call.retries;
-        if retries.max_retries > 0
-            && (retries.delay.is_zero()
-                || retries.delay > retries.backoff_max
-                || retries.backoff_max > call.timeout)
-        {
-            return fail(
-                "kms_aggregator.call.retries must satisfy 0 < delay <= backoff_max <= call.timeout"
-                    .to_owned(),
-            );
+        // The waits of each class must all fit before the deadline, otherwise the last retries can never run.
+        let past_deadline =
+            |at: &str, class: RetryClass| match call.first_retry_past_deadline(class) {
+                Some((k, start)) => fail(format!(
+                    "{at}: retry {k} would start at {start:?}, not before call.timeout ({:?})",
+                    call.timeout
+                )),
+                None => Ok(()),
+            };
+        let at = "kms_aggregator.call.retries.waits";
+        if let Some(i) = call.retries.waits.iter().position(Duration::is_zero) {
+            return fail(format!("{at}[{i}] must be > 0"));
+        }
+        past_deadline(at, RetryClass::Transient)?;
+        let at = "kms_aggregator.call.rate_limit.initial_delay";
+        if call.rate_limit.max_retries > 0 {
+            if call.rate_limit.initial_delay.is_zero() {
+                return fail(format!("{at} must be > 0 when max_retries > 0"));
+            }
+            past_deadline(at, RetryClass::RateLimit)?;
         }
         let auth = &self.auth;
         if auth.validity <= call.timeout || auth.validity > DEFAULT_MAX_AUTH_VALIDITY {
@@ -289,16 +392,13 @@ pub(crate) mod tests {
         Url::parse(s).unwrap()
     }
 
-    /// `n` https endpoints with distinct audiences, a local signer, thresholds 1, single attempt.
+    /// `n` https endpoints with distinct audiences, a local signer, thresholds 1, the default call config.
     pub(crate) fn valid(n: usize) -> KmsAggregatorConfig {
         KmsAggregatorConfig {
             allow_insecure_http: false,
             skip_tls_verification: false,
             max_concurrent_calls: 64.max(n),
-            call: CallConfig {
-                timeout: Duration::from_secs(5),
-                retries: RetryConfig::default(),
-            },
+            call: CallConfig::default(),
             user_decrypt: UserDecryptConfig {
                 threshold: 1,
                 checks: UserChecks::default(),
@@ -463,36 +563,126 @@ pub(crate) mod tests {
     fn call_timeout_bounds() {
         let mut cfg = valid(1);
         cfg.call.timeout = Duration::ZERO;
-        assert!(message(&cfg).contains("call.timeout must be within"));
+        assert!(message(&cfg).contains("call.timeout must be within 1s..=60s"));
+        cfg.call.timeout = Duration::from_millis(999);
+        assert!(message(&cfg).contains("call.timeout must be within 1s..=60s"));
         cfg.call.timeout = MAX_TIMEOUT + Duration::from_millis(1);
-        assert!(message(&cfg).contains("call.timeout must be within"));
+        assert!(message(&cfg).contains("call.timeout must be within 1s..=60s"));
         cfg.call.timeout = MAX_TIMEOUT;
+        cfg.validate().unwrap();
+        // The bound alone: the default retry lists need about 3 s, which their own rule says.
+        cfg.call.timeout = MIN_TIMEOUT;
+        cfg.call.retries = waits(&[]);
+        cfg.call.rate_limit.max_retries = 0;
         cfg.validate().unwrap();
     }
 
     #[test]
-    fn retry_rules() {
+    fn waits_are_trimmed_and_empty_entries_dropped() {
+        let parsed = |json: &str| serde_json::from_str::<CallConfig>(json).map(|c| c.retries.waits);
+        assert_eq!(
+            parsed(r#"{"retries": {"waits": ["200ms", " 1s ", ""]}}"#).unwrap(),
+            waits(&[200, 1000]).waits
+        );
+        assert!(
+            parsed(r#"{"retries": {"waits": [""]}}"#)
+                .unwrap()
+                .is_empty()
+        );
+        let err = parsed(r#"{"retries": {"waits": ["200ms", "nope"]}}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("\"nope\""), "{err}");
+    }
+
+    /// A transient budget of `ms` waits.
+    fn waits(ms: &[u64]) -> RetryConfig {
+        RetryConfig {
+            waits: ms.iter().copied().map(Duration::from_millis).collect(),
+        }
+    }
+
+    #[test]
+    fn transient_waits_must_fit_before_the_deadline() {
         let mut cfg = valid(1);
-        // No ceiling on the count: the deadline bounds the retries that actually run.
-        cfg.call.retries.max_retries = u32::MAX;
+        cfg.call.timeout = Duration::from_secs(1);
+        // Only the transient class under test: the default 1 s rate-limit wait would not fit either.
+        cfg.call.rate_limit.max_retries = 0;
+        // Retry 3 would start after 400 + 400 + 400 ms of waits: never before a 1 s deadline.
+        cfg.call.retries = waits(&[400, 400, 400, 400]);
+        assert_eq!(
+            message(&cfg),
+            "kms_aggregator.call.retries.waits: retry 3 would start at 1.2s, not before call.timeout (1s)"
+        );
+        cfg.call.retries = waits(&[400, 400]);
         cfg.validate().unwrap();
-        cfg.call.retries.max_retries = 2;
-        cfg.call.retries.delay = Duration::ZERO;
-        assert!(message(&cfg).contains("0 < delay <= backoff_max <= call.timeout"));
-        cfg.call.retries.delay = Duration::from_secs(5);
-        cfg.call.retries.backoff_max = Duration::from_secs(4);
-        assert!(message(&cfg).contains("0 < delay <= backoff_max <= call.timeout"));
-        // backoff_max beyond the deadline can never take effect: refused.
-        cfg.call.retries.delay = Duration::from_millis(500);
-        cfg.call.retries.backoff_max = cfg.call.timeout + Duration::from_secs(1);
-        assert!(message(&cfg).contains("0 < delay <= backoff_max <= call.timeout"));
-        cfg.call.retries.backoff_max = cfg.call.timeout;
+        // The message names the zero entry.
+        cfg.call.retries = waits(&[200, 0, 200]);
+        assert_eq!(
+            message(&cfg),
+            "kms_aggregator.call.retries.waits[1] must be > 0"
+        );
+        // The last wait of a long list is the one that reaches the deadline.
+        cfg.call.retries = waits(&[1; 1000]);
+        assert!(message(&cfg).contains("retries.waits: retry 1000 would start at 1s"));
+        // An empty list is a single attempt and nothing to check.
+        cfg.call.retries = waits(&[]);
         cfg.validate().unwrap();
-        // With no retries the delays are irrelevant.
-        cfg.call.retries.max_retries = 0;
-        cfg.call.retries.delay = Duration::ZERO;
-        cfg.call.retries.backoff_max = Duration::from_secs(600);
+    }
+
+    #[test]
+    fn rate_limit_waits_must_fit_before_the_deadline() {
+        let mut cfg = valid(1);
+        // 1 + 2 + 4 = 7 s > 5 s: retry 3 can never run.
+        cfg.call.rate_limit.max_retries = 3;
+        assert_eq!(
+            message(&cfg),
+            "kms_aggregator.call.rate_limit.initial_delay: retry 3 would start at 7s, not before call.timeout (5s)"
+        );
+        cfg.call.rate_limit.max_retries = 2;
         cfg.validate().unwrap();
+        cfg.call.rate_limit.initial_delay = Duration::ZERO;
+        assert!(
+            message(&cfg).contains("rate_limit.initial_delay must be > 0 when max_retries > 0")
+        );
+        cfg.call.rate_limit = RateLimitConfig {
+            max_retries: 0,
+            initial_delay: Duration::ZERO,
+        };
+        cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn call_section_defaults_and_rejects_the_old_keys() {
+        let call: CallConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(call.timeout, Duration::from_secs(5));
+        assert_eq!(call.retries.waits, waits(&[200, 300, 500, 800, 1000]).waits);
+        assert_eq!(
+            (call.rate_limit.max_retries, call.rate_limit.initial_delay),
+            (1, Duration::from_secs(1))
+        );
+        let mut cfg = valid(1);
+        cfg.call = call;
+        cfg.validate().unwrap();
+        // The waits carry units; an empty list is a single attempt.
+        let listed: CallConfig =
+            serde_json::from_str(r#"{"retries": {"waits": ["200ms", "1s"]}}"#).unwrap();
+        assert_eq!(listed.retries.waits, waits(&[200, 1000]).waits);
+        let none: CallConfig = serde_json::from_str(r#"{"retries": {"waits": []}}"#).unwrap();
+        assert!(none.retries.waits.is_empty());
+        // The curve keys of earlier versions are refused, so a stale file fails at startup.
+        for (old, key) in [
+            (
+                r#"{"retries": {"max_retries": 1, "delay": "200ms", "backoff_max": "4s"}}"#,
+                "max_retries",
+            ),
+            (r#"{"retries": {"delay": "200ms"}}"#, "delay"),
+        ] {
+            let err = serde_json::from_str::<CallConfig>(old)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(key), "{err}");
+        }
     }
 
     #[test]
@@ -527,24 +717,48 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn delay_for_doubles_and_caps() {
-        let retries = RetryConfig::default();
+    fn transient_waits_are_read_from_the_list() {
+        let call = CallConfig::default();
         let ms = |v| Duration::from_millis(v);
-        assert_eq!(retries.delay_for(1), ms(500));
-        assert_eq!(retries.delay_for(2), ms(1000));
-        assert_eq!(retries.delay_for(3), ms(2000));
-        assert_eq!(retries.delay_for(4), ms(4000));
-        assert_eq!(retries.delay_for(5), ms(4000));
-        assert_eq!(retries.delay_for(0), ms(500));
-        assert_eq!(retries.delay_for(u32::MAX), ms(4000));
+        let delay = |k| call.delay_for(RetryClass::Transient, k, None);
+        assert_eq!(
+            (delay(1), delay(2), delay(3), delay(4), delay(5)),
+            (ms(200), ms(300), ms(500), ms(800), ms(1000))
+        );
+        assert_eq!(delay(0), ms(200));
+        // Past the list: zero, never slept (the budget is exhausted first).
+        assert_eq!(
+            (delay(6), delay(u32::MAX)),
+            (Duration::ZERO, Duration::ZERO)
+        );
+        // Retry-After never applies to the transient class.
+        assert_eq!(
+            call.delay_for(RetryClass::Transient, 1, Some(Duration::from_secs(9))),
+            ms(200)
+        );
     }
 
     #[test]
-    fn retry_config_default() {
-        let retries = RetryConfig::default();
-        assert_eq!(retries.max_retries, 0);
-        assert_eq!(retries.delay, Duration::from_millis(500));
-        assert_eq!(retries.backoff_max, Duration::from_secs(4));
+    fn rate_limit_delay_doubles_from_the_larger_of_floor_and_header() {
+        let call = CallConfig::default();
+        let s = Duration::from_secs;
+        let delay = |k, after| call.delay_for(RetryClass::RateLimit, k, after);
+        assert_eq!(
+            (delay(1, None), delay(2, None), delay(3, None)),
+            (s(1), s(2), s(4))
+        );
+        assert_eq!(delay(0, None), s(1));
+        // The header raises the base; a header below the floor is ignored.
+        assert_eq!((delay(1, Some(s(2))), delay(2, Some(s(2)))), (s(2), s(4)));
+        assert_eq!(delay(1, Some(Duration::ZERO)), s(1));
+        assert_eq!(delay(u32::MAX, None), s(1).saturating_mul(u32::MAX));
+        assert_eq!(
+            (
+                call.max_retries(RetryClass::Transient),
+                call.max_retries(RetryClass::RateLimit)
+            ),
+            (5, 1)
+        );
     }
 
     #[test]
