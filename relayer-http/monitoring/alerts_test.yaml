@@ -277,7 +277,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: "relayer-http's circuit breaker is at its floor: more KMS nodes are unhealthy than it may exclude"
-              description: "30 time(s) in the last 10 minutes an unhealthy KMS node was kept in use because excluding it would leave fewer than circuit_breaker.min_nodes: requests wait for the deadline again. relayer_http_kms_node_excluded says which nodes are out, RelayerHttpKmsNodeFailing which one is failing."
+              description: "30 time(s) in the last 10 minutes an unhealthy KMS node was kept in use because excluding it would leave fewer than circuit_breaker.min_nodes: requests wait for the deadline again. relayer_http_kms_node_excluded says which nodes are out, relayer_http_kms_exclusions_total by code why (cancelled: no answer at all, the node hangs)."
               runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpkmsfloorreached"
       - eval_time: 25m
         alertname: RelayerHttpKmsFloorReachedAndSlow
@@ -303,7 +303,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: "relayer-http's circuit breaker is at its floor: more KMS nodes are unhealthy than it may exclude"
-              description: "30 time(s) in the last 10 minutes an unhealthy KMS node was kept in use because excluding it would leave fewer than circuit_breaker.min_nodes: requests wait for the deadline again. relayer_http_kms_node_excluded says which nodes are out, RelayerHttpKmsNodeFailing which one is failing."
+              description: "30 time(s) in the last 10 minutes an unhealthy KMS node was kept in use because excluding it would leave fewer than circuit_breaker.min_nodes: requests wait for the deadline again. relayer_http_kms_node_excluded says which nodes are out, relayer_http_kms_exclusions_total by code why (cancelled: no answer at all, the node hangs)."
               runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpkmsfloorreached"
       - eval_time: 25m
         alertname: RelayerHttpKmsFloorReachedAndSlow

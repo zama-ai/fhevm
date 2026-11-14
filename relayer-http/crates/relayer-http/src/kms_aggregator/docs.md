@@ -112,8 +112,9 @@ stateDiagram-v2
 | otherwise (every node finished, or fail fast) | `Err(ThresholdNotReached { counted, threshold, dominant })` |
 
 Two consequences to keep in mind: a single hung node makes that request last the full `call.timeout` (accepted: the
-answer then carries every share that arrived), and responses that would have arrived after the answer are cancelled,
-not stored.
+answer then carries every share that arrived; with the circuit breaker on, section 7, only the request that detects
+the hung node does, the next ones leave it out), and responses that would have arrived after the answer are
+cancelled, not stored.
 
 The instant the counted responses first reach the threshold is `Tally::threshold_reached`: the summary line reports it
 as `threshold_reached_ms` (from the request's receipt), and `run` observes the time from it to its end in
@@ -281,7 +282,9 @@ in the same critical section: with k concurrent unhealthy outcomes and room for 
 opens. A node's fan-out is fixed by its own `select`: exclusion and re-inclusion take effect for the aggregations that
 start afterwards, no node is added to or removed from a running one. Re-inclusion only raises the closed count, so it
 never crosses the floor. At most `n − min_nodes` probes are in flight per pod, each holding one call permit like any
-node call.
+node call. An outcome for a node that is no longer closed changes nothing; with `exclude_for` shorter than
+`call.timeout`, an aggregation started before the window could still report after the node was probed and closed
+again, and open it again: a legitimate verdict, and not reachable with the defaults (30 s against 5 s).
 
 **Cost and trade-off.** A node that is out cannot rescue a request: with one node out the fan-out is 12 for a
 threshold of 9, so four failures fail fast where five were needed; with two out, three. The floor bounds the loss, and
@@ -423,7 +426,7 @@ request id; lines about one node carry its configured name as `kms_node`. Events
 | `call cut` | warn | kms_node, attempts, elapsed_ms, cause: `deadline` (too slow or hung), or `fail_fast`; last_code: the node's last answer during the call, `none` when it never answered (section 7); a client hangup is reported by the endpoint's `Guard` (cause `client_closed`) |
 | `response rejected` | warn | kms_node, elapsed_ms, error: a check refused a 200 response |
 | `node task panicked` | error | kms_node, location: a panic inside a node task (no panic text), the panic's only ERROR line; the node is counted as failed, and the fail-fast check still runs |
-| `node excluded`, `probe failed: node excluded` | warn | kms_node, last_code, excluded_for_ms, closed_nodes: the circuit breaker opened the node (section 7), after a call or after a probe; the `call cut` or `call failed` line before it, same request id and node, says why |
+| `node excluded`, `probe failed: node excluded` | warn | kms_node, last_code, excluded_for_ms, closed_nodes: the circuit breaker opened the node (section 7). After a call, the `call cut` or `call failed` line before it, same request id and node, says why; after a probe, its own `attempt failed` lines do (a probe's end is not a `call cut` line: it never goes through the collection loop) |
 | `node kept: floor reached` | warn | kms_node, last_code, min_nodes, closed_nodes: unhealthy, but excluding it would leave fewer than `min_nodes` in use |
 | `node included` | info | kms_node, excluded_ms, closed_nodes: a probe answered, the node is in use again |
 | `breakers reset` (outside any span) | info | closed: how many nodes were out; `Caller::reset_circuit_breakers()` was called |
@@ -458,7 +461,14 @@ that an alert sees the first hit). A probe's attempts are recorded like a reques
   cannot be used: its KMS `Sign` ignores `MessageType=DIGEST` and hashes the digest again.
 - Log tests (`aggregator.rs`, `call.rs`) capture the production JSON with `logging::capture_runs` and
   assert on fields and levels: each degradation (failed attempt, failed signature, failed call, cut call, rejected
-  response) is a WARN with its `kms_node`, a panicked node task an ERROR.
+  response, node excluded or kept at the floor) is a WARN with its `kms_node`, a panicked node task an ERROR, a node
+  included again an INFO.
+- The circuit breaker (section 7): unit tests in `breaker.rs` for every transition, the floor, the generation and
+  the verdict over every connector code; sequential runs over one aggregator in `aggregator.rs` (the mock's
+  per-node scripts and latency can be replaced between runs) reproduce the example of the design: the request that
+  detects a hung node pays the deadline once, the next ones run at the healthy latency with one share fewer, the
+  probing one included; three hung nodes keep the floor; a probe survives fail fast and a panic; `reset` re-includes
+  for the next run only. The YAML format is not extended: a scenario is one run.
 - Scenarios in `scenarios/*.yaml`, run by `cargo nextest run -p relayer-http yaml_scenarios` under paused tokio time (a 5 s
   scenario runs in microseconds and `elapsed` is exact). Adding a scenario is adding a file:
 
