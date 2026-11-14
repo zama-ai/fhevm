@@ -218,6 +218,7 @@ impl Caller {
                 .collect(),
             breaker.min_nodes,
             breaker.exclude_for,
+            metrics.clone(),
         );
         Ok(Self {
             client,

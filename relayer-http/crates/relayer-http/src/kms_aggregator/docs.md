@@ -439,6 +439,14 @@ records none: the aggregator counts it as `code="panic"`). The slot wait starts 
 attempt: it counts in `relayer_http_signer_errors_total{flow}`, and a call that made no attempt is not observed in
 `relayer_http_kms_attempts`; the node stays in `failed_kms_nodes`, which names the nodes that gave no response.
 
+The circuit breaker (section 7) records its own state, from `breaker.rs`, while it is enabled:
+`relayer_http_kms_node_excluded{kms_node}` (gauge: 1 while the node is out, 0 while in use, 0 for every node at
+startup and after a reset; `sum()` of it is the number of nodes out on a pod), `relayer_http_kms_exclusions_total{kms_node, code}`
+(one per exclusion, after a call or a failed probe; `code` is the node's last answer, `cancelled` when it never
+answered), `relayer_http_kms_probes_total{kms_node, outcome}` (`succeeded`, `failed`, `cancelled`) and
+`relayer_http_kms_floor_hits_total{kms_node}` (an unhealthy node kept by the floor; starts at 0 for every node so
+that an alert sees the first hit). A probe's attempts are recorded like a request's, under the request's flow.
+
 ## 13. Testing
 
 - Unit tests next to every function (`cargo nextest run -p relayer-http`).

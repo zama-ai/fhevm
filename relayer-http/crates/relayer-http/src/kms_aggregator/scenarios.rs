@@ -230,6 +230,11 @@ fn node_metrics(
             "relayer_http_kms_attempts" => calls += count,
             "relayer_http_kms_attempt_duration_seconds" => answered += count,
             "relayer_http_kms_call_slot_wait_seconds" => {}
+            // The circuit breaker is off in every scenario: its series stay at 0 and are skipped above.
+            "relayer_http_kms_node_excluded"
+            | "relayer_http_kms_exclusions_total"
+            | "relayer_http_kms_probes_total"
+            | "relayer_http_kms_floor_hits_total" => {}
             // One run, one wait at most.
             "relayer_http_kms_wait_after_threshold_seconds" if count == 1 => {}
             "relayer_http_kms_attempt_errors_total" => {

@@ -9,7 +9,9 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use kms_connector_api::ErrorCode;
-use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder};
+use prometheus::{
+    HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder,
+};
 use tokio::net::TcpListener;
 use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -184,7 +186,7 @@ pub const LABELS: &[Label] = &[
     },
     Label {
         name: "code",
-        meaning: "`ok`, an API error code of a request, or the connector error code of a failed KMS node attempt (`cancelled` for an attempt cut in flight, `panic` for a node task that panicked)",
+        meaning: "`ok`, an API error code of a request, or the connector error code of a failed KMS node attempt (`cancelled` for an attempt cut in flight, `panic` for a node task that panicked); on an exclusion, the node's last answer (`cancelled` when it never answered)",
         values: Values::Enumerated(|| {
             let own = [
                 "ok",
@@ -214,6 +216,8 @@ pub const LABELS: &[Label] = &[
 /// What a metric counts.
 pub enum Kind {
     Counter,
+    /// A value that goes up and down (a state, not a count).
+    Gauge,
     /// Upper bounds of the buckets, `+Inf` excluded.
     Histogram(&'static [f64]),
 }
@@ -290,6 +294,32 @@ const WAIT_AFTER_THRESHOLD: MetricDef = MetricDef {
     help: "One aggregation that reached its threshold: seconds from reaching it to the answer, spent waiting for the remaining KMS nodes (until every node finished or the deadline). Buckets 5 ms to 5 s.",
 };
 
+// The circuit breaker (`kms_aggregator/breaker.rs`): the four exist only while it is enabled.
+const NODE_EXCLUDED: MetricDef = MetricDef {
+    name: "relayer_http_kms_node_excluded",
+    kind: Kind::Gauge,
+    labels: &["kms_node"],
+    help: "1 while the circuit breaker leaves the KMS node out (open, or being probed), 0 while it is in use; 0 for every node at startup and after a reset.",
+};
+const NODE_EXCLUSIONS: MetricDef = MetricDef {
+    name: "relayer_http_kms_exclusions_total",
+    kind: Kind::Counter,
+    labels: &["kms_node", "code"],
+    help: "One exclusion of a KMS node by the circuit breaker, after a call or after a failed probe; `code` is the node's last answer during that call (`upstream_transient`, `overloaded`, `timeout`), or `cancelled` when it never answered before the deadline.",
+};
+const NODE_PROBES: MetricDef = MetricDef {
+    name: "relayer_http_kms_probes_total",
+    kind: Kind::Counter,
+    labels: &["kms_node", "outcome"],
+    help: "One probe of an excluded KMS node that ended: `succeeded` (it answered, the node is in use again), `failed` (unhealthy, excluded for another window), `cancelled` (nothing known, probed again by the next request).",
+};
+const FLOOR_HITS: MetricDef = MetricDef {
+    name: "relayer_http_kms_floor_hits_total",
+    kind: Kind::Counter,
+    labels: &["kms_node"],
+    help: "One unhealthy KMS node kept in use because excluding it would leave fewer than `circuit_breaker.min_nodes`: more nodes are unhealthy than the breaker may exclude, requests wait for the deadline again. Starts at 0 for every node.",
+};
+
 /// Every metric of the process.
 pub const METRICS: &[MetricDef] = &[
     REQUESTS,
@@ -300,6 +330,10 @@ pub const METRICS: &[MetricDef] = &[
     CALL_SLOT_WAIT,
     SIGNER_ERRORS,
     WAIT_AFTER_THRESHOLD,
+    NODE_EXCLUDED,
+    NODE_EXCLUSIONS,
+    NODE_PROBES,
+    FLOOR_HITS,
 ];
 
 /// Every metric of the process, registered in its own registry. Built once in `App::new`; tests build their own.
@@ -313,6 +347,10 @@ pub struct Metrics {
     call_slot_wait: HistogramVec,
     signer_errors: IntCounterVec,
     wait_after_threshold: HistogramVec,
+    node_excluded: IntGaugeVec,
+    node_exclusions: IntCounterVec,
+    node_probes: IntCounterVec,
+    floor_hits: IntCounterVec,
 }
 
 impl Metrics {
@@ -323,6 +361,11 @@ impl Metrics {
             let counter = IntCounterVec::new(Opts::new(def.name, def.help), def.labels)?;
             registry.register(Box::new(counter.clone()))?;
             Ok(counter)
+        };
+        let gauge = |def: &MetricDef| -> Result<IntGaugeVec, prometheus::Error> {
+            let gauge = IntGaugeVec::new(Opts::new(def.name, def.help), def.labels)?;
+            registry.register(Box::new(gauge.clone()))?;
+            Ok(gauge)
         };
         let histogram = |def: &MetricDef| -> Result<HistogramVec, prometheus::Error> {
             let Kind::Histogram(buckets) = def.kind else {
@@ -345,6 +388,10 @@ impl Metrics {
             call_slot_wait: histogram(&CALL_SLOT_WAIT)?,
             signer_errors: counter(&SIGNER_ERRORS)?,
             wait_after_threshold: histogram(&WAIT_AFTER_THRESHOLD)?,
+            node_excluded: gauge(&NODE_EXCLUDED)?,
+            node_exclusions: counter(&NODE_EXCLUSIONS)?,
+            node_probes: counter(&NODE_PROBES)?,
+            floor_hits: counter(&FLOOR_HITS)?,
             registry,
         };
         // A counter that only exists after its first increment hides that increment from `increase()`: the alerts
@@ -369,13 +416,15 @@ impl Metrics {
         Ok(metrics)
     }
 
-    /// Starts the `panic` error series of `kms_nodes` at 0 (see `new`); the nodes are known once the `Caller` is built.
+    /// Starts the `panic` error series and the circuit breaker's floor counter of `kms_nodes` at 0 (see `new`);
+    /// the nodes are known once the `Caller` is built.
     pub fn announce_nodes<'a>(&self, kms_nodes: impl IntoIterator<Item = &'a str>) {
         for kms_node in kms_nodes {
             for flow in FlowName::DECRYPTS {
                 self.attempt_errors
                     .with_label_values(&[kms_node, flow.as_str(), PANIC_CODE]);
             }
+            self.floor_hits.with_label_values(&[kms_node]);
         }
     }
 
@@ -430,6 +479,32 @@ impl Metrics {
             .observe(waited.as_secs_f64());
     }
 
+    /// The circuit breaker leaves `kms_node` out (`true`) or uses it (`false`).
+    pub fn node_excluded(&self, kms_node: &str, excluded: bool) {
+        self.node_excluded
+            .with_label_values(&[kms_node])
+            .set(i64::from(excluded));
+    }
+
+    /// The circuit breaker excluded `kms_node`; `code` is the node's last answer, or `cancelled`.
+    pub fn node_exclusion(&self, kms_node: &str, code: &str) {
+        self.node_exclusions
+            .with_label_values(&[kms_node, code])
+            .inc();
+    }
+
+    /// One probe of `kms_node` ended: `Succeeded` (included again), `Failed` (excluded again), `Cancelled` (ignored).
+    pub fn node_probe(&self, kms_node: &str, outcome: Outcome) {
+        self.node_probes
+            .with_label_values(&[kms_node, outcome.as_str()])
+            .inc();
+    }
+
+    /// An unhealthy `kms_node` was kept in use because of `circuit_breaker.min_nodes`.
+    pub fn floor_hit(&self, kms_node: &str) {
+        self.floor_hits.with_label_values(&[kms_node]).inc();
+    }
+
     /// The Prometheus text format of every metric.
     pub fn render(&self) -> Result<String, prometheus::Error> {
         TextEncoder::new().encode_to_string(&self.registry.gather())
@@ -479,10 +554,12 @@ pub(crate) mod tests {
                     .iter()
                     .map(|l| (l.name().to_owned(), l.value().to_owned()))
                     .collect();
-                let value = if family.get_field_type() == prometheus::proto::MetricType::HISTOGRAM {
-                    metric.get_histogram().get_sample_count()
-                } else {
-                    metric.get_counter().get_value() as u64
+                let value = match family.get_field_type() {
+                    prometheus::proto::MetricType::HISTOGRAM => {
+                        metric.get_histogram().get_sample_count()
+                    }
+                    prometheus::proto::MetricType::GAUGE => metric.get_gauge().get_value() as u64,
+                    _ => metric.get_counter().get_value() as u64,
                 };
                 out.insert((family.name().to_owned(), labels), value);
             }
@@ -532,6 +609,10 @@ pub(crate) mod tests {
         m.call_slot_wait(FlowName::UserDecrypt, Duration::ZERO);
         m.signer_error(FlowName::UserDecrypt);
         m.wait_after_threshold(FlowName::UserDecrypt, Duration::ZERO);
+        m.node_excluded("kms_00", true);
+        m.node_exclusion("kms_00", "cancelled");
+        m.node_probe("kms_00", Outcome::Succeeded);
+        m.floor_hit("kms_00");
         let mut registered: Vec<String> = m.gather().iter().map(|f| f.name().to_owned()).collect();
         let mut defined: Vec<String> = METRICS.iter().map(|d| d.name.to_owned()).collect();
         registered.sort_unstable();
@@ -577,6 +658,14 @@ pub(crate) mod tests {
         ];
         assert_eq!(
             value(&m, "relayer_http_kms_attempt_errors_total", &panic),
+            Some(0)
+        );
+        assert_eq!(
+            value(
+                &m,
+                "relayer_http_kms_floor_hits_total",
+                &[("kms_node", "kms_00")]
+            ),
             Some(0)
         );
     }

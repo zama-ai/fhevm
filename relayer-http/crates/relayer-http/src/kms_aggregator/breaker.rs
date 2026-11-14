@@ -21,7 +21,7 @@
 //! call (`CallResult::last_code`): no answer at all, or a last answer saying the node cannot serve, is unhealthy;
 //! any other last answer means the node is up and the retries were legitimate.
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use kms_connector_api::ErrorCode;
@@ -30,10 +30,17 @@ use tracing::{debug, info, warn};
 
 use super::call::{CallError, CallResult};
 use super::client::AttemptError;
+use crate::metrics::{Metrics, Outcome};
 
 /// The `last_code` log field: the node's last answer, `none` when it never answered.
 fn last_code_str(last_code: Option<ErrorCode>) -> &'static str {
     last_code.map_or("none", ErrorCode::as_str)
+}
+
+/// The `code` label of an exclusion: the node's last answer, `cancelled` when it never answered (a value the
+/// label already has for an attempt cut in flight).
+fn last_code_label(last_code: Option<ErrorCode>) -> &'static str {
+    last_code.map_or("cancelled", ErrorCode::as_str)
 }
 
 fn ms(duration: Duration) -> u64 {
@@ -143,13 +150,24 @@ pub struct CircuitBreakers {
     nodes: usize,
     /// `None` when disabled.
     state: Option<Mutex<State>>,
+    metrics: Arc<Metrics>,
 }
 
 impl CircuitBreakers {
-    /// `names` in endpoint order; `enabled: false` builds the no-op set.
-    pub fn new(enabled: bool, names: Vec<String>, min_nodes: usize, exclude_for: Duration) -> Self {
+    /// `names` in endpoint order; `enabled: false` builds the no-op set, which records no metric.
+    pub fn new(
+        enabled: bool,
+        names: Vec<String>,
+        min_nodes: usize,
+        exclude_for: Duration,
+        metrics: Arc<Metrics>,
+    ) -> Self {
         let nodes = names.len();
         let state = enabled.then(|| {
+            // Every node starts in use (the floor counter starts at 0 in `Metrics::announce_nodes`).
+            for name in &names {
+                metrics.node_excluded(name, false);
+            }
             Mutex::new(State {
                 nodes: names
                     .into_iter()
@@ -160,7 +178,11 @@ impl CircuitBreakers {
                 generation: 0,
             })
         });
-        Self { nodes, state }
+        Self {
+            nodes,
+            state,
+            metrics,
+        }
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -223,7 +245,6 @@ impl CircuitBreakers {
         if *switch != NodeState::Closed {
             return;
         }
-        let last_code = last_code_str(*last_code);
         // The floor: opening this node must leave at least `min_nodes` in use.
         if closed > min_nodes {
             // `exclude_for` is validated to be at most an hour: this cannot overflow.
@@ -231,17 +252,21 @@ impl CircuitBreakers {
                 since: now,
                 until: now + exclude_for,
             };
+            self.metrics.node_excluded(node, true);
+            self.metrics
+                .node_exclusion(node, last_code_label(*last_code));
             warn!(
                 kms_node = node,
-                last_code,
+                last_code = last_code_str(*last_code),
                 excluded_for_ms = ms(exclude_for),
                 closed_nodes = closed - 1,
                 "node excluded"
             );
         } else {
+            self.metrics.floor_hit(node);
             warn!(
                 kms_node = node,
-                last_code,
+                last_code = last_code_str(*last_code),
                 min_nodes,
                 closed_nodes = closed,
                 "node kept: floor reached"
@@ -265,6 +290,8 @@ impl CircuitBreakers {
         };
         *switch = match verdict {
             Verdict::Answered => {
+                self.metrics.node_excluded(node, false);
+                self.metrics.node_probe(node, Outcome::Succeeded);
                 info!(
                     kms_node = node,
                     excluded_ms = ms(now - since),
@@ -274,6 +301,9 @@ impl CircuitBreakers {
                 NodeState::Closed
             }
             Verdict::Unhealthy { last_code } => {
+                self.metrics.node_probe(node, Outcome::Failed);
+                self.metrics
+                    .node_exclusion(node, last_code_label(*last_code));
                 warn!(
                     kms_node = node,
                     last_code = last_code_str(*last_code),
@@ -287,7 +317,10 @@ impl CircuitBreakers {
                 }
             }
             // Nothing is known: the next aggregation probes again.
-            Verdict::Ignored => NodeState::Open { since, until: now },
+            Verdict::Ignored => {
+                self.metrics.node_probe(node, Outcome::Cancelled);
+                NodeState::Open { since, until: now }
+            }
         };
     }
 
@@ -298,8 +331,9 @@ impl CircuitBreakers {
             return 0;
         };
         let out = state.nodes.len() - state.closed_count();
-        for (_, switch) in &mut state.nodes {
+        for (name, switch) in &mut state.nodes {
             *switch = NodeState::Closed;
+            self.metrics.node_excluded(name, false);
         }
         state.generation += 1;
         info!(closed = out, "breakers reset");
@@ -321,6 +355,7 @@ impl CircuitBreakers {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::time::Duration;
 
     use kms_connector_api::{ErrorCode, ErrorResponse};
@@ -329,7 +364,8 @@ mod tests {
     use super::*;
     use crate::kms_aggregator::call::{CallError, CallResult, Retries};
     use crate::kms_aggregator::client::AttemptError;
-    use crate::metrics::connector_codes;
+    use crate::metrics::tests::value;
+    use crate::metrics::{Metrics, connector_codes};
 
     const N: usize = 13;
     const MIN_NODES: usize = 11;
@@ -340,7 +376,88 @@ mod tests {
     }
 
     fn breakers() -> CircuitBreakers {
-        CircuitBreakers::new(true, names(), MIN_NODES, WINDOW)
+        CircuitBreakers::new(true, names(), MIN_NODES, WINDOW, metrics())
+    }
+
+    fn metrics() -> Arc<Metrics> {
+        Arc::new(Metrics::new().unwrap())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn breaker_metrics_move_with_the_state() {
+        let metrics = metrics();
+        metrics.announce_nodes(names().iter().map(String::as_str));
+        let breakers = CircuitBreakers::new(true, names(), MIN_NODES, WINDOW, metrics.clone());
+        let gauge = |node: &str| {
+            value(
+                &metrics,
+                "relayer_http_kms_node_excluded",
+                &[("kms_node", node)],
+            )
+        };
+        let exclusions = |node: &str, code: &str| {
+            value(
+                &metrics,
+                "relayer_http_kms_exclusions_total",
+                &[("kms_node", node), ("code", code)],
+            )
+        };
+        let probes = |node: &str, outcome: &str| {
+            value(
+                &metrics,
+                "relayer_http_kms_probes_total",
+                &[("kms_node", node), ("outcome", outcome)],
+            )
+        };
+        let floor_hits = |node: &str| {
+            value(
+                &metrics,
+                "relayer_http_kms_floor_hits_total",
+                &[("kms_node", node)],
+            )
+        };
+        // Every node starts in use, with its alerting counter at 0.
+        assert_eq!(
+            (gauge("node-12"), floor_hits("node-12")),
+            (Some(0), Some(0))
+        );
+        let generation = breakers.select(Instant::now()).generation;
+        breakers.on_call_outcome("node-12", &unhealthy(), Instant::now(), generation);
+        assert_eq!(gauge("node-12"), Some(1));
+        assert_eq!(exclusions("node-12", "cancelled"), Some(1));
+        let overloaded = Verdict::Unhealthy {
+            last_code: Some(ErrorCode::Overloaded),
+        };
+        breakers.on_call_outcome("node-11", &overloaded, Instant::now(), generation);
+        assert_eq!(exclusions("node-11", "overloaded"), Some(1));
+        // The floor: counted, the node stays in use.
+        breakers.on_call_outcome("node-10", &unhealthy(), Instant::now(), generation);
+        assert_eq!(
+            (gauge("node-10"), floor_hits("node-10")),
+            (Some(0), Some(1))
+        );
+        advance(WINDOW).await;
+        let generation = breakers.select(Instant::now()).generation;
+        breakers.on_probe_outcome("node-12", &Verdict::Answered, Instant::now(), generation);
+        assert_eq!(
+            (gauge("node-12"), probes("node-12", "succeeded")),
+            (Some(0), Some(1))
+        );
+        breakers.on_probe_outcome("node-11", &unhealthy(), Instant::now(), generation);
+        assert_eq!(
+            (gauge("node-11"), probes("node-11", "failed")),
+            (Some(1), Some(1))
+        );
+        assert_eq!(exclusions("node-11", "cancelled"), Some(1));
+        advance(WINDOW).await;
+        let generation = breakers.select(Instant::now()).generation;
+        breakers.on_probe_outcome("node-11", &Verdict::Ignored, Instant::now(), generation);
+        assert_eq!(
+            (gauge("node-11"), probes("node-11", "cancelled")),
+            (Some(1), Some(1))
+        );
+        breakers.reset();
+        assert_eq!(gauge("node-11"), Some(0));
     }
 
     fn unhealthy() -> Verdict {
@@ -476,7 +593,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn min_nodes_equal_to_n_never_excludes() {
-        let breakers = CircuitBreakers::new(true, names(), N, WINDOW);
+        let breakers = CircuitBreakers::new(true, names(), N, WINDOW, metrics());
         let generation = breakers.select(Instant::now()).generation;
         breakers.on_call_outcome("node-0", &unhealthy(), Instant::now(), generation);
         assert_eq!(included(&breakers).len(), 13);
@@ -497,7 +614,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn disabled_breakers_change_nothing() {
-        let breakers = CircuitBreakers::new(false, names(), MIN_NODES, WINDOW);
+        let breakers = CircuitBreakers::new(false, names(), MIN_NODES, WINDOW, metrics());
         assert!(!breakers.is_enabled());
         let generation = breakers.select(Instant::now()).generation;
         breakers.on_call_outcome("node-12", &unhealthy(), Instant::now(), generation);
