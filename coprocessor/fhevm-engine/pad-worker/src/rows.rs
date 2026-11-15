@@ -9,6 +9,7 @@ use std::time::Duration;
 pub const RETRY_BACKOFF_STEP_SECS: i32 = 5;
 pub const RETRY_BACKOFF_MAX_SECS: i32 = 60;
 /// Rows changed by each GC statement, so that each transaction stays short.
+/// The GC statements skip locked rows, so two GCs never wait for each other.
 pub const GC_BATCH: i64 = 1000;
 
 /// A claimed row.
@@ -146,15 +147,17 @@ pub async fn retry(
     Ok(())
 }
 
-/// Releases the claims of evaluations that a stop aborted. Returns the rows released.
+/// Releases the claims that a stop aborted, except locked rows. Returns the rows released.
 pub async fn release(pool: &PgPool, prf_instance: u16, claims: &[Claim]) -> sqlx::Result<u64> {
     let labels: Vec<Vec<u8>> = claims.iter().map(|c| c.label.to_vec()).collect();
     let lengths: Vec<i32> = claims.iter().map(|c| i32::from(c.pad_length)).collect();
     let result = sqlx::query!(
-        "UPDATE pads SET claimed_at = NULL
-          WHERE prf_instance = $1
-            AND (label, pad_length) IN (SELECT * FROM UNNEST($2::BYTEA[], $3::INTEGER[]))
-            AND signature IS NULL AND NOT is_error",
+        "UPDATE pads SET claimed_at = NULL WHERE ctid IN (
+             SELECT ctid FROM pads
+              WHERE prf_instance = $1
+                AND (label, pad_length) IN (SELECT * FROM UNNEST($2::BYTEA[], $3::INTEGER[]))
+                AND signature IS NULL AND NOT is_error
+                FOR UPDATE SKIP LOCKED)",
         i32::from(prf_instance),
         &labels,
         &lengths,
@@ -252,7 +255,8 @@ pub async fn delete_old_outputs(pool: &PgPool, max_age: Duration) -> sqlx::Resul
                  SELECT ctid FROM pads
                   WHERE (s3_verified_at IS NOT NULL OR is_error)
                     AND created_at <= NOW() - make_interval(secs => $1)
-                  LIMIT $2)",
+                  LIMIT $2
+                    FOR UPDATE SKIP LOCKED)",
             max_age.as_secs_f64(),
             GC_BATCH,
         )
@@ -274,7 +278,8 @@ pub async fn delete_expired_pending(
                   WHERE signature IS NULL AND NOT is_error
                     AND created_at <= NOW() - make_interval(secs => $1)
                     AND (claimed_at IS NULL OR claimed_at <= NOW() - make_interval(secs => $2))
-                  LIMIT $3)",
+                  LIMIT $3
+                    FOR UPDATE SKIP LOCKED)",
             pending_max_age.as_secs_f64(),
             claim_timeout.as_secs_f64(),
             GC_BATCH,
@@ -291,7 +296,8 @@ pub async fn clear_old_ct64(pool: &PgPool, max_age: Duration) -> sqlx::Result<u6
             "UPDATE pads SET ciphertext64 = NULL WHERE ctid IN (
                  SELECT ctid FROM pads
                   WHERE ciphertext64 IS NOT NULL AND created_at <= NOW() - make_interval(secs => $1)
-                  LIMIT $2)",
+                  LIMIT $2
+                    FOR UPDATE SKIP LOCKED)",
             max_age.as_secs_f64(),
             GC_BATCH,
         )
