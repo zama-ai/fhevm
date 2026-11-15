@@ -1,5 +1,5 @@
 //! One node call: sign → semaphore permit → POST → decode → retry per the class of the failure, cancellable and
-//! bounded by the deadline.
+//! bounded by the deadline. A probe of an excluded node (`breaker.rs`) is the same call with one attempt.
 
 use std::sync::Arc;
 
@@ -62,10 +62,12 @@ impl Retries {
     }
 }
 
-/// Why a call stops retrying, in decision order: a rejected credential and a non-retryable error are final
-/// whatever the budget; then the class's budget; then a wait that would end after the deadline.
+/// Why a call stops retrying, in decision order: a probe makes one attempt whatever the failure; a rejected
+/// credential and a non-retryable error are final whatever the budget; then the class's budget; then a wait that
+/// would end after the deadline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GiveUp {
+    Probe,
     Auth,
     NonRetryable,
     BudgetExhausted,
@@ -73,8 +75,10 @@ enum GiveUp {
 }
 
 impl GiveUp {
-    fn decide(failure: &AttemptError, budget_left: bool, fits: bool) -> Option<Self> {
-        if failure.is_auth() {
+    fn decide(failure: &AttemptError, probe: bool, budget_left: bool, fits: bool) -> Option<Self> {
+        if probe {
+            Some(Self::Probe)
+        } else if failure.is_auth() {
             Some(Self::Auth)
         } else if !failure.is_retryable() {
             Some(Self::NonRetryable)
@@ -89,6 +93,7 @@ impl GiveUp {
 
     fn as_str(self) -> &'static str {
         match self {
+            Self::Probe => "probe",
             Self::Auth => "auth",
             Self::NonRetryable => "non_retryable",
             Self::BudgetExhausted => "budget_exhausted",
@@ -113,8 +118,9 @@ enum Stage {
 
 /// How far a call got: the attempts that reached the node pool (signing failures excluded), the retries of each
 /// class it used (signing failures included: the policy counts them), the node's last answer, and where the
-/// current attempt stands.
+/// current attempt stands. `probe`: the call is a probe of an excluded node, one attempt and no retry (`breaker.rs`).
 struct Progress {
+    probe: bool,
     attempts: u32,
     retries: Retries,
     last_code: Option<ErrorCode>,
@@ -243,9 +249,11 @@ impl Caller {
         self.breakers.reset()
     }
 
-    /// Sends `body` to the endpoint at `index` beside an aggregation, as a probe of an open circuit breaker:
-    /// detached from the aggregation, cut at `deadline`, its verdict goes to the breakers and its answer is
-    /// dropped. The aggregation never waits for it; nothing else cancels it.
+    /// Sends `body` to the endpoint at `index` beside an aggregation, as a probe of an open circuit breaker: one
+    /// attempt and no retry (a retry would only delay the verdict: an unhealthy answer keeps the node out for
+    /// another window, any other answer puts it back and the next request's call retries as usual), detached from
+    /// the aggregation, cut at `deadline`, its verdict goes to the breakers and its answer is dropped. The
+    /// aggregation never waits for it; nothing else cancels it.
     pub fn probe<R: DeserializeOwned + Send + 'static>(
         self: &Arc<Self>,
         flow: FlowName,
@@ -269,7 +277,7 @@ impl Caller {
                         (caller.clone(), endpoint.clone(), cancel.clone());
                     async move {
                         caller
-                            .call::<R>(flow, &endpoint, route, body, deadline, cancel)
+                            .call_with::<R>(true, flow, &endpoint, route, body, deadline, cancel)
                             .await
                     }
                     .in_current_span()
@@ -331,12 +339,29 @@ impl Caller {
         deadline: Instant,
         cancel: CancellationToken,
     ) -> CallResult<R> {
+        self.call_with(false, flow, endpoint, route, body, deadline, cancel)
+            .await
+    }
+
+    /// `call`, as a probe (one attempt) when `probe` is true.
+    #[allow(clippy::too_many_arguments)]
+    async fn call_with<R: DeserializeOwned>(
+        &self,
+        probe: bool,
+        flow: FlowName,
+        endpoint: &Endpoint,
+        route: &str,
+        body: Bytes,
+        deadline: Instant,
+        cancel: CancellationToken,
+    ) -> CallResult<R> {
         let started = Instant::now();
         let mut record = CallRecord {
             metrics: &self.metrics,
             kms_node: &endpoint.name,
             flow,
             progress: Progress {
+                probe,
                 attempts: 0,
                 retries: Retries::default(),
                 last_code: None,
@@ -443,7 +468,7 @@ impl Caller {
                 .delay_for(class, retries.of(class).saturating_add(1), retry_after);
             let budget_left = retries.of(class) < self.cfg.max_retries(class);
             let fits = delay < deadline.saturating_duration_since(Instant::now());
-            let give_up = GiveUp::decide(&failure, budget_left, fits);
+            let give_up = GiveUp::decide(&failure, progress.probe, budget_left, fits);
             attempt_failed(
                 &endpoint.name,
                 tries,
@@ -496,7 +521,7 @@ struct Decision {
 }
 
 /// One failed attempt: one WARN per retry or skipped retry (`OBSERVABILITY.md`), with the decision the policy
-/// took: the retry class, the wait before the next attempt (`retry_in_ms`, `null` when the call gives up), the
+/// took: the retry class, the wait before the next attempt (`retry_in_ms`, absent when the call gives up), the
 /// node's parsed `Retry-After` when it sent one, and the give-up reason. The node task runs in the `aggregation`
 /// span, so the line also carries the request's id. A signing failure is the relayer's own and is reported as
 /// such: nothing reached the node, so there is no code and no header.
@@ -769,6 +794,18 @@ pub(crate) mod tests {
             assert_eq!(last["fields"]["give_up_reason"], reason, "{last}");
             assert!(last["fields"]["retry_in_ms"].is_null(), "{last}");
         }
+    }
+
+    #[test]
+    fn a_probe_gives_up_after_one_attempt() {
+        // Budget left and a wait that fits: a request's call retries, a probe never does.
+        let retryable = AttemptError::Transport("refused".to_owned());
+        assert_eq!(GiveUp::decide(&retryable, false, true, true), None);
+        assert_eq!(
+            GiveUp::decide(&retryable, true, true, true),
+            Some(GiveUp::Probe)
+        );
+        assert_eq!(GiveUp::Probe.as_str(), "probe");
     }
 
     #[tokio::test(start_paused = true)]

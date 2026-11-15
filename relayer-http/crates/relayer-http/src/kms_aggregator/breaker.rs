@@ -1,5 +1,5 @@
 //! Per-node circuit breaker: which KMS nodes an aggregation calls, judged from the outcome of their last call.
-//! Every node has a switch (closed: used; open: skipped for a window, then probed by the next request, which
+//! Every node has a switch (closed: used; open: skipped for a window, then probed once by the next request, which
 //! never waits for the probe) and a floor keeps at least `min_nodes` in use. The algorithm in plain words, the
 //! verdict table and the diagrams: `docs.md`, section 7.
 

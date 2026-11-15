@@ -43,9 +43,10 @@ run a flow once, stop one party's proxy (`docker ps | grep connector-2-proxy`, t
 flow again: the first run after the stop is slow (the retries against the refused connection, about 3 s, or the
 5 s deadline when the connection hangs) and logs `node excluded` for `kms_2`; the next ones answer at the healthy
 latency with 3 shares and `aggregation started` names the node under `excluded_nodes`.
-Start the proxy again: the first run more than 30 s after the exclusion probes it (`node probed`, debug), the next
-one includes it again (`node included`, INFO, and `relayer_http_kms_node_excluded{kms_node="kms_2"}` back to 0 on the
-metrics port, host 3092).
+Start the proxy again: the first run more than 30 s after the exclusion probes it (`node probed`, debug; one attempt,
+no retry: while the proxy is still down that is one `attempt failed` with `give_up_reason` `probe`, then
+`probe failed: node excluded`), the next one includes it again (`node included`, INFO, and
+`relayer_http_kms_node_excluded{kms_node="kms_2"}` back to 0 on the metrics port, host 3092).
 
 ### In the preview env
 

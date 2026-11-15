@@ -1169,6 +1169,45 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn a_probe_makes_one_attempt_and_an_unhealthy_answer_reopens() {
+        let (mock, aggregator) = breaking(&[(12, OK), (1, Reply::Error(ErrorCode::Overloaded))]);
+        let metrics = aggregator.caller.metrics().clone();
+        // The call spends the retry budget (six attempts) and trips the node.
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(6 * 300 + 2800)));
+        assert_eq!(mock.attempts(12), 6);
+        sleep(secs(31)).await;
+        // The probe is one attempt: its verdict is in right after the run, not 2.8 s of waits later.
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
+        sleep(ms(1)).await;
+        assert_eq!(mock.attempts(12), 7);
+        assert_eq!(
+            value(
+                &metrics,
+                "relayer_http_kms_probes_total",
+                &[("kms_node", "node-12"), ("outcome", "failed")]
+            ),
+            Some(1)
+        );
+        assert_eq!(excluded(&aggregator), ["node-12"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_probe_answering_a_request_error_closes_the_node() {
+        let (mock, aggregator) = breaking(&[(12, OK), (1, HANG)]);
+        assert_eq!(run_once(&aggregator).await, (Ok(12), secs(5)));
+        // The node is back but refuses the request: it is up, so one attempt puts it back in use.
+        mock.set_script(12, vec![NOT_FOUND]);
+        sleep(secs(31)).await;
+        assert_eq!(run_once(&aggregator).await, (Ok(12), ms(300)));
+        sleep(secs(1)).await;
+        assert!(excluded(&aggregator).is_empty());
+        assert_eq!(mock.attempts(12), 2, "one attempt, no retry");
+        // The next request calls it, and that call retries as usual.
+        assert_eq!(run_once(&aggregator).await.0, Ok(12));
+        assert_eq!(mock.attempts(12), 8);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn breaker_lines_carry_the_request_id_and_their_fields() {
         let expected = [
             "node excluded",
@@ -1213,6 +1252,32 @@ mod tests {
         assert_eq!(started[1]["fields"]["nodes"], 12);
         assert_eq!(started[1]["fields"]["excluded_nodes"], "[\"node-12\"]");
         assert_eq!(started[1]["fields"]["probed_nodes"], "[\"node-12\"]");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_probe_logs_one_attempt_failed_line_with_its_reason() {
+        let lines = capture_runs(&["attempt failed"], || async {
+            let (_, aggregator) = breaking(&[(12, OK), (1, Reply::Error(ErrorCode::Overloaded))]);
+            let _ = run_once(&aggregator).await;
+            sleep(secs(31)).await;
+            let _ = run_once(&aggregator).await;
+            sleep(secs(1)).await;
+        })
+        .await;
+        // Six attempts of the call, then the probe's one.
+        let failed = lines_of(&lines, "attempt failed");
+        assert_eq!(failed.len(), 7, "{failed:?}");
+        let probe = &failed[6];
+        assert_eq!(probe["level"], "WARN");
+        assert_eq!(probe["span"]["request_id"], "req-breaker");
+        let fields = &probe["fields"];
+        assert_eq!(fields["kms_node"], "node-12");
+        assert_eq!(fields["attempt"], 1);
+        assert_eq!(fields["code"], "overloaded");
+        assert_eq!(fields["give_up_reason"], "probe");
+        assert!(fields["retry_in_ms"].is_null(), "{probe}");
+        // A request's attempt keeps its own reason.
+        assert_eq!(failed[5]["fields"]["give_up_reason"], "budget_exhausted");
     }
 
     #[tokio::test(start_paused = true)]

@@ -139,7 +139,8 @@ capped) so that no arithmetic can overflow later. A panic inside a spawned task 
 
 **Fail fast.** Never wait for something that cannot change the outcome: when `counted + pending < threshold` the
 remaining calls are cancelled at once. One deadline per request, no queue, no ETA; the client retries. A probe of an
-excluded KMS node never delays a request: it runs beside the aggregation and only its verdict is kept.
+excluded KMS node never delays a request: it runs beside the aggregation, makes one attempt, and only its verdict is
+kept.
 
 **HPA compatible.** No per-request state outside the request's own future: no shared map, no registry, no sticky
 session. Every replica is identical; the call semaphore is per pod. Per-node health state in memory (the circuit

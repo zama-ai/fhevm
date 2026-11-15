@@ -203,7 +203,7 @@ the ACL nor the ciphertext before the fan-out (section 14), so a decryption that
 every node. A longer list buys coverage of the deadline at that price; `relayer_http_kms_attempts` shows what calls
 actually use.
 
-**Observing it.** Each failed attempt is one WARN line with its decision: `retry_class`, `retry_in_ms` (null when
+**Observing it.** Each failed attempt is one WARN line with its decision: `retry_class`, `retry_in_ms` (absent when
 the call gives up), `retry_after_ms`, `give_up_reason`; `call failed` carries `transient_retries` and
 `rate_limit_retries`, and `aggregation started` (debug) the policy itself (section 12). The scenarios
 `transient_waits_are_the_list`, `rate_limit_waits_one_window`, `rate_limit_honors_retry_after`,
@@ -221,8 +221,9 @@ Every KMS node has a switch. Closed means the node is used, open means it is ski
    `ciphertext_not_found` or `acl_denied`, even when the deadline cut the last retry.
 3. An unhealthy node is opened for `exclude_for` (30 s), unless that would leave fewer than `min_nodes` closed nodes.
    Then it stays in use and the requests stay slow.
-4. After the window, the next request is also sent to the opened node, as a probe. The request does not wait for the
-   probe. If the probe answers, the node is closed again. If not, it is opened for another window.
+4. After the window, the next request is also sent to the opened node, as a probe: one attempt, no retry. The request
+   does not wait for the probe. If the probe answers, the node is closed again. If not, it is opened for another
+   window. A node that refuses or fails is judged at once, a hung one at the deadline.
 5. `Caller::reset_circuit_breakers()` closes every node.
 
 Seen from outside: only the request that detects an outage is slow, once per pod per outage. Every request after
@@ -238,7 +239,7 @@ kept:
 flowchart TD
   R[request arrives] --> S["1. select: closed nodes A, B, D … are called;<br/>C, open and past its window, is probed"]
   S --> F[fan-out to the closed nodes]
-  S --> P[probe to C, detached, same body, same deadline]
+  S --> P[probe to C, detached, same body, same deadline, one attempt]
   F --> O["2. each call ends: judged once<br/>(unhealthy / answered / ignored)"]
   O --> X{"3. unhealthy and<br/>closed − 1 ≥ min_nodes?"}
   X -- yes --> E[node opened for exclude_for]
@@ -250,7 +251,8 @@ flowchart TD
   V -- ignored --> C3[C open, probed again by the next request]
 ```
 
-**Verdict** (`Verdict::of`, one pure function on a finished call, after the retries of section 6 are spent):
+**Verdict** (`Verdict::of`, one pure function on a finished call, after the retries of section 6 are spent, or on a
+probe's one attempt):
 
 | verdict | final outcome of the call | reading |
 |---|---|---|
@@ -290,11 +292,13 @@ stateDiagram-v2
   refreshed; a committee change (node count or thresholds) rebuilds the `Caller`, since the floor's bounds depend on
   both.
 - The probe (`Caller::probe`): the same body sent by a detached task with the aggregation's deadline and its own
-  cancellation token; cut at that deadline, so a hung node ends it `Cancelled` with no answer, judged by the same
-  function. Its call runs as a child task, so a panic inside it is a `JoinError` and the verdict `Ignored`, never a
-  node left probing. Observe-only: no channel back to the aggregation, nothing to join; fail fast, the end of the
-  aggregation and a client that hangs up do not cancel it. Its attempts are recorded in the node metrics under the
-  request's flow.
+  cancellation token, one attempt and no retry (`give_up_reason` `probe` on its `attempt failed` line): a retry
+  would only delay the verdict, since an unhealthy answer keeps the node out for another window, any other answer
+  puts it back, and the next request's call retries as usual. Cut at the deadline, so a hung node ends it
+  `Cancelled` with no answer, judged by the same function. Its call runs as a child task, so a panic inside it is a
+  `JoinError` and the verdict `Ignored`, never a node left probing. Observe-only: no channel back to the
+  aggregation, nothing to join; fail fast, the end of the aggregation and a client that hangs up do not cancel it.
+  Its attempt is recorded in the node metrics under the request's flow.
 
 **State.** One mutex per pod around `State`: the switches, the two settings and a generation counter.
 
@@ -472,13 +476,13 @@ request id; lines about one node carry its configured name as `kms_node`. Events
 
 | event | level | fields |
 |---|---|---|
-| `attempt failed` | warn | kms_node, attempt, elapsed_ms (this attempt), error, code, retry_class (`transient` or `rate_limit`), retry_in_ms (`null` when the call gives up), retry_after_ms (the node's parsed `Retry-After`, when sent), give_up_reason (`auth`, `non_retryable`, `budget_exhausted`, `deadline`, else `null`): one line per failed attempt, retried or final, so also the skipped retries |
-| `signing failed` | warn | kms_node, attempt, elapsed_ms, error, retry_class, retry_in_ms, give_up_reason: signing the call failed, nothing reached the node (the relayer's key, not the node, is at fault); the retry is in the transient budget |
+| `attempt failed` | warn | kms_node, attempt, elapsed_ms (this attempt), error, code, retry_class (`transient` or `rate_limit`), retry_in_ms (absent when the call gives up), retry_after_ms (the node's parsed `Retry-After`, when sent), give_up_reason (`probe`: a probe's one attempt, section 7; `auth`, `non_retryable`, `budget_exhausted`, `deadline`; absent when the call retries): one line per failed attempt, retried or final, so also the skipped retries. An absent field is left out of the JSON line, never written as `null` |
+| `signing failed` | warn | kms_node, attempt, elapsed_ms, error, retry_class, retry_in_ms, give_up_reason: signing the call failed, nothing reached the node (the relayer's key, not the node, is at fault); the retry is in the transient budget; for a probe (`give_up_reason` `probe`) nothing is retried and the verdict is `Ignored`, so the next request probes again |
 | `call failed` | warn | kms_node, attempts, transient_retries, rate_limit_retries, elapsed_ms, error: the node's outcome after its last attempt and how much of each retry budget it used |
 | `call cut` | warn | kms_node, attempts, elapsed_ms, cause: `deadline` (too slow or hung), or `fail_fast`; last_code: the node's last answer during the call, `cancelled` when it never answered (section 7; the same value as the exclusion metric's `code`); a client hangup is reported by the endpoint's `Guard` (cause `client_closed`) |
 | `response rejected` | warn | kms_node, elapsed_ms, error: a check refused a 200 response |
 | `node task panicked` | error | kms_node, location: a panic inside a node task (no panic text), the panic's only ERROR line; the node is counted as failed, and the fail-fast check still runs |
-| `node excluded`, `probe failed: node excluded` | warn | kms_node, last_code, excluded_for_ms, closed_nodes: the circuit breaker opened the node (section 7). After a call, the `call cut` or `call failed` line before it, same request id and node, says why; after a probe, its own `attempt failed` lines do (a probe's end is not a `call cut` line: it never goes through the collection loop) |
+| `node excluded`, `probe failed: node excluded` | warn | kms_node, last_code, excluded_for_ms, closed_nodes: the circuit breaker opened the node (section 7). After a call, the `call cut` or `call failed` line before it, same request id and node, says why; after a probe, its one `attempt failed` line does, `give_up_reason` `probe` (a probe's end is not a `call cut` line: it never goes through the collection loop) |
 | `node kept: floor reached` | warn | kms_node, last_code, min_nodes, closed_nodes: unhealthy, but excluding it would leave fewer than `min_nodes` in use |
 | `node included` | info | kms_node, excluded_ms, closed_nodes: a probe answered, the node is in use again |
 | `breakers reset` (outside any span) | info | closed: how many nodes were out; `Caller::reset_circuit_breakers()` was called |
@@ -500,7 +504,7 @@ startup and after a reset; `sum()` of it is the number of nodes out on a pod), `
 (one per exclusion, after a call or a failed probe; `code` is the node's last answer, `cancelled` when it never
 answered), `relayer_http_kms_probes_total{kms_node, outcome}` (`succeeded`, `failed`, `cancelled`) and
 `relayer_http_kms_floor_hits_total{kms_node}` (an unhealthy node kept by the floor; starts at 0 for every node so
-that an alert sees the first hit). A probe's attempts are recorded like a request's, under the request's flow.
+that an alert sees the first hit). A probe's one attempt is recorded like a request's, under the request's flow.
 
 ## 13. Testing
 
@@ -519,8 +523,9 @@ that an alert sees the first hit). A probe's attempts are recorded like a reques
   the verdict over every connector code; sequential runs over one aggregator in `aggregator.rs` (the mock's
   per-node scripts and latency can be replaced between runs) reproduce the example of the design: the request that
   detects a hung node pays the deadline once, the next ones run at the healthy latency with one share fewer, the
-  probing one included; three hung nodes keep the floor; a probe survives fail fast and a panic; `reset` re-includes
-  for the next run only. The YAML format is not extended: a scenario is one run.
+  probing one included; three hung nodes keep the floor; a probe makes one attempt (an unhealthy answer keeps the
+  node out, a request error puts it back); a probe survives fail fast and a panic; `reset` re-includes for the next
+  run only. The YAML format is not extended: a scenario is one run.
 - Scenarios in `scenarios/*.yaml`, run by `cargo nextest run -p relayer-http yaml_scenarios` under paused tokio time (a 5 s
   scenario runs in microseconds and `elapsed` is exact). Adding a scenario is adding a file:
 
