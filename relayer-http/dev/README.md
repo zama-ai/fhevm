@@ -35,9 +35,10 @@ By default the stack pulls the relayer-http image resolved for the target (`RELA
 
 Use it when the change must be seen through the stack as deployed: the config template (`test-suite/fhevm/templates/config/relayer-http.yaml`), the TLS path to the proxies, the relayer proxy route. For code iteration with logs in the terminal, `make run` below is faster (no image build).
 
-**Trying the circuit breaker** (`kms_aggregator/docs.md`, section 7; off by default). In the template set
-`circuit_breaker: { enabled: true, exclude_for: 30s, min_nodes: 3 }`: with the 4-party committee the thresholds are
-2 and 3, so `min_nodes` must be within `3..=4`, and 3 lets one node out. Then `./fhevm-cli up --override relayer-http`,
+**Trying the circuit breaker** (`kms_aggregator/docs.md`, section 7). It is on in the stack: the template enables
+it and the renderer sets `min_nodes` to the committee size minus one (3 with the 4-party committee, whose
+thresholds are 2 and 3, so one node may be out); `enabled: false` in the template turns it off. Run
+`./fhevm-cli up --override relayer-http`,
 run a flow once, stop one party's proxy (`docker ps | grep connector-2-proxy`, then `docker stop` it), and run the
 flow again: the first run after the stop is slow (the retries against the refused connection, about 3 s, or the
 5 s deadline when the connection hangs) and logs `node excluded` for `kms_2`; the next ones answer at the healthy

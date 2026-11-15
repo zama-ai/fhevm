@@ -200,10 +200,10 @@ describe("relayer-http config", () => {
     });
   });
 
-  test("passes the circuit breaker section through, off, with the production values", () => {
-    // Off, so relayer-http does not validate min_nodes against the 4-party committee; on, it would reject it.
+  test("renders the circuit breaker on, with one node allowed out of the committee", () => {
+    // 4 endpoints and thresholds 2 and 3: the floor must be within 3..=4, and 3 lets one node out.
     const config = YAML.parse(renderRelayerHttpConfig({ discovery: undefined }, template, plan, envs));
-    expect(config.kms_aggregator.circuit_breaker).toEqual({ enabled: false, exclude_for: "30s", min_nodes: 11 });
+    expect(config.kms_aggregator.circuit_breaker).toEqual({ enabled: true, exclude_for: "30s", min_nodes: 3 });
   });
 
   test("keeps the placeholder ProtocolConfig before discovery", () => {

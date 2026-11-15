@@ -135,27 +135,27 @@ pub const MIN_EXCLUDE_FOR: Duration = Duration::from_secs(1);
 /// Longest exclusion window: an hour without a probe is an operator's decision, not a breaker's.
 pub const MAX_EXCLUDE_FOR: Duration = Duration::from_secs(3600);
 
-/// The per-node circuit breaker (`docs.md`, Circuit breaker). Off by default; validated only when enabled, so a
-/// file can carry the production values for a smaller committee.
+/// The per-node circuit breaker (`docs.md`, Circuit breaker). On by default; validated only when enabled, so a
+/// disabled section is never a startup failure.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CircuitBreakerConfig {
-    /// Feature flag: off is today's behaviour, nothing is tracked.
+    /// Feature flag: off is the previous behaviour, nothing is tracked.
     pub enabled: bool,
     /// How long an unhealthy node is left out before the next request probes it. Fixed, no growth.
     #[serde(with = "humantime_serde")]
     pub exclude_for: Duration,
-    /// Never exclude a node when fewer than this many would remain in use. Required when enabled: within
-    /// `max(thresholds)..=endpoints.len()`; equal to the node count, it excludes nothing.
-    pub min_nodes: usize,
+    /// Never exclude a node when fewer than this many would remain in use: within
+    /// `max(thresholds)..=endpoints.len()`. Left out: the number of endpoints, which excludes nothing.
+    pub min_nodes: Option<usize>,
 }
 
 impl Default for CircuitBreakerConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             exclude_for: Duration::from_secs(30),
-            min_nodes: 0,
+            min_nodes: None,
         }
     }
 }
@@ -292,6 +292,13 @@ fn fail(message: String) -> Result<(), ConfigError> {
 }
 
 impl KmsAggregatorConfig {
+    /// The breaker's floor: `circuit_breaker.min_nodes`, or the number of endpoints when the file leaves it out.
+    pub fn min_nodes(&self) -> usize {
+        self.circuit_breaker
+            .min_nodes
+            .unwrap_or(self.endpoints.len())
+    }
+
     /// Every rule names the offending field with its dotted path.
     pub fn validate(&self) -> Result<(), ConfigError> {
         let n = self.endpoints.len();
@@ -415,10 +422,10 @@ impl KmsAggregatorConfig {
                 .user_decrypt
                 .threshold
                 .max(self.public_decrypt.threshold);
-            if breaker.min_nodes < floor || breaker.min_nodes > n {
+            let min_nodes = self.min_nodes();
+            if min_nodes < floor || min_nodes > n {
                 return fail(format!(
-                    "kms_aggregator.circuit_breaker.min_nodes ({}) must be within {floor}..={n}",
-                    breaker.min_nodes
+                    "kms_aggregator.circuit_breaker.min_nodes ({min_nodes}) must be within {floor}..={n}"
                 ));
             }
         }
@@ -758,24 +765,23 @@ pub(crate) mod tests {
         cfg.circuit_breaker = CircuitBreakerConfig {
             enabled: true,
             exclude_for,
-            min_nodes,
+            min_nodes: Some(min_nodes),
         };
         cfg
     }
 
     #[test]
-    fn circuit_breaker_defaults_off() {
+    fn circuit_breaker_defaults_on() {
         let section: CircuitBreakerConfig = serde_json::from_str("{}").unwrap();
-        assert!(!section.enabled);
+        assert!(section.enabled);
         assert_eq!(section.exclude_for, Duration::from_secs(30));
-        assert_eq!(section.min_nodes, 0);
-        // An enabled section needs its floor; the window has a default; unknown keys are refused.
-        let on: CircuitBreakerConfig =
-            serde_json::from_str(r#"{"enabled": true, "min_nodes": 11}"#).unwrap();
-        assert!(on.enabled);
+        assert_eq!(section.min_nodes, None);
+        // A floor alone keeps the flag and the window; unknown keys are refused.
+        let floored: CircuitBreakerConfig = serde_json::from_str(r#"{"min_nodes": 11}"#).unwrap();
+        assert!(floored.enabled);
         assert_eq!(
-            (on.exclude_for, on.min_nodes),
-            (Duration::from_secs(30), 11)
+            (floored.exclude_for, floored.min_nodes),
+            (Duration::from_secs(30), Some(11))
         );
         let err = serde_json::from_str::<CircuitBreakerConfig>(r#"{"half_open": "5s"}"#)
             .unwrap_err()
@@ -784,13 +790,24 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn min_nodes_defaults_to_the_endpoint_count() {
+        // Left out, the floor is `n`: on, validated, excluding nothing.
+        let mut cfg = valid(13);
+        cfg.user_decrypt.threshold = 9;
+        cfg.public_decrypt.threshold = 5;
+        assert_eq!(cfg.min_nodes(), 13);
+        cfg.validate().unwrap();
+        assert_eq!(with_breaker(Duration::from_secs(30), 11).min_nodes(), 11);
+    }
+
+    #[test]
     fn circuit_breaker_is_not_validated_while_disabled() {
-        // The stack template carries the mainnet values with 4 endpoints: fine while off.
+        // An explicitly disabled section is never a startup failure, whatever it carries.
         let mut cfg = valid(4);
         cfg.circuit_breaker = CircuitBreakerConfig {
             enabled: false,
             exclude_for: Duration::ZERO,
-            min_nodes: 11,
+            min_nodes: Some(11),
         };
         cfg.validate().unwrap();
     }

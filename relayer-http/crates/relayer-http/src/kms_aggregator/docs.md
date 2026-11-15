@@ -211,7 +211,7 @@ the call gives up), `retry_after_ms`, `give_up_reason`; `call failed` carries `t
 
 ## 7. Circuit breaker (`breaker.rs`)
 
-Off by default (`circuit_breaker.enabled`); with the flag off the code path is section 4's. In plain words:
+On by default; `circuit_breaker.enabled: false` turns it off, and the code path is then section 4's. In plain words:
 
 Every KMS node has a switch. Closed means the node is used, open means it is skipped.
 
@@ -393,10 +393,10 @@ kms_aggregator:
     timeout: 5000ms            # the deadline (1s..=60s); the whole section is optional, these are the defaults
     retries: { waits: [200ms, 300ms, 500ms, 800ms, 1s] }   # transient errors: the wait before each retry, section 6
     rate_limit: { max_retries: 1, initial_delay: 1s }  # rate_limited: retry k waits max(initial_delay, Retry-After) * 2^(k-1)
-  circuit_breaker:             # per-node circuit breaker, section 7; the whole section is optional and off by default
-    enabled: false             # off: today's behaviour, nothing is tracked
+  circuit_breaker:             # per-node circuit breaker, section 7; the whole section is optional and on by default
+    enabled: true              # false: the previous behaviour, nothing is tracked
     exclude_for: 30s           # an unhealthy node is left out this long, then the next request probes it (1s..=1h)
-    min_nodes: 11              # never exclude when fewer than this many nodes would stay in use (max(thresholds)..=n)
+    min_nodes: 11              # never exclude when fewer than this many nodes would stay in use (max(thresholds)..=n); left out: n, excludes nothing
   public_decrypt: { threshold: 5 }
   user_decrypt:
     threshold: 9
@@ -433,9 +433,9 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
   entry non-zero (the message names its index) and the prefix sums of the list all below `timeout`; with
   `rate_limit.max_retries > 0`, a non-zero `initial_delay` whose waits (`initial_delay * 2^(k-1)`) all start before
   `timeout` (both messages name the first retry that could never run); each `threshold` within `1..=n`; with
-  `circuit_breaker.enabled`, `exclude_for` within `1s..=1h` and `min_nodes` within `max(thresholds)..=n` (a
-  disabled section is not validated, so a file can carry the production values for a smaller committee). Every
-  message names the field with its dotted path.
+  `circuit_breaker.enabled` (the default), `exclude_for` within `1s..=1h` and `min_nodes` within
+  `max(thresholds)..=n`, `n` itself when left out (a disabled section is not validated). Every message names the
+  field with its dotted path.
 - The signing key is loaded at startup, from the env var named by `auth.signer.value_env` (hex private key) or from
   AWS KMS (`key_id`; region, credentials and any custom endpoint, `AWS_ENDPOINT_URL`, from the ambient AWS
   configuration, IRSA in a deployment); it is never in the config, the logs or any error message. Startup then fails, so the pod never becomes ready, unless the key passes

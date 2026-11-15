@@ -216,7 +216,7 @@ impl Caller {
                 .iter()
                 .map(|endpoint| endpoint.name.clone())
                 .collect(),
-            breaker.min_nodes,
+            cfg.min_nodes(),
             breaker.exclude_for,
             metrics.clone(),
         );

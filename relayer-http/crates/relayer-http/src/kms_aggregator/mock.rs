@@ -148,7 +148,11 @@ impl MockClient {
             skip_tls_verification: false,
             max_concurrent_calls: n.max(1),
             call,
-            circuit_breaker: CircuitBreakerConfig::default(),
+            // Off: the scenarios and the endpoint tests describe the aggregator alone; `caller_with_breakers` opts in.
+            circuit_breaker: CircuitBreakerConfig {
+                enabled: false,
+                ..CircuitBreakerConfig::default()
+            },
             user_decrypt: UserDecryptConfig {
                 threshold: 1,
                 checks: UserChecks::default(),
@@ -201,7 +205,7 @@ impl MockClient {
         cfg.circuit_breaker = CircuitBreakerConfig {
             enabled: true,
             exclude_for,
-            min_nodes,
+            min_nodes: Some(min_nodes),
         };
         let metrics = Arc::new(Metrics::new().unwrap());
         Arc::new(Caller::new(&cfg, self, test_signer(), metrics).unwrap())
