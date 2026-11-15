@@ -10,9 +10,15 @@ const methods = new Map([
   ['GetKeyGenResult', 'GetInsecureKeyGenResult'],
 ]);
 // v0.12 and v0.13 implement InsecureKeyGen but not InsecureKeyGenPreproc.
-// Pass "secure-preproc" as the second argument to leave preprocessing on KeyGenPreproc.
+// A non-numeric argument (or a third argument) of "secure-preproc" leaves
+// preprocessing on KeyGenPreproc. A numeric second argument stays the listen port.
+function proxyArgs() {
+  const [destination, second, third] = process.argv.slice(2);
+  if (second && !/^\d+$/.test(second)) return { destination, port: '3000', mode: second };
+  return { destination, port: second || '3000', mode: third || '' };
+}
 function rewritePreproc() {
-  return process.argv[3] !== 'secure-preproc';
+  return proxyArgs().mode !== 'secure-preproc';
 }
 function rewritePath(path) {
   if (!path.startsWith(prefix)) return path;
@@ -61,7 +67,7 @@ function createProxy(destination, observe = () => {}) {
 }
 module.exports = { createProxy, rewritePath };
 if (require.main === module) {
-  const [destination, port = '3000'] = process.argv.slice(2);
+  const { destination, port } = proxyArgs();
   const server = createProxy(destination, event => console.log(JSON.stringify(event)));
   server.listen(Number(port), '0.0.0.0', () => console.log('INSECURE_TEST_KEYGEN_PROXY_READY'));
 }
