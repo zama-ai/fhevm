@@ -146,7 +146,8 @@ pub struct CircuitBreakerConfig {
     #[serde(with = "humantime_serde")]
     pub exclude_for: Duration,
     /// Never exclude a node when fewer than this many would remain in use: within
-    /// `max(thresholds)..=endpoints.len()`. Left out: the number of endpoints, which excludes nothing.
+    /// `max(thresholds)..=endpoints.len() - 1`, so at least one node may be out. Left out: one node fewer than
+    /// the endpoints.
     pub min_nodes: Option<usize>,
 }
 
@@ -292,11 +293,12 @@ fn fail(message: String) -> Result<(), ConfigError> {
 }
 
 impl KmsAggregatorConfig {
-    /// The breaker's floor: `circuit_breaker.min_nodes`, or the number of endpoints when the file leaves it out.
+    /// The breaker's floor: `circuit_breaker.min_nodes`, or one node fewer than the endpoints when the file
+    /// leaves it out.
     pub fn min_nodes(&self) -> usize {
         self.circuit_breaker
             .min_nodes
-            .unwrap_or(self.endpoints.len())
+            .unwrap_or(self.endpoints.len().saturating_sub(1))
     }
 
     /// Every rule names the offending field with its dotted path.
@@ -417,15 +419,20 @@ impl KmsAggregatorConfig {
                     "kms_aggregator.circuit_breaker.exclude_for must be within 1s..=1h".to_owned(),
                 );
             }
-            // An aggregation always has at least `threshold` candidates, and a floor at `n` excludes nothing.
+            // An aggregation always has at least `threshold` candidates, and a floor at `n` would exclude nothing.
             let floor = self
                 .user_decrypt
                 .threshold
                 .max(self.public_decrypt.threshold);
-            let min_nodes = self.min_nodes();
-            if min_nodes < floor || min_nodes > n {
+            if n <= floor {
                 return fail(format!(
-                    "kms_aggregator.circuit_breaker.min_nodes ({min_nodes}) must be within {floor}..={n}"
+                    "kms_aggregator.circuit_breaker.enabled: no node to spare with {n} endpoints and a threshold of {floor}; set it to false"
+                ));
+            }
+            let (min_nodes, ceiling) = (self.min_nodes(), n - 1);
+            if min_nodes < floor || min_nodes > ceiling {
+                return fail(format!(
+                    "kms_aggregator.circuit_breaker.min_nodes ({min_nodes}) must be within {floor}..={ceiling}"
                 ));
             }
         }
@@ -458,7 +465,11 @@ pub(crate) mod tests {
             skip_tls_verification: false,
             max_concurrent_calls: 64.max(n),
             call: CallConfig::default(),
-            circuit_breaker: CircuitBreakerConfig::default(),
+            // One endpoint has no node to spare: the breaker is off for `valid(1)`.
+            circuit_breaker: CircuitBreakerConfig {
+                enabled: n > 1,
+                ..CircuitBreakerConfig::default()
+            },
             user_decrypt: UserDecryptConfig {
                 threshold: 1,
                 checks: UserChecks::default(),
@@ -754,6 +765,8 @@ pub(crate) mod tests {
         cfg.public_decrypt.threshold = 4;
         assert!(message(&cfg).contains("public_decrypt.threshold (4) must be within 1..=3"));
         cfg.public_decrypt.threshold = 3;
+        // Thresholds at `n` leave no node to spare: valid without the breaker.
+        cfg.circuit_breaker.enabled = false;
         cfg.validate().unwrap();
     }
 
@@ -790,14 +803,26 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn min_nodes_defaults_to_the_endpoint_count() {
-        // Left out, the floor is `n`: on, validated, excluding nothing.
+    fn min_nodes_defaults_to_one_node_out() {
+        // Left out, the floor is `n - 1`: on, validated, one node may be out.
         let mut cfg = valid(13);
         cfg.user_decrypt.threshold = 9;
         cfg.public_decrypt.threshold = 5;
-        assert_eq!(cfg.min_nodes(), 13);
+        assert_eq!(cfg.min_nodes(), 12);
         cfg.validate().unwrap();
         assert_eq!(with_breaker(Duration::from_secs(30), 11).min_nodes(), 11);
+    }
+
+    #[test]
+    fn circuit_breaker_needs_a_node_to_spare() {
+        // One endpoint with a threshold of 1: no floor can let a node out, so the breaker must be off.
+        let mut cfg = valid(1);
+        cfg.circuit_breaker.enabled = true;
+        assert!(message(&cfg).contains(
+            "kms_aggregator.circuit_breaker.enabled: no node to spare with 1 endpoints and a threshold of 1; set it to false"
+        ));
+        cfg.circuit_breaker.enabled = false;
+        cfg.validate().unwrap();
     }
 
     #[test]
@@ -828,14 +853,15 @@ pub(crate) mod tests {
         let window = Duration::from_secs(30);
         assert!(
             message(&with_breaker(window, 0))
-                .contains("kms_aggregator.circuit_breaker.min_nodes (0) must be within 9..=13")
+                .contains("kms_aggregator.circuit_breaker.min_nodes (0) must be within 9..=12")
         );
-        assert!(message(&with_breaker(window, 8)).contains("min_nodes (8) must be within 9..=13"));
+        assert!(message(&with_breaker(window, 8)).contains("min_nodes (8) must be within 9..=12"));
+        // A floor at `n` would exclude nothing: refused.
         assert!(
-            message(&with_breaker(window, 14)).contains("min_nodes (14) must be within 9..=13")
+            message(&with_breaker(window, 13)).contains("min_nodes (13) must be within 9..=12")
         );
         with_breaker(window, 9).validate().unwrap();
-        with_breaker(window, 13).validate().unwrap();
+        with_breaker(window, 12).validate().unwrap();
     }
 
     #[test]

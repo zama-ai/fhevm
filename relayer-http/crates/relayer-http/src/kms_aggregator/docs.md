@@ -396,7 +396,7 @@ kms_aggregator:
   circuit_breaker:             # per-node circuit breaker, section 7; the whole section is optional and on by default
     enabled: true              # false: the previous behaviour, nothing is tracked
     exclude_for: 30s           # an unhealthy node is left out this long, then the next request probes it (1s..=1h)
-    min_nodes: 11              # never exclude when fewer than this many nodes would stay in use (max(thresholds)..=n); left out: n, excludes nothing
+    min_nodes: 11              # never exclude when fewer than this many nodes would stay in use (max(thresholds)..=n-1); left out: n-1, one node may be out
   public_decrypt: { threshold: 5 }
   user_decrypt:
     threshold: 9
@@ -433,9 +433,9 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
   entry non-zero (the message names its index) and the prefix sums of the list all below `timeout`; with
   `rate_limit.max_retries > 0`, a non-zero `initial_delay` whose waits (`initial_delay * 2^(k-1)`) all start before
   `timeout` (both messages name the first retry that could never run); each `threshold` within `1..=n`; with
-  `circuit_breaker.enabled` (the default), `exclude_for` within `1s..=1h` and `min_nodes` within
-  `max(thresholds)..=n`, `n` itself when left out (a disabled section is not validated). Every message names the
-  field with its dotted path.
+  `circuit_breaker.enabled` (the default), more endpoints than the larger threshold (a committee with no node to
+  spare runs with `enabled: false`), `exclude_for` within `1s..=1h` and `min_nodes` within `max(thresholds)..=n-1`,
+  `n-1` when left out (a disabled section is not validated). Every message names the field with its dotted path.
 - The signing key is loaded at startup, from the env var named by `auth.signer.value_env` (hex private key) or from
   AWS KMS (`key_id`; region, credentials and any custom endpoint, `AWS_ENDPOINT_URL`, from the ambient AWS
   configuration, IRSA in a deployment); it is never in the config, the logs or any error message. Startup then fails, so the pod never becomes ready, unless the key passes

@@ -201,7 +201,7 @@ describe("relayer-http config", () => {
   });
 
   test("renders the circuit breaker on, with one node allowed out of the committee", () => {
-    // 4 endpoints and thresholds 2 and 3: the floor must be within 3..=4, and 3 lets one node out.
+    // 4 endpoints and thresholds 2 and 3: the floor must be within 3..=3, one node out.
     const config = YAML.parse(renderRelayerHttpConfig({ discovery: undefined }, template, plan, envs));
     expect(config.kms_aggregator.circuit_breaker).toEqual({ enabled: true, exclude_for: "30s", min_nodes: 3 });
   });

@@ -61,7 +61,7 @@ The circuit breaker (`kms_aggregator/docs.md`, Circuit breaker) leaves an unheal
 The floor is reached (RelayerHttpKmsFloorReached) and the 95th percentile of the requests is above 4 s (0.8 x the default call timeout, the threshold of RelayerHttpSlowRequests): more than one KMS node is slow or down. The relayer itself serves, at the deadline.
 
 1. Follow RelayerHttpKmsFloorReached: the KMS operators of the excluded and kept nodes are the ones to call.
-2. If the floor was raised on purpose (`min_nodes` close to the node count), the breaker cannot help: lower it within `max(thresholds)..=n`, or accept the latency until the nodes recover.
+2. If the floor was raised on purpose (`min_nodes` close to the node count), the breaker cannot help: lower it within `max(thresholds)..=n-1`, or accept the latency until the nodes recover.
 
 ## Incident debugging
 

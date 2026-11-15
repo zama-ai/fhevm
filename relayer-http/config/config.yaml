@@ -30,7 +30,7 @@ kms_aggregator:
   circuit_breaker:             # per-node circuit breaker, see kms_aggregator/docs.md; optional, on by default
     enabled: true              # false: the previous behaviour, nothing is tracked
     exclude_for: 30s           # an unhealthy node (unreachable, hung, 502/503/504) is left out this long, then the next request probes it (1s..=1h)
-    min_nodes: 11              # never exclude when fewer than this many nodes would stay in use (max(thresholds)..=n); left out: n, excludes nothing
+    min_nodes: 11              # never exclude when fewer than this many nodes would stay in use (max(thresholds)..=n-1); left out: n-1, one node may be out
   public_decrypt:
     threshold: 5               # identical (decryptedResult, extraData) answers needed; protocol config value (5 at n = 13) (t + 1)
   user_decrypt:

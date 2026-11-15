@@ -55,7 +55,7 @@ configuration → behaviour). The implementation plans live outside the reposito
 One YAML file (`config/config.yaml` is the example), five sections: `name`, `log` (optional, defaults to JSON
 lines), `http` (bind address, body limit, body read timeout, supported chain ids, optional request limits defaulting to the connector's), `metrics` (optional: `endpoint`, default `0.0.0.0:9898`, the Prometheus listener on its own port) and `kms_aggregator` (deadline,
 two retry budgets: `call.retries.waits`, the explicit list of waits for transient errors, and `call.rate_limit` for
-rate limits, the per-node circuit breaker `circuit_breaker` (on by default; `min_nodes` left out is the node count, which excludes nothing), thresholds, optional checks, the KMS
+rate limits, the per-node circuit breaker `circuit_breaker` (on by default; `min_nodes` left out is one node fewer than the endpoints, and an enabled breaker must be allowed one node out), thresholds, optional checks, the KMS
 endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
 unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`; a list is one comma-separated value). Every connector call carries an `FhevmSig` header (RFC-038)
 signed for that endpoint's `audience`; the signing key is never in the file: `kms_aggregator.auth.signer` names the env
