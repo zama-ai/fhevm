@@ -169,7 +169,7 @@ export const renderRelayerHttpConfig = (
     url,
     audience: audiences[index] ?? "",
   }));
-  // The breaker may leave one node out; relayer-http requires the floor within max(thresholds)..=n.
+  // The breaker may leave one node out; relayer-http requires the floor within max(thresholds)..=n-1.
   aggregator.circuit_breaker.min_nodes = aggregator.endpoints.length - 1;
   return YAML.stringify(config);
 };
