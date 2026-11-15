@@ -587,6 +587,47 @@ async fn the_gc_deletes_in_batches() {
 }
 
 #[tokio::test]
+async fn the_gc_skips_the_rows_that_another_transaction_locks() {
+    let (_instance, pool) = db().await;
+    // Rows 1 and 2: old and uploaded, with a ct64. Rows 3 and 4: expired and pending.
+    for label in [1, 2] {
+        add_row(&pool, INSTANCE, label, 1, 3600.0).await;
+        set_state(&pool, INSTANCE, label, "uploaded").await;
+    }
+    sqlx::query("UPDATE pads SET ciphertext64 = '\\x01'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    add_row(&pool, INSTANCE, 3, 1, 3600.0).await;
+    add_row(&pool, INSTANCE, 4, 1, 3600.0).await;
+    // For example another GC: it locks rows 1 and 3.
+    let mut other = pool.begin().await.unwrap();
+    sqlx::query("SELECT 1 FROM pads WHERE label IN ($1, $2) FOR UPDATE")
+        .bind(B256::repeat_byte(1).as_slice())
+        .bind(B256::repeat_byte(3).as_slice())
+        .execute(other.as_mut())
+        .await
+        .unwrap();
+
+    let gc = async {
+        let cleared = rows::clear_old_ct64(&pool, Duration::from_secs(1800)).await?;
+        let deleted = rows::delete_old_outputs(&pool, Duration::from_secs(1800)).await?;
+        let expired =
+            rows::delete_expired_pending(&pool, Duration::from_secs(600), Duration::from_secs(60))
+                .await?;
+        Ok::<_, sqlx::Error>((cleared, deleted, expired))
+    };
+    let changed = tokio::time::timeout(Duration::from_secs(5), gc)
+        .await
+        .expect("the GC does not wait for locked rows")
+        .unwrap();
+
+    assert_eq!(changed, (1, 1, 1));
+    other.commit().await.unwrap();
+    assert_eq!(labels(&pool, INSTANCE).await, vec![1, 3]);
+}
+
+#[tokio::test]
 async fn gives_the_age_of_the_oldest_rows_of_each_instance() {
     let (_instance, pool) = db().await;
     add_row(&pool, INSTANCE, 1, 1, 100.0).await;
@@ -721,6 +762,45 @@ async fn a_stop_releases_the_claims_still_running_after_the_drain() {
     .await
     .unwrap();
     assert_eq!(claimed.map(|c| c.label), Some(B256::repeat_byte(1)));
+}
+
+#[tokio::test]
+async fn the_release_skips_the_rows_that_another_transaction_locks() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 2, 1, 0.0).await;
+    sqlx::query("UPDATE pads SET claimed_at = NOW()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut other = pool.begin().await.unwrap();
+    sqlx::query("SELECT 1 FROM pads WHERE label = $1 FOR UPDATE")
+        .bind(B256::repeat_byte(1).as_slice())
+        .execute(other.as_mut())
+        .await
+        .unwrap();
+
+    let claims = [1, 2].map(|label| rows::Claim {
+        prf_instance: INSTANCE,
+        label: B256::repeat_byte(label),
+        pad_length: 64,
+    });
+    let released = tokio::time::timeout(
+        Duration::from_secs(5),
+        rows::release(&pool, INSTANCE, &claims),
+    )
+    .await
+    .expect("the release does not wait for locked rows")
+    .unwrap();
+
+    assert_eq!(released, 1);
+    other.commit().await.unwrap();
+    let claimed: Vec<bool> =
+        sqlx::query_scalar("SELECT claimed_at IS NOT NULL FROM pads ORDER BY label")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(claimed, vec![true, false]);
 }
 
 #[tokio::test]
