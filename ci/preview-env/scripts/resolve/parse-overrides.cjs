@@ -15,6 +15,7 @@ const ALLOWED = new Set([
   "kms_connector_chart_version",
   "kms_core_version",
   "kms_repo_ref",
+  "kms_only",
   "relayer_version",
   "relayer_sdk_version",
   "test_suite_version",
