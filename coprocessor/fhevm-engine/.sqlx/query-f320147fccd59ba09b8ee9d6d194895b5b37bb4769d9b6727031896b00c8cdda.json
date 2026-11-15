@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM pads WHERE ctid IN (\n                 SELECT ctid FROM pads\n                  WHERE (s3_verified_at IS NOT NULL OR is_error)\n                    AND created_at <= NOW() - make_interval(secs => $1)\n                  LIMIT $2\n                    FOR UPDATE SKIP LOCKED)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f320147fccd59ba09b8ee9d6d194895b5b37bb4769d9b6727031896b00c8cdda"
+}
