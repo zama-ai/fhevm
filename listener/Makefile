@@ -9,11 +9,14 @@ test-unit:
 # Named containers created by the shared-container pattern in e2e tests.
 AMQP_CONTAINER := e2e-rabbitmq
 REDIS_CONTAINER := e2e-redis
+PG_CONTAINER := e2e-postgres
+PG_PORT ?= 55432
 
 # Remove named e2e containers if they exist (idempotent).
 clean-e2e-containers:
 	@docker rm -f $(AMQP_CONTAINER) 2>/dev/null || true
 	@docker rm -f $(REDIS_CONTAINER) 2>/dev/null || true
+	@docker rm -f $(PG_CONTAINER) 2>/dev/null || true
 
 # ── broker (amqp) e2e ────────────────────────────────────────────────────────
 # Runs the AMQP e2e suite and removes the shared container afterwards,
@@ -42,8 +45,19 @@ test-e2e-consumer: clean-e2e-containers
 	$(MAKE) clean-e2e-containers
 
 # ── listener_core e2e (Postgres via DATABASE_URL + Redis container) ───────────
+# Uses $DATABASE_URL if set; otherwise starts a throwaway Postgres container.
+# pg_isready over TCP (-h 127.0.0.1) skips the image's socket-only init phase.
 test-e2e-listener: clean-e2e-containers
-	cargo test -p listener_core --lib -- --ignored reorg_abandon; \
+	@if [ -z "$$DATABASE_URL" ]; then \
+	  docker run -d --name $(PG_CONTAINER) -e POSTGRES_PASSWORD=postgres \
+	    -p $(PG_PORT):5432 postgres:17-alpine >/dev/null && \
+	  for i in $$(seq 1 30); do \
+	    docker exec $(PG_CONTAINER) pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break; \
+	    sleep 1; \
+	  done; \
+	fi
+	DATABASE_URL=$${DATABASE_URL:-postgres://postgres:postgres@localhost:$(PG_PORT)/postgres} \
+	  cargo test -p listener_core --lib -- --ignored reorg_abandon; \
 	status=$$?; \
 	$(MAKE) clean-e2e-containers; \
 	exit $$status
