@@ -250,11 +250,20 @@ impl ProxyHttp for Proxy {
     // does not match: it gets a truncated request and a closed connection instead.
     async fn request_body_filter(
         &self,
-        _session: &mut Session,
+        session: &mut Session,
         body: &mut Option<Bytes>,
         end_of_stream: bool,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
+        // Pingora's read timeout bounds each read, so a client sending a byte at a time would
+        // never hit it. The next read only gets what is left of `request_read_timeout`, which
+        // then bounds the whole body. Pingora waits for the answer without a read timeout.
+        let left = self
+            .config
+            .request_read_timeout
+            .saturating_sub(ctx.observation.elapsed());
+        session.set_read_timeout(Some(left));
+
         if let Some(chunk) = body {
             ctx.body_len += chunk.len();
             if ctx.body_len > self.config.max_body_bytes {
