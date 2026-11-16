@@ -9,8 +9,9 @@ name: test-suite-e2e-nightly
 
 on:
   schedule:
-    # Every night at 00:00 UTC.
-    - cron: "0 0 * * *"
+    # Mon-Fri at 00:00 UTC. No Saturday and Sunday runs, so a failure introduced on
+    # Friday alerts once (Sunday-Monday night) instead of three times.
+    - cron: "0 0 * * 1-5"
   workflow_dispatch:
 
 permissions: {}
