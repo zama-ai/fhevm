@@ -6,12 +6,12 @@
 set -euo pipefail
 
 deploy_timeout="${CONTRACTS_DEPLOY_TIMEOUT:-10m}"
-# The Default DKG is multi-hour; Test params and the insecure keygen (key and
-# CRS in about 6 min) finish well within 45m. v0.12 and v0.13 have no
-# InsecureKeyGenPreproc, so Default preprocessing is the real DKG even when
-# KeyGen itself is insecure.
+# The Default DKG is about a day: BitGen alone ran past 11h, then the DKG and
+# CRS still have to finish. Test params and the insecure keygen fit in 45m.
+# v0.12 and v0.13 previews call KeyGen on kms-core directly, so Default
+# preprocessing is the real DKG. 26h covers the 24h ActivateKey wait plus CRS.
 if [[ "${FHE_PARAMS:?}" == "default" && ( "${KEYGEN:?}" == "secure" || "${KMS_CORE_TAG:-}" =~ ^v0\.1[23]\. ) ]]; then
-  keygen_timeout="${KEYGEN_TIMEOUT:-310m}"
+  keygen_timeout="${KEYGEN_TIMEOUT:-26h}"
 else
   keygen_timeout="${KEYGEN_TIMEOUT:-45m}"
 fi
@@ -91,10 +91,24 @@ EOF
       ' "${keygen_values}"
       keygen_tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")
     fi
+    # Chart 0.7.3 omits backoffLimit, so Kubernetes retries the Job 6 times.
+    # Each retry runs task:triggerKeygen again and reverts with KeygenOngoing.
+    # Patch as soon as the Job exists; helm --wait keeps the pod in the cluster
+    # after the 6h Actions limit kills this step.
     helm upgrade --install host-trigger-keygen "${CONTRACTS_CHART}" \
       -n "${NAMESPACE}" -f "${keygen_values}" \
       --set-string "scDeploy.image.tag=${keygen_tag}" \
-      --wait --wait-for-jobs --timeout="${keygen_timeout}"
+      --wait --wait-for-jobs --timeout="${keygen_timeout}" &
+    helm_pid=$!
+    for _ in $(seq 1 60); do
+      job_name=$(kubectl get jobs -n "${NAMESPACE}" -o name | sed -n 's|^job/||p' | grep -E '^host-trigger-keygen-deploy' | head -1 || true)
+      if [[ -n "${job_name}" ]]; then
+        kubectl patch job "${job_name}" -n "${NAMESPACE}" --type merge -p '{"spec":{"backoffLimit":0}}'
+        break
+      fi
+      sleep 2
+    done
+    wait "${helm_pid}"
     ;;
   *)
     echo "::error::unknown contracts kind '${kind}'" >&2

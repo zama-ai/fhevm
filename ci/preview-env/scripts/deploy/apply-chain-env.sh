@@ -61,13 +61,14 @@ set_poller_flag() {
 # would collide on DEPLOYER_PRIVATE_KEY. Keep file-specific helpers instead.
 
 # The values hold Default params. The insecure keygen and Test params fit the
-# trigger script's 15 min waits; the four-party Default DKG needs hours.
+# trigger script's 15 min waits. A four-party Default BitGen ran past 11h, so
+# the ActivateKey wait is 24h. CRS starts only after that, in the same pod.
 keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
 if [[ "${FHE_PARAMS}" == "test" ]]; then
   set_named_env "${keygen}" ".scDeploy.env" KEYGEN_PARAMS_TYPE 1
 elif [[ "${KEYGEN}" == "secure" ]]; then
-  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
-  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
+  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-86400000}"
+  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-14400000}"
 fi
 if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
   echo "Anvil: fhe_params=${FHE_PARAMS} keygen=${KEYGEN}."
