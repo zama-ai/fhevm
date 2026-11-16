@@ -765,6 +765,41 @@ async fn a_stop_releases_the_claims_still_running_after_the_drain() {
 }
 
 #[tokio::test]
+async fn a_stop_releases_the_upload_claims_still_running_after_the_drain() {
+    let (_instance, pool) = db().await;
+    let (_localstack, client, _) = s3().await;
+    let uploader = Uploader::new(
+        client,
+        BUCKET.to_string(),
+        NonZeroUsize::new(1).unwrap(),
+        Duration::from_millis(100),
+    );
+    // With no free upload slot, the upload of resubmit waits.
+    let _slot = uploader.slot(false).await.unwrap();
+    let config = Config {
+        drain_timeout: Duration::from_millis(100),
+        ..config()
+    };
+    let (_signer, cancel, run) = start_with(&pool, config, Arc::new(MockEvaluator), Some(uploader));
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
+    sqlx::query("UPDATE pads SET claimed_at = NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    until(&pool, "SELECT claimed_at IS NOT NULL FROM pads").await;
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+    // The next pod uploads the row at once, not after `claim_timeout`.
+    let released: bool = sqlx::query_scalar("SELECT claimed_at IS NULL FROM pads")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(released);
+}
+
+#[tokio::test]
 async fn the_release_skips_the_rows_that_another_transaction_locks() {
     let (_instance, pool) = db().await;
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
