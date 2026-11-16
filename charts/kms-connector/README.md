@@ -17,6 +17,17 @@ The proxy needs a `kubernetes.io/tls` secret (`kmsConnectorProxy.tls.secretName`
 
 By default the secret must exist before the proxy starts. Set `kmsConnectorProxy.tls.certManager.enabled` to `true` to have the chart create it with cert-manager (ignored when TLS is disabled), which must be installed in the cluster: a self-signed `Issuer` and a `Certificate` that writes the secret. The certificate covers the proxy Service name and its `.<namespace>.svc` and `.<namespace>.svc.cluster.local` forms, and it is valid for 10 years. Leave it disabled when the secret is managed outside the chart: cert-manager overwrites an existing secret with the same name.
 
+### Deployment requirement
+
+The proxy authenticates every request before it reads its body or connects to the endpoint. It caps the size of the body (`KMS_CONNECTOR_MAX_BODY_BYTES`, 1 MiB by default) and the time a client has to send it (`KMS_CONNECTOR_REQUEST_READ_TIMEOUT`, 30 s by default). It does not protect its own connections from a client that holds them open before that. Pingora 0.9 caps neither the number of connections nor the total time a client takes to send a request head: each read of a head waits up to 60 s, so a client that sends a byte at a time holds its connection. Pingora also accepts request heads of up to 1 MiB and waits up to 60 s for a TLS handshake. Every connection held open takes memory in the replica, and nothing bounds their number. The proxy must therefore not be reachable directly from the internet. Put it behind one of:
+
+- a network allowlist that admits only the relayers' addresses, for example a firewall rule in front of a TLS-passthrough exposure;
+- an HTTP-aware layer that terminates the client's TLS connection, receives each request in full before forwarding it and limits connections per client IP, such as Cloudflare or an HTTP(S) load balancer configured this way. It connects to the proxy over TLS, or over plain HTTP with `kmsConnectorProxy.tls.enabled: false`, and the proxy must be reachable only through it.
+
+A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle connections to the proxy unchanged.
+
+The proxy speaks HTTP/1.1 to its clients, so each request in flight takes one connection, and the endpoint holds a decryption request until its response is ready. A per-client connection limit must allow the relayer's concurrent requests: an endpoint replica holds up to `KMS_CONNECTOR_MAX_IN_FLIGHT_DECRYPTIONS` of them (1000 by default). The front layer must also wait for an answer longer than the proxy does (`KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT`, 60 s by default).
+
 ## Installing the Chart
 
 To pull and install the OCI Helm chart from ghcr.io:
