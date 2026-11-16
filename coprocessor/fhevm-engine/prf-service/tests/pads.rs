@@ -22,6 +22,7 @@ use tokio_util::sync::CancellationToken;
 const LIMIT: i64 = 100;
 const MAX_ADDS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
 const PENDING_MAX_AGE: Duration = Duration::from_secs(600);
+const CLAIM_TIMEOUT: Duration = Duration::from_secs(300);
 const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
 
 /// A database and an admin pool.
@@ -45,6 +46,7 @@ async fn test_db() -> (DBInstance, PgPool, PgPool, Arc<Admissions>) {
         LIMIT,
         MAX_ADDS,
         PENDING_MAX_AGE,
+        CLAIM_TIMEOUT,
     ));
     (instance, pool, service, admissions)
 }
@@ -141,7 +143,13 @@ async fn concurrent_requests_of_a_connector_stay_in_its_budget() {
 #[tokio::test]
 async fn requests_on_two_pods_stay_in_the_budget() {
     let (_instance, _pool, service, pod_a) = test_db().await;
-    let pod_b = Arc::new(Admissions::new(service, LIMIT, MAX_ADDS, PENDING_MAX_AGE));
+    let pod_b = Arc::new(Admissions::new(
+        service,
+        LIMIT,
+        MAX_ADDS,
+        PENDING_MAX_AGE,
+        CLAIM_TIMEOUT,
+    ));
     let requests: Vec<_> = (0..10)
         .map(|label| {
             let pod = if label % 2 == 0 {
@@ -287,6 +295,30 @@ async fn expired_pending_rows_do_not_count_in_the_budget() {
         Admission::Created
     );
     // A request for the expired row does not wait on it.
+    assert_eq!(
+        admissions
+            .admit(&path(1, 64), OTHER_CONNECTOR)
+            .await
+            .unwrap(),
+        Admission::Expired
+    );
+
+    // Unless a pad-worker still computes it.
+    let claim = |age: f64| {
+        sqlx::query("UPDATE pads SET claimed_at = NOW() - make_interval(secs => $1)")
+            .bind(age)
+            .execute(&pool)
+    };
+    claim(0.0).await.unwrap();
+    assert_eq!(
+        admissions
+            .admit(&path(1, 64), OTHER_CONNECTOR)
+            .await
+            .unwrap(),
+        Admission::Existing(PadState::Pending)
+    );
+    // A stale claim: the pad-worker stopped.
+    claim(CLAIM_TIMEOUT.as_secs_f64() + 1.0).await.unwrap();
     assert_eq!(
         admissions
             .admit(&path(1, 64), OTHER_CONNECTOR)
