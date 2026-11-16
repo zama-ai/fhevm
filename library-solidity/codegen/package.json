@@ -1,5 +1,6 @@
 {
   "name": "codegen",
+  "private": true,
   "type": "module",
   "dependencies": {
     "commander": "^14.0.1",
