@@ -8520,18 +8520,6 @@ library FHE {
         return false;
     }
 
-    /**
-     * @notice          Recovers the signer's address from a `signature` and a `message` digest.
-     * @dev             It utilizes ECDSA for actual address recovery. It does not support contract signature (EIP-1271).
-     * @param message   The hash of the message that was signed.
-     * @param signature The signature to verify.
-     * @return signer   The address that supposedly signed the message.
-     */
-    function _recoverSigner(bytes32 message, bytes memory signature) private pure returns (address) {
-        address signerRecovered = FhevmECDSA.recover(message, signature);
-        return signerRecovered;
-    }
-
     /// @notice Verifies KMS signatures against the provided handles and public decryption data.
     /// @param handlesList The list of handles as an array of bytes32 to verify
     /// @param abiEncodedCleartexts The ABI-encoded list of decrypted values associated with each handle in the `handlesList`.
