@@ -1624,7 +1624,7 @@ use super::mock_rpc;
 const FOREIGN_HASH: &str = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
 fn mock_fetcher(url: &str) -> EvmBlockFetcher {
-    let provider = SemEvmRpcProvider::new(url.to_string(), 5, false, 64).expect("provider");
+    let provider = SemEvmRpcProvider::new(url.to_string(), 5).expect("provider");
     EvmBlockFetcher::new(provider).with_retry_interval(Duration::from_millis(1))
 }
 

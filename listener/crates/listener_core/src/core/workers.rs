@@ -632,7 +632,7 @@ mod reorg_abandon_tests {
             "strategy": { "loop_delay_ms": 10, "reorg_not_found_max_retries": 2 }
         }))
         .unwrap();
-        let provider = SemEvmRpcProvider::new(node.url.clone(), 5, false, 64).unwrap();
+        let provider = SemEvmRpcProvider::new(node.url.clone(), 5).unwrap();
         let listener = EvmListener::new(
             provider,
             repositories.clone(),
