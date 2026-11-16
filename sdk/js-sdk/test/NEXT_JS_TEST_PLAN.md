@@ -466,6 +466,7 @@ test/scripts/localcleartext-run-tests.sh   --skip-fhetest flag (opt-in)
 test/infra/
   topology.ts                  slots: ports, distinct chainIds, key files, gateway port
   anvil/anvils.ts              startAnvils/stopAnvils (marker-readiness, reuse, teardown)
+  anvil/kmsGenerationSeed.ts   activate the slot key's digests in KMSGeneration (real keygen/crsgen)
   anvil/spawn-anvils.ts        CLI: bring up both anvils until Ctrl-C
   gateway/keyRelayer.ts        test/keys -> v2/keyurl wire format + bytes
   gateway/gateway.ts           pure handleGateway(req)->res (rpc proxy + relayer)

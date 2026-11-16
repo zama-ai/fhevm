@@ -17,7 +17,7 @@ import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 export type ReadKmsVerifierContractDataParameters = {
   readonly address: ChecksummedAddress;
-  readonly protocolConfigAddress: ChecksummedAddress | undefined;
+  readonly protocolConfigAddress: ChecksummedAddress;
 };
 
 export type ReadKmsVerifierContractDataReturnType = KmsVerifierContractData;

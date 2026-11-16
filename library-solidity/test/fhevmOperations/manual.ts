@@ -1,8 +1,8 @@
 import { expect } from 'chai';
 import { ZeroAddress } from 'ethers';
-import { ethers } from 'hardhat';
 
-import type { FHEVMManualTestSuite } from '../../typechain-types/examples/tests/FHEVMManualTestSuite';
+import type { FHEVMManualTestSuite } from '../../typechain-types/examples/tests/FHEVMManualTestSuite.js';
+import { ethers } from '../hardhat.js';
 import {
   createInstances,
   decrypt8,
@@ -13,8 +13,15 @@ import {
   decrypt256,
   decryptAddress,
   decryptBool,
-} from '../instance';
-import { getSigners, initSigners } from '../signers';
+} from '../instance.js';
+import { getSigners, initSigners } from '../signers.js';
+
+// The tests access the contract through mocha's `this` (as the generated fhevmOperations tests do).
+declare module 'mocha' {
+  interface Context {
+    contract: FHEVMManualTestSuite;
+  }
+}
 
 async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
   const signers = await getSigners();
@@ -24,7 +31,7 @@ async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
-  return contract as unknown as FHEVMManualTestSuite;
+  return contract;
 }
 
 describe('FHEVM manual operations', function () {
@@ -904,7 +911,7 @@ describe('FHEVM manual operations', function () {
       0,
       encryptedAmount.inputProof,
     );
-    await expect(promise).to.be.reverted;
+    await expect(promise).to.be.revert(ethers);
   });
 
   it('mulDiv euint64 enc*enc: (10^10 * 10^10) / 10^10 = 10^10 (intermediate overflows uint64)', async function () {

@@ -9,6 +9,7 @@
 
 import { headers } from 'next/headers';
 import { LIB, THREADS, USE_MT, runEncryptLeg } from './shared.js';
+import { CURRENT_SLOT } from '../_diag/slots.js';
 import { CsrLeg } from './CsrLeg.jsx';
 import { createTestLogger, logError, DiagnosticsView } from '../_diag/diagnostics.jsx';
 
@@ -36,7 +37,7 @@ export default async function Page() {
   return (
     <main>
       <h1>
-        SDK mixed (v13 · lib={LIB} · threads={THREADS})
+        SDK mixed ({CURRENT_SLOT} · lib={LIB} · threads={THREADS})
       </h1>
       <DiagnosticsView title="SSR leg" status={ssr.status} logs={ssr.logs} idPrefix="ssr" />
       <CsrLeg />

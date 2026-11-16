@@ -16,11 +16,13 @@
       "imports": [["CoprocessorSetup", "../CoprocessorSetup.sol"]]
     },
     "typescript": {
-      "__comment": "All imports paths are relative to outDir",
+      "__comment": "All imports paths are relative to outDir. HH3 tests are ESM: module paths include the .js extension.",
       "outDir": "./test/fhevmOperations",
+      "hardhatVersion": 3,
       "imports": [
-        ["instance", "../instance"],
-        ["signers", "../signers"],
+        ["hardhat", "../hardhat.js"],
+        ["instance", "../instance.js"],
+        ["signers", "../signers.js"],
         ["typechain", "../../typechain-types/examples/tests"]
       ]
     }

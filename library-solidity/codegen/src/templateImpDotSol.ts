@@ -1,9 +1,9 @@
 import { readFileSync } from 'fs';
 
-import type { Operator } from './common';
-import { OperatorArguments } from './common';
-import { resolveTemplatePath } from './paths';
-import { removeTemplateComments } from './utils';
+import type { Operator } from './common.js';
+import { OperatorArguments } from './common.js';
+import { resolveTemplatePath } from './paths.js';
+import { removeTemplateComments } from './utils.js';
 
 /**
  * Generates the Solidity implementation (Impl.sol) library for FHE operations.

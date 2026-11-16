@@ -14,7 +14,7 @@ import { resolve } from 'node:path';
 
 // `<base>.v<version>.<ext>` — base is alnum/_/-, version starts with a digit. The
 // strict shape doubles as path-traversal protection (no slashes or `..`).
-const VERSIONED_ASSET = /^([A-Za-z0-9_-]+)\.v([0-9][0-9A-Za-z.\-]*)\.(wasm|mjs)$/;
+const VERSIONED_ASSET = /^([A-Za-z0-9_-]+)\.v([0-9][0-9A-Za-z.-]*)\.(wasm|mjs)$/;
 
 /** Maps a versioned asset filename to its on-disk path under `assetDir`, or undefined. */
 export function resolveWasmAssetPath(assetDir: string, filename: string): string | undefined {
@@ -22,9 +22,9 @@ export function resolveWasmAssetPath(assetDir: string, filename: string): string
   if (match === null) {
     return undefined;
   }
-  const [, base, version, ext] = match;
-  const moduleDir = base!.startsWith('kms') ? 'tkms' : 'tfhe';
-  return resolve(assetDir, moduleDir, `v${version!}`, `${base!}.${ext!}`);
+  const [, base = '', version = '', ext = ''] = match;
+  const moduleDir = base.startsWith('kms') ? 'tkms' : 'tfhe';
+  return resolve(assetDir, moduleDir, `v${version}`, `${base}.${ext}`);
 }
 
 export type WasmAsset = {
