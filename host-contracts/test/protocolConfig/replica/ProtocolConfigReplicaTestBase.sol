@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {ProtocolConfigTestBase} from "../protocolConfig/ProtocolConfigTestBase.sol";
+import {ProtocolConfigTestBase} from "../ProtocolConfigTestBase.sol";
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {IProtocolConfigReplica, KmsContextSubmission, KmsEpochSubmission} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
