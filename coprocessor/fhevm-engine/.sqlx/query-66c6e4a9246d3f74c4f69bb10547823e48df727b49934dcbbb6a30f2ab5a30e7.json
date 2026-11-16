@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT p.is_error AS \"is_error?\", OCTET_LENGTH(p.ciphertext128) AS body_length,\n                  p.attestation_version AS \"attestation_version?\",\n                  p.ciphertext_digest AS \"ciphertext_digest?\",\n                  p.ciphertext128_digest AS \"ciphertext128_digest?\", p.signer AS \"signer?\",\n                  p.signature AS \"signature?\",\n                  COALESCE(p.created_at <= NOW() - make_interval(secs => $4), FALSE) AS \"expired!\"\n             FROM (VALUES (1)) AS one\n             LEFT JOIN pads p\n               ON p.prf_instance = $1 AND p.label = $2 AND p.pad_length = $3",
+  "query": "SELECT p.is_error AS \"is_error?\", OCTET_LENGTH(p.ciphertext128) AS body_length,\n                  p.attestation_version AS \"attestation_version?\",\n                  p.ciphertext_digest AS \"ciphertext_digest?\",\n                  p.ciphertext128_digest AS \"ciphertext128_digest?\", p.signer AS \"signer?\",\n                  p.signature AS \"signature?\",\n                  COALESCE(p.created_at <= NOW() - make_interval(secs => $4)\n                           AND (p.claimed_at IS NULL\n                                OR p.claimed_at <= NOW() - make_interval(secs => $5)),\n                           FALSE) AS \"expired!\"\n             FROM (VALUES (1)) AS one\n             LEFT JOIN pads p\n               ON p.prf_instance = $1 AND p.label = $2 AND p.pad_length = $3",
   "describe": {
     "columns": [
       {
@@ -49,6 +49,7 @@
         "Int4",
         "Bytea",
         "Int4",
+        "Float8",
         "Float8"
       ]
     },
@@ -63,5 +64,5 @@
       null
     ]
   },
-  "hash": "58af5771a40fa1a8b31882401e3908cc87e1721e0732bd57001e23591fd4faea"
+  "hash": "66c6e4a9246d3f74c4f69bb10547823e48df727b49934dcbbb6a30f2ab5a30e7"
 }

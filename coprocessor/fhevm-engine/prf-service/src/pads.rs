@@ -52,6 +52,8 @@ pub struct Admissions {
     max_adds_per_connector: NonZeroUsize,
     /// Pending rows older than this do not count in the budget.
     pending_max_age: Duration,
+    /// A claim younger than this keeps an expired row in progress.
+    claim_timeout: Duration,
     /// One semaphore for each connector with an add in progress in this pod.
     adds: Adds,
 }
@@ -62,12 +64,14 @@ impl Admissions {
         max_pending_bits: i64,
         max_adds_per_connector: NonZeroUsize,
         pending_max_age: Duration,
+        claim_timeout: Duration,
     ) -> Self {
         Self {
             pool,
             max_pending_bits,
             max_adds_per_connector,
             pending_max_age,
+            claim_timeout,
             adds: Adds::default(),
         }
     }
@@ -79,7 +83,8 @@ impl Admissions {
         path: &PrfOutputRef,
         connector: Address,
     ) -> anyhow::Result<Admission> {
-        let row = read_for_admission(&self.pool, path, self.pending_max_age).await?;
+        let row =
+            read_for_admission(&self.pool, path, self.pending_max_age, self.claim_timeout).await?;
         match row.state {
             Some(PadState::Pending) if row.expired => return Ok(Admission::Expired),
             Some(state) => return Ok(Admission::Existing(state)),
@@ -197,7 +202,7 @@ async fn add(
 /// The row of a request.
 struct AdmissionRow {
     state: Option<PadState>,
-    /// The row is older than `pending_max_age`.
+    /// The row is older than `pending_max_age` and has no claim younger than `claim_timeout`.
     expired: bool,
 }
 
@@ -206,6 +211,7 @@ async fn read_for_admission(
     pool: &PgPool,
     path: &PrfOutputRef,
     pending_max_age: Duration,
+    claim_timeout: Duration,
 ) -> anyhow::Result<AdmissionRow> {
     let row = sqlx::query!(
         r#"SELECT p.is_error AS "is_error?", OCTET_LENGTH(p.ciphertext128) AS body_length,
@@ -213,7 +219,10 @@ async fn read_for_admission(
                   p.ciphertext_digest AS "ciphertext_digest?",
                   p.ciphertext128_digest AS "ciphertext128_digest?", p.signer AS "signer?",
                   p.signature AS "signature?",
-                  COALESCE(p.created_at <= NOW() - make_interval(secs => $4), FALSE) AS "expired!"
+                  COALESCE(p.created_at <= NOW() - make_interval(secs => $4)
+                           AND (p.claimed_at IS NULL
+                                OR p.claimed_at <= NOW() - make_interval(secs => $5)),
+                           FALSE) AS "expired!"
              FROM (VALUES (1)) AS one
              LEFT JOIN pads p
                ON p.prf_instance = $1 AND p.label = $2 AND p.pad_length = $3"#,
@@ -221,6 +230,7 @@ async fn read_for_admission(
         path.label.as_slice(),
         i32::from(path.pad_length),
         pending_max_age.as_secs_f64(),
+        claim_timeout.as_secs_f64(),
     )
     .fetch_one(pool)
     .await?;
@@ -363,6 +373,7 @@ mod tests {
             64,
             NonZeroUsize::new(2).unwrap(),
             Duration::from_secs(600),
+            Duration::from_secs(300),
         )
     }
 
