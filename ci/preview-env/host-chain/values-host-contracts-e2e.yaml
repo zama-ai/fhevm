@@ -91,6 +91,8 @@ scDeploy:
     # appended dynamically for NB_KMS_CORE parties - see header note.
     - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
     - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
+    - {name: INITIAL_KMS_CONTEXT_ID, value: "0x0700000000000000000000000000000000000000000000000000000000000001"}
+    - {name: INITIAL_EPOCH_ID, value: "0x0800000000000000000000000000000000000000000000000000000000000001"}
   deployCommands:
     - npx hardhat task:deployAllHostContracts --with-kms-generation true
     # task:addHostPausers intentionally omitted — deferred to a follow-up step, same reasoning

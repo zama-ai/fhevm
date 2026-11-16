@@ -4,6 +4,7 @@ import fs from 'fs';
 import { ethers, upgrades } from 'hardhat';
 import path from 'path';
 
+import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
@@ -128,7 +129,7 @@ export async function initializeProtocolConfigProxy(
   const upgraded = await upgrades.upgradeProxy(proxy, newImplementation, {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [kmsNodes, thresholds, '', []],
+      args: [KMS_CONTEXT_COUNTER_BASE + 1n, EPOCH_COUNTER_BASE + 1n, kmsNodes, thresholds, '', []],
     },
   });
   await upgraded.waitForDeployment();
