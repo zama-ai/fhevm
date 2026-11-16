@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM host_chain_consumer_blocks b\n            WHERE b.ctid IN (\n                SELECT c.ctid\n                FROM host_chain_consumer_blocks c\n                WHERE c.chain_id = $1\n                  AND c.stats_processed = TRUE\n                  AND c.created_at < (\n                      SELECT tip.created_at\n                      FROM host_chain_consumer_blocks tip\n                      WHERE tip.chain_id = $1\n                        AND tip.stats_processed = FALSE\n                      ORDER BY tip.block_number DESC\n                      LIMIT 1\n                  ) - $2::BIGINT * INTERVAL '1 second'\n                LIMIT $3\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "be90fc34bde37dc29cea71f8148b393a7546682efb72242079b452de10437538"
+}

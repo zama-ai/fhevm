@@ -288,6 +288,15 @@ async fn observe_consumer_stats(
             stats.number_of_duplicated_inserts as u64,
         );
     }
+    // Rows counted above only serve these stats: drop the old ones.
+    match db.prune_consumer_blocks().await {
+        Ok(0) => {}
+        Ok(pruned) => info!(chain_id, pruned, "Pruned consumer block history"),
+        Err(err) => {
+            inc_db_errors(chain_id, 1);
+            warn!(error = %err, "Failed to prune consumer block history");
+        }
+    }
 }
 
 async fn run_consumer_stats_observer(

@@ -193,6 +193,15 @@ const BLOCKS_VALID_RETENTION: i64 = 10_000;
 const BLOCKS_VALID_MIN_AGE_SECS: i64 = 7 * 24 * 3600;
 /// Upper bound of rows removed per pruning pass; keeps each pass short.
 const BLOCKS_VALID_PRUNE_BATCH: i64 = 1_000;
+/// `host_chain_consumer_blocks` only feeds the consumer's delivery metrics
+/// and gap statistics: counted rows received more than this long before the
+/// newest block are deleted.
+const CONSUMER_BLOCKS_RETENTION_SECS: i64 = 24 * 3600;
+/// Upper bound of `host_chain_consumer_blocks` rows deleted per stats pass,
+/// small enough that a pass never pauses the database. At one pass a minute
+/// it still outpaces the fastest chain (BSC, ~160 blocks a minute), so a
+/// backlog shrinks at every pass.
+const CONSUMER_BLOCKS_PRUNE_BATCH: i64 = 5_000;
 /// A spaced prune waits this many times its previous duration before running
 /// again, so pruning takes at most ~10 % of the caller's time.
 const PRUNE_SPACING_FACTOR: u32 = 10;
@@ -1820,12 +1829,16 @@ impl Database {
                 number_of_duplicated_inserts: 0,
             });
         };
+        // The newest row is never counted (only rows below it minus the
+        // margin are), so its number is the maximum of the uncounted rows: one
+        // probe of the partial index instead of a scan of the whole history.
         let row = sqlx::query!(
             r#"
             WITH last_block_number AS (
                 SELECT MAX(block_number) AS last_block_number
                 FROM host_chain_consumer_blocks
                 WHERE chain_id = $1
+                AND stats_processed = FALSE
             ),
             eligible_blocks AS (
                 SELECT
@@ -1877,6 +1890,46 @@ impl Database {
             total_new_gap_size: row.total_new_gap_size,
             number_of_duplicated_inserts: row.number_of_duplicated_inserts,
         })
+    }
+
+    /// Deletes counted `host_chain_consumer_blocks` rows received more than
+    /// [`CONSUMER_BLOCKS_RETENTION_SECS`] before the newest block, at most
+    /// [`CONSUMER_BLOCKS_PRUNE_BATCH`] per call. The table only feeds the
+    /// consumer's metrics and nothing deleted it. The cutoff follows the
+    /// newest block rather than the clock, so a stalled consumer keeps its
+    /// last day of history. Uncounted rows are kept for the next stats pass.
+    pub async fn prune_consumer_blocks(&self) -> Result<u64, SqlxError> {
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(0);
+        };
+        let deleted = sqlx::query!(
+            r#"
+            DELETE FROM host_chain_consumer_blocks b
+            WHERE b.ctid IN (
+                SELECT c.ctid
+                FROM host_chain_consumer_blocks c
+                WHERE c.chain_id = $1
+                  AND c.stats_processed = TRUE
+                  AND c.created_at < (
+                      SELECT tip.created_at
+                      FROM host_chain_consumer_blocks tip
+                      WHERE tip.chain_id = $1
+                        AND tip.stats_processed = FALSE
+                      ORDER BY tip.block_number DESC
+                      LIMIT 1
+                  ) - $2::BIGINT * INTERVAL '1 second'
+                LIMIT $3
+            )
+            "#,
+            self.chain_id.as_i64(),
+            CONSUMER_BLOCKS_RETENTION_SECS,
+            CONSUMER_BLOCKS_PRUNE_BATCH,
+        )
+        .execute(tx.as_mut())
+        .await?
+        .rows_affected();
+        tx.commit().await?;
+        Ok(deleted)
     }
 
     pub async fn get_finalized_blocks_number(
