@@ -4,6 +4,7 @@ import fs from 'fs';
 import { ethers, upgrades } from 'hardhat';
 import path from 'path';
 
+import type { Coprocessor } from '../../tasks/utils/coprocessorConfigTasks';
 import type { KMSGeneration } from '../../types';
 import type { KmsThresholdsStruct } from '../../types/contracts/ProtocolConfig';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
@@ -204,14 +205,7 @@ export async function rotateToNewKmsContext(
   return context.contextId;
 }
 
-export type CoprocessorFixture = {
-  txSenderAddress: string;
-  signerAddress: string;
-  storageUrl: string;
-  prfEndpointUrl: string;
-};
-
-export function buildCoprocessors(): CoprocessorFixture[] {
+export function buildCoprocessors(): Coprocessor[] {
   return [
     {
       txSenderAddress: '0x000000000000000000000000000000000000c111',
@@ -239,7 +233,7 @@ export const COPROCESSOR_MAJORITY_THRESHOLD = Math.floor(buildCoprocessors().len
 
 export async function deployFreshCoprocessorConfigProxy(
   deployer: Wallet,
-  coprocessors: CoprocessorFixture[],
+  coprocessors: Coprocessor[],
   majorityThreshold: number,
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
@@ -252,7 +246,7 @@ export async function deployFreshCoprocessorConfigProxy(
 export async function deployFreshCoprocessorConfigReplicaProxy(
   deployer: Wallet,
   coprocessorContextId: bigint,
-  coprocessors: CoprocessorFixture[],
+  coprocessors: Coprocessor[],
   majorityThreshold: number,
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);

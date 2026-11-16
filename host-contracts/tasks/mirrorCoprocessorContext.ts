@@ -2,14 +2,11 @@ import type { Interface, Provider } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import {
-  type Coprocessor,
-  getCoprocessorConfig,
-  readCanonicalCoprocessorConfigSnapshot,
-} from './coprocessorConfigMirror';
+import { getCoprocessorConfig, readCanonicalCoprocessorConfigSnapshot } from './coprocessorConfigMirror';
 import { broadcast } from './kmsContext';
 import { assertCanonicalBlockHash } from './utils/canonicalBlock';
 import {
+  type Coprocessor,
   addMirrorTaskParams,
   getCanonicalProvider,
   getCoprocessorConfigReplica,

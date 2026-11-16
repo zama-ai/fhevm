@@ -2,7 +2,8 @@ const REQUEST_TYPE_SHIFT = 248n;
 
 // Values 1 and 2 are reserved for Gateway public/user decryption request IDs.
 // Host KMS generation keeps the historical Gateway tags so migrated request IDs stay unchanged.
-// Values 7 and 8 are consensus-confirmed ProtocolConfig lifecycle IDs. Value 9 is CoprocessorConfig context IDs.
+// Values 7 and 8 are consensus-confirmed ProtocolConfig lifecycle IDs. Values 9 and 10 are CoprocessorConfig
+// context and upgrade proposal IDs.
 const enum RequestType {
   _deprecated_ = 0,
   _gatewayPublicDecrypt_ = 1,
@@ -14,6 +15,7 @@ const enum RequestType {
   KmsContext = 7,
   Epoch = 8,
   CoprocessorContext = 9,
+  CoprocessorUpgradeProposal = 10,
 }
 
 export const KMS_CONTEXT_COUNTER_BASE = BigInt(RequestType.KmsContext) << REQUEST_TYPE_SHIFT;

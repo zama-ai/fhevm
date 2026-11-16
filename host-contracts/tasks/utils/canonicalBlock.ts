@@ -11,7 +11,7 @@ export async function assertCanonicalBlockHash(
   snapshot: { blockNumber: number; blockHash: string },
 ): Promise<void> {
   const block = await canonicalProvider.getBlock(snapshot.blockNumber);
-  if (block === null || block.hash === null || block.hash !== snapshot.blockHash) {
+  if (block?.hash !== snapshot.blockHash) {
     throw new Error(`Canonical block ${snapshot.blockNumber} is missing or its hash changed during the read; retry.`);
   }
 }

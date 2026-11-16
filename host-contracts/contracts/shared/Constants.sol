@@ -4,7 +4,8 @@ pragma solidity ^0.8.24;
 uint8 constant HANDLE_VERSION = 0;
 
 /**
- * @notice The KMS request and protocol-lifecycle ID tags used in the high byte of KMS IDs.
+ * @notice The type tags in the high byte of the IDs the host contracts assign: KMS requests,
+ *         KMS lifecycle, coprocessor contexts and coprocessor upgrade proposals.
  * @dev The ordering preserves Gateway request-type history so migrated IDs keep their meaning.
  */
 enum RequestType {
@@ -21,7 +22,7 @@ enum RequestType {
     CoprocessorUpgradeProposal // 10
 }
 
-// Bit position to left shift for initializing KMS ID counters.
+// Bit position to left shift a type tag into the high byte of an ID.
 uint256 constant REQUEST_TYPE_SHIFT = 248;
 
 /// @dev Base value for preprocessing keygen request IDs. Format: [0x03 type tag | 31 counter bytes].

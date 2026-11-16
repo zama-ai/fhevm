@@ -6,10 +6,17 @@ import type { CoprocessorConfigReplica } from '../../types';
 import { getContractInterface } from './contractInterface';
 import { loadHostAddresses } from './loadVariables';
 
-// Shared plumbing for the CoprocessorConfig and CoprocessorConfigReplica tasks: ABI loading, target
-// address resolution and the common CLI parameters.
+// Shared plumbing for the CoprocessorConfig and CoprocessorConfigReplica tasks: the coprocessor type,
+// ABI loading, target address resolution and the common CLI parameters.
 
 export const COPROCESSOR_CONFIG_ADDRESS_ENV_VAR = 'COPROCESSOR_CONFIG_CONTRACT_ADDRESS';
+
+export type Coprocessor = {
+  txSenderAddress: string;
+  signerAddress: string;
+  storageUrl: string;
+  prfEndpointUrl: string;
+};
 
 export interface EncodedCall {
   functionSignature: string;
