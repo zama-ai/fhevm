@@ -118,7 +118,7 @@ where
         bridge,
         options,
         get_block,
-        |_| std::future::ready(ExecutorVersionSchedule::default()),
+        |_| std::future::ready(Ok(ExecutorVersionSchedule::default())),
     )
     .await
 }
@@ -172,7 +172,7 @@ where
     GetBlock: FnMut(u64) -> BlockFuture,
     BlockFuture: Future<Output = anyhow::Result<BlockLogs<Log>>>,
     GetExecutorSchedule: FnMut(ExecutorVersionRequest) -> ScheduleFuture,
-    ScheduleFuture: Future<Output = ExecutorVersionSchedule>,
+    ScheduleFuture: Future<Output = anyhow::Result<ExecutorVersionSchedule>>,
 {
     let mut repair = None;
     let mut fetched = 0;
@@ -183,7 +183,7 @@ where
         request.persisted_parent_version =
             persisted_executor_version_for_parent(db, chain_id, &request)
                 .await?;
-        let schedule = get_executor_schedule(request).await;
+        let schedule = get_executor_schedule(request).await?;
         let result = ingest_block_logs_with_executor_schedule(
             chain_id,
             db,
@@ -500,7 +500,14 @@ async fn persisted_prior_minted_outputs(
 
     let rows = sqlx::query_as::<
         _,
-        (Vec<u8>, Vec<u8>, Option<i64>, Option<bool>, i64),
+        (
+            Vec<u8>,
+            Vec<u8>,
+            Option<i64>,
+            Option<bool>,
+            Option<Vec<u8>>,
+            i64,
+        ),
     >(
         "WITH requested AS (
              SELECT transaction_id, output_handle, consumer_log_index
@@ -511,14 +518,15 @@ async fn persisted_prior_minted_outputs(
                 c.output_handle,
                 c.log_index,
                 c.is_executor_minted,
+                c.log_index_block_hash,
                 r.consumer_log_index
          FROM requested r
          JOIN computations c
            ON c.transaction_id = r.transaction_id
           AND c.output_handle = r.output_handle
           AND c.host_chain_id = $4
-          AND c.block_number = $5
-          AND c.log_index_block_hash = $6",
+          AND (c.block_number = $5 OR c.block_number IS NULL)
+          AND (c.log_index_block_hash = $6 OR c.log_index_block_hash IS NULL)",
     )
     .bind(transaction_ids)
     .bind(output_handles)
@@ -535,11 +543,17 @@ async fn persisted_prior_minted_outputs(
         output_handle,
         producer_log_index,
         is_executor_minted,
+        producer_block_hash,
         consumer_log_index,
     ) in rows
     {
         if is_executor_minted == Some(false) {
             continue;
+        }
+        if producer_block_hash.is_none() {
+            return Err(refuse_mask_derivation(
+                "refusing operand-origin derivation: persisted same-transaction producer has no block identity; replay the complete block",
+            ));
         }
         let Some(producer_log_index) = producer_log_index else {
             return Err(refuse_mask_derivation(
@@ -1666,11 +1680,12 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
         .filter_map(|(_, chain)| chain.clone())
         .collect::<Vec<_>>();
     at_least_one_insertion |= !upgraded.is_empty();
-    // ACL-only replay can reactivate previously persisted outputs even when
-    // this delivery did not observe a duplicate computation insertion. It is
-    // still a replay for dependency reconstruction: the child may have been
-    // stored with its ACL absent and therefore incomplete gate accounting.
-    let replay_repair = replayed_computation || !upgraded.is_empty();
+    // An ACL upgrade alone is not evidence of replay: a later block may grant
+    // an earlier output while introducing unrelated, freshly grouped work.
+    // Re-arm upgraded stored chains below, but preserve the fresh delivery's
+    // inferred edges. Reconstruction needs duplicated computation logs; an
+    // ACL-only delivery has no operand graph from which to reconstruct gates.
+    let replay_repair = replayed_computation;
     if slow_lane_enabled {
         for (handle, stored_chain) in &upgraded {
             // Recording a missing producer inventory entry can already have
@@ -3304,6 +3319,105 @@ mod tests {
         );
     }
 
+    #[test]
+    fn scalar_admission_matches_historical_executor_implementations() {
+        let handle = |ty| {
+            let mut bytes = [0_u8; 32];
+            bytes[21] = COMPUTED_HANDLE_INDEX_MARKER;
+            bytes[22..30].copy_from_slice(&1_u64.to_be_bytes());
+            bytes[30] = ty;
+            bytes[31] = HANDLE_VERSION;
+            FixedBytes(bytes)
+        };
+        // 1515d36df5 added all three range checks together, with the 0.6 ->
+        // 0.7 version bump. The old executor accepted these exact arguments.
+        let scalar = FixedBytes(U256::from(257).to_be_bytes::<32>());
+        let events = [
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: U256::from(256),
+                toType: 2,
+                result: handle(2),
+            }),
+            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                caller: Address::ZERO,
+                lhs: handle(2),
+                rhs: scalar,
+                scalarByte: FixedBytes([1]),
+                result: handle(2),
+            }),
+            TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+                caller: Address::ZERO,
+                factor1: handle(2),
+                factor2: scalar,
+                divisor: scalar,
+                scalarByte: FixedBytes([3]),
+                result: handle(2),
+            }),
+        ];
+        for event in &events {
+            for version in
+                [ExecutorVersion::new(0, 5, 0), ExecutorVersion::new(0, 6, 0)]
+            {
+                assert!(validate_tfhe_event_for_version(
+                    event,
+                    1,
+                    Some(version)
+                )
+                .is_ok());
+            }
+            assert!(validate_tfhe_event_for_version(
+                event,
+                1,
+                Some(ExecutorVersion::new(0, 7, 0))
+            )
+            .is_err());
+        }
+
+        // fb301b1d35 added the uint8 shift/rotate cap without changing 0.7.
+        // Versioned admission must accept the earlier implementation's logs.
+        let amount = FixedBytes(U256::from(256).to_be_bytes::<32>());
+        let shifts = [
+            TfheContractEvents::FheShl(TfheContract::FheShl {
+                caller: Address::ZERO,
+                lhs: handle(3),
+                rhs: amount,
+                scalarByte: FixedBytes([1]),
+                result: handle(3),
+            }),
+            TfheContractEvents::FheShr(TfheContract::FheShr {
+                caller: Address::ZERO,
+                lhs: handle(3),
+                rhs: amount,
+                scalarByte: FixedBytes([1]),
+                result: handle(3),
+            }),
+            TfheContractEvents::FheRotl(TfheContract::FheRotl {
+                caller: Address::ZERO,
+                lhs: handle(3),
+                rhs: amount,
+                scalarByte: FixedBytes([1]),
+                result: handle(3),
+            }),
+            TfheContractEvents::FheRotr(TfheContract::FheRotr {
+                caller: Address::ZERO,
+                lhs: handle(3),
+                rhs: amount,
+                scalarByte: FixedBytes([1]),
+                result: handle(3),
+            }),
+        ];
+        for event in &shifts {
+            assert!(validate_tfhe_event_for_version(
+                event,
+                1,
+                Some(ExecutorVersion::new(0, 7, 0))
+            )
+            .is_ok());
+            assert!(crate::database::event_operands::validate_scalar_values_for_current_executor(event).is_err());
+        }
+    }
+
     fn fixture_chain(hash: u8, dependencies: &[u8]) -> Chain {
         Chain {
             hash: FixedBytes::<32>::from([hash; 32]),
@@ -4376,9 +4490,9 @@ mod tests {
         };
         let make_schedule = || {
             let mut schedule = ExecutorVersionSchedule::new(Some(
-                ExecutorVersion::new(0, 4, 0),
+                ExecutorVersion::new(0, 6, 0),
             ));
-            schedule.add_transition(1, Some(ExecutorVersion::new(0, 5, 0)));
+            schedule.add_transition(1, Some(ExecutorVersion::new(0, 7, 0)));
             schedule
         };
         let options = IngestOptions {
@@ -4398,10 +4512,10 @@ mod tests {
 
         let invalid_logs = vec![
             // The upgrade is effective strictly after log index 1. This
-            // event remains v0.4 and is therefore valid despite the v0.5
+            // event remains v0.6 and is therefore valid despite the v0.7
             // uint8 range check.
             make_log(1, 256, 1),
-            // This event is after the upgrade and must fail the v0.5 bound.
+            // This event is after the upgrade and must fail the v0.7 bound.
             make_log(2, 256, 2),
         ];
         let error = ingest_block_logs_with_executor_schedule(
@@ -4474,6 +4588,6 @@ mod tests {
         .await
         .expect("persisted accepted block");
         assert_eq!(counts.0, 2);
-        assert_eq!(counts.1.as_deref(), Some("FHEVMExecutor v0.5.0"));
+        assert_eq!(counts.1.as_deref(), Some("FHEVMExecutor v0.7.0"));
     }
 }

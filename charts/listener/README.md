@@ -108,6 +108,11 @@ listeners:
 If the address is unset, publishers omit the optional metadata and the host
 listener keeps history-compatible scalar admission. Deployments that require
 version-aware admission should wire this variable to the chain's proxy address.
+When it is configured, a failed version RPC prevents publication of that block
+and retries through the normal listener error path. The RPC must support the
+requested historical state; a transport error must not be published as unknown
+version metadata. A successful empty response before proxy deployment remains
+compatible with historical replay.
 
 #### Overriding shared settings
 

@@ -351,7 +351,7 @@ impl SemEvmRpcProvider {
         &self,
         address: Address,
         block_hash: B256,
-    ) -> Result<String, RpcProviderError> {
+    ) -> Result<Option<String>, RpcProviderError> {
         let call_data = Bytes::from(FhevmExecutorVersionAbi::getVersionCall {}.abi_encode());
         let response: Bytes = self
             .raw_request(
@@ -362,12 +362,17 @@ impl SemEvmRpcProvider {
                 ]),
             )
             .await?;
-        FhevmExecutorVersionAbi::getVersionCall::abi_decode_returns(&response).map_err(|error| {
-            RpcProviderError::DeserializationError {
+        // Before the proxy is deployed, eth_call succeeds with empty bytes.
+        // Preserve that historical state without conflating it with RPC errors.
+        if response.is_empty() {
+            return Ok(None);
+        }
+        FhevmExecutorVersionAbi::getVersionCall::abi_decode_returns(&response)
+            .map(Some)
+            .map_err(|error| RpcProviderError::DeserializationError {
                 method: "eth_call(getVersion)".to_string(),
                 details: error.to_string(),
-            }
-        })
+            })
     }
 
     #[instrument(skip(self), level = "debug")]

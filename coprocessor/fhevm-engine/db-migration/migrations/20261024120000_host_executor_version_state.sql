@@ -1,18 +1,22 @@
 -- Persist the executor version known at each observed host block. This lets a
 -- restarted listener continue from a canonical parent without guessing from
 -- the current proxy implementation; block_hash keeps competing forks distinct.
+-- Bound lock acquisition and avoid scanning retained history while holding the
+-- ALTER TABLE lock. NOT VALID still checks every new/updated row; validation of
+-- old rows can run separately with VALIDATE CONSTRAINT after deployment.
+SET LOCAL lock_timeout = '5s';
 ALTER TABLE public.host_chain_blocks_valid
     ADD COLUMN IF NOT EXISTS tfhe_executor_address BYTEA,
     ADD COLUMN IF NOT EXISTS tfhe_executor_version TEXT;
 
 ALTER TABLE public.host_chain_blocks_valid
     ADD CONSTRAINT host_chain_blocks_valid_executor_address_length
-        CHECK (tfhe_executor_address IS NULL OR octet_length(tfhe_executor_address) = 20),
+        CHECK (tfhe_executor_address IS NULL OR octet_length(tfhe_executor_address) = 20) NOT VALID,
     ADD CONSTRAINT host_chain_blocks_valid_executor_version_format
         CHECK (
             tfhe_executor_version IS NULL
             OR tfhe_executor_version ~ '^FHEVMExecutor v[0-9]+[.][0-9]+[.][0-9]+$'
-        );
+        ) NOT VALID;
 
 -- CREATE TABLE IF NOT EXISTS ... LIKE public does not evolve an existing
 -- Green schema. A listener restarted during an upgrade reads these columns
@@ -34,7 +38,7 @@ BEGIN
                 green_schema
             );
             EXECUTE format(
-                'ALTER TABLE %I.host_chain_blocks_valid ADD CONSTRAINT host_chain_blocks_valid_executor_address_length CHECK (tfhe_executor_address IS NULL OR octet_length(tfhe_executor_address) = 20), ADD CONSTRAINT host_chain_blocks_valid_executor_version_format CHECK (tfhe_executor_version IS NULL OR tfhe_executor_version ~ ''^FHEVMExecutor v[0-9]+[.][0-9]+[.][0-9]+$'')',
+                'ALTER TABLE %I.host_chain_blocks_valid ADD CONSTRAINT host_chain_blocks_valid_executor_address_length CHECK (tfhe_executor_address IS NULL OR octet_length(tfhe_executor_address) = 20) NOT VALID, ADD CONSTRAINT host_chain_blocks_valid_executor_version_format CHECK (tfhe_executor_version IS NULL OR tfhe_executor_version ~ ''^FHEVMExecutor v[0-9]+[.][0-9]+[.][0-9]+$'') NOT VALID',
                 green_schema
             );
         END IF;

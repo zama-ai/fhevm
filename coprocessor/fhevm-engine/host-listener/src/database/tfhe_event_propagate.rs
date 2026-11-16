@@ -1099,20 +1099,7 @@ impl Database {
                 log_index_block_hash
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-            ON CONFLICT (output_handle, transaction_id) DO UPDATE
-                SET log_index = CASE
-                        WHEN computations.log_index_block_hash IS NOT DISTINCT FROM EXCLUDED.log_index_block_hash
-                        THEN LEAST(computations.log_index, EXCLUDED.log_index)
-                        ELSE EXCLUDED.log_index END,
-                    log_index_block_hash = EXCLUDED.log_index_block_hash,
-                    is_executor_minted = COALESCE(
-                        computations.is_executor_minted,
-                        EXCLUDED.is_executor_minted
-                    )
-                WHERE computations.log_index IS NULL
-                   OR computations.is_executor_minted IS NULL
-                   OR computations.log_index_block_hash IS DISTINCT FROM EXCLUDED.log_index_block_hash
-                   OR computations.log_index > EXCLUDED.log_index
+            ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
         )
         .bind(output_handle)
@@ -1137,7 +1124,32 @@ impl Database {
         .bind(log.is_executor_minted)
         .bind(log.is_executor_minted.then_some(log.block_hash.as_slice()))
         .execute(tx.deref_mut()).await?;
-        Ok(result.rows_affected() > 0)
+        let inserted = result.rows_affected() > 0;
+        if !inserted {
+            // A provenance backfill is still a replay, not newly scheduled
+            // work. Keep its result separate from INSERT's rows_affected so
+            // callers repair persisted chain identities and count work once.
+            sqlx::query(
+                "UPDATE computations
+                 SET log_index = CASE
+                         WHEN log_index_block_hash IS NOT DISTINCT FROM $4::bytea
+                         THEN LEAST(log_index, $3) ELSE $3 END,
+                     log_index_block_hash = $4,
+                     is_executor_minted = COALESCE(is_executor_minted, $5)
+                 WHERE output_handle = $1 AND transaction_id IS NOT DISTINCT FROM $2
+                   AND (log_index IS NULL OR is_executor_minted IS NULL
+                        OR log_index_block_hash IS DISTINCT FROM $4::bytea
+                        OR log_index > $3)",
+            )
+            .bind(output_handle)
+            .bind(log.transaction_hash.map(|hash| hash.to_vec()))
+            .bind(log_index)
+            .bind(log.is_executor_minted.then_some(log.block_hash.as_slice()))
+            .bind(log.is_executor_minted)
+            .execute(tx.deref_mut())
+            .await?;
+        }
+        Ok(inserted)
     }
 
     pub async fn allowed_computation_handles(
@@ -1468,7 +1480,10 @@ impl Database {
                 WHERE p.output_handle = consumed.input
                   AND p.host_chain_id = candidate.host_chain_id
                   AND p.transaction_id <> candidate.transaction_id
-                  AND p.block_number <= candidate.block_number
+                  AND (p.block_number < candidate.block_number
+                       OR (p.block_number = candidate.block_number
+                           AND p.log_index_block_hash = candidate.log_index_block_hash
+                           AND p.log_index < candidate.log_index))
                   AND p.is_allowed AND NOT p.is_completed AND NOT p.is_error
                   AND dc.status <> 'processed'
                 ORDER BY p.schedule_order, p.transaction_id

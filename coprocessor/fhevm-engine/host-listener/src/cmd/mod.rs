@@ -377,51 +377,51 @@ impl InfiniteLogIter {
         &self,
         address: Address,
         at_block_hash: BlockHash,
-    ) -> Option<ExecutorVersion> {
-        let provider = self.provider.read().await.clone()?;
-        let executor =
-            crate::contracts::TfheContract::FHEVMExecutorInstance::new(
-                address, &provider,
-            );
-        match tokio::time::timeout(
+    ) -> anyhow::Result<Option<ExecutorVersion>> {
+        use alloy::sol_types::SolCall;
+        let provider = self.provider.read().await.clone().ok_or_else(|| {
+            anyhow::anyhow!(
+                "WebSocket provider is unavailable for executor version lookup"
+            )
+        })?;
+        let request = alloy::rpc::types::TransactionRequest::default()
+            .to(address)
+            .input(alloy::rpc::types::TransactionInput::both(
+                crate::contracts::TfheContract::getVersionCall {}
+                    .abi_encode()
+                    .into(),
+            ));
+        let value = tokio::time::timeout(
             Duration::from_secs(self.timeout_request_websocket),
-            executor
-                .getVersion()
-                .block(BlockId::hash_canonical(at_block_hash))
-                .call(),
+            provider
+                .call(request)
+                .block(BlockId::hash_canonical(at_block_hash)),
         )
         .await
-        {
-            Ok(Ok(value)) => ExecutorVersion::parse(&value),
-            Ok(Err(error)) => {
-                tracing::debug!(
-                    %address,
-                    %at_block_hash,
-                    %error,
-                    "Cannot resolve FHEVMExecutor version at canonical block"
-                );
-                None
-            }
-            Err(_) => {
-                tracing::debug!(
-                    %address,
-                    %at_block_hash,
-                    "Timed out resolving FHEVMExecutor version at canonical block"
-                );
-                None
-            }
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "Timed out resolving FHEVMExecutor version at canonical block"
+            )
+        })??;
+        if value.is_empty() {
+            return Ok(None);
         }
+        let version =
+            crate::contracts::TfheContract::getVersionCall::abi_decode_returns(
+                &value,
+            )?;
+        Ok(ExecutorVersion::parse(&version))
     }
 
     pub(crate) async fn executor_version_schedule(
         &self,
         request: ExecutorVersionRequest,
-    ) -> ExecutorVersionSchedule {
+    ) -> anyhow::Result<ExecutorVersionSchedule> {
         let Some(tfhe_proxy) = request.tfhe_proxy else {
             if let Ok(mut cursor) = self.executor_version_cursor.lock() {
                 *cursor = None;
             }
-            return ExecutorVersionSchedule::default();
+            return Ok(ExecutorVersionSchedule::default());
         };
 
         let cached_parent = self
@@ -440,13 +440,13 @@ impl InfiniteLogIter {
         if current.is_none() {
             current = self
                 .query_executor_version(tfhe_proxy, request.parent_hash)
-                .await;
+                .await?;
         }
         let mut schedule = ExecutorVersionSchedule::new(current);
         for (log_index, implementation) in request.upgrades {
             current = self
                 .query_executor_version(implementation, request.block_hash)
-                .await;
+                .await?;
             schedule.add_transition(log_index, current);
         }
 
@@ -461,7 +461,7 @@ impl InfiniteLogIter {
         } else if let Ok(mut cursor) = self.executor_version_cursor.lock() {
             *cursor = None;
         }
-        schedule
+        Ok(schedule)
     }
 
     async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
@@ -1824,8 +1824,10 @@ mod tests {
         let mut parent_request =
             ExecutorVersionRequest::from_block(&parent, Some(proxy));
         parent_request.persisted_parent_version = Some(Some(version));
-        let parent_schedule =
-            iter.executor_version_schedule(parent_request).await;
+        let parent_schedule = iter
+            .executor_version_schedule(parent_request)
+            .await
+            .expect("executor version lookup");
         assert_eq!(parent_schedule.ending_version(), Some(version));
 
         let child = BlockLogs {
@@ -1844,8 +1846,43 @@ mod tests {
                 &child,
                 Some(proxy),
             ))
-            .await;
+            .await
+            .expect("executor version lookup");
         assert_eq!(child_schedule.ending_version(), Some(version));
+    }
+
+    #[tokio::test]
+    async fn websocket_executor_version_failure_does_not_become_unknown_metadata(
+    ) {
+        let iter = new_test_iter(50);
+        let block = BlockLogs {
+            logs: vec![],
+            summary: BlockSummary {
+                number: 100,
+                hash: BlockHash::with_last_byte(100),
+                parent_hash: BlockHash::with_last_byte(99),
+                timestamp: 1_790_000_000,
+            },
+            catchup: false,
+            finalized: true,
+        };
+        let proxy = Some(Address::with_last_byte(0x42));
+        assert!(iter
+            .executor_version_schedule(ExecutorVersionRequest::from_block(
+                &block, proxy
+            ))
+            .await
+            .is_err());
+        let mut recovered = ExecutorVersionRequest::from_block(&block, proxy);
+        recovered.persisted_parent_version =
+            Some(Some(ExecutorVersion::new(0, 7, 0)));
+        assert_eq!(
+            iter.executor_version_schedule(recovered)
+                .await
+                .unwrap()
+                .ending_version(),
+            Some(ExecutorVersion::new(0, 7, 0))
+        );
     }
 
     #[tokio::test]

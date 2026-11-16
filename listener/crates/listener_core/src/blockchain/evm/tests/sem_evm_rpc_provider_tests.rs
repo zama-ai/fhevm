@@ -315,7 +315,7 @@ mod sem_evm_rpc_provider_tests {
             .get_executor_version_at_hash(proxy, block_hash)
             .await
             .unwrap();
-        assert_eq!(actual, VERSION);
+        assert_eq!(actual.as_deref(), Some(VERSION));
 
         let request = captured_request.lock().unwrap().take().unwrap();
         assert_eq!(request["method"], "eth_call");

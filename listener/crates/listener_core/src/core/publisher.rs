@@ -412,29 +412,22 @@ async fn resolve_executor_version_metadata(
     provider: &SemEvmRpcProvider,
     fetched_block: &FetchedBlock,
     proxy: Option<Address>,
-) -> Option<ExecutorVersionMetadata> {
-    let proxy = proxy?;
+) -> Result<Option<ExecutorVersionMetadata>, PublisherError> {
+    let Some(proxy) = proxy else {
+        return Ok(None);
+    };
+    let block_number = fetched_block.block.header.number;
     let block_hash = fetched_block.block.header.hash;
     let parent_hash = fetched_block.block.header.parent_hash;
-    let initial_version = match provider
+    let initial_version = provider
         .get_executor_version_at_hash(proxy, parent_hash)
         .await
-    {
-        Ok(version) => Some(version),
-        Err(error) => {
-            warn!(
-                block_number = fetched_block.block.header.number,
-                %proxy,
-                %parent_hash,
-                %error,
-                "Could not resolve executor version at canonical parent; preserving permissive admission"
-            );
-            None
-        }
-    };
+        .map_err(|error| PublisherError::PayloadBuildError {
+            block_number,
+            reason: format!("Cannot resolve executor version at canonical parent: {error}"),
+        })?;
 
     let mut upgrades = Vec::new();
-    let mut malformed_upgrade = false;
     for log in fetched_block
         .receipts_ordered()
         .into_iter()
@@ -445,63 +438,45 @@ async fn resolve_executor_version_metadata(
         {
             continue;
         }
-        let Some(log_index) = log.log_index else {
-            malformed_upgrade = true;
-            continue;
-        };
-        match FhevmExecutorUpgradeAbi::Upgraded::decode_log(&log.inner) {
-            Ok(event) => upgrades.push((log_index, event.data.implementation)),
-            Err(_) => malformed_upgrade = true,
-        }
-    }
-    if malformed_upgrade {
-        warn!(
-            block_number = fetched_block.block.header.number,
-            %proxy,
-            "Malformed FHEVMExecutor Upgraded log; leaving this block's executor version unknown"
-        );
-        return Some(ExecutorVersionMetadata {
-            proxy_address: proxy,
-            block_hash,
-            parent_hash,
-            initial_version: None,
-            transitions: Vec::new(),
-        });
+        let log_index = log
+            .log_index
+            .ok_or_else(|| PublisherError::PayloadBuildError {
+                block_number,
+                reason: "Executor upgrade has no log index".into(),
+            })?;
+        let event = FhevmExecutorUpgradeAbi::Upgraded::decode_log(&log.inner).map_err(|error| {
+            PublisherError::PayloadBuildError {
+                block_number,
+                reason: format!("Cannot decode executor upgrade: {error}"),
+            }
+        })?;
+        upgrades.push((log_index, event.data.implementation));
     }
     upgrades.sort_by_key(|(log_index, _)| *log_index);
 
     let mut transitions = Vec::with_capacity(upgrades.len());
     for (after_log_index, implementation) in upgrades {
-        let version = match provider
+        let version = provider
             .get_executor_version_at_hash(implementation, block_hash)
             .await
-        {
-            Ok(version) => Some(version),
-            Err(error) => {
-                warn!(
-                    block_number = fetched_block.block.header.number,
-                    after_log_index,
-                    %implementation,
-                    %block_hash,
-                    %error,
-                    "Could not resolve upgraded executor version; preserving permissive admission after transition"
-                );
-                None
-            }
-        };
+            .map_err(|error| PublisherError::PayloadBuildError {
+                block_number,
+                reason: format!(
+                    "Cannot resolve upgraded executor version at log {after_log_index}: {error}"
+                ),
+            })?;
         transitions.push(ExecutorVersionTransitionMetadata {
             after_log_index,
             version,
         });
     }
-
-    Some(ExecutorVersionMetadata {
+    Ok(Some(ExecutorVersionMetadata {
         proxy_address: proxy,
         block_hash,
         parent_hash,
         initial_version,
         transitions,
-    })
+    }))
 }
 
 /// Build IndexedLog entries from a transaction receipt.
@@ -600,7 +575,7 @@ pub async fn publish_block_events(
         fetched_block,
         publish_config.tfhe_executor_proxy_address,
     )
-    .await;
+    .await?;
     let payloads = filter_index.build_block_payloads_with_executor_version(
         fetched_block,
         chain_id,
@@ -676,7 +651,7 @@ pub async fn publish_final_block_events(
         fetched_block,
         publish_config.tfhe_executor_proxy_address,
     )
-    .await;
+    .await?;
     let payloads = filter_index.build_block_payloads_with_executor_version(
         fetched_block,
         chain_id,
@@ -753,7 +728,7 @@ pub async fn publish_catchup_block_events(
         fetched_block,
         publish_config.tfhe_executor_proxy_address,
     )
-    .await;
+    .await?;
     let payloads = filter_index.build_block_payloads_with_executor_version(
         fetched_block,
         chain_id,
@@ -847,7 +822,7 @@ pub async fn publish_final_catchup_block_events(
         fetched_block,
         publish_config.tfhe_executor_proxy_address,
     )
-    .await;
+    .await?;
     let payloads = filter_index.build_block_payloads_with_executor_version(
         fetched_block,
         chain_id,
@@ -1454,6 +1429,55 @@ mod tests {
             block,
             receipts: HashMap::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn executor_metadata_rpc_failure_prevents_publication_and_can_retry() {
+        use axum::{Json, Router, routing::post};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        let recovered = Arc::new(AtomicBool::new(false));
+        let state = recovered.clone();
+        let app = Router::new().route("/", post(move |Json(request): Json<serde_json::Value>| {
+            let state = state.clone();
+            async move {
+                if state.load(Ordering::SeqCst) {
+                    // A successful empty response represents a proxy not yet
+                    // deployed at this historical parent, not an RPC failure.
+                    Json(serde_json::json!({"jsonrpc":"2.0", "id":request["id"], "result":"0x"}))
+                } else {
+                    Json(serde_json::json!({"jsonrpc":"2.0", "id":request["id"], "error":{"code":-32000,"message":"historical state temporarily unavailable"}}))
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let provider = SemEvmRpcProvider::new(format!("http://{address}"), 1, false, 1).unwrap();
+        let block = empty_fetched_block();
+        let proxy = Some(addr(ADDR_1));
+        assert!(matches!(
+            resolve_executor_version_metadata(&provider, &block, proxy).await,
+            Err(PublisherError::PayloadBuildError { .. })
+        ));
+        recovered.store(true, Ordering::SeqCst);
+        let metadata = resolve_executor_version_metadata(&provider, &block, proxy)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(metadata.parent_hash, block.block.header.parent_hash);
+        assert_eq!(metadata.initial_version, None);
+        assert!(
+            resolve_executor_version_metadata(&provider, &block, None)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        server.abort();
     }
 
     fn only_payload(payloads: Vec<(String, BlockPayload)>) -> BlockPayload {

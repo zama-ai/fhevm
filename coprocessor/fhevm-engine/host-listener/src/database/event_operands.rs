@@ -307,13 +307,25 @@ pub fn validate_scalar_values_for_current_executor(
     validate_scalar_values_for_executor_version(
         op,
         ExecutorVersion::new(0, 7, 0),
-    )
+    )?;
+    // This helper describes the checked-in implementation, not every contract
+    // reporting v0.7. Historical ingestion must use the versioned helper below.
+    if let Some((rhs, scalar_byte)) = scalar_shift_operands(op) {
+        if binary_rhs_is_scalar(scalar_byte)
+            && U256::from_be_bytes(rhs.0) > U256::from(u8::MAX)
+        {
+            return Err("scalar shift exceeds the current executor range");
+        }
+    }
+    Ok(())
 }
 
-/// Apply the constraints that were active in the executor version that emitted
-/// this event. Version thresholds follow the contract history: Div/Rem typed-zero
-/// checks in v0.3, trivial-encrypt range checks in v0.5, binary and MulDiv scalar checks in v0.6, and the
-/// uint8 shift cap in v0.7.
+/// Apply only constraints shared by every implementation reporting this version.
+/// Div/Rem typed-zero checks started in v0.3 (2da166bece). Scalar range checks
+/// for trivial encryption, binary operations and MulDiv started in v0.7
+/// (1515d36df5). The later uint8 shift cap (fb301b1d35) did NOT bump v0.7, so a
+/// version string cannot establish that cap. Historical ingestion accepts the
+/// earlier v0.7 range until implementation-specific activation evidence exists.
 pub fn validate_scalar_values_for_executor_version(
     op: &TfheContractEvents,
     version: ExecutorVersion,
@@ -322,8 +334,6 @@ pub fn validate_scalar_values_for_executor_version(
     use TfheContractEvents as E;
 
     const V0_3_0: ExecutorVersion = ExecutorVersion::new(0, 3, 0);
-    const V0_5_0: ExecutorVersion = ExecutorVersion::new(0, 5, 0);
-    const V0_6_0: ExecutorVersion = ExecutorVersion::new(0, 6, 0);
     const V0_7_0: ExecutorVersion = ExecutorVersion::new(0, 7, 0);
 
     fn fits(value: U256, ty: i16) -> bool {
@@ -370,7 +380,7 @@ pub fn validate_scalar_values_for_executor_version(
         }
     }
 
-    if version >= V0_5_0 {
+    if version >= V0_7_0 {
         if let E::TrivialEncrypt(C::TrivialEncrypt { pt, toType, .. }) = op {
             if !fits(*pt, i16::from(*toType)) {
                 return Err(
@@ -380,7 +390,7 @@ pub fn validate_scalar_values_for_executor_version(
         }
     }
 
-    if version >= V0_6_0 {
+    if version >= V0_7_0 {
         if let Some((lhs, rhs, scalar_byte)) = binary_event_operands(op) {
             if binary_rhs_is_scalar(scalar_byte)
                 && !fits(
@@ -406,16 +416,6 @@ pub fn validate_scalar_values_for_executor_version(
                     && !fits(U256::from_be_bytes(factor2.0), ty))
             {
                 return Err("MulDiv scalar exceeds its factor FheType range");
-            }
-        }
-    }
-
-    if version >= V0_7_0 {
-        if let Some((rhs, scalar_byte)) = scalar_shift_operands(op) {
-            if binary_rhs_is_scalar(scalar_byte)
-                && U256::from_be_bytes(rhs.0) > U256::from(u8::MAX)
-            {
-                return Err("scalar shift exceeds the current executor range");
             }
         }
     }

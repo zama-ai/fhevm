@@ -49,6 +49,73 @@ async fn executor_version_migration_updates_existing_green_tables(
         columns, 2,
         "migration left the active Green listener's table incompatible"
     );
+    let unvalidated: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+         WHERE n.nspname IN ('public', $1) AND c.conname IN ('host_chain_blocks_valid_executor_address_length', 'host_chain_blocks_valid_executor_version_format')
+           AND NOT c.convalidated"
+    ).bind(GCS_SCHEMA).fetch_one(&pool).await?;
+    assert_eq!(
+        unvalidated, 4,
+        "rollout must not scan retained per-block history"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn unknown_legacy_producer_requires_complete_block_before_mask_derivation(
+) -> anyhow::Result<()> {
+    use alloy::primitives::Address;
+    use host_listener::contracts::TfheContract;
+    let (mut db, pool, _instance) = setup().await?;
+    let b = block();
+    let transaction = FixedBytes::repeat_byte(0x19);
+    let input = computed_handle(0x51);
+    let output = computed_handle(0x52);
+    let producer = rpc_log(&trivial_encrypt(input), &b, transaction, 0);
+    let consumer = rpc_log(
+        &TfheContract::FheNeg {
+            caller: Address::ZERO,
+            ct: input,
+            result: output,
+        },
+        &b,
+        transaction,
+        1,
+    );
+    ingest(&mut db, &b, vec![producer.clone()], false).await?;
+    sqlx::query("UPDATE computations SET log_index = NULL, log_index_block_hash = NULL, is_executor_minted = NULL WHERE output_handle = $1")
+        .bind(input.as_slice()).execute(&pool).await?;
+    let error = ingest(&mut db, &b, vec![consumer.clone()], true)
+        .await
+        .expect_err(
+            "unknown provenance must not be mistaken for a boundary input",
+        );
+    assert!(error.to_string().contains("replay the complete block"));
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM computations WHERE output_handle = $1",
+    )
+    .bind(output.as_slice())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(count, 0);
+    ingest(
+        &mut db,
+        &b,
+        vec![
+            producer,
+            consumer,
+            rpc_log(&allowed(output), &b, transaction, 2),
+        ],
+        true,
+    )
+    .await?;
+    let mask: Vec<u8> = sqlx::query_scalar("SELECT operand_boundary_mask FROM computations WHERE output_handle = $1")
+        .bind(output.as_slice()).fetch_one(&pool).await?;
+    assert_eq!(
+        mask,
+        vec![0; 32],
+        "the complete block proves a transaction-local operand"
+    );
     Ok(())
 }
 

@@ -622,6 +622,90 @@ pub struct ListenerHeader {
     pub parent_hash: Vec<u8>,
 }
 
+/// Establish an operator-verified legacy Gateway cursor baseline. This is a
+/// rollout operation, not fork recovery: it never moves a cursor, overwrites a
+/// conflicting checkpoint or resolves a halt. A dry run rolls everything back.
+pub async fn establish_gateway_baseline(
+    pool: &PgPool,
+    schema: &str,
+    chain_id: i64,
+    header: &ListenerHeader,
+    apply: bool,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        schema == "public" || schema == crate::database::GCS_SCHEMA,
+        "baseline schema must be public or this release's Green schema"
+    );
+    anyhow::ensure!(
+        chain_id > 0 && header.number > 0,
+        "baseline requires a positive chain ID and cursor"
+    );
+    anyhow::ensure!(
+        header.hash.len() == 32 && header.parent_hash.len() == 32,
+        "baseline hashes must be 32 bytes"
+    );
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET LOCAL lock_timeout = '5s'")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(CUTOVER_LOCK_ID)
+        .execute(&mut *tx)
+        .await?;
+    anyhow::ensure!(
+        !is_halted_tx(&mut tx).await?,
+        "an unresolved history halt requires audited recovery before baseline seeding"
+    );
+    // schema is restricted to the two identifiers above, including the
+    // compiled Green schema; it is never an arbitrary SQL identifier.
+    let cursor: Option<i64> = sqlx::query_scalar(&format!(
+        "SELECT last_block_num FROM \"{schema}\".gw_listener_last_block WHERE dummy_id FOR UPDATE"
+    ))
+    .fetch_optional(&mut *tx)
+    .await?
+    .flatten();
+    anyhow::ensure!(
+        cursor == Some(header.number),
+        "Gateway cursor no longer matches the verified baseline height"
+    );
+    let gcs_mode = schema != "public";
+    let previous: Option<(Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT block_hash, parent_hash FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = $1 AND chain_id = $2 AND block_number = $3",
+    )
+    .bind(stack_role(gcs_mode))
+    .bind(chain_id)
+    .bind(header.number)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some((hash, parent)) = previous {
+        anyhow::ensure!(
+            hash == header.hash && parent.as_ref().is_none_or(|p| p == &header.parent_hash),
+            "baseline conflicts with a retained checkpoint; audited recovery is required"
+        );
+    }
+    if let Some(conflict) = pin_headers_tx(
+        &mut tx,
+        ListenerSource::Gateway,
+        gcs_mode,
+        chain_id,
+        std::slice::from_ref(header),
+    )
+    .await?
+    {
+        anyhow::bail!(
+            "baseline conflicts with retained history at block {}; audited recovery is required",
+            conflict.block_number
+        );
+    }
+    if apply {
+        tx.commit().await?;
+    } else {
+        tx.rollback().await?;
+    }
+    Ok(())
+}
+
 /// Compare and pin a contiguous canonical range under the source/chain lock.
 /// Callers roll back this transaction before recording a returned conflict,
 /// since containment needs the exclusive cutover lock.

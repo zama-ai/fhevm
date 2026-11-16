@@ -122,8 +122,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             let d = db_pool.clone();
             tokio::spawn(async move {
                 let mut sleep_duration = s.conf.error_sleep_initial_secs as u64;
+                let mut needs_startup_replay = true;
                 loop {
-                    match s.run_get_logs(&d, &mut sleep_duration).await {
+                    match s
+                        .run_get_logs(&d, &mut sleep_duration, &mut needs_startup_replay)
+                        .await
+                    {
                         Ok(_) => {
                             info!("run_get_logs() stopped");
                             break;
@@ -146,6 +150,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         &self,
         db_pool: &Pool<Postgres>,
         sleep_duration: &mut u64,
+        needs_startup_replay: &mut bool,
     ) -> anyhow::Result<()> {
         anyhow::ensure!(
             (1..=1000).contains(&self.conf.get_logs_block_batch_size),
@@ -158,7 +163,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         let gateway_chain_id = i64::try_from(self.provider.get_chain_id().await?)?;
         let mut progress =
             get_listener_progress(db_pool, self.stack_mode.gcs_mode(), gateway_chain_id).await?;
-        self.replay_proof_window(db_pool, &progress, gateway_chain_id)
+        self.replay_proof_window(db_pool, &progress, gateway_chain_id, needs_startup_replay)
             .await?;
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
         let mut next_registry_refresh = Instant::now() + self.conf.gateway_config_refresh_interval;
@@ -638,8 +643,27 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         pool: &Pool<Postgres>,
         progress: &ListenerProgress,
         gateway_chain_id: i64,
+        needs_startup_replay: &mut bool,
     ) -> anyhow::Result<()> {
+        if !*needs_startup_replay {
+            // An RPC error or another replica's cursor advance restarts the
+            // scan loop, not the process. Adopt unfinished work without opening
+            // another generation or resurrecting an already drained window.
+            if let Some(replay) = chain_recovery::pending_replay(
+                pool,
+                ListenerSource::Gateway,
+                progress.gcs_mode,
+                gateway_chain_id,
+            )
+            .await?
+            {
+                self.replay_proof_chunk(pool, progress, gateway_chain_id, &replay)
+                    .await?;
+            }
+            return Ok(());
+        }
         let Some(cursor) = progress.last_processed_block_num else {
+            *needs_startup_replay = false;
             return Ok(());
         };
         let to_block = i64::try_from(cursor)?;
@@ -653,6 +677,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             to_block,
         )
         .await?;
+        // Clear this as soon as the obligation is durable, even if fetching
+        // its first chunk fails. Retries must resume that same generation.
+        *needs_startup_replay = false;
         self.replay_proof_chunk(pool, progress, gateway_chain_id, &replay)
             .await
     }
@@ -1715,6 +1742,304 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn gateway_scan_retry_resumes_one_replay_generation() -> anyhow::Result<()> {
+        use alloy::{
+            node_bindings::Anvil,
+            providers::{ext::AnvilApi, ProviderBuilder},
+        };
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let pool = Pool::<Postgres>::connect(instance.db_url()).await?;
+        let anvil = Anvil::new().chain_id(12345).try_spawn()?;
+        let provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
+        provider.anvil_mine(Some(100), None).await?;
+        let listener = GatewayListener::new(
+            Address::ZERO,
+            ConfigSettings::default(),
+            CancellationToken::new(),
+            provider,
+        );
+        let initial = get_listener_progress(&pool, false, 12345).await?;
+        listener.pin_log_range(&pool, 12345, 100, 100, &[]).await?;
+        let mut count = 0;
+        let progress = update_listener_progress(
+            &pool,
+            &ConfigSettings::default(),
+            false,
+            12345,
+            ListenerProgress {
+                last_processed_block_num: Some(100),
+                ..initial
+            },
+            &mut count,
+        )
+        .await?;
+
+        // The obligation must survive even failure of its very first RPC.
+        let broken = GatewayListener::new(
+            Address::ZERO,
+            ConfigSettings::default(),
+            CancellationToken::new(),
+            ProviderBuilder::new().connect_http("http://127.0.0.1:1".parse()?),
+        );
+        let mut needs_startup_replay = true;
+        assert!(tokio::time::timeout(
+            Duration::from_secs(5),
+            broken.replay_proof_window(&pool, &progress, 12345, &mut needs_startup_replay)
+        )
+        .await?
+        .is_err());
+        assert!(!needs_startup_replay);
+        let generation =
+            chain_recovery::pending_replay(&pool, ListenerSource::Gateway, false, 12345)
+                .await?
+                .expect("failed RPC retains the replay")
+                .generation;
+        listener
+            .replay_proof_window(&pool, &progress, 12345, &mut needs_startup_replay)
+            .await?;
+        assert!(
+            chain_recovery::pending_replay(&pool, ListenerSource::Gateway, false, 12345)
+                .await?
+                .is_none()
+        );
+
+        // Another replica advances while this one retains the old revision.
+        listener.provider.anvil_mine(Some(1), None).await?;
+        listener.pin_log_range(&pool, 12345, 101, 101, &[]).await?;
+        let advanced = update_listener_progress(
+            &pool,
+            &ConfigSettings::default(),
+            false,
+            12345,
+            ListenerProgress {
+                last_processed_block_num: Some(101),
+                ..progress
+            },
+            &mut count,
+        )
+        .await?;
+        assert!(update_listener_progress(
+            &pool,
+            &ConfigSettings::default(),
+            false,
+            12345,
+            ListenerProgress {
+                last_processed_block_num: Some(101),
+                ..progress
+            },
+            &mut count
+        )
+        .await
+        .is_err());
+        assert_eq!(get_listener_progress(&pool, false, 12345).await?, advanced);
+        // Losing the cursor CAS restarts the scan loop but must not create
+        // another replay generation after reloading the winning cursor.
+        for _ in 0..3 {
+            listener
+                .replay_proof_window(&pool, &advanced, 12345, &mut needs_startup_replay)
+                .await?;
+        }
+        let retained: i64 = sqlx::query_scalar("SELECT generation FROM public.listener_replay_state WHERE source = 'gateway' AND stack_role = 'BCS' AND chain_id = 12345")
+            .fetch_one(&pool).await?;
+        assert_eq!(retained, generation);
+        assert!(!chain_recovery::readiness_blocked(&pool).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn legacy_gateway_baseline_is_explicit_checked_and_idempotent() -> anyhow::Result<()> {
+        use chain_recovery::{checkpoint_hash, establish_gateway_baseline, ListenerHeader};
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let pool = Pool::<Postgres>::connect(instance.db_url()).await?;
+        sqlx::query("INSERT INTO gw_listener_last_block (dummy_id, last_block_num) VALUES (TRUE, 100) ON CONFLICT(dummy_id) DO UPDATE SET last_block_num = 100")
+            .execute(&pool).await?;
+        let header = ListenerHeader {
+            number: 100,
+            hash: vec![0x64; 32],
+            parent_hash: vec![0x63; 32],
+        };
+        establish_gateway_baseline(&pool, "public", 12345, &header, false).await?;
+        assert!(
+            checkpoint_hash(&pool, ListenerSource::Gateway, false, 12345, 100)
+                .await?
+                .is_none()
+        );
+        let stale = ListenerHeader {
+            number: 99,
+            ..header.clone()
+        };
+        assert!(
+            establish_gateway_baseline(&pool, "public", 12345, &stale, true)
+                .await
+                .is_err()
+        );
+        for _ in 0..2 {
+            establish_gateway_baseline(&pool, "public", 12345, &header, true).await?;
+        }
+        assert_eq!(
+            get_listener_progress(&pool, false, 12345)
+                .await?
+                .last_processed_block_num,
+            Some(100)
+        );
+        let conflict = ListenerHeader {
+            hash: vec![0xff; 32],
+            ..header.clone()
+        };
+        assert!(
+            establish_gateway_baseline(&pool, "public", 12345, &conflict, true)
+                .await
+                .is_err()
+        );
+        let wrong_parent = ListenerHeader {
+            parent_hash: vec![0xfe; 32],
+            ..header.clone()
+        };
+        assert!(
+            establish_gateway_baseline(&pool, "public", 12345, &wrong_parent, true)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            checkpoint_hash(&pool, ListenerSource::Gateway, false, 12345, 100).await?,
+            Some(header.hash)
+        );
+        let green_schema = fhevm_engine_common::database::GCS_SCHEMA;
+        sqlx::raw_sql(&format!(
+            "CREATE SCHEMA IF NOT EXISTS \"{green_schema}\";
+             CREATE TABLE IF NOT EXISTS \"{green_schema}\".gw_listener_last_block (LIKE public.gw_listener_last_block INCLUDING ALL);
+             INSERT INTO \"{green_schema}\".gw_listener_last_block (dummy_id, last_block_num) VALUES (TRUE, 200);"
+        )).execute(&pool).await?;
+        let green = ListenerHeader {
+            number: 200,
+            hash: vec![0xc8; 32],
+            parent_hash: vec![0xc7; 32],
+        };
+        establish_gateway_baseline(&pool, green_schema, 12345, &green, true).await?;
+        assert_eq!(
+            checkpoint_hash(&pool, ListenerSource::Gateway, true, 12345, 200).await?,
+            Some(green.hash)
+        );
+        assert!(
+            checkpoint_hash(&pool, ListenerSource::Gateway, false, 12345, 200)
+                .await?
+                .is_none()
+        );
+        assert!(!chain_recovery::is_halted(&pool).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unseeded_legacy_gateway_cursor_halts_and_baseline_cannot_clear_it(
+    ) -> anyhow::Result<()> {
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let pool = Pool::<Postgres>::connect(instance.db_url()).await?;
+        sqlx::query("INSERT INTO gw_listener_last_block (dummy_id, last_block_num) VALUES (TRUE, 100) ON CONFLICT(dummy_id) DO UPDATE SET last_block_num = 100")
+            .execute(&pool).await?;
+        assert!(get_listener_progress(&pool, false, 12345).await.is_err());
+        assert!(chain_recovery::is_halted(&pool).await?);
+        let header = chain_recovery::ListenerHeader {
+            number: 100,
+            hash: vec![0x64; 32],
+            parent_hash: vec![0x63; 32],
+        };
+        assert!(
+            chain_recovery::establish_gateway_baseline(&pool, "public", 12345, &header, true)
+                .await
+                .is_err()
+        );
+        assert!(chain_recovery::is_halted(&pool).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn gateway_checkpoint_conflict_preserves_cursor_and_requires_reconciled_anchors(
+    ) -> anyhow::Result<()> {
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let pool = Pool::<Postgres>::connect(instance.db_url()).await?;
+        let initial = get_listener_progress(&pool, false, 12345).await?;
+        let headers = [
+            chain_recovery::ListenerHeader {
+                number: 99,
+                hash: vec![0x63; 32],
+                parent_hash: vec![0x62; 32],
+            },
+            chain_recovery::ListenerHeader {
+                number: 100,
+                hash: vec![0x64; 32],
+                parent_hash: vec![0x63; 32],
+            },
+        ];
+        chain_recovery::save_checkpoints(&pool, ListenerSource::Gateway, false, 12345, &headers)
+            .await?;
+        let mut count = 0;
+        update_listener_progress(
+            &pool,
+            &ConfigSettings::default(),
+            false,
+            12345,
+            ListenerProgress {
+                last_processed_block_num: Some(100),
+                ..initial
+            },
+            &mut count,
+        )
+        .await?;
+        let replacement = chain_recovery::ListenerHeader {
+            number: 100,
+            hash: vec![0xff; 32],
+            parent_hash: vec![0xfe; 32],
+        };
+        assert!(chain_recovery::save_checkpoints(
+            &pool,
+            ListenerSource::Gateway,
+            false,
+            12345,
+            std::slice::from_ref(&replacement)
+        )
+        .await
+        .is_err());
+        assert!(chain_recovery::readiness_blocked(&pool).await?);
+        let cursor: Option<i64> =
+            sqlx::query_scalar("SELECT last_block_num FROM gw_listener_last_block WHERE dummy_id")
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(cursor, Some(100));
+        assert_eq!(
+            chain_recovery::checkpoint_hash(&pool, ListenerSource::Gateway, false, 12345, 100)
+                .await?,
+            Some(headers[1].hash.clone())
+        );
+
+        // Demonstrate why acknowledging a halt and replacing only the tip is
+        // insufficient. The retained predecessor must be reconciled too.
+        // This deliberately incomplete recovery is confined to this test DB.
+        sqlx::query("UPDATE public.chain_recovery_halts SET resolved_at = NOW(), recovery_note = 'test-only incomplete recovery'")
+            .execute(&pool).await?;
+        sqlx::query("DELETE FROM public.listener_block_checkpoints WHERE source = 'gateway' AND block_number = 100")
+            .execute(&pool).await?;
+        assert!(chain_recovery::save_checkpoints(
+            &pool,
+            ListenerSource::Gateway,
+            false,
+            12345,
+            &[replacement]
+        )
+        .await
+        .is_err());
+        assert!(chain_recovery::is_halted(&pool).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn adopted_gateway_replay_drains_in_chunks_and_retains_anchors() -> anyhow::Result<()> {
         use alloy::{
             node_bindings::Anvil,
@@ -1771,7 +2096,7 @@ mod tests {
                 .is_some()
         );
         listener
-            .replay_proof_window(&pool, &progress, 12345)
+            .replay_proof_window(&pool, &progress, 12345, &mut true)
             .await?;
         let remainder = pending_replay(&pool, ListenerSource::Gateway, false, 12345)
             .await?

@@ -84,5 +84,9 @@ path = "src/bin/resolve_database_url.rs"
 name = "bootstrap_versioning"
 path = "src/bin/bootstrap_versioning.rs"
 
+[[bin]]
+name = "gateway_history_baseline"
+path = "src/bin/gateway_history_baseline.rs"
+
 [lints]
 workspace = true
