@@ -35,6 +35,9 @@ aws-config           = { version = "1", optional = true }
 aws-credential-types = { version = "1", optional = true }
 aws-sigv4            = { version = "1", optional = true }
 
+[dev-dependencies]
+test-support = { path = "../test-support" }
+
 [features]
 default = []
 iam-auth = ["aws-config", "aws-credential-types", "aws-sigv4"]
