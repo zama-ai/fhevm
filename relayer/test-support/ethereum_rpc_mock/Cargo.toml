@@ -2,6 +2,7 @@
 name = "ethereum_rpc_mock"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 # Core async runtime - match relayer versions
