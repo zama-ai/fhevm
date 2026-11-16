@@ -6,6 +6,42 @@
 ignore = [
     "RUSTSEC-2023-0071",
     "RUSTSEC-2025-0111",
+    # Not compiled: optional Hickory DNS and Quinn HTTP/3 dependencies remain
+    # in Cargo.lock, but production builds enable neither reqwest/hickory-dns
+    # nor reqwest/http3. `cargo tree --workspace --target all -e normal,build
+    # -i <crate>` is empty for each of the five affected crates below.
+    # Remove once patched versions are locked; reassess before enabling them.
+    # hickory-proto: DNS message parsing.
+    "RUSTSEC-2026-0487",
+    "RUSTSEC-2026-0488",
+    "RUSTSEC-2026-0489",
+    "RUSTSEC-2026-0490",
+    "RUSTSEC-2026-0491",
+    # hickory-net: DNS responses and DNSSEC validation.
+    "RUSTSEC-2026-0506",
+    "RUSTSEC-2026-0507",
+    "RUSTSEC-2026-0508",
+    "RUSTSEC-2026-0509",
+    "RUSTSEC-2026-0517",
+    "RUSTSEC-2026-0518",
+    "RUSTSEC-2026-0519",
+    "RUSTSEC-2026-0520",
+    "RUSTSEC-2026-0539",
+    "RUSTSEC-2026-0540",
+    "RUSTSEC-2026-0541",
+    "RUSTSEC-2026-0556",
+    "RUSTSEC-2026-0557",
+    "RUSTSEC-2026-0558",
+    # hickory-resolver: DNS resolution and retries.
+    "RUSTSEC-2026-0513",
+    "RUSTSEC-2026-0514",
+    "RUSTSEC-2026-0515",
+    "RUSTSEC-2026-0516",
+    # quinn-proto: QUIC streams and Retry tokens.
+    "RUSTSEC-2026-0523",
+    "RUSTSEC-2026-0524",
+    # quinn-udp: truncated UDP datagrams.
+    "RUSTSEC-2026-0538",
     # Temporary 0.14.x release exception: h2 unbounded empty DATA frames.
     # Covers both locked h2 versions; remove after migrating both to >=0.4.16.
     "RUSTSEC-2026-0258",
