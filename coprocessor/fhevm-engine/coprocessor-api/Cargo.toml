@@ -4,6 +4,7 @@ description = "The coprocessor's HTTP interface: the PRF output route and its er
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 version = "0.1.0"
 
 # Dependencies are deliberately NOT workspace-inherited. The workspace pins exact versions, and

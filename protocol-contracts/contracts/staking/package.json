@@ -1,5 +1,6 @@
 {
   "name": "@fhevm/staking-contracts",
+  "private": true,
   "license": "MIT",
   "files": [
     "/contracts/**/*.sol",

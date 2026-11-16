@@ -3,6 +3,7 @@ name = "host-listener"
 version = "0.7.0"
 edition = "2021"
 license.workspace = true
+publish.workspace = true
 
 [features]
 test-failpoints = ["consumer/test-failpoints"]
