@@ -86,13 +86,13 @@ pub struct PadWorker {
     cancel_token: CancellationToken,
     /// Set once the pad-worker listens for rows: until then, a rollout keeps the old pod.
     ready: Arc<AtomicBool>,
-    /// The claims of this pod whose evaluation runs.
+    /// The claims that a task of this pod holds.
     running: Mutex<HashSet<Claim>>,
     /// Wakes the claim loop when an evaluation slot is free, before the upload ends.
     slot_free: Notify,
 }
 
-/// Adds a claim to `running` until its evaluation ends.
+/// Adds a claim to `running` until its task ends.
 struct Running<'a>(&'a Mutex<HashSet<Claim>>, Claim);
 
 impl<'a> Running<'a> {
@@ -270,10 +270,8 @@ impl PadWorker {
                 .or_else(non_fatal);
         }
         metrics::count_evaluation(claim.prf_instance);
-        let running = Running::new(&self.running, claim);
-        let computed = self.compute(claim).await;
-        drop(running);
-        let (output, ct64) = match computed {
+        let _running = Running::new(&self.running, claim);
+        let (output, ct64) = match self.compute(claim).await {
             Ok(computed) => computed,
             Err(OutputError::Evaluation(message)) => {
                 warn!(?claim, message, "PRF evaluation failed");
@@ -366,9 +364,14 @@ impl PadWorker {
             .await;
             match claimed {
                 Ok(outputs) => {
-                    futures_util::future::try_join_all(
-                        outputs.into_iter().map(|output| self.upload(output, true)),
-                    )
+                    let worker = &*self;
+                    futures_util::future::try_join_all(outputs.into_iter().map(|output| {
+                        let running = Running::new(&worker.running, output.claim);
+                        async move {
+                            let _running = running;
+                            worker.upload(output, true).await
+                        }
+                    }))
                     .await?;
                 }
                 Err(e) => non_fatal(e)?,

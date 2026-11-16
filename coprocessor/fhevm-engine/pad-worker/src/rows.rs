@@ -156,7 +156,6 @@ pub async fn release(pool: &PgPool, prf_instance: u16, claims: &[Claim]) -> sqlx
              SELECT ctid FROM pads
               WHERE prf_instance = $1
                 AND (label, pad_length) IN (SELECT * FROM UNNEST($2::BYTEA[], $3::INTEGER[]))
-                AND signature IS NULL AND NOT is_error
                 FOR UPDATE SKIP LOCKED)",
         i32::from(prf_instance),
         &labels,
