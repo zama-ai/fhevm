@@ -111,7 +111,8 @@ is deployed only here.
 
 Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica`, a read-replica. Replicas never
 run the lifecycle/quorum path, since KMS resharing and attestations happen once, on Ethereum. They
-have no `KMSGeneration`, and their only write path is the mirror methods below.
+have no `KMSGeneration`. Anyone may apply a canonical lifecycle step with the KMS confirmation
+signatures through the `submitKms*` methods. The owner can also use the mirror methods below.
 
 ### Mirror methods (non-canonical write path)
 
@@ -121,10 +122,10 @@ operator to import state Ethereum has already finalized, landing it as immediate
 
 - `mirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds)` —
   imports a context and its epoch as active; emits `MirrorKmsContextAndEpoch`.
-- `mirrorKmsEpoch(contextId, epochId)` — advances the active epoch of the mirrored context; emits
+- `mirrorKmsEpoch(contextId, epochId)` — sets the active epoch of the active context; emits
   `MirrorKmsEpoch`.
 
-IDs must be **strictly increasing** — the only on-chain guard, preventing rollback. Gaps are fine
+The mirror methods have **no ordering check** on the IDs. A lower ID moves the replica back. Gaps are fine
 (contexts/epochs aborted or never activated on Ethereum are just never mirrored). Nothing stops a
 replica from **drifting** if a mirror call is skipped or applied out of order: replaying each
 Ethereum rotation to every replica, in order, is the operator's responsibility.
@@ -135,7 +136,7 @@ The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **ne
 seed their replica from it.
 
 An existing replica proxy that still runs `ProtocolConfig` does not need this flow. It migrates in
-place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV3())`. Both contracts use the
+place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV3(canonicalProtocolConfig, canonicalChainId))`. Both contracts use the
 same storage, so the KMS context, epoch and nodes stay as they are.
 
 The flow is artifact-centric — the same three steps in every environment:
@@ -168,8 +169,9 @@ on devnet is byte-identical to what the DAO signs**.
 Both apply tasks read their configuration from environment variables. They take no command-line flags
 for the canonical state. A deployment platform injects the values into the deploy container.
 
-The table lists the `export` keys from step 1. The tasks reject a bad value before they deploy anything, so a
-misconfigured environment leaves the proxy untouched.
+The table lists the `export` keys from step 1. The tasks check the values before they deploy anything. They
+check `CANONICAL_PROTOCOL_CONFIG_ADDRESS` and `CANONICAL_BLOCK_HASH` for presence only. A value that fails a check
+leaves the proxy untouched.
 
 | Variable                            | Type           | Meaning                                                |
 | ----------------------------------- | -------------- | ------------------------------------------------------ |
@@ -183,9 +185,10 @@ misconfigured environment leaves the proxy untouched.
 | `CANONICAL_KMS_THRESHOLDS`          | JSON object    | The four thresholds, each a decimal string.            |
 
 The context id, epoch id, node set and thresholds become the `initializeFromCanonical` calldata, so
-the tasks check them in full. The chain id and block number are provenance, and the tasks parse them
-as decimal strings. The block hash and the address are provenance that the tasks only check for
-presence, then print.
+the tasks check them in full. The chain id and the address also become calldata. They set the
+canonical EIP-712 domain. The tasks parse the chain id and block number as decimal strings. They only
+check the address and the block hash for presence, then print them. The block number and block hash
+are provenance.
 
 | Environment       | Task                                            | Signer                                              |
 | ----------------- | ----------------------------------------------- | --------------------------------------------------- |
@@ -202,8 +205,8 @@ npx hardhat task:prepareDeployProtocolConfigFromCanonical
 
 Only step 1 talks to the canonical chain. The tasks check what the environment gives them, and no more.
 They do not prove the values match the reviewed artifact. The deployment platform
-owns that binding. Both apply tasks print `decodedArgs`, the context id, epoch id, node set and
-thresholds the payload encodes. They also print the chain id, block number, block hash and canonical
+owns that binding. Both apply tasks print `decodedArgs`, the context id, epoch id, node set,
+thresholds, address and chain id the payload encodes. They also print the chain id, block number, block hash and canonical
 `ProtocolConfig` address. An operator compares every provenance value against the artifact.
 
 When deploying a full non-canonical host stack, `task:deployAllHostContracts
