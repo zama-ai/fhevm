@@ -7,6 +7,7 @@ import {
   EXCLUDED_FUNCTION_PATTERNS,
   EXCLUDED_MODIFIERS,
   PACKAGE_CONFIG,
+  PREDECESSOR_CONTRACTS,
   type PackageName,
 } from "./config";
 import { ABI_COMPAT_EXCEPTIONS } from "./exceptions";
@@ -191,10 +192,13 @@ function readManifestContracts(root: string) {
 }
 
 export function collectAbiCompatResults(baselineDir: string, targetDir: string, pkg: PackageName): AbiCompatResult[] {
-  const contracts = readManifestContracts(targetDir);
+  const predecessors = PREDECESSOR_CONTRACTS[pkg] ?? {};
+  const contracts = [...readManifestContracts(targetDir), ...Object.keys(predecessors)];
 
   return contracts.map((name) => {
-    const baselineSource = join(baselineDir, "contracts", `${name}.sol`);
+    const baselineName =
+      name in predecessors && !existsSync(join(baselineDir, "contracts", `${name}.sol`)) ? predecessors[name] : name;
+    const baselineSource = join(baselineDir, "contracts", `${baselineName}.sol`);
     if (!existsSync(baselineSource)) {
       return {
         name,
@@ -208,7 +212,7 @@ export function collectAbiCompatResults(baselineDir: string, targetDir: string, 
       };
     }
 
-    const baselineAbi = forgeInspectAbi(name, baselineDir);
+    const baselineAbi = forgeInspectAbi(baselineName, baselineDir);
     const targetAbi = forgeInspectAbi(name, targetDir);
     const errors: string[] = [];
     if (baselineAbi == null) {
@@ -230,7 +234,7 @@ export function collectAbiCompatResults(baselineDir: string, targetDir: string, 
       };
     }
 
-    const baselineStable = collectStableSignatures(name, baselineDir, baselineAbi);
+    const baselineStable = collectStableSignatures(baselineName, baselineDir, baselineAbi);
     const targetStable = collectStableSignatures(name, targetDir, targetAbi);
     if (baselineStable.error) {
       errors.push(baselineStable.error);

@@ -63,6 +63,50 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       // The key and CRS results carry no signature now, so the error names results, not attestations.
       "error EmptyEpochActivationAttestation(uint256)",
     ],
+    // Compared against the v0.14 ProtocolConfig that replica proxies run before reinitializeV3.
+    // The replica applies lifecycle steps that Ethereum signed. It does not run the canonical
+    // lifecycle, the coprocessor upgrade proposal, or the threshold updates, so their ABI goes.
+    // Delete this entry once the baseline release contains ProtocolConfigReplica.sol, because the
+    // comparison then runs against it.
+    ProtocolConfigReplica: [
+      "function confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[]) returns ()",
+      "function confirmKmsContextCreation(uint256) returns ()",
+      "function getContextCreationPreviousTxSenderThreshold(uint256) returns (uint256)",
+      "function getCurrentKmsContextIdCounter() returns (uint256)",
+      "function getKmsContextAnchor(uint256) returns (uint256,bytes32)",
+      "event ActivateEpoch(uint256 indexed,uint256 indexed,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],string[])",
+      "event CoprocessorUpgradeProposed(uint256 indexed,string,(uint64,uint64,uint64)[],uint64)",
+      "event EpochActivationConfirmation(uint256 indexed,address indexed,bytes32)",
+      "event KmsContextCreationConfirmation(uint256 indexed,address indexed,bool,bool)",
+      "event NewKmsContext(uint256 indexed,uint256 indexed,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])",
+      "event NewKmsEpoch(uint256 indexed,uint256 indexed,uint256,uint256,uint256)",
+      "event KmsGenThresholdUpdated(uint256 indexed,uint256)",
+      "event MpcThresholdUpdated(uint256 indexed,uint256)",
+      "event PublicDecryptionThresholdUpdated(uint256 indexed,uint256)",
+      "event UserDecryptionThresholdUpdated(uint256 indexed,uint256)",
+      "error DuplicateChainId(uint64)",
+      "error EmptyChainUpgradeWindows()",
+      "error EmptyEpochActivationAttestation(uint256)",
+      "error EmptySoftwareVersion()",
+      "error EpochActivationAlreadyConfirmed(address,uint256)",
+      "error EpochActivationSignerDoesNotMatchTxSender(address,address)",
+      "error EpochActivationUnauthorized(address,uint256)",
+      "error InvalidBlockWindow(uint64,uint64,uint64)",
+      "error InvalidProposalId()",
+      "error KmsContextCreationAlreadyConfirmed(address,uint256)",
+      "error KmsContextCreationUnauthorized(address,uint256)",
+      "error KmsContextNotCreated(uint256)",
+      "error KmsContextNotPending(uint256)",
+      "error KmsLifecycleOperationInFlight(uint256,uint256)",
+      "error ThresholdExceedsProofFormatLimit(string,uint256,uint256)",
+      "error ZeroChainId()",
+      "error ZeroGwStartBlock()",
+      // The replica rejects an ID that is not above the active one with KmsContextNotAboveActive and KmsEpochNotAboveActive.
+      "error NonIncreasingEpochId(uint256,uint256)",
+      "error NonIncreasingKmsContextId(uint256,uint256)",
+      // The replica mirror event carries only the node fields the replica stores.
+      "event MirrorKmsContextAndEpoch(uint256 indexed,uint256 indexed,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])",
+    ],
   },
   "gateway-contracts": {
     // The NotCustodian{Signer,TxSender} selectors were inherited from the GatewayConfigChecks

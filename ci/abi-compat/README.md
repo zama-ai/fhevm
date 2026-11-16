@@ -1,6 +1,8 @@
 # ABI Compatibility
 
-ABI coverage is derived from each package's `upgrade-manifest.json`.
+ABI coverage is derived from each package's `upgrade-manifest.json`, plus the contracts in
+`PREDECESSOR_CONTRACTS` in [`config.ts`](./config.ts). Such a contract replaces a different contract
+behind an existing proxy, and the check compares it against that predecessor until the baseline has it.
 Stable-surface policy lives in [`config.ts`](./config.ts): initializer, ownership, upgrade,
 and other intentionally non-public entrypoints are excluded there.
 
