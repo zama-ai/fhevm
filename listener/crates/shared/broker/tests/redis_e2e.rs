@@ -1297,7 +1297,7 @@ async fn test_run_retries_pending_in_steady_state() {
         .consumer_name("consumer-1")
         .dead_stream(dead_stream)
         .max_retries(3)
-        .claim_min_idle(Duration::from_millis(300))
+        .claim_min_idle(Duration::from_millis(2000))
         .claim_interval(Duration::from_millis(400))
         .prefetch_count(10)
         .block_ms(2000)
