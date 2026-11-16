@@ -80,6 +80,31 @@ pub enum BlockFetchError {
 
     #[error("RPC deserialization error in {method}: {details}")]
     DeserializationError { method: String, details: String },
+
+    #[error("Block or receipt still not found after {attempts} attempts")]
+    NotFoundAfterRetries { attempts: u32 },
+
+    #[error("Receipt for transaction {tx_hash} belongs to block {got:?}, expected {expected}")]
+    ReceiptBlockMismatch {
+        tx_hash: B256,
+        expected: B256,
+        got: Option<B256>,
+    },
+}
+
+impl BlockFetchError {
+    /// True when the block and its receipts do not describe one consistent block:
+    /// the chain moved between the RPC calls, or the node no longer serves the
+    /// block. Retrying the same request cannot fix it; fresher chain data can.
+    pub fn is_inconsistent_snapshot(&self) -> bool {
+        matches!(
+            self,
+            Self::NotFoundAfterRetries { .. }
+                | Self::ReceiptCountMismatch { .. }
+                | Self::MissingReceipt { .. }
+                | Self::ReceiptBlockMismatch { .. }
+        )
+    }
 }
 
 /// A successfully fetched block with all its receipts.
@@ -130,6 +155,14 @@ pub struct FetchConfig {
     pub max_exponential_backoff_ms: u64,
     /// Chain ID for metric labels.
     pub chain_id: u64,
+    /// Maximum number of retries on `NotFound` (null result) before giving up
+    /// with [`BlockFetchError::NotFoundAfterRetries`]. `None` retries forever.
+    pub not_found_max_retries: Option<u32>,
+    /// Reject receipts whose `blockHash` is not the fetched block's hash
+    /// ([`BlockFetchError::ReceiptBlockMismatch`]). Off by default: only flows
+    /// that can race a reorg (live cursor, reorg walk) enable it; catch-up,
+    /// finality and startup keep it off so their behaviour is unchanged.
+    pub verify_receipt_block_hash: bool,
 }
 
 impl Default for FetchConfig {
@@ -141,6 +174,8 @@ impl Default for FetchConfig {
             cancellation_token: CancellationToken::new(),
             max_exponential_backoff_ms: 20_000,
             chain_id: 0,
+            not_found_max_retries: None,
+            verify_receipt_block_hash: false,
         }
     }
 }
@@ -204,6 +239,18 @@ impl EvmBlockFetcher {
         self
     }
 
+    /// Cap the retries on `NotFound` (null result). `None` retries forever.
+    pub fn with_not_found_max_retries(mut self, max: Option<u32>) -> Self {
+        self.config.not_found_max_retries = max;
+        self
+    }
+
+    /// Check that every receipt belongs to the fetched block (`blockHash`).
+    pub fn with_verify_receipt_block_hash(mut self, verify: bool) -> Self {
+        self.config.verify_receipt_block_hash = verify;
+        self
+    }
+
     /// Fetch a block and its receipts using eth_getBlockReceipts (by block number).
     ///
     /// This is the most efficient strategy when the RPC node supports eth_getBlockReceipts.
@@ -220,6 +267,7 @@ impl EvmBlockFetcher {
         let provider = self.provider.clone();
         let retry_interval = self.config.retry_interval;
         let max_backoff = self.config.max_exponential_backoff_ms;
+        let not_found_max = self.config.not_found_max_retries;
         let token = child_token.clone();
         join_set.spawn(async move {
             let block = retry_with_cancel(
@@ -227,6 +275,7 @@ impl EvmBlockFetcher {
                 retry_interval,
                 max_backoff,
                 &token,
+                not_found_max,
             )
             .await?;
             Ok(FetchTaskResult::Block(Box::new(block)))
@@ -241,6 +290,7 @@ impl EvmBlockFetcher {
                 retry_interval,
                 max_backoff,
                 &token,
+                not_found_max,
             )
             .await?;
             Ok(FetchTaskResult::Receipts(receipts))
@@ -262,6 +312,7 @@ impl EvmBlockFetcher {
         let provider = self.provider.clone();
         let retry_interval = self.config.retry_interval;
         let max_backoff = self.config.max_exponential_backoff_ms;
+        let not_found_max = self.config.not_found_max_retries;
         let token = child_token.clone();
         let hash_str = format!("{:?}", block_hash);
         join_set.spawn(async move {
@@ -270,6 +321,7 @@ impl EvmBlockFetcher {
                 retry_interval,
                 max_backoff,
                 &token,
+                not_found_max,
             )
             .await?;
             Ok(FetchTaskResult::Block(Box::new(block)))
@@ -287,6 +339,7 @@ impl EvmBlockFetcher {
                 retry_interval,
                 max_backoff,
                 &token,
+                not_found_max,
             )
             .await?;
             let block_number = block.header.number;
@@ -297,6 +350,7 @@ impl EvmBlockFetcher {
                 retry_interval,
                 max_backoff,
                 &token,
+                not_found_max,
             )
             .await?;
             Ok(FetchTaskResult::Receipts(receipts))
@@ -321,6 +375,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -336,6 +391,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -357,6 +413,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -372,6 +429,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -395,6 +453,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -420,6 +479,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -454,6 +514,7 @@ impl EvmBlockFetcher {
             let provider = self.provider.clone();
             let retry_interval = self.config.retry_interval;
             let max_backoff = self.config.max_exponential_backoff_ms;
+            let not_found_max = self.config.not_found_max_retries;
             let token = cancel_token.clone();
 
             join_set.spawn(async move {
@@ -462,6 +523,7 @@ impl EvmBlockFetcher {
                     retry_interval,
                     max_backoff,
                     &token,
+                    not_found_max,
                 )
                 .await
             });
@@ -509,6 +571,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -531,6 +594,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -557,6 +621,7 @@ impl EvmBlockFetcher {
             let provider = self.provider.clone();
             let retry_interval = self.config.retry_interval;
             let max_backoff = self.config.max_exponential_backoff_ms;
+            let not_found_max = self.config.not_found_max_retries;
             let token = cancel_token.clone();
             let hash_str = tx_hash.to_string();
 
@@ -566,6 +631,7 @@ impl EvmBlockFetcher {
                     retry_interval,
                     max_backoff,
                     &token,
+                    not_found_max,
                 )
                 .await?;
                 Ok((index, receipt))
@@ -616,6 +682,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -638,6 +705,7 @@ impl EvmBlockFetcher {
             self.config.retry_interval,
             self.config.max_exponential_backoff_ms,
             &child_token,
+            self.config.not_found_max_retries,
         )
         .await?;
 
@@ -666,6 +734,7 @@ impl EvmBlockFetcher {
                 self.config.retry_interval,
                 self.config.max_exponential_backoff_ms,
                 cancel_token,
+                self.config.not_found_max_retries,
             )
             .await?;
             receipts.push(receipt);
@@ -741,6 +810,26 @@ impl EvmBlockFetcher {
             }
         }
 
+        // Verify every receipt belongs to this block (opt-in, see
+        // `FetchConfig::verify_receipt_block_hash`). Receipts are fetched by block
+        // number or by tx hash, so they reflect the node's canonical view, which can
+        // differ from the block we hold if the chain moved between the calls.
+        if self.config.verify_receipt_block_hash {
+            let block_hash = block.header.hash;
+            if let Some((tx_hash, got)) = first_foreign_receipt(
+                block_hash,
+                receipts_map
+                    .values()
+                    .map(|r| (r.transaction_hash, r.block_hash)),
+            ) {
+                return Err(BlockFetchError::ReceiptBlockMismatch {
+                    tx_hash,
+                    expected: block_hash,
+                    got,
+                });
+            }
+        }
+
         // Optional block verification
         if self.config.verify_block {
             let receipts_ordered: Vec<AnyTransactionReceipt> = block
@@ -779,6 +868,10 @@ enum FetchTaskResult {
 ///   capped at `max_exponential_backoff_ms`. Sequence: 500ms -> 1s -> 2s -> 4s -> ... -> max.
 ///   The backoff counter resets when a non-rate-limit attempt succeeds or errors differently.
 /// - **Recoverable**: fixed `retry_interval` sleep, then retry.
+/// - **NotFound cap**: when `not_found_max_retries` is `Some(max)`, the operation
+///   gives up with [`BlockFetchError::NotFoundAfterRetries`] once it has seen more
+///   than `max` `NotFound` (null) results. `None` retries forever. Other errors
+///   do not count against the cap.
 ///
 /// # Cancellation
 /// Checked (via `biased` select) at two points per iteration:
@@ -790,12 +883,14 @@ async fn retry_with_cancel<T, F, Fut>(
     retry_interval: Duration,
     max_exponential_backoff_ms: u64,
     cancel_token: &CancellationToken,
+    not_found_max_retries: Option<u32>,
 ) -> Result<T, BlockFetchError>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, RpcProviderError>>,
 {
     let mut rate_limit_attempt: u32 = 0;
+    let mut not_found_attempts: u32 = 0;
 
     loop {
         tokio::select! {
@@ -807,6 +902,15 @@ where
                 match result {
                     Ok(value) => return Ok(value),
                     Err(e) => {
+                        if matches!(e, RpcProviderError::NotFound) {
+                            not_found_attempts = not_found_attempts.saturating_add(1);
+                            if not_found_max_retries.is_some_and(|max| not_found_attempts > max) {
+                                warn!(attempts = not_found_attempts, "Still not found after max retries, giving up");
+                                return Err(BlockFetchError::NotFoundAfterRetries {
+                                    attempts: not_found_attempts,
+                                });
+                            }
+                        }
                         match classify_error(&e) {
                             ErrorClassification::Unrecoverable(fatal) => {
                                 error!(error = %e, "Unrecoverable RPC error, not retrying");
@@ -836,6 +940,15 @@ where
             }
         }
     }
+}
+
+/// Return the first receipt `(tx_hash, block_hash)` whose block hash is not
+/// `block_hash`, if any. A missing block hash counts as foreign.
+fn first_foreign_receipt(
+    block_hash: B256,
+    mut receipts: impl Iterator<Item = (B256, Option<B256>)>,
+) -> Option<(B256, Option<B256>)> {
+    receipts.find(|(_, got)| *got != Some(block_hash))
 }
 
 /// Classification of RPC errors for retry strategy selection.
@@ -891,3 +1004,7 @@ fn classify_error(error: &RpcProviderError) -> ErrorClassification {
 #[cfg(test)]
 #[path = "./tests/evm_block_fetcher_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "./tests/mock_rpc.rs"]
+pub(crate) mod mock_rpc;

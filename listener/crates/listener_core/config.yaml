@@ -31,7 +31,7 @@ broker:
   # ensure_publish: true # Enable replication-aware publish durability (WAIT for Redis, confirms for AMQP)
   # circuit_breaker_cooldown_secs: 10  # Seconds to wait before retrying a failed publish (circuit breaker)
   # circuit_breaker_threshold: 3  # Number of consecutive publish failures to trigger the circuit breaker
-  # claim_min_idle: 30  # Minimum idle time in seconds before a claim is eligible for processing optionnal
+  # claim_min_idle: 30  # Minimum idle time in seconds before a claim is eligible for processing (optional)
 
 telemetry:
   enabled: true
@@ -84,13 +84,16 @@ blockchain:
     range_size: 200
     loop_delay_ms: 2000
     max_parallel_requests: 50
-    # block_receipts | batch_receipts_full | batch_receipts_range | transaction_receipts_parallel | transaction_receipts_seqential
+    # block_receipts | batch_receipts_full | batch_receipts_range | transaction_receipts_parallel | transaction_receipts_sequential
     block_fetcher: block_receipts
     # taken into account only for batch_receipts_range
     batch_receipts_size_range: 10
     compute_block: true
     # Maximum backoff in ms for rate-limit retries (exponential backoff cap, default: 20000)
     max_exponential_backoff_ms: 500
+    # Null (NotFound) retries per RPC call of a by-hash (reorg walk) fetch, block and
+    # receipts alike, before abandoning the walk and re-arming the cursor (default: 5)
+    # reorg_not_found_max_retries: 5
     publish:
       publish_retry_secs: 1
       publish_stale: true
