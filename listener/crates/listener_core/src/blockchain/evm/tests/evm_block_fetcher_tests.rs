@@ -94,6 +94,7 @@ fn init_tracing() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_fetcher_clone() {
     init_tracing();
 
@@ -147,6 +148,7 @@ async fn test_fetcher_clone() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_fetcher_clone_shared_cancellation() {
     init_tracing();
 
@@ -195,6 +197,7 @@ async fn test_fetcher_clone_shared_cancellation() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_strategy1_block_receipts_by_number_all_chains() {
     init_tracing();
 
@@ -248,6 +251,7 @@ async fn test_strategy1_block_receipts_by_number_all_chains() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_strategy1_block_receipts_by_hash_all_chains() {
     init_tracing();
 
@@ -311,6 +315,7 @@ async fn test_strategy1_block_receipts_by_hash_all_chains() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_strategy2_batch_receipts_by_number_all_chains() {
     init_tracing();
 
@@ -364,6 +369,7 @@ async fn test_strategy2_batch_receipts_by_number_all_chains() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_strategy2_batch_receipts_by_hash_all_chains() {
     init_tracing();
 
@@ -491,6 +497,7 @@ async fn test_strategy2_batch_receipts_by_hash_all_chains() {
 // }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_strategy3_chunked_batch_by_hash() {
     init_tracing();
 
@@ -664,6 +671,7 @@ async fn test_strategy3_chunked_batch_by_hash() {
 // }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_strategy5_sequential_receipts_by_number() {
     init_tracing();
 
@@ -710,6 +718,7 @@ async fn test_strategy5_sequential_receipts_by_number() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_strategy5_sequential_receipts_by_hash() {
     init_tracing();
 
@@ -766,6 +775,7 @@ async fn test_strategy5_sequential_receipts_by_hash() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_strategy5_sequential_with_transactions() {
     init_tracing();
 
@@ -822,6 +832,7 @@ async fn test_strategy5_sequential_with_transactions() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_cancellation_immediate() {
     init_tracing();
 
@@ -864,6 +875,7 @@ async fn test_cancellation_immediate() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_cancellation_during_fetch() {
     init_tracing();
 
@@ -981,6 +993,7 @@ async fn test_cancellation_during_fetch() {
 // }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_verification_enabled() {
     init_tracing();
 
@@ -1053,6 +1066,7 @@ async fn test_verification_enabled() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_retry_eventually_succeeds() {
     init_tracing();
 
@@ -1095,7 +1109,7 @@ async fn test_retry_eventually_succeeds() {
 }
 
 #[tokio::test]
-#[ignore] // Long-running test
+#[ignore = "Require stable RPC endpoints"]
 async fn test_retry_with_timeout() {
     init_tracing();
 
@@ -1143,6 +1157,7 @@ async fn test_retry_with_timeout() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_fetched_block_methods() {
     init_tracing();
 
@@ -1196,6 +1211,7 @@ async fn test_fetched_block_methods() {
 }
 
 #[tokio::test]
+#[ignore = "Require stable RPC endpoints"]
 async fn test_empty_block() {
     init_tracing();
 
