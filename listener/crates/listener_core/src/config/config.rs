@@ -189,6 +189,13 @@ pub struct StrategyConfig {
     #[serde(default = "default_max_exponential_backoff_ms")]
     pub max_exponential_backoff_ms: u64,
 
+    /// Retries on a null (`NotFound`) result, per RPC call of a by-hash fetch
+    /// (reorg walk; block and receipts alike), before abandoning the walk and
+    /// re-arming the cursor. A reorged block can vanish from the RPC for good;
+    /// `0` gives up on the first null.
+    #[serde(default = "default_reorg_not_found_max_retries")]
+    pub reorg_not_found_max_retries: u32,
+
     #[serde(default)]
     pub publish: PublishConfig,
 }
@@ -207,6 +214,9 @@ fn default_loop_delay_ms() -> u64 {
 }
 fn default_max_exponential_backoff_ms() -> u64 {
     20_000
+}
+fn default_reorg_not_found_max_retries() -> u32 {
+    5
 }
 fn default_compute_block_allow_skipping() -> bool {
     true
@@ -284,6 +294,7 @@ impl Default for StrategyConfig {
             automatic_startup: true,
             loop_delay_ms: default_loop_delay_ms(),
             max_exponential_backoff_ms: default_max_exponential_backoff_ms(),
+            reorg_not_found_max_retries: default_reorg_not_found_max_retries(),
             publish: PublishConfig::default(),
         }
     }
