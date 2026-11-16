@@ -1,5 +1,6 @@
 {
   "name": "fhevm-gateway",
+  "private": true,
   "version": "0.15.0",
   "description": "",
   "main": "index.js",

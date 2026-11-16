@@ -4,6 +4,7 @@ name = "block-manifest"
 version = "0.14.0"
 edition = "2024"
 license = "BSD-3-Clause-Clear"
+publish = false
 
 [dependencies]
 alloy-primitives = { version = "1", default-features = false, features = ["std", "serde"] }
