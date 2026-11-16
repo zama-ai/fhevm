@@ -30,7 +30,7 @@ use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
-use sqlx::{PgPool, Postgres};
+use sqlx::{Connection, PgPool, Postgres};
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -193,6 +193,8 @@ const BLOCKS_VALID_RETENTION: i64 = 10_000;
 const BLOCKS_VALID_MIN_AGE_SECS: i64 = 7 * 24 * 3600;
 /// Upper bound of rows removed per pruning pass; keeps each pass short.
 const BLOCKS_VALID_PRUNE_BATCH: i64 = 1_000;
+/// Advisory lock key serializing builds of the finalized-blocks index.
+const FINALIZED_INDEX_BUILD_LOCK: &str = "host-listener:finalized-blocks-index";
 const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
 const SLOW_LANE_RESET_BATCH_SIZE: i64 = 5_000;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
@@ -1960,6 +1962,63 @@ impl Database {
         .await?
         .rows_affected();
         Ok(deleted)
+    }
+
+    /// Builds `idx_host_chain_blocks_valid_finalized` on the table this
+    /// service routes to, if missing. Migration 20261109120000 creates it in
+    /// `public`; building it here as well covers a database whose migration
+    /// has not run yet and a GCS schema's own copy of the table.
+    ///
+    /// Runs CONCURRENTLY, so ingestion keeps writing, on a connection taken
+    /// out of the pool: the build may outlast the pool's statement_timeout and
+    /// an interrupted build leaves an INVALID index. A session advisory lock
+    /// keeps one builder per database, so an INVALID index found while holding
+    /// it is a leftover, dropped and rebuilt. Returns false when another
+    /// process holds the lock.
+    pub async fn ensure_finalized_block_index(
+        &self,
+    ) -> Result<bool, SqlxError> {
+        let pool = self.pool().await;
+        // Closing this connection ends its session, releasing the lock and
+        // the timeout setting with it.
+        let mut conn = pool.acquire().await?.detach();
+        sqlx::query("SET statement_timeout = 0")
+            .execute(&mut conn)
+            .await?;
+        let locked: bool = sqlx::query_scalar(
+            "SELECT pg_try_advisory_lock(hashtextextended($1, 0))",
+        )
+        .bind(FINALIZED_INDEX_BUILD_LOCK)
+        .fetch_one(&mut conn)
+        .await?;
+        if !locked {
+            return Ok(false);
+        }
+        let invalid: Option<String> = sqlx::query_scalar(
+            "SELECT format('%I.%I', n.nspname, c.relname)
+               FROM pg_index i
+               JOIN pg_class c ON c.oid = i.indexrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE i.indrelid = 'host_chain_blocks_valid'::regclass
+                AND c.relname = 'idx_host_chain_blocks_valid_finalized'
+                AND NOT i.indisvalid",
+        )
+        .fetch_optional(&mut conn)
+        .await?;
+        if let Some(index) = invalid {
+            sqlx::query(&format!("DROP INDEX CONCURRENTLY IF EXISTS {index}"))
+                .execute(&mut conn)
+                .await?;
+        }
+        sqlx::query(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_host_chain_blocks_valid_finalized
+             ON host_chain_blocks_valid (chain_id, block_number)
+             WHERE block_status = 'finalized'",
+        )
+        .execute(&mut conn)
+        .await?;
+        conn.close().await?;
+        Ok(true)
     }
 
     pub async fn poller_get_last_caught_up_block(

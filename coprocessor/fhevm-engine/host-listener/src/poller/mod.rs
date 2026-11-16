@@ -419,6 +419,22 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             cancel_token.clone(),
         );
 
+        // In the background: a concurrent build waits for the transactions
+        // already open on the table, and polling must not wait for it.
+        let index_db = db.clone();
+        tokio::spawn(async move {
+            match index_db.ensure_finalized_block_index().await {
+                Ok(true) => info!("Finalized-blocks index is present"),
+                Ok(false) => info!(
+                    "Another process is building the finalized-blocks index"
+                ),
+                Err(err) => warn!(
+                    error = %err,
+                    "Could not build the finalized-blocks index; finalized lookups stay slow"
+                ),
+            }
+        });
+
         // Seed RPC resolution must not hold the cutover fence. Each attempt re-reads
         // the routed cursor, so promotion and concurrent initialization win over a
         // seed resolved before them. Replay ownership is returned with its token.

@@ -273,3 +273,61 @@ async fn finalization_accepts_linked_chain_and_orphans_sibling() {
         "fork sibling of a finalized block is orphaned"
     );
 }
+
+async fn finalized_index_valid(db: &Database) -> Option<bool> {
+    let pool = db.pool().await;
+    sqlx::query_scalar(
+        "SELECT i.indisvalid FROM pg_index i
+         JOIN pg_class c ON c.oid = i.indexrelid
+         WHERE i.indrelid = 'host_chain_blocks_valid'::regclass
+           AND c.relname = 'idx_host_chain_blocks_valid_finalized'",
+    )
+    .fetch_optional(&pool)
+    .await
+    .expect("index query")
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finalized_block_index_is_built_once_and_repaired() {
+    let (db, _inst) = fresh_db(CHAIN_ID).await;
+    let pool = db.pool().await;
+    // The migration already built it; start from a database without it.
+    sqlx::query("DROP INDEX idx_host_chain_blocks_valid_finalized")
+        .execute(&pool)
+        .await
+        .expect("drop migrated index");
+    assert_eq!(finalized_index_valid(&db).await, None);
+
+    assert!(db.ensure_finalized_block_index().await.expect("build"));
+    assert_eq!(finalized_index_valid(&db).await, Some(true));
+    // Idempotent.
+    assert!(db.ensure_finalized_block_index().await.expect("rerun"));
+    assert_eq!(finalized_index_valid(&db).await, Some(true));
+
+    // An interrupted concurrent build leaves an INVALID index behind.
+    sqlx::query(
+        "UPDATE pg_index SET indisvalid = false
+         WHERE indexrelid = 'idx_host_chain_blocks_valid_finalized'::regclass",
+    )
+    .execute(&pool)
+    .await
+    .expect("mark index invalid");
+    assert_eq!(finalized_index_valid(&db).await, Some(false));
+    assert!(db.ensure_finalized_block_index().await.expect("repair"));
+    assert_eq!(finalized_index_valid(&db).await, Some(true));
+
+    // Another builder holds the lock: step aside without touching the index.
+    let mut holder = pool.acquire().await.expect("lock holder");
+    sqlx::query("SELECT pg_advisory_lock(hashtextextended($1, 0))")
+        .bind("host-listener:finalized-blocks-index")
+        .execute(&mut *holder)
+        .await
+        .expect("hold build lock");
+    assert!(!db.ensure_finalized_block_index().await.expect("locked"));
+    sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1, 0))")
+        .bind("host-listener:finalized-blocks-index")
+        .execute(&mut *holder)
+        .await
+        .expect("release build lock");
+}
