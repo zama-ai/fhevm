@@ -639,8 +639,8 @@ async function fillEpochActivation(
   // disagree on the reshared key/CRS material or on extraData, and the epoch cannot activate as-is.
   status.epochConfirmationsDiverged = Object.keys(byDigest).length > 1;
 
-  // Both abort paths clear the pending epoch: destroyKmsEpoch clears it directly, and
-  // destroyKmsContext clears it together with its context.
+  // Both abort paths end the pending epoch, and the task reports it as DESTROYED. destroyKmsEpoch
+  // destroys the epoch alone, and destroyKmsContext clears it together with its context.
   if (status.activeEpochId === pendingEpochId) {
     status.epochState = 'ACTIVE';
     status.contextState = 'ACTIVE';

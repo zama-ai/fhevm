@@ -1,13 +1,16 @@
-import { isAddress } from 'ethers';
+import { ZeroAddress, getAddress, isAddress } from 'ethers';
 
 import { type CanonicalSnapshot, type KmsNode } from '../protocolConfigMirror';
 import { makeEnvHelpers } from './envSnapshot';
 import { formatError } from './formatError';
 import { getRequiredEnvVar } from './loadVariables';
 
-// The context id, epoch id, node set and thresholds become initializeFromCanonical calldata, so the task
-// checks them in full. The chain id and block number are provenance, and the task parses them as decimal
-// strings. The block hash and the address are provenance that the task only checks for presence, then prints.
+// These values become initializeFromCanonical calldata. The contract checks the ID lower bounds, the
+// committee shape and the thresholds. It does not check that the values match canonical. Wrong values
+// can make valid submits revert or let a wrong signer quorum pass. This module checks the format and
+// range of each value. It does not check that they match canonical. The reviewed snapshot that
+// task:exportCanonicalProtocolConfig writes ties the values to canonical. The block number
+// and block hash are provenance only.
 const CANONICAL_SNAPSHOT_ENV_KEYS = [
   'CANONICAL_CHAIN_ID',
   'CANONICAL_PROTOCOL_CONFIG_ADDRESS',
@@ -39,6 +42,25 @@ function parseJson(name: CanonicalSnapshotEnvKey): unknown {
   } catch (err) {
     throw new Error(`"${name}" env variable is not valid JSON (${formatError(err)}).`);
   }
+}
+
+// A uint64 in the replica's EIP-712 domain. The contract accepts 0, the task does not.
+function requireCanonicalChainId(): bigint {
+  const chainId = requireDecimal('CANONICAL_CHAIN_ID');
+  if (chainId === 0n || chainId >= 2n ** 64n) {
+    throw new Error(`"CANONICAL_CHAIN_ID" env variable must be in [1, 2^64), got ${chainId}.`);
+  }
+  return chainId;
+}
+
+function requireCanonicalProtocolConfigAddress(): string {
+  const raw = getRequiredEnvVar('CANONICAL_PROTOCOL_CONFIG_ADDRESS');
+  if (!isAddress(raw) || getAddress(raw) === ZeroAddress) {
+    throw new Error(
+      `"CANONICAL_PROTOCOL_CONFIG_ADDRESS" env variable must be a valid nonzero address, got ${JSON.stringify(raw)}.`,
+    );
+  }
+  return getAddress(raw);
 }
 
 function requireKmsNodes(): KmsNode[] {
@@ -93,8 +115,8 @@ function requireThresholds(): CanonicalSnapshot['thresholds'] {
 export function readCanonicalSnapshotFromEnv(): CanonicalSnapshot {
   // Read in the order the keys are declared, so a wholly unset environment reports the first key.
   return {
-    canonicalChainId: requireDecimal('CANONICAL_CHAIN_ID'),
-    protocolConfigAddress: getRequiredEnvVar('CANONICAL_PROTOCOL_CONFIG_ADDRESS'),
+    canonicalChainId: requireCanonicalChainId(),
+    protocolConfigAddress: requireCanonicalProtocolConfigAddress(),
     blockNumber: Number(requireDecimal('CANONICAL_BLOCK_NUMBER')),
     blockHash: getRequiredEnvVar('CANONICAL_BLOCK_HASH'),
     currentKmsContextId: requireDecimal('CANONICAL_KMS_CONTEXT_ID'),
