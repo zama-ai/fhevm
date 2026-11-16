@@ -1,9 +1,8 @@
 use crate::core::event_processor::{
     KmsClient, KmsPollTarget, ProcessingError, RequestCheckError,
     context::ContextManager,
-    decryption::{DecryptionProcessor, UserDecryptionExtraData},
+    decryption::{DecryptionProcessor, pad},
     kms::KMSGenerationProcessor,
-    pad,
     protocol_config::ProtocolConfigProcessor,
 };
 use alloy::{primitives::B256, providers::Provider};
@@ -271,24 +270,21 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
-                    .prepare_decryption_request(
+                    .prepare_public_decryption_request(
                         req.decryptionId,
                         &req.ctHandles,
                         &req.extraData,
-                        None,
                     )
                     .await
             }
             ProtocolEventKind::UserDecryption(req) => {
                 self.decryption_processor
-                    .prepare_decryption_request(
+                    .prepare_user_decryption_request(
                         req.decryptionId,
                         &req.ctHandles,
                         &req.extraData,
-                        Some(UserDecryptionExtraData::new(
-                            req.userAddress,
-                            req.publicKey.clone(),
-                        )),
+                        req.userAddress,
+                        &req.publicKey,
                     )
                     .await
             }
@@ -296,14 +292,12 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 let payload = &req.payload;
                 let handles: Vec<B256> = req.handles.iter().map(|h| h.handle).collect();
                 self.decryption_processor
-                    .prepare_decryption_request(
+                    .prepare_user_decryption_request(
                         req.decryptionId,
                         &handles,
                         &payload.extraData,
-                        Some(UserDecryptionExtraData::new(
-                            payload.userAddress,
-                            payload.publicKey.clone(),
-                        )),
+                        payload.userAddress,
+                        &payload.publicKey,
                     )
                     .await
             }

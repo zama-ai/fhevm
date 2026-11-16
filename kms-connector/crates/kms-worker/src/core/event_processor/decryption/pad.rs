@@ -126,11 +126,14 @@ mod tests {
     use super::*;
     use crate::core::{
         config::Config,
-        event_processor::{CiphertextManager, HostRpcClient, ProcessingErrorKind},
+        event_processor::{
+            ProcessingErrorKind,
+            decryption::tests::{CHAIN_ID, setup_test_processor_with_config},
+        },
     };
     use alloy::{
         primitives::{Address, Bytes, FixedBytes},
-        providers::{ProviderBuilder, mock::Asserter},
+        providers::mock::Asserter,
         signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
     };
@@ -138,35 +141,9 @@ mod tests {
         rand::{rand_address, rand_digest, rand_public_key, rand_u256},
         setup::acl_multicall_response,
     };
-    use fhevm_host_bindings::acl::ACL;
     use kms_connector_api::{PadDecryptionPayload, PadEntry, PadWitness, RequestValidity};
     use rstest::rstest;
-    use std::collections::HashMap;
     use user_decryption_signature::default_user_decrypt_domain;
-
-    const CHAIN_ID: u64 = 12345;
-
-    fn setup_test_processor(
-        asserter: Asserter,
-    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>> {
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter);
-        let host_clients = HashMap::from([(
-            CHAIN_ID,
-            HostRpcClient::new(
-                CHAIN_ID,
-                ACL::new(Address::default(), mock_provider.clone()),
-            ),
-        )]);
-        let ciphertext_manager = CiphertextManager::for_test(mock_provider.clone());
-        DecryptionProcessor::new(
-            &Config::default(),
-            mock_provider,
-            host_clients,
-            ciphertext_manager,
-        )
-    }
 
     /// A valid witness, expiring in an hour.
     fn witness(submitter: Address, decryptors: Vec<Address>) -> PadWitness {
@@ -278,7 +255,8 @@ mod tests {
         #[case] expected: Option<(ProcessingErrorKind, ErrorCode)>,
     ) {
         let asserter = Asserter::new();
-        let processor = setup_test_processor(asserter.clone());
+        let processor =
+            setup_test_processor_with_config(asserter.clone(), CHAIN_ID, Config::default());
         let user = PrivateKeySigner::random();
         let not_invalidated = U256::ZERO.abi_encode();
 
@@ -359,7 +337,8 @@ mod tests {
     #[tokio::test]
     async fn check_pad_decryption_request_rejects_signature_for_another_chain() {
         let asserter = Asserter::new();
-        let processor = setup_test_processor(asserter.clone());
+        let processor =
+            setup_test_processor_with_config(asserter.clone(), CHAIN_ID, Config::default());
         let user = PrivateKeySigner::random();
 
         // `ecrecover` mismatch, and no contract code at `userAddress` for the ERC-1271 fallback.
