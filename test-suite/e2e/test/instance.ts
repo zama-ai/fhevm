@@ -114,6 +114,7 @@ const keyVerification: KeyVerification | undefined = (() => {
           acl: { address: address('KEY_VERIFICATION_ACL_CONTRACT_ADDRESS') },
           inputVerifier: { address: address('KEY_VERIFICATION_INPUT_VERIFIER_CONTRACT_ADDRESS') },
           kmsVerifier: { address: address('KEY_VERIFICATION_KMS_VERIFIER_CONTRACT_ADDRESS') },
+          protocolConfig: { address: address('KEY_VERIFICATION_PROTOCOL_CONFIG_CONTRACT_ADDRESS') },
           kmsGeneration: { address: kmsGenerationAddress as `0x${string}` },
         },
         relayerUrl,
