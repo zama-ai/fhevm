@@ -12,7 +12,14 @@
 # RUSTSEC-2026-0387 (crypto-bigint): no fix is reachable. Both copies come
 # through aws-sigv4 1.4.0, the newest release, which still pins crypto-bigint
 # 0.5. Remove this when the AWS SDK moves.
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0381", "RUSTSEC-2026-0387"]
+# RUSTSEC-2026-0459 (libsqlite3-sys): reached only via sqlx-sqlite, which we never compile
+# (postgres-only).
+ignore = [
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2026-0381",
+    "RUSTSEC-2026-0387",
+    "RUSTSEC-2026-0459",
+]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 
