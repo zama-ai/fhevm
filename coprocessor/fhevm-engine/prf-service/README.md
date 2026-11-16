@@ -87,8 +87,9 @@ default), so the 4 faulty connectors that the protocol tolerates cannot fill it.
 A pending row older than `PAD_PENDING_MAX_AGE` (default 10 min) does not count in the budget: no
 pad-worker computes it.
 
-A request for such a row gets `503 unavailable`. After the GC deletes the row, a new request adds
-it again.
+A request for such a row gets `503 unavailable`. If a pad-worker claimed the row less than
+`PAD_CLAIM_TIMEOUT` ago (default 5 min), the request waits for the output. Use the pad-worker value.
+After the GC deletes the row, a new request adds it again.
 
 Do not autoscale `prf-service`. With more pods, one connector can have more requests in progress.
 
