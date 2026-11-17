@@ -55,9 +55,12 @@ export const diffReports = (
     baseline.version !== current.version ||
     baseline.run.network !== current.run.network ||
     baseline.run.model !== current.run.model ||
+    (baseline.run.decryptTransport ?? "gateway") !== (current.run.decryptTransport ?? "gateway") ||
     !isDeepStrictEqual(baseline.run.scenario, current.run.scenario)
   ) {
-    throw new Error("Baseline is incompatible with the current report version, network, model, or resolved scenario.");
+    throw new Error(
+      "Baseline is incompatible with the current report version, network, model, decrypt transport, or resolved scenario.",
+    );
   }
   const baselineTargets = baseline.targets.map((entry) => entry.target).sort();
   const currentTargets = current.targets.map((entry) => entry.target).sort();

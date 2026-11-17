@@ -169,6 +169,18 @@ afterEach(async () => {
 });
 
 describe("executeRun lifecycle", () => {
+  it("rejects flows relayer-http does not serve before opening any client", async () => {
+    await expect(executeRun({
+      scenario,
+      env: { ...env(dir), useRelayerHttp: true },
+      skipReadiness: true,
+    })).rejects.toThrow(
+      '--use-relayer-http supports only user-decrypt and public-decrypt; scenario "lifecycle" includes input-proof. Run a single-flow scenario with --flow user-decrypt or --flow public-decrypt.',
+    );
+    expect(mocks.clients).toHaveLength(0);
+    expect(mocks.createFlowExecutor).not.toHaveBeenCalled();
+  });
+
   it("closes a registered executor and clients when prepare fails", async () => {
     const instance = executor();
     const failure = new Error("prepare failed");

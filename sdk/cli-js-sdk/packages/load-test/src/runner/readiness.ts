@@ -44,7 +44,7 @@ export const assertRelayerReadiness = async (
   options.signal?.throwIfAborted();
   if (options.skipReadiness) {
     logger.warn(
-      "Skipping readiness check (--no-readiness-check); assuming the relayer's v2 routes are live.",
+      "Skipping readiness check (--no-readiness-check); assuming the relayer is live.",
     );
     return;
   }
@@ -53,7 +53,14 @@ export const assertRelayerReadiness = async (
   const ownsClients = options.clients === undefined;
   let readinessError: unknown;
   try {
-    if (!(await clients.primary.isReady())) {
+    if (options.env.useRelayerHttp) {
+      if (!(await clients.primary.isReady("/healthz"))) {
+        throw new Error(
+          `relayer-http at ${options.env.relayerUrl} failed the readiness check (GET /healthz); ` +
+            "pass --no-readiness-check to proceed.",
+        );
+      }
+    } else if (!(await clients.primary.isReady())) {
       throw new Error(
         `Relayer at ${options.env.relayerUrl} failed the readiness check (GET /health/readiness). ` +
           "Older relayers expose health elsewhere (e.g. /liveness, /healthz); pass --no-readiness-check to proceed.",
