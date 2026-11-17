@@ -9,9 +9,11 @@
 # the `language` matrix defined below to confirm you have the correct set of
 # supported CodeQL languages.
 #
-# Fast scan of pull requests targeting main. The default branch is fully scanned
-# by codeql-main.yml on every push and on a schedule, so a PR skipped by the
-# `paths` filter below is still covered once merged.
+# Fast scan of pull requests targeting main. Each language is analyzed only when
+# the pull request changes files of that language (see `check-changes`), so the
+# ~45 min Rust analysis no longer runs on pull requests without Rust changes.
+# The default branch is fully scanned by codeql-main.yml on every push and on a
+# schedule, so a language skipped here is still covered once merged.
 name: codeql-pr
 permissions: {} # No permissions needed at workflow level
 
@@ -27,7 +29,6 @@ on:
       - '**.cjs'
       - '**.py'
       - '**.rs'
-      - '**.sol'
       - '.github/workflows/**'
       - '.github/actions/**'
 
@@ -36,8 +37,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-changes:
+    name: codeql-pr/check-changes
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+    runs-on: ubuntu-latest
+    outputs:
+      # JSON list of the filter names below that match the changed files.
+      languages: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          # Filter names must match CodeQL language names.
+          filters: |
+            actions:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+            javascript-typescript:
+              - '**.ts'
+              - '**.tsx'
+              - '**.js'
+              - '**.mjs'
+              - '**.cjs'
+            python:
+              - '**.py'
+            rust:
+              - '**.rs'
+
   analyze:
     name: codeql-pr/analyze-${{ matrix.language }}
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.languages != '[]' && needs.check-changes.outputs.languages != '' }}
     # Runner size impacts CodeQL analysis time. To learn more, please see:
     #   - https://gh.io/recommended-hardware-resources-for-running-codeql
     #   - https://gh.io/supported-runners-and-hardware-resources
@@ -53,15 +88,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - language: actions
-            build-mode: none
-          - language: javascript-typescript
-            build-mode: none
-          - language: python
-            build-mode: none
-          - language: rust
-            build-mode: none
+        # Only the languages with changed files (actions, javascript-typescript,
+        # python, rust). All of them use build-mode: none.
+        language: ${{ fromJSON(needs.check-changes.outputs.languages) }}
         # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
         # Use `c-cpp` to analyze code written in C, C++ or both
         # Use 'java-kotlin' to analyze code written in Java, Kotlin or both
@@ -86,7 +115,7 @@ jobs:
         uses: github/codeql-action/init@3c3833e0f8c1c83d449a7478aa59c036a9165498 # v3.29.11
         with:
           languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
+          build-mode: none
           # If you wish to specify custom queries, you can do so here or in a config file.
           # By default, queries listed here will override any specified in a config file.
           # Prefix the list here with "+" to use these queries and those in the config file.
