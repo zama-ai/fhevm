@@ -12,7 +12,7 @@ use pad_worker::{
     upload::{s3_key, Uploader},
     Config, PadWorker,
 };
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{postgres::PgPoolOptions, types::Uuid, PgPool};
 use std::{
     num::NonZeroUsize,
     sync::{
@@ -354,7 +354,51 @@ async fn a_temporary_error_retries_the_row_after_a_backoff() {
         .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(claim().await.unwrap(), Some(first));
+    let again = claim().await.unwrap().unwrap();
+    assert_eq!(again.label, first.label);
+    assert_ne!(again.token, first.token);
+}
+
+#[tokio::test]
+async fn a_pod_whose_claim_expired_cannot_change_a_row_claimed_again() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    let claim_timeout = Duration::from_secs(60);
+    let claim = || rows::claim(&pool, INSTANCE, Duration::from_secs(600), claim_timeout);
+    let stale = claim().await.unwrap().unwrap();
+    sqlx::query("UPDATE pads SET claimed_at = NOW() - INTERVAL '2 minutes'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let live = claim().await.unwrap().unwrap();
+    let attestation = PrfOutputAttestation {
+        version: Version::V1,
+        ciphertext_digest: B256::ZERO,
+        sns_ciphertext_digest: B256::ZERO,
+        signer: alloy::primitives::Address::ZERO,
+        signature: vec![1; 65],
+    };
+
+    assert_eq!(rows::release(&pool, INSTANCE, &[stale]).await.unwrap(), 0);
+    rows::retry(&pool, &stale, "late", claim_timeout)
+        .await
+        .unwrap();
+    rows::fail(&pool, &stale, "late").await.unwrap();
+    assert!(!rows::write_output(&pool, &stale, &[8], &[2], &attestation)
+        .await
+        .unwrap());
+
+    // The row keeps the live claim, and only the pod of that claim writes the output.
+    assert!(claim().await.unwrap().is_none());
+    let (attempts, failed): (i32, bool) = sqlx::query_as("SELECT attempts, is_error FROM pads")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!((attempts, failed), (0, false));
+    assert!(rows::write_output(&pool, &live, &[9], &[1], &attestation)
+        .await
+        .unwrap());
+    assert_eq!(ct64(&pool).await, vec![vec![9]]);
 }
 
 #[tokio::test]
@@ -402,7 +446,8 @@ async fn uploads_the_output_with_its_attestation() {
         s3_key(&rows::Claim {
             prf_instance: INSTANCE,
             label,
-            pad_length: 64
+            pad_length: 64,
+            token: Uuid::nil(),
         }),
         key
     );
@@ -478,7 +523,7 @@ async fn writes_the_output_of_a_pending_row_only() {
         signature: vec![1; 65],
     };
 
-    // The second write is from a pod whose claim went stale: the row keeps the first output.
+    // A second write after the row is complete: the row keeps the first output.
     assert!(rows::write_output(&pool, &claim, &[9], &[1], &attestation)
         .await
         .unwrap());
@@ -499,6 +544,15 @@ async fn writes_the_output_of_a_pending_row_only() {
         .await
         .unwrap();
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    let claim = rows::claim(
+        &pool,
+        INSTANCE,
+        Duration::from_secs(600),
+        Duration::from_secs(60),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let other = PrfOutputAttestation {
         signature: vec![2; 65],
         ..attestation
@@ -918,10 +972,16 @@ async fn the_release_skips_the_rows_that_another_transaction_locks() {
     let (_instance, pool) = db().await;
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     add_row(&pool, INSTANCE, 2, 1, 0.0).await;
-    sqlx::query("UPDATE pads SET claimed_at = NOW()")
-        .execute(&pool)
-        .await
-        .unwrap();
+    let mut claims = Vec::new();
+    for _ in 0..2 {
+        let claim = rows::claim(
+            &pool,
+            INSTANCE,
+            Duration::from_secs(600),
+            Duration::from_secs(60),
+        );
+        claims.push(claim.await.unwrap().unwrap());
+    }
     let mut other = pool.begin().await.unwrap();
     sqlx::query("SELECT 1 FROM pads WHERE label = $1 FOR UPDATE")
         .bind(B256::repeat_byte(1).as_slice())
@@ -929,11 +989,6 @@ async fn the_release_skips_the_rows_that_another_transaction_locks() {
         .await
         .unwrap();
 
-    let claims = [1, 2].map(|label| rows::Claim {
-        prf_instance: INSTANCE,
-        label: B256::repeat_byte(label),
-        pad_length: 64,
-    });
     let released = tokio::time::timeout(
         Duration::from_secs(5),
         rows::release(&pool, INSTANCE, &claims),
