@@ -722,6 +722,7 @@ async fn prf_service_role_writes_only_the_queue() {
         "UPDATE pads SET is_error = false",
         "UPDATE pads SET signature = NULL",
         "DELETE FROM pads",
+        "SELECT 1 FROM pad_ct64",
     ] {
         assert_denied(as_prf_service(&pool, denied).await, denied);
     }
@@ -745,9 +746,15 @@ async fn pad_worker_role_writes_only_outputs() {
         "UPDATE pads SET claimed_at = NOW(), attempts = attempts + 1, error_message = 'e',
              is_error = true, s3_verified_at = NOW()",
         "UPDATE pads SET ciphertext128 = NULL, ciphertext_digest = NULL, ciphertext128_digest = NULL,
-             signer = NULL, signature = NULL, attestation_version = NULL, ciphertext64 = NULL",
+             signer = NULL, signature = NULL, attestation_version = NULL",
         "DELETE FROM pads",
         "SELECT 1 FROM keys",
+        "INSERT INTO pad_ct64 (prf_instance, label, pad_length, ciphertext64, ciphertext_digest,
+                               ciphertext128_digest, signer, signature, attestation_version)
+             VALUES (1, decode(repeat('01', 32), 'hex'), 64, '\\x01',
+                     decode(repeat('00', 32), 'hex'), decode(repeat('00', 32), 'hex'),
+                     decode(repeat('00', 20), 'hex'), decode(repeat('01', 65), 'hex'), 1)",
+        "DELETE FROM pad_ct64",
     ] {
         as_role(&pool, "pad_worker", allowed).await.expect(allowed);
     }
@@ -758,6 +765,7 @@ async fn pad_worker_role_writes_only_outputs() {
         INSERT_PAD,
         "UPDATE pads SET triggered_by = triggered_by",
         "UPDATE pads SET label = label",
+        "UPDATE pad_ct64 SET ciphertext64 = ciphertext64",
     ] {
         assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
     }

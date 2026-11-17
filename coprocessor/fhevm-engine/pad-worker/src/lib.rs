@@ -59,12 +59,12 @@ pub struct Config {
     pub poll_interval: Duration,
     /// Pending rows older than this are not claimed (`PAD_PENDING_MAX_AGE`).
     pub pending_max_age: Duration,
-    /// Delete uploaded or failed rows older than this. `None`: keep all (`PRF_OUTPUT_MAX_AGE`).
-    pub output_max_age: Option<Duration>,
+    /// Delete uploaded or failed rows older than this. `None`: keep all (`PAD_CT128_MAX_AGE`).
+    pub ct128_max_age: Option<Duration>,
+    /// Delete the ct64 older than this. `None`: keep all (`PAD_CT64_MAX_AGE`).
+    pub ct64_max_age: Option<Duration>,
     /// Interval of the GC and the row age metrics (`PAD_GC_INTERVAL`).
     pub gc_interval: Duration,
-    /// The GC clears the ct64 of rows older than this (`PAD_CT64_MAX_AGE`).
-    pub ct64_max_age: Duration,
     /// On a stop, the time for the claimed rows to complete.
     pub drain_timeout: Duration,
 }
@@ -332,14 +332,17 @@ impl PadWorker {
 
     async fn gc_pass(&self) -> sqlx::Result<()> {
         let config = &self.config;
-        let old = match config.output_max_age {
+        let old = match config.ct128_max_age {
             Some(max_age) => rows::delete_old_outputs(&self.pool, max_age).await?,
             None => 0,
         };
         let expired =
             rows::delete_expired_pending(&self.pool, config.pending_max_age, config.claim_timeout)
                 .await?;
-        let ct64 = rows::clear_old_ct64(&self.pool, config.ct64_max_age).await?;
+        let ct64 = match config.ct64_max_age {
+            Some(max_age) => rows::delete_old_ct64(&self.pool, max_age).await?,
+            None => 0,
+        };
         if old + expired + ct64 > 0 {
             info!(old, expired, ct64, "Deleted pads rows and ct64");
         }
@@ -416,12 +419,12 @@ impl HealthCheckService for Health {
         status.set_db_connected(&self.pool).await;
         let rights = sqlx::query_scalar::<_, bool>(
             "SELECT has_column_privilege('pads', 'signature', 'UPDATE')
-                AND has_column_privilege('pads', 'ciphertext64', 'UPDATE')",
+                AND has_table_privilege('pad_ct64', 'INSERT')",
         )
         .fetch_one(&self.pool);
         let has_rights = matches!(timeout(DB_CHECK_TIMEOUT, rights).await, Ok(Ok(true)));
         if !has_rights {
-            status.add_error_details("No UPDATE rights on pads".to_string());
+            status.add_error_details("No write rights on pads or pad_ct64".to_string());
         }
         status.set_custom_check("pad_rights", has_rights, true);
         status

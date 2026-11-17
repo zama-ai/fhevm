@@ -43,7 +43,7 @@ static OLDEST_NOT_UPLOADED: LazyLock<GaugeVec> = LazyLock::new(|| {
 static STORED_CT64_BYTES: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
         "coprocessor_pad_worker_stored_ct64_bytes",
-        "Bytes of the ct64 stored for Unmask, in all instances"
+        "Disk bytes of the ct64 stored for Unmask (pad_ct64), in all instances"
     )
     .unwrap()
 });
