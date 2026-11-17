@@ -492,16 +492,62 @@ async fn writes_the_output_of_a_pending_row_only() {
     assert_eq!(ct128, vec![1]);
     assert_eq!(ct64(&pool).await, vec![vec![9]]);
 
-    // After the GC deletes the row, a new request adds it again. The stored ct64 stays.
-    sqlx::query("DELETE FROM pads")
+    // After the GC deletes the row, a new request adds it again. The stored ct64 keeps its bytes
+    // and attestation, and its age restarts.
+    sqlx::raw_sql("DELETE FROM pads; UPDATE pad_ct64 SET created_at = NOW() - INTERVAL '1 day'")
         .execute(&pool)
         .await
         .unwrap();
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
-    assert!(rows::write_output(&pool, &claim, &[8], &[1], &attestation)
+    let other = PrfOutputAttestation {
+        signature: vec![2; 65],
+        ..attestation
+    };
+    assert!(rows::write_output(&pool, &claim, &[8], &[1], &other)
         .await
         .unwrap());
     assert_eq!(ct64(&pool).await, vec![vec![9]]);
+    let (signature, recent): (Vec<u8>, bool) =
+        sqlx::query_as("SELECT signature, created_at > NOW() - INTERVAL '1 minute' FROM pad_ct64")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((signature, recent), (vec![1; 65], true));
+}
+
+#[tokio::test]
+async fn the_write_restarts_the_claim_for_the_upload() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    let claim_timeout = Duration::from_secs(60);
+    let claim = rows::claim(&pool, INSTANCE, Duration::from_secs(600), claim_timeout)
+        .await
+        .unwrap()
+        .unwrap();
+    // The evaluation took longer than the claim timeout.
+    sqlx::query("UPDATE pads SET claimed_at = NOW() - INTERVAL '2 minutes'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let attestation = PrfOutputAttestation {
+        version: Version::V1,
+        ciphertext_digest: B256::ZERO,
+        sns_ciphertext_digest: B256::ZERO,
+        signer: alloy::primitives::Address::ZERO,
+        signature: vec![1; 65],
+    };
+    assert!(rows::write_output(&pool, &claim, &[9], &[1], &attestation)
+        .await
+        .unwrap());
+
+    // Resubmit takes the row only after the claim timeout, not while its pod uploads it.
+    let claim_uploads = || rows::claim_uploads(&pool, INSTANCE, claim_timeout, 16);
+    assert!(claim_uploads().await.unwrap().is_empty());
+    sqlx::query("UPDATE pads SET claimed_at = NOW() - INTERVAL '2 minutes'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(claim_uploads().await.unwrap().len(), 1);
 }
 
 /// The stored ct64, sorted by label.

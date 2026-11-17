@@ -73,8 +73,9 @@ pub async fn claim(
 }
 
 /// Writes the outputs and the attestation; the trigger sends `pad_ready`. Returns false if the row
-/// was deleted or completed. The ct64 row gets a copy of the attestation. An existing ct64 stays:
-/// it has the same bytes.
+/// was deleted or completed. Restarts the claim: the claim then covers the upload. The ct64 row
+/// gets a copy of the attestation. An existing ct64 keeps its bytes and attestation, and its age
+/// restarts.
 pub async fn write_output(
     pool: &PgPool,
     claim: &Claim,
@@ -86,7 +87,7 @@ pub async fn write_output(
     let result = sqlx::query!(
         "UPDATE pads
             SET ciphertext128 = $4, ciphertext_digest = $5, ciphertext128_digest = $6,
-                signer = $7, signature = $8, attestation_version = $9
+                signer = $7, signature = $8, attestation_version = $9, claimed_at = NOW()
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3
             AND signature IS NULL AND NOT is_error",
         i32::from(claim.prf_instance),
@@ -108,7 +109,7 @@ pub async fn write_output(
         "INSERT INTO pad_ct64 (prf_instance, label, pad_length, ciphertext64, ciphertext_digest,
                                ciphertext128_digest, signer, signature, attestation_version)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT DO NOTHING",
+         ON CONFLICT (prf_instance, label, pad_length) DO UPDATE SET created_at = NOW()",
         i32::from(claim.prf_instance),
         claim.label.as_slice(),
         i32::from(claim.pad_length),
