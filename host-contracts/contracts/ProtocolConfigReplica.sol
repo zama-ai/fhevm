@@ -73,6 +73,8 @@ contract ProtocolConfigReplica is
         address canonicalProtocolConfig,
         uint64 canonicalChainId
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        __EIP712_init(EIP712_NAME, EIP712_VERSION, canonicalProtocolConfig, canonicalChainId);
+
         if (canonicalContextId < KMS_CONTEXT_COUNTER_BASE + 1) {
             revert InvalidKmsContext(canonicalContextId);
         }
@@ -82,7 +84,6 @@ contract ProtocolConfigReplica is
 
         _storeKmsNodesAndThresholds(canonicalContextId, canonicalNodes, canonicalThresholds);
         _activateKmsContextAndEpoch(canonicalContextId, canonicalEpochId);
-        __EIP712_init(EIP712_NAME, EIP712_VERSION, canonicalProtocolConfig, canonicalChainId);
     }
 
     /**
