@@ -28,7 +28,7 @@ BEGIN
         -- No INSERT, and no UPDATE of the key or the payer.
         GRANT SELECT, DELETE ON pads TO pad_worker;
         GRANT UPDATE (
-            claimed_at, attempts, error_message, is_error, s3_verified_at,
+            claimed_at, claim_token, attempts, error_message, is_error, s3_verified_at,
             ciphertext128, ciphertext_digest, ciphertext128_digest, signer, signature,
             attestation_version
         ) ON pads TO pad_worker;
