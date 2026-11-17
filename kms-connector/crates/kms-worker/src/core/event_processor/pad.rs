@@ -179,10 +179,10 @@ mod tests {
         }
     }
 
-    /// A pad decryption of `witness` on `CHAIN_ID`, signed by `signer` for `sign_chain_id`.
+    /// A pad decryption of `witnesses` on `CHAIN_ID`, signed by `signer` for `sign_chain_id`.
     fn pad_request(
         signer: &PrivateKeySigner,
-        witness: PadWitness,
+        witnesses: Vec<PadWitness>,
         allowed_contracts: Vec<Address>,
         sign_chain_id: u64,
     ) -> PadDecryptionEvent {
@@ -200,11 +200,13 @@ mod tests {
             },
             extraData: Bytes::default(),
         };
-        payload.pads.push(PadEntry {
-            label: payload.label_of(&witness),
-            witness,
-            padLength: 64,
-        });
+        for witness in witnesses {
+            payload.pads.push(PadEntry {
+                label: payload.label_of(&witness),
+                witness,
+                padLength: 64,
+            });
+        }
 
         let domain = default_user_decrypt_domain(
             sign_chain_id,
@@ -233,6 +235,8 @@ mod tests {
         UserIsDecryptor,
         UserIsDelegateOfDecryptor,
         UserIsNotDelegate,
+        SecondPadNotAuthorized,
+        ConsumerInAllowedContracts,
         ConsumerNotInAllowedContracts,
         WitnessExpired,
         LabelNotFromWitness,
@@ -243,8 +247,13 @@ mod tests {
     #[case::user_is_submitter(PadScenario::UserIsSubmitter, None)]
     #[case::user_is_decryptor(PadScenario::UserIsDecryptor, None)]
     #[case::user_is_delegate_of_decryptor(PadScenario::UserIsDelegateOfDecryptor, None)]
+    #[case::consumer_in_allowed_contracts(PadScenario::ConsumerInAllowedContracts, None)]
     #[case::user_is_not_delegate(
         PadScenario::UserIsNotDelegate,
+        Some((ProcessingErrorKind::Recoverable, ErrorCode::AclDenied))
+    )]
+    #[case::second_pad_not_authorized(
+        PadScenario::SecondPadNotAuthorized,
         Some((ProcessingErrorKind::Recoverable, ErrorCode::AclDenied))
     )]
     #[case::consumer_not_in_allowed_contracts(
@@ -275,6 +284,7 @@ mod tests {
 
         let mut allowed_contracts = vec![];
         let mut witness = witness(rand_address(), vec![rand_address()]);
+        let mut other_witnesses = vec![];
         let mut acl_results = None;
         match scenario {
             PadScenario::UserIsSubmitter => {
@@ -289,7 +299,23 @@ mod tests {
                 // Delegation checks: submitter, then the decryptor.
                 acl_results = Some(vec![not_invalidated, false.abi_encode(), true.abi_encode()]);
             }
+            PadScenario::ConsumerInAllowedContracts => {
+                witness.submitter = user.address();
+                allowed_contracts.push(witness.consumer);
+                acl_results = Some(vec![not_invalidated]);
+            }
             PadScenario::UserIsNotDelegate => {
+                acl_results = Some(vec![
+                    not_invalidated,
+                    false.abi_encode(),
+                    false.abi_encode(),
+                ]);
+            }
+            PadScenario::SecondPadNotAuthorized => {
+                witness.submitter = user.address();
+                other_witnesses.push(self::witness(rand_address(), vec![rand_address()]));
+                // The user is the first pad's submitter: only the second pad needs delegation
+                // checks, for its submitter, then its decryptor, both mocked to false here.
                 acl_results = Some(vec![
                     not_invalidated,
                     false.abi_encode(),
@@ -311,7 +337,8 @@ mod tests {
             None => asserter.push_failure_msg("transport error"),
         }
 
-        let mut request = pad_request(&user, witness, allowed_contracts, CHAIN_ID);
+        let witnesses = iter::once(witness).chain(other_witnesses).collect();
+        let mut request = pad_request(&user, witnesses, allowed_contracts, CHAIN_ID);
         if let PadScenario::LabelNotFromWitness = scenario {
             request.payload.pads[0].label = rand_digest();
         }
@@ -338,7 +365,12 @@ mod tests {
         // `ecrecover` mismatch, and no contract code at `userAddress` for the ERC-1271 fallback.
         asserter.push_success(&Bytes::default());
 
-        let request = pad_request(&user, witness(user.address(), vec![]), vec![], CHAIN_ID + 1);
+        let request = pad_request(
+            &user,
+            vec![witness(user.address(), vec![])],
+            vec![],
+            CHAIN_ID + 1,
+        );
         let err = processor
             .check_pad_decryption_request(&request)
             .await
