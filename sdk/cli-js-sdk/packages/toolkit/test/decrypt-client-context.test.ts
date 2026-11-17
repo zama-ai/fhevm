@@ -31,22 +31,13 @@ describe("createDecryptClientContext", () => {
     mocks.createFhevmDecryptClient.mockReturnValue({ decryptClient: true });
   });
 
-  it.each(["0.13.10", "0.13.20-0"] as const)(
-    "constructs a decrypt-only client pinned to TKMS %s",
-    (tkmsVersion) => {
-      const context = createDecryptClientContext(
-        { network: "testnet" },
-        tkmsVersion,
-      );
+  it("constructs a decrypt-only client", () => {
+    const context = createDecryptClientContext({ network: "testnet" });
 
-      expect(mocks.createFhevmDecryptClient).toHaveBeenCalledWith(
-        expect.objectContaining({
-          publicClient: { publicClient: true },
-          options: { moduleVersions: { kms: tkmsVersion } },
-        }),
-      );
-      expect(mocks.createFhevmClient).not.toHaveBeenCalled();
-      expect(context.fhevm).toEqual({ decryptClient: true });
-    },
-  );
+    expect(mocks.createFhevmDecryptClient).toHaveBeenCalledWith(
+      expect.objectContaining({ publicClient: { publicClient: true } }),
+    );
+    expect(mocks.createFhevmClient).not.toHaveBeenCalled();
+    expect(context.fhevm).toEqual({ decryptClient: true });
+  });
 });
