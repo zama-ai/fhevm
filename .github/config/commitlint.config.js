@@ -29,7 +29,9 @@ const Configuration = {
         'charts',
         'common',
         'relayer',
-        'listener'
+        'listener',
+        'deps',
+        'deps-dev'
       ]
     ],
   },
