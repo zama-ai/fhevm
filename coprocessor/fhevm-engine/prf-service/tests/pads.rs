@@ -755,6 +755,12 @@ async fn pad_worker_role_writes_only_outputs() {
                      decode(repeat('00', 32), 'hex'), decode(repeat('00', 32), 'hex'),
                      decode(repeat('00', 20), 'hex'), decode(repeat('01', 65), 'hex'), 1)",
         "DELETE FROM pad_ct64",
+        "INSERT INTO pad_ct64 (prf_instance, label, pad_length, ciphertext64, ciphertext_digest,
+                               ciphertext128_digest, signer, signature, attestation_version)
+             VALUES (1, decode(repeat('01', 32), 'hex'), 64, '\\x01',
+                     decode(repeat('00', 32), 'hex'), decode(repeat('00', 32), 'hex'),
+                     decode(repeat('00', 20), 'hex'), decode(repeat('01', 65), 'hex'), 1)
+             ON CONFLICT (prf_instance, label, pad_length) DO UPDATE SET created_at = NOW()",
     ] {
         as_role(&pool, "pad_worker", allowed).await.expect(allowed);
     }
@@ -766,6 +772,7 @@ async fn pad_worker_role_writes_only_outputs() {
         "UPDATE pads SET triggered_by = triggered_by",
         "UPDATE pads SET label = label",
         "UPDATE pad_ct64 SET ciphertext64 = ciphertext64",
+        "UPDATE pad_ct64 SET signature = signature",
     ] {
         assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
     }

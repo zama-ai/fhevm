@@ -20,7 +20,11 @@ BEGIN
         REVOKE UPDATE (prf_instance, label, pad_length, triggered_by, created_at)
             ON pads FROM pad_worker;
         REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON keys FROM pad_worker;
-        REVOKE UPDATE, TRUNCATE, REFERENCES, TRIGGER ON pad_ct64 FROM pad_worker;
+        REVOKE TRUNCATE, REFERENCES, TRIGGER ON pad_ct64 FROM pad_worker;
+        REVOKE UPDATE (
+            prf_instance, label, pad_length, ciphertext64, ciphertext_digest, ciphertext128_digest,
+            signer, signature, attestation_version
+        ) ON pad_ct64 FROM pad_worker;
         -- No INSERT, and no UPDATE of the key or the payer.
         GRANT SELECT, DELETE ON pads TO pad_worker;
         GRANT UPDATE (
@@ -28,8 +32,10 @@ BEGIN
             ciphertext128, ciphertext_digest, ciphertext128_digest, signer, signature,
             attestation_version
         ) ON pads TO pad_worker;
-        -- The pad-worker never changes a ct64. It deletes a ct64 only in the GC.
+        -- The pad-worker never changes a ct64. A new computation restarts its age. The pad-worker
+        -- deletes a ct64 only in the GC.
         GRANT SELECT, INSERT, DELETE ON pad_ct64 TO pad_worker;
+        GRANT UPDATE (created_at) ON pad_ct64 TO pad_worker;
         GRANT SELECT ON keys TO pad_worker;
     ELSE
         RAISE NOTICE 'Role pad_worker does not exist: no grants';
