@@ -2001,8 +2001,13 @@ coprocessorProxy:
   replicas: 1
 
   tls:
-    # kubernetes.io/tls Secret holding tls.crt and tls.key.
+    # kubernetes.io/tls Secret holding tls.crt and tls.key (required). Created by cert-manager when
+    # `certManager.enabled`, otherwise it must exist before the proxy starts.
     secretName: ""
+    # Self-signed certificate issued by cert-manager (must be installed in the cluster). Leave it
+    # disabled to serve a secret managed outside this chart: cert-manager would overwrite it.
+    certManager:
+      enabled: false
 
   # Domain and registry RPC come from the chains entry matching
   # commonConfig.canonicalProtocolConfigChainId. That entry needs a ProtocolConfig address

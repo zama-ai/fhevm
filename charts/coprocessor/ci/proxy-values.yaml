@@ -20,5 +20,7 @@ coprocessorProxy:
     tag: v0.0.0-test
   tls:
     secretName: coprocessor-proxy-tls
+    certManager:
+      enabled: true
   coprocessorSignerAddress: "0x00000000000000000000000000000000000000a1"
   prfServiceAddress: "prf-service:8090"
