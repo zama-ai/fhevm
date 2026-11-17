@@ -28,8 +28,14 @@ connectors keep working through a context switch. The chart takes the chain that
 through (`httpUrl` or `httpUrlValueFrom`). Rendering fails when one of them is missing. Requests
 must be signed for this coprocessor's signer address, `coprocessorProxy.coprocessorSignerAddress`.
 
-The proxy needs a `kubernetes.io/tls` secret that this chart does not create
-(`coprocessorProxy.tls.secretName`), with the certificate it serves. The chart configures the proxy
+The proxy needs a `kubernetes.io/tls` secret (`coprocessorProxy.tls.secretName`) with the
+certificate it serves. By default the secret must exist before the proxy starts. Set
+`coprocessorProxy.tls.certManager.enabled` to `true` to have the chart create it with cert-manager,
+which must be installed in the cluster: a self-signed `Issuer` and a `Certificate` that writes the
+secret. The certificate covers the proxy Service name and its `.<namespace>.svc` and
+`.<namespace>.svc.cluster.local` forms, and it is valid for 10 years. It suits a load balancer that
+does not validate the backend certificate. Leave it disabled when the secret is managed outside the
+chart: cert-manager overwrites an existing secret with the same name. The chart configures the proxy
 through environment variables only. `coprocessor-proxy --help` lists every setting and its
 variable; `coprocessorProxy.env` sets the others. The Service is a ClusterIP. Exposing it
 outside the cluster is left to the deployment, within the requirement below.
