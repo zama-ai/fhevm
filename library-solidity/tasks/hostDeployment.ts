@@ -260,10 +260,20 @@ export async function upgradeHostProxies(hre: HardhatRuntimeEnvironment, connect
     'FHEVM_EXECUTOR_CONTRACT_ADDRESS',
     'fhevmTemp/contracts/FHEVMExecutor.sol:FHEVMExecutor',
   );
+  // First IDs of a fresh KMS committee: request type in the top byte (KmsContext = 7, Epoch = 8), counter 1.
+  const initialKmsContextId = (7n << 248n) + 1n;
+  const initialEpochId = (8n << 248n) + 1n;
   await upgradeToRealImplementation(
     'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
     'fhevmTemp/contracts/ProtocolConfig.sol:ProtocolConfig',
-    [buildKmsNodeParams(), buildKmsThresholds(), process.env.KMS_SOFTWARE_VERSION ?? '', []],
+    [
+      initialKmsContextId,
+      initialEpochId,
+      buildKmsNodeParams(),
+      buildKmsThresholds(),
+      process.env.KMS_SOFTWARE_VERSION ?? '',
+      [],
+    ],
   );
   await upgradeToRealImplementation(
     'KMS_GENERATION_CONTRACT_ADDRESS',

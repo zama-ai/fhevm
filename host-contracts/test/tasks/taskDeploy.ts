@@ -9,6 +9,7 @@ import {
 } from '../../tasks/protocolConfigMirror';
 import {
   CRS_COUNTER_BASE,
+  EPOCH_COUNTER_BASE,
   KEY_COUNTER_BASE,
   KMS_CONTEXT_COUNTER_BASE,
   PREP_KEYGEN_COUNTER_BASE,
@@ -38,11 +39,13 @@ import {
 } from './taskHelpers';
 
 describe('task:deployAllHostContracts', function () {
-  const kmsAttestationEnv = {
+  const deployEnv = {
     KMS_PCR_VALUES: '[]',
     KMS_SOFTWARE_VERSION: 'kms-v1',
+    INITIAL_KMS_CONTEXT_ID: (KMS_CONTEXT_COUNTER_BASE + 0x0bn).toString(),
+    INITIAL_EPOCH_ID: (EPOCH_COUNTER_BASE + 0x0en).toString(),
   };
-  let previousEnv: Partial<Record<keyof typeof kmsAttestationEnv, string | undefined>>;
+  let previousEnv: Partial<Record<keyof typeof deployEnv, string | undefined>>;
   let previousSolidityCoverage: string | undefined;
   let originalEnvHost: string;
   let originalAddressesSol: string;
@@ -60,8 +63,8 @@ describe('task:deployAllHostContracts', function () {
     // file without kmsGenerationAdd, which would break the subsequent `forge test` compile of
     // contracts that unconditionally import that constant.
     originalAddressesSol = fs.readFileSync(HOST_ADDRESSES_SOL_FILE, 'utf-8');
-    for (const [key, value] of Object.entries(kmsAttestationEnv)) {
-      const envKey = key as keyof typeof kmsAttestationEnv;
+    for (const [key, value] of Object.entries(deployEnv)) {
+      const envKey = key as keyof typeof deployEnv;
       previousEnv[envKey] = process.env[envKey];
       process.env[envKey] = value;
     }
@@ -69,7 +72,7 @@ describe('task:deployAllHostContracts', function () {
 
   afterEach(function () {
     restoreProtocolConfigCanonicalEnv(originalCanonicalConfigEnv);
-    for (const key of Object.keys(kmsAttestationEnv) as (keyof typeof kmsAttestationEnv)[]) {
+    for (const key of Object.keys(deployEnv) as (keyof typeof deployEnv)[]) {
       const previousValue = previousEnv[key];
       if (previousValue === undefined) {
         delete process.env[key];
@@ -118,7 +121,9 @@ describe('task:deployAllHostContracts', function () {
     );
 
     expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.3.0');
-    expect(await protocolConfig.getCurrentKmsContextId()).to.equal(KMS_CONTEXT_COUNTER_BASE + 1n);
+    const [contextId, epochId] = await protocolConfig.getCurrentKmsContextAndEpoch();
+    expect(contextId).to.equal(KMS_CONTEXT_COUNTER_BASE + 0x0bn);
+    expect(epochId).to.equal(EPOCH_COUNTER_BASE + 0x0en);
   });
 });
 
