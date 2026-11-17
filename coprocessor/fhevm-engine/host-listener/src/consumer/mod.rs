@@ -22,7 +22,7 @@ use fhevm_engine_common::versioning::{
     is_retired, older_versions_are_retired, StackMode,
 };
 use fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION;
-use primitives::event::BlockFlow;
+use primitives::event::{BlockFlow, BlockPayload};
 
 use crate::cmd::block_history::BlockSummary;
 use crate::consumer::metrics::{
@@ -31,9 +31,12 @@ use crate::consumer::metrics::{
     observe_legacy_insert_delay_seconds, set_received_block,
 };
 use crate::consumer::migration::spawn_id_migration;
+use crate::database::event_operands::{
+    ExecutorVersion, ExecutorVersionSchedule,
+};
 use crate::database::ingest::{
-    ingest_block_logs_in_transaction, BlockLogs, HistoryGap, IngestOptions,
-    IngestResult,
+    ingest_block_logs_in_transaction_with_executor_schedule, BlockLogs,
+    HistoryGap, IngestOptions, IngestResult,
 };
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
@@ -42,9 +45,7 @@ use crate::health_check::HealthCheck;
 use crate::kms_generation::aws_s3::{AwsS3Client, AwsS3Interface};
 use crate::kms_generation::process_kms_generation_activations;
 
-use consumer::{
-    AckDecision, BlockPayload, Broker, HandlerError, ListenerConsumer,
-};
+use consumer::{AckDecision, Broker, HandlerError, ListenerConsumer};
 pub mod catchup;
 #[cfg(test)]
 mod finalization_tests;
@@ -918,6 +919,8 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
         catchup,
         finalized,
     };
+    let executor_version_schedule =
+        executor_version_schedule_for_payload(payload, config.tfhe_address);
     match ingest_with_retry(
         chain_id,
         db,
@@ -930,6 +933,7 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
         config.confidential_bridge_address,
         config.database_retry_interval,
         ingest_options.clone(),
+        executor_version_schedule,
     )
     .await
     {
@@ -1235,6 +1239,7 @@ async fn ingest_with_retry(
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
+    executor_version_schedule: ExecutorVersionSchedule,
 ) -> Result<(IngestResult, u64), (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
@@ -1268,7 +1273,7 @@ async fn ingest_with_retry(
                     return Ok(IngestResult::Complete);
                 }
             }
-            ingest_block_logs_in_transaction(
+            ingest_block_logs_in_transaction_with_executor_schedule(
                 chain_id,
                 db,
                 tx,
@@ -1279,6 +1284,7 @@ async fn ingest_with_retry(
                 &protocol_config,
                 &confidential_bridge_address,
                 options.clone(),
+                executor_version_schedule.clone(),
             )
             .await
         }
@@ -1301,6 +1307,53 @@ async fn ingest_with_retry(
             }
         }
     }
+}
+
+/// Convert optional broker metadata into the ingress version schedule only
+/// when it is bound to this exact block and configured executor proxy. Older
+/// producer payloads and malformed or mismatched metadata retain the
+/// history-compatible scalar admission policy.
+fn executor_version_schedule_for_payload(
+    payload: &BlockPayload,
+    expected_proxy: Address,
+) -> ExecutorVersionSchedule {
+    let Some(metadata) = payload.executor_version.as_ref() else {
+        return ExecutorVersionSchedule::default();
+    };
+    if metadata.proxy_address != expected_proxy
+        || metadata.block_hash != payload.block_hash
+        || metadata.parent_hash != payload.parent_hash
+        || metadata
+            .transitions
+            .windows(2)
+            .any(|pair| pair[0].after_log_index >= pair[1].after_log_index)
+    {
+        warn!(
+            block_number = payload.block_number,
+            block_hash = ?payload.block_hash,
+            metadata_proxy = %metadata.proxy_address,
+            expected_proxy = %expected_proxy,
+            "Ignoring unbound or unordered executor-version metadata"
+        );
+        return ExecutorVersionSchedule::default();
+    }
+
+    let mut schedule = ExecutorVersionSchedule::new(
+        metadata
+            .initial_version
+            .as_deref()
+            .and_then(ExecutorVersion::parse),
+    );
+    for transition in &metadata.transitions {
+        schedule.add_transition(
+            transition.after_log_index,
+            transition
+                .version
+                .as_deref()
+                .and_then(ExecutorVersion::parse),
+        );
+    }
+    schedule
 }
 
 #[cfg(test)]

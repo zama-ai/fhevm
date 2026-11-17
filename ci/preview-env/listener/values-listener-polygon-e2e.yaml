@@ -40,6 +40,12 @@ env:
 
 listeners:
   - name: polygon
+    env:
+      - name: APP_BLOCKCHAIN__STRATEGY__PUBLISH__TFHE_EXECUTOR_PROXY_ADDRESS
+        valueFrom:
+          configMapKeyRef:
+            name: polygon-sc-addresses
+            key: fhevm_executor.address
     config:
       broker:
         ensure_publish: true

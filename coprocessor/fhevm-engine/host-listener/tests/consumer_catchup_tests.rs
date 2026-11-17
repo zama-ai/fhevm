@@ -1509,6 +1509,7 @@ fn event_block(
             U256::from(number.saturating_sub(1)).to_be_bytes::<32>(),
         ),
         timestamp: 1_700_000_000,
+        executor_version: None,
         catchup_id,
         last_in_catchup,
         transactions: vec![TransactionPayload {

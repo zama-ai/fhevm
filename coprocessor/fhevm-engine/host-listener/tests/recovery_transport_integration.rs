@@ -581,6 +581,7 @@ async fn broker_final_catchup_queue_repairs_a_blocked_final_delivery(
             transactions,
             catchup_id: None,
             last_in_catchup: false,
+            executor_version: None,
         });
     }
     let publisher = broker.publisher("").await?;
