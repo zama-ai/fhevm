@@ -2,7 +2,7 @@
 
 use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
-use sqlx::PgPool;
+use sqlx::{types::Uuid, PgPool};
 use std::time::Duration;
 
 /// Backoff of a temporary error, in seconds: this step for each attempt, up to the max.
@@ -18,6 +18,8 @@ pub struct Claim {
     pub prf_instance: u16,
     pub label: B256,
     pub pad_length: u16,
+    /// Each claim sets a new token. A pod whose claim expired cannot change a row claimed again.
+    pub token: Uuid,
 }
 
 /// Claims the next pending row of `prf_instance`, if any. The connector with the fewest rows in
@@ -55,27 +57,29 @@ pub async fn claim(
     let Some(row) = row else {
         return Ok(None);
     };
-    sqlx::query!(
-        "UPDATE pads SET claimed_at = NOW()
-          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+    let token = sqlx::query_scalar!(
+        r#"UPDATE pads SET claimed_at = NOW(), claim_token = gen_random_uuid()
+            WHERE prf_instance = $1 AND label = $2 AND pad_length = $3
+        RETURNING claim_token AS "claim_token!""#,
         i32::from(prf_instance),
         row.label,
         row.pad_length,
     )
-    .execute(tx.as_mut())
+    .fetch_one(tx.as_mut())
     .await?;
     tx.commit().await?;
     Ok(Some(Claim {
         prf_instance,
         label: B256::try_from(row.label.as_slice()).expect("label is 32 bytes"),
         pad_length: u16::try_from(row.pad_length).expect("pad_length is in range"),
+        token,
     }))
 }
 
 /// Writes the outputs and the attestation; the trigger sends `pad_ready`. Returns false if the row
-/// was deleted or completed. Restarts the claim: the claim then covers the upload. The ct64 row
-/// gets a copy of the attestation. An existing ct64 keeps its bytes and attestation, and its age
-/// restarts.
+/// was deleted, completed or claimed again. Restarts the claim: the claim then covers the upload.
+/// The ct64 row gets a copy of the attestation. An existing ct64 keeps its bytes and attestation,
+/// and its age restarts.
 pub async fn write_output(
     pool: &PgPool,
     claim: &Claim,
@@ -89,7 +93,7 @@ pub async fn write_output(
             SET ciphertext128 = $4, ciphertext_digest = $5, ciphertext128_digest = $6,
                 signer = $7, signature = $8, attestation_version = $9, claimed_at = NOW()
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3
-            AND signature IS NULL AND NOT is_error",
+            AND signature IS NULL AND NOT is_error AND claim_token = $10",
         i32::from(claim.prf_instance),
         claim.label.as_slice(),
         i32::from(claim.pad_length),
@@ -99,6 +103,7 @@ pub async fn write_output(
         attestation.signer.as_slice(),
         attestation.signature,
         i16::from(u8::from(attestation.version)),
+        claim.token,
     )
     .execute(tx.as_mut())
     .await?;
@@ -126,16 +131,18 @@ pub async fn write_output(
     Ok(true)
 }
 
-/// Fails the row for good. The trigger then sends `pad_ready`.
+/// Fails the row: no pod tries it again. The trigger then sends `pad_ready`. Changes only a row
+/// with the token of `claim`.
 pub async fn fail(pool: &PgPool, claim: &Claim, message: &str) -> sqlx::Result<()> {
     sqlx::query!(
         "UPDATE pads SET is_error = TRUE, error_message = $4
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3
-            AND signature IS NULL AND NOT is_error",
+            AND signature IS NULL AND NOT is_error AND claim_token = $5",
         i32::from(claim.prf_instance),
         claim.label.as_slice(),
         i32::from(claim.pad_length),
         message,
+        claim.token,
     )
     .execute(pool)
     .await?;
@@ -143,7 +150,7 @@ pub async fn fail(pool: &PgPool, claim: &Claim, message: &str) -> sqlx::Result<(
 }
 
 /// After a temporary error: holds the claim for a backoff that grows with each attempt. Never fails
-/// the row: a row that keeps failing expires.
+/// the row: a row that keeps failing expires. Changes only a row with the token of `claim`.
 pub async fn retry(
     pool: &PgPool,
     claim: &Claim,
@@ -156,7 +163,7 @@ pub async fn retry(
                 claimed_at = NOW() - make_interval(secs => $5)
                              + make_interval(secs => LEAST((attempts + 1) * $6, $7))
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3
-            AND signature IS NULL AND NOT is_error",
+            AND signature IS NULL AND NOT is_error AND claim_token = $8",
         i32::from(claim.prf_instance),
         claim.label.as_slice(),
         i32::from(claim.pad_length),
@@ -164,25 +171,30 @@ pub async fn retry(
         claim_timeout.as_secs_f64(),
         RETRY_BACKOFF_STEP_SECS,
         RETRY_BACKOFF_MAX_SECS,
+        claim.token,
     )
     .execute(pool)
     .await?;
     Ok(())
 }
 
-/// Releases the claims that a stop aborted, except locked rows. Returns the rows released.
+/// Releases the claims that a stop aborted, except locked rows and rows claimed again. Returns the
+/// rows released.
 pub async fn release(pool: &PgPool, prf_instance: u16, claims: &[Claim]) -> sqlx::Result<u64> {
     let labels: Vec<Vec<u8>> = claims.iter().map(|c| c.label.to_vec()).collect();
     let lengths: Vec<i32> = claims.iter().map(|c| i32::from(c.pad_length)).collect();
+    let tokens: Vec<Uuid> = claims.iter().map(|c| c.token).collect();
     let result = sqlx::query!(
         "UPDATE pads SET claimed_at = NULL WHERE ctid IN (
              SELECT ctid FROM pads
               WHERE prf_instance = $1
-                AND (label, pad_length) IN (SELECT * FROM UNNEST($2::BYTEA[], $3::INTEGER[]))
+                AND (label, pad_length, claim_token)
+                    IN (SELECT * FROM UNNEST($2::BYTEA[], $3::INTEGER[], $4::UUID[]))
                 FOR UPDATE SKIP LOCKED)",
         i32::from(prf_instance),
         &labels,
         &lengths,
+        &tokens,
     )
     .execute(pool)
     .await?;
@@ -204,7 +216,7 @@ pub async fn claim_uploads(
     limit: i64,
 ) -> sqlx::Result<Vec<Output>> {
     let rows = sqlx::query!(
-        r#"UPDATE pads SET claimed_at = NOW()
+        r#"UPDATE pads SET claimed_at = NOW(), claim_token = gen_random_uuid()
             WHERE (prf_instance, label, pad_length) IN (
                   SELECT prf_instance, label, pad_length
                     FROM pads
@@ -216,7 +228,8 @@ pub async fn claim_uploads(
         RETURNING label, pad_length, ciphertext128 AS "ciphertext128!",
                   ciphertext_digest AS "ciphertext_digest!",
                   ciphertext128_digest AS "ciphertext128_digest!", signer AS "signer!",
-                  signature AS "signature!", attestation_version AS "attestation_version!""#,
+                  signature AS "signature!", attestation_version AS "attestation_version!",
+                  claim_token AS "claim_token!""#,
         i32::from(prf_instance),
         claim_timeout.as_secs_f64(),
         limit,
@@ -234,6 +247,7 @@ pub async fn claim_uploads(
                     prf_instance,
                     label: B256::try_from(row.label.as_slice()).expect("label is 32 bytes"),
                     pad_length: u16::try_from(row.pad_length).expect("pad_length is in range"),
+                    token: row.claim_token,
                 },
                 ct128: row.ciphertext128,
                 attestation: PrfOutputAttestation {

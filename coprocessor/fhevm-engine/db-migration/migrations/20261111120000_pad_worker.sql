@@ -2,6 +2,8 @@
 
 ALTER TABLE pads
     ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ NULL,
+    -- Each claim sets a new token. A pod changes the row only while the row has its token.
+    ADD COLUMN IF NOT EXISTS claim_token UUID NULL,
     ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     ADD COLUMN IF NOT EXISTS error_message TEXT NULL,
     ADD COLUMN IF NOT EXISTS s3_verified_at TIMESTAMPTZ NULL;

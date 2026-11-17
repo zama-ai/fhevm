@@ -291,7 +291,7 @@ impl PadWorker {
         .await
         {
             Ok(true) => {}
-            // Another pod completed the row, or the GC deleted it: do not upload this output.
+            // Another pod claimed or completed the row, or the GC deleted it: do not upload.
             Ok(false) => return Ok(()),
             Err(e) if is_fatal_connection_error(&e) => return Err(e.into()),
             Err(e) => return self.retry(&claim, &format!("write: {e}")).await,
