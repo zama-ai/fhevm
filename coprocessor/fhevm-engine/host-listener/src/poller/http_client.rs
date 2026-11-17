@@ -361,6 +361,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn executor_version_lookup_distinguishes_empty_addresses_from_precompiles(
+    ) -> Result<()> {
+        let anvil = alloy::node_bindings::Anvil::new().try_spawn()?;
+        let provider =
+            ProviderBuilder::new().connect_http(anvil.endpoint_url());
+        let block_hash = provider
+            .get_block_by_number(0.into())
+            .await?
+            .expect("Anvil genesis block")
+            .header
+            .hash;
+        let undeployed_proxy = Address::repeat_byte(2);
+        let client = HttpChainClient::new(
+            &anvil.endpoint(),
+            Address::repeat_byte(1),
+            undeployed_proxy,
+            None,
+            None,
+            None,
+            Duration::from_millis(10),
+            0,
+            1_000_000,
+        )?;
+
+        assert_eq!(
+            client
+                .query_executor_version(undeployed_proxy, block_hash)
+                .await?,
+            None,
+            "an undeployed proxy must remain replayable"
+        );
+        // Low addresses are not empty placeholders: calling getVersion() at
+        // 0x02 returns a SHA-256 digest, which must remain a decoding error.
+        let error = client
+            .query_executor_version(Address::with_last_byte(2), block_hash)
+            .await
+            .expect_err(
+                "precompile output must not become unknown-version metadata",
+            );
+        assert!(
+            error.downcast_ref::<alloy::sol_types::Error>().is_some(),
+            "expected an ABI decoding error, got {error:#}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn silent_peer_times_out_and_same_client_recovers() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener =

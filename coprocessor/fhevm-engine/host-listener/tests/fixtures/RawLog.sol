@@ -9,6 +9,13 @@ pragma solidity ^0.8.24;
 /// Then wrap ABI + bytecode + deployedBytecode as
 /// `{ "abi", "bytecode": { "object" }, "deployedBytecode": { "object" } }`.
 contract RawLog {
+    // The listeners query the configured executor's version. This fixture
+    // emits historical and current payloads, so identify it explicitly without
+    // claiming any FHEVMExecutor version or reverting the metadata lookup.
+    function getVersion() external pure returns (string memory) {
+        return "RawLog test fixture";
+    }
+
     function emitLog(bytes32[] calldata topics, bytes calldata data) external {
         uint256 n = topics.length;
         require(n <= 4, "too many topics");

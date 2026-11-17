@@ -17,8 +17,10 @@ pub(super) fn pause_test_config(
 ) -> PollerConfig {
     PollerConfig {
         url: anvil.endpoint(),
-        acl_address: Address::with_last_byte(1),
-        tfhe_address: Address::with_last_byte(2),
+        // Version probes need an empty address, not an EVM precompile (0x02
+        // is SHA-256 and returns bytes that cannot decode as getVersion()).
+        acl_address: Address::repeat_byte(1),
+        tfhe_address: Address::repeat_byte(2),
         kms_generation_address: None,
         protocol_config_address: None,
         confidential_bridge_address: None,
@@ -346,30 +348,11 @@ async fn poller_recovers_missing_canonical_height_before_restart_overlap(
     sqlx::query("INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block) VALUES (42, 10)")
         .execute(&pool).await?;
     let config = PollerConfig {
-        url: anvil.endpoint(),
-        acl_address: Address::with_last_byte(1),
-        tfhe_address: Address::with_last_byte(2),
-        kms_generation_address: None,
-        protocol_config_address: None,
-        confidential_bridge_address: None,
-        database_url: instance.db_url.clone(),
         finality_lag: 0,
-        batch_size: 100,
         poll_interval: Duration::from_millis(10),
-        retry_interval: Duration::from_millis(10),
         service_name: "missing-canonical-poller-test".into(),
-        max_http_retries: 0,
-        rpc_compute_units_per_second: 1000,
-        health_port: 0,
-        seed_start_block: None,
         replay_window: 1,
-        dependence_cache_size: 64,
-        dependence_by_connexity: false,
-        dependence_cross_block: false,
-        dependent_ops_max_per_chain: 0,
-        gcs_mode: false,
-        disable_synthetic_ops: true,
-        canonical_protocol_config_chain_id: None,
+        ..pause_test_config(instance.db_url.clone(), &anvil, 0)
     };
     let poller = run_poller(config);
     tokio::pin!(poller);
