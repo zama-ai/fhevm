@@ -1,0 +1,50 @@
+name: relayer-db-rollback-docker-build
+
+# Manual only. The rollback tool is used a few times a year, so its image is
+# built when a rollback is being prepared, not on pushes, pull requests or
+# releases. Run it from the Actions tab or with:
+#   gh workflow run relayer-db-rollback-docker-build.yml --ref <branch-or-tag>
+on:
+  workflow_dispatch:
+    inputs:
+      image-tag:
+        description: 'Image tag (default: short SHA of the commit that is built)'
+        type: string
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: relayer-db-rollback-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    secrets:
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      # The image only needs its own directory: the migration files are copies
+      # kept inside it, not read from the relayer at build time.
+      docker-context: "relayer-db-rollback"
+      push_image: true
+      image-name: "fhevm/relayer-db-rollback"
+      docker-file: "relayer-db-rollback/Dockerfile"
+      app-cache-dir: "fhevm-relayer-db-rollback"
+      # sqlx-cli is compiled from source; 16 vCPUs keep a cache-miss build short.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+      rust-toolchain-file-path: relayer/rust-toolchain.toml
+      image-tag: ${{ inputs.image-tag }}
