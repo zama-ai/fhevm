@@ -22,6 +22,7 @@ use pingora::{
     prelude::HttpPeer,
     proxy::{FailToProxy, ProxyHttp, Session},
 };
+use std::time::Duration;
 use tracing::{Span, error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -81,6 +82,14 @@ impl Proxy {
             ));
         }
         Ok(())
+    }
+
+    /// What is left of `request_read_timeout` for the client to send its request body, counted
+    /// from the request head.
+    fn body_read_budget(&self, ctx: &RequestContext) -> Duration {
+        self.config
+            .request_read_timeout
+            .saturating_sub(ctx.observation.elapsed())
     }
 
     /// Writes an error body as JSON, or nothing if an answer has already started.
@@ -258,11 +267,7 @@ impl ProxyHttp for Proxy {
         // Pingora's read timeout bounds each read, so a client sending a byte at a time would
         // never hit it. The next read only gets what is left of `request_read_timeout`, which
         // then bounds the whole body. Pingora waits for the answer without a read timeout.
-        let left = self
-            .config
-            .request_read_timeout
-            .saturating_sub(ctx.observation.elapsed());
-        session.set_read_timeout(Some(left));
+        session.set_read_timeout(Some(self.body_read_budget(ctx)));
 
         if let Some(chunk) = body {
             ctx.body_len += chunk.len();
@@ -322,6 +327,10 @@ impl ProxyHttp for Proxy {
             upstream_request.insert_header(X_FORWARDED_FOR, addr.ip().to_string())?;
         }
         upstream_request.insert_header(X_FORWARDED_PROTO, self.config.scheme())?;
+
+        // The first body read comes next. Connecting to the endpoint took some of
+        // `request_read_timeout`, so that read only gets what is left of it too.
+        session.set_read_timeout(Some(self.body_read_budget(ctx)));
         Ok(())
     }
 
