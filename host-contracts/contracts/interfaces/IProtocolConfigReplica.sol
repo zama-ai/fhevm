@@ -5,7 +5,7 @@ import {KmsThresholds, KmsNode} from "../shared/Structs.sol";
 import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
 
 /**
- * @notice A canonical context switch from the active context.
+ * @notice The context metadata derived from a context activation on the canonical contract.
  * @param contextId The new context ID.
  * @param nodes The new committee, in canonical storage order.
  * @param thresholds The thresholds of the new committee.
