@@ -21,11 +21,9 @@
  *        - make the target invalid on chain without moving the active context/epoch (destroying a
  *          context also makes its epochs invalid, because `isValidEpochForContext` needs a valid
  *          context, so the contract writes nothing per epoch);
- *        - reach every committee node: its connector forwards `DestroyMpcContext` /
+ *        - reach every node: its connector forwards `DestroyMpcContext` /
  *          `DestroyMpcEpoch` to its core and drops the target from its validation cache;
  *        - leave the current context and epoch serving decryptions and input proofs.
- *      The spare never held this material: its core has nothing to delete, but still confirms
- *      both destroys.
  *   4. Recovery and abort. Two independent checks:
  *      a) A context switch must still work after a destroy. That is, destroying a context must
  *         never leave the system stuck and unable to reshare and activate a new one.
@@ -396,9 +394,8 @@ const assertCurrentUnchanged = async (
  *     the active context/epoch does not move;
  *   - connector + KMS Core: every party forwards `DestroyMpcContext` / `DestroyMpcEpoch` to its
  *     core and marks the destroyed target invalid in its validation cache (invalidation follows
- *     the chain event, not the core outcome). The spare never held the material: its core
- *     confirms both destroys trivially. A context destroy also invalidates the context's cached
- *     epochs, on every party;
+ *     the chain event, not the core outcome). A context destroy also invalidates the context's
+ *     cached epochs, on every party;
  *   - app: the current context/epoch keeps serving user decryption and the input-proof flow.
  */
 const destroyContextAndEpoch = async (
@@ -482,8 +479,6 @@ const destroyContextAndEpoch = async (
   }
 
   await assertCurrentUnchanged(rpcUrl, protocolConfig, current, "destroying the retired context");
-  // Every party completes the destroy, the spare included: its core never held the context, so
-  // it has nothing to delete and completes trivially.
   await checkConnectorsDbColumn(
     parties, "context-destroy forwarded to KMS Core",
     columnQuery("kms_context_destroyed", "context_id", "status", oldContextId), ["completed"],
@@ -532,8 +527,6 @@ const destroyContextAndEpoch = async (
     throw new PreflightError(`kms-context-switch: epoch ${oldEpochId} still reads valid after destroy`);
   }
   await assertCurrentUnchanged(rpcUrl, protocolConfig, current, "destroying the retired epoch");
-  // Every party completes the destroy, the spare included: its core never held the epoch, so it
-  // has nothing to delete and completes trivially.
   await checkConnectorsDbColumn(
     parties, "epoch-destroy forwarded to KMS Core",
     columnQuery("kms_epoch_destroyed", "epoch_id", "status", oldEpochId), ["completed"],
@@ -662,7 +655,6 @@ const abortStuckRotation = async (
     if (abortedEpochIdFromEvent !== pendingEpochId) {
       throw new PreflightError(`kms-context-switch: KmsEpochDestroyed event does not carry epochId=${pendingEpochId}`);
     }
-    // The spare never reshared this Pending epoch, but its core still confirms the destroy.
     await checkConnectorsDbColumn(
       [...committee, ...spares], "aborted epoch-destroy forwarded to KMS Core",
       columnQuery("kms_epoch_destroyed", "epoch_id", "status", pendingEpochId), ["completed"],
