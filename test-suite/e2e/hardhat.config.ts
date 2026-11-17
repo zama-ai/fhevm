@@ -6,6 +6,8 @@ import { task, vars } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
+import './tasks/hcuAllowlist';
+
 const NUM_ACCOUNTS = 120;
 const DEFAULT_NETWORK = 'staging';
 
