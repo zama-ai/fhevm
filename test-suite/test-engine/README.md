@@ -331,20 +331,20 @@ spec:
 | --------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `none`    | no           | None. Built-in default (no file, no settings). Only for scenarios that do not use the fhEVM stack.                                                                                                                  |
 | `local`   | no           | `RPC_URL`, `CHAIN_ID_HOST` (default 12345) and `MNEMONIC` from `<repo>/.fhevm/runtime/env/test-suite.env`, written by `fhevm-cli up`. The RPC address is the stack network's: the engine runs in a container on it. |
-| `devnet`  | no           | `RPC_URL` (secret), chain ID 1337, `MNEMONIC`.                                                                                                                                                                      |
+| `devnet`  | no           | `ETH_RPC_URL` (secret), chain ID 11155111 (Sepolia), `MNEMONIC`.                                                                                                                                                    |
 | `testnet` | no           | `SEPOLIA_ETH_RPC_URL` (secret), chain ID 11155111, `MNEMONIC`.                                                                                                                                                      |
 | `mainnet` | **yes**      | `MAINNET_ETH_RPC_URL` (secret), chain ID 1, `MNEMONIC`. Real funds.                                                                                                                                                 |
 
 No URL or mnemonic is committed: they come from the environment.
 
-Every shipped profile also declares the [`relayer` and `contracts` sections](#the-relayer-and-contracts-sections), with the variable names of the e2e suite:
+Every shipped profile also declares the [`relayer` and `contracts` sections](#the-relayer-and-contracts-sections), with the variable names of the e2e suite or of its pods:
 
-| Profile   | `relayer` and `contracts` sections                                                                                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `local`   | From `test-suite.env`: `RELAYER_URL`, `CHAIN_ID_GATEWAY` (default 54321), the gateway and host contract addresses. No API key.                                                      |
-| `devnet`  | From the environment; `ZAMA_FHEVM_API_KEY` is optional (empty by default, so no authentication).                                                                                    |
-| `testnet` | **Placeholder**, as `devnet`: not validated against the network yet. The public values embedded in the e2e suite (`test/instance.ts`) are the starting point when it is configured. |
-| `mainnet` | **Placeholder**, as `testnet`.                                                                                                                                                      |
+| Profile   | `relayer` and `contracts` sections                                                                                                                                                                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `local`   | From `test-suite.env`: `RELAYER_URL`, `CHAIN_ID_GATEWAY` (default 54321), the gateway and host contract addresses. No API key.                                                                                                     |
+| `devnet`  | From the environment, with the names of the DevNet e2e pods: the host contract addresses carry the `ETH_` prefix (`ETH_ACL_CONTRACT_ADDRESS`, …); `ZAMA_FHEVM_API_KEY` is optional (empty by default, so no authentication).       |
+| `testnet` | **Placeholder**, from the environment with the e2e suite's unprefixed names: not validated against the network yet. The public values embedded in the e2e suite (`test/instance.ts`) are the starting point when it is configured. |
+| `mainnet` | **Placeholder**, as `testnet`.                                                                                                                                                                                                     |
 
 **Value resolution.** A setting is exactly one of `{ value }`, `{ env }` or `{ env, default }`. An `env` source is looked up in the process environment first, then in the env files, in order. Settings are resolved once, before any scenario runs: a missing variable or a missing (non-optional) env file stops the run with exit 2. Env files are never merged into `process.env`.
 

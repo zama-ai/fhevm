@@ -52,6 +52,13 @@ const LIVE_ENV = {
   KMS_VERIFIER_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000005',
   PROTOCOL_CONFIG_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000006',
   FHEVM_EXECUTOR_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000007',
+  // devnet: the names of the DevNet e2e pods, with the host chain's ETH_ prefix.
+  ETH_RPC_URL: 'https://sepolia.example/devnet-key-123456',
+  ETH_ACL_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000003',
+  ETH_INPUT_VERIFIER_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000004',
+  ETH_KMS_VERIFIER_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000005',
+  ETH_PROTOCOL_CONFIG_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000006',
+  ETH_FHEVM_EXECUTOR_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000007',
 };
 
 describe('profile files', () => {
@@ -295,7 +302,11 @@ describe('relayer and contracts sections', () => {
       const profile = loadProfile(name, { profilesDir: DEFAULT_PROFILES_DIR, env: LIVE_ENV });
       assert.equal(profile.relayer!.gateway.chainId.value, 10901);
       assert.deepEqual(profile.relayer!.apiKey, { value: '', secret: true, source: 'default' });
-      assert.equal(profile.contracts!.acl.source, 'env:ACL_CONTRACT_ADDRESS');
+      assert.equal(profile.chain!.chainId.value, 11155111);
+      assert.equal(
+        profile.contracts!.acl.source,
+        name === 'devnet' ? 'env:ETH_ACL_CONTRACT_ADDRESS' : 'env:ACL_CONTRACT_ADDRESS',
+      );
       assert.ok(!secretsOf(profile).some((secret) => secret.key === 'relayer.apiKey'));
     }
     assert.match(

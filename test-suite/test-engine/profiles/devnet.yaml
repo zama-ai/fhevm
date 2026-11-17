@@ -2,12 +2,14 @@ apiVersion: fhevm.zama.ai/profile/v1
 kind: Profile
 metadata:
   name: devnet
-  description: DevNet (zws-dev)
+  description: DevNet (zws-dev), Sepolia host chain
 spec:
   requiresConfirmation: false
+  # The variable names are those of the DevNet e2e pods (namespace relayer on zws-dev), which hold
+  # every host chain of the cluster: the host chain's values carry the ETH_ prefix.
   chain:
-    rpcUrl: { env: RPC_URL, secret: true }
-    chainId: { value: 1337 }
+    rpcUrl: { env: ETH_RPC_URL, secret: true }
+    chainId: { value: 11155111 }
     mnemonic: { env: MNEMONIC, secret: true }
   relayer:
     url: { env: RELAYER_URL }
@@ -18,9 +20,9 @@ spec:
       decryption: { env: DECRYPTION_ADDRESS }
       inputVerification: { env: INPUT_VERIFICATION_ADDRESS }
   contracts:
-    acl: { env: ACL_CONTRACT_ADDRESS }
-    executor: { env: FHEVM_EXECUTOR_CONTRACT_ADDRESS }
-    inputVerifier: { env: INPUT_VERIFIER_CONTRACT_ADDRESS }
-    kmsVerifier: { env: KMS_VERIFIER_CONTRACT_ADDRESS }
-    protocolConfig: { env: PROTOCOL_CONFIG_CONTRACT_ADDRESS }
+    acl: { env: ETH_ACL_CONTRACT_ADDRESS }
+    executor: { env: ETH_FHEVM_EXECUTOR_CONTRACT_ADDRESS }
+    inputVerifier: { env: ETH_INPUT_VERIFIER_CONTRACT_ADDRESS }
+    kmsVerifier: { env: ETH_KMS_VERIFIER_CONTRACT_ADDRESS }
+    protocolConfig: { env: ETH_PROTOCOL_CONFIG_CONTRACT_ADDRESS }
   settings: {}
