@@ -501,8 +501,7 @@ async fn test_allowed_computation_records_its_producer_block(
     use sqlx::types::time::PrimitiveDateTime;
 
     let test_instance =
-        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
-            .await?;
+        test_harness::instance::setup_test_db(ImportMode::None).await?;
     let chain_id = ChainId::try_from(42_u64)?;
     let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
     let pool = db.pool.read().await.clone();
@@ -517,6 +516,7 @@ async fn test_allowed_computation_records_its_producer_block(
     let synthetic_event = |handle,
                            transaction_hash,
                            block_hash,
+                           log_index,
                            is_allowed: bool,
                            clear,
                            is_synthetic| {
@@ -543,7 +543,7 @@ async fn test_allowed_computation_records_its_producer_block(
             block_timestamp: PrimitiveDateTime::MAX,
             dependence_chain: transaction_hash,
             tx_depth_size: 0,
-            log_index: None,
+            log_index: Some(log_index),
             operand_boundary_mask: Some(Default::default()),
             has_legacy_operand_origin: false,
             is_executor_minted: true,
@@ -551,16 +551,18 @@ async fn test_allowed_computation_records_its_producer_block(
             is_synthetic,
         }
     };
-    let event = |handle, transaction_hash, block_hash, is_allowed, clear| {
-        synthetic_event(
-            handle,
-            transaction_hash,
-            block_hash,
-            is_allowed,
-            clear,
-            false,
-        )
-    };
+    let event =
+        |handle, transaction_hash, block_hash, log_index, is_allowed, clear| {
+            synthetic_event(
+                handle,
+                transaction_hash,
+                block_hash,
+                log_index,
+                is_allowed,
+                clear,
+                false,
+            )
+        };
 
     let mut tx = db
         .new_transaction()
@@ -572,6 +574,7 @@ async fn test_allowed_computation_records_its_producer_block(
             handle,
             FixedBytes::repeat_byte(0x71),
             first_block_hash,
+            0,
             true,
             7,
         ),
@@ -583,6 +586,7 @@ async fn test_allowed_computation_records_its_producer_block(
             unallowed_handle,
             FixedBytes::repeat_byte(0x72),
             first_block_hash,
+            1,
             false,
             8,
         ),
@@ -594,6 +598,7 @@ async fn test_allowed_computation_records_its_producer_block(
             handle,
             FixedBytes::repeat_byte(0x73),
             competing_block_hash,
+            0,
             true,
             9,
         ),
@@ -606,6 +611,7 @@ async fn test_allowed_computation_records_its_producer_block(
             probe_handle,
             FixedBytes::repeat_byte(0x74),
             first_block_hash,
+            2,
             true,
             10,
             true,

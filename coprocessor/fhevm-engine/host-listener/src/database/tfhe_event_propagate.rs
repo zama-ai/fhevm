@@ -1006,6 +1006,15 @@ impl Database {
                     .into(),
             )
         })?;
+        let log_index = log
+            .log_index
+            .and_then(|index| i64::try_from(index).ok())
+            .ok_or_else(|| {
+                SqlxError::Protocol(
+                    "refusing computation insert without a PostgreSQL-range log index"
+                        .into(),
+                )
+            })?;
         let operand_boundary_mask =
             (!log.has_legacy_operand_origin).then_some(derived_mask.as_slice());
         // Schema isolation handles BCS/GCS routing at the connection layer
@@ -1022,8 +1031,8 @@ impl Database {
         // The block-number and boundary-mask migrations leave legacy rows NULL.
         // That means unknown metadata, not a contradiction. Preserve NULL
         // (and the worker's legacy inference) instead of backfilling metadata
-        // onto retained pre-upgrade work. All other metadata, and every
-        // already-recorded height or mask, remain immutable. Handles
+        // onto retained pre-upgrade work. Execution metadata and every
+        // already-recorded height or mask remain immutable. Handles
         // verified against the old executor preimage also start with NULL on
         // fresh historical replay: their origin was never committed on-chain.
         let conflicting: bool = sqlx::query_scalar(
@@ -1036,7 +1045,9 @@ impl Database {
                     $9::bytea, $10::smallint, $11::smallint)
                     OR (block_number IS NOT NULL AND block_number IS DISTINCT FROM $7::bigint)
                     OR ($8::bytea IS NOT NULL AND operand_boundary_mask IS NOT NULL
-                        AND operand_boundary_mask IS DISTINCT FROM $8::bytea)))",
+                        AND operand_boundary_mask IS DISTINCT FROM $8::bytea)
+                    OR (is_executor_minted IS NOT NULL
+                        AND is_executor_minted IS DISTINCT FROM $12::boolean)))",
         )
         .bind(output_handle)
         .bind(log.transaction_hash.map(|hash| hash.to_vec()))
@@ -1049,6 +1060,7 @@ impl Database {
         .bind(&group_id_vec)
         .bind(output_index)
         .bind(output_count)
+        .bind(log.is_executor_minted)
         .fetch_one(tx.deref_mut()).await?;
         if conflicting {
             error!(
@@ -1057,9 +1069,13 @@ impl Database {
             );
             return Err(SqlxError::Protocol(REPLAY_METADATA_CONFLICT.into()));
         }
+        // Repeated operations may mint the same handle at multiple indexes.
+        // Keep the earliest observation within this fork; a sibling's global
+        // indexes are incomparable. Synthetic fallback indexes are bookkeeping
+        // only and deliberately carry no executor block identity.
         // Reconcile ACL evidence after all computation writes, before taking
         // chain locks, to keep the worker and ingestion lock order consistent.
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             INSERT INTO computations (
                 output_handle,
@@ -1077,32 +1093,63 @@ impl Database {
                 operand_boundary_mask,
                 group_id,
                 output_index,
-                output_count
+                output_count,
+                log_index,
+                is_executor_minted,
+                log_index_block_hash
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
-            output_handle,
-            dependencies as _,
-            fhe_operation as i16,
-            is_scalar,
-            log.dependence_chain.to_vec(),
-            log.transaction_hash.map(|txh| txh.to_vec()) as _,
-            output_allowed,
-            log.block_timestamp
+        )
+        .bind(output_handle)
+        .bind(dependencies.to_vec())
+        .bind(fhe_operation as i16)
+        .bind(is_scalar)
+        .bind(log.dependence_chain.to_vec())
+        .bind(log.transaction_hash.map(|txh| txh.to_vec()))
+        .bind(output_allowed)
+        .bind(log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64
-                )),
-            !output_allowed,
-            self.chain_id.as_i64(),
-            log.block_number as i64,
-            operand_boundary_mask,
-            group_id_vec,
-            output_index,
-            output_count,
-        )
+                )))
+        .bind(!output_allowed)
+        .bind(self.chain_id.as_i64())
+        .bind(log.block_number as i64)
+        .bind(operand_boundary_mask.map(ToOwned::to_owned))
+        .bind(group_id_vec)
+        .bind(output_index)
+        .bind(output_count)
+        .bind(log_index)
+        .bind(log.is_executor_minted)
+        .bind(log.is_executor_minted.then_some(log.block_hash.as_slice()))
         .execute(tx.deref_mut()).await?;
-        Ok(result.rows_affected() > 0)
+        let inserted = result.rows_affected() > 0;
+        if !inserted {
+            // A provenance backfill is still a replay, not newly scheduled
+            // work. Keep its result separate from INSERT's rows_affected so
+            // callers repair persisted chain identities and count work once.
+            sqlx::query(
+                "UPDATE computations
+                 SET log_index = CASE
+                         WHEN log_index_block_hash IS NOT DISTINCT FROM $4::bytea
+                         THEN LEAST(log_index, $3) ELSE $3 END,
+                     log_index_block_hash = $4,
+                     is_executor_minted = COALESCE(is_executor_minted, $5)
+                 WHERE output_handle = $1 AND transaction_id IS NOT DISTINCT FROM $2
+                   AND (log_index IS NULL OR is_executor_minted IS NULL
+                        OR log_index_block_hash IS DISTINCT FROM $4::bytea
+                        OR log_index > $3)",
+            )
+            .bind(output_handle)
+            .bind(log.transaction_hash.map(|hash| hash.to_vec()))
+            .bind(log_index)
+            .bind(log.is_executor_minted.then_some(log.block_hash.as_slice()))
+            .bind(log.is_executor_minted)
+            .execute(tx.deref_mut())
+            .await?;
+        }
+        Ok(inserted)
     }
 
     pub async fn allowed_computation_handles(
