@@ -21,7 +21,7 @@ struct KmsContextSubmission {
 }
 
 /**
- * @notice A canonical epoch activation after the active epoch.
+ * @notice The epoch metadata derived from an epoch activation on the canonical contract.
  * @param epochId The new epoch ID.
  * @param epochMaterialHash The hash of the epoch's key and CRS results.
  * @param signatures The EpochActivationConfirmation signatures of every committee signer.
@@ -73,7 +73,7 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     event SubmitKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId, bytes32 nodeConfigHash);
 
     /**
-     * @notice Emitted when a signed KMS epoch is submitted and activated.
+     * @notice Emitted when a signed KMS epoch rotation is submitted and activated.
      * @param contextId The active context ID.
      * @param epochId The submitted epoch ID.
      */
