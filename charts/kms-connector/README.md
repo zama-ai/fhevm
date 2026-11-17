@@ -19,14 +19,19 @@ By default the secret must exist before the proxy starts. Set `kmsConnectorProxy
 
 ### Deployment requirement
 
-The proxy authenticates every request before it reads its body or connects to the endpoint. It caps the size of the body (`KMS_CONNECTOR_MAX_BODY_BYTES`, 1 MiB by default) and the time a client has to send it (`KMS_CONNECTOR_REQUEST_READ_TIMEOUT`, 30 s by default). It does not protect its own connections from a client that holds them open before that. Pingora 0.9 caps neither the number of connections nor the total time a client takes to send a request head: each read of a head waits up to 60 s, so a client that sends a byte at a time holds its connection. Pingora also accepts request heads of up to 1 MiB and waits up to 60 s for a TLS handshake. Every connection held open takes memory in the replica, and nothing bounds their number. The proxy must therefore not be reachable directly from the internet. Put it behind one of:
+The proxy must not be reachable directly from the internet. It authenticates each request and caps its body's size and the time to send it (1 MiB and 30 s by default), but it does not protect its connections before that: Pingora 0.9 caps neither their number nor the total time a client takes to send a request head, so slow or idle connections can use up the replica's memory.
+
+Put the proxy behind one of:
 
 - a network allowlist that admits only the relayers' addresses, for example a firewall rule in front of a TLS-passthrough exposure;
-- an HTTP-aware layer that terminates the client's TLS connection, receives each request in full before forwarding it and limits connections per client IP, such as Cloudflare or an HTTP(S) load balancer configured this way. It connects to the proxy over TLS, or over plain HTTP with `kmsConnectorProxy.tls.enabled: false`, and the proxy must be reachable only through it.
+- an HTTP-aware layer, such as Cloudflare or an HTTP(S) load balancer, that terminates the client's TLS connection, receives each request in full before forwarding it and limits connections per client IP. It connects to the proxy over TLS, or over plain HTTP with `kmsConnectorProxy.tls.enabled: false`, and must be the only way to reach it.
 
-A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle connections to the proxy unchanged.
+A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle connections unchanged.
 
-The proxy speaks HTTP/1.1 to its clients, so each request in flight takes one connection, and the endpoint holds a decryption request until its response is ready. A per-client connection limit must allow the relayer's concurrent requests: an endpoint replica holds up to `KMS_CONNECTOR_MAX_IN_FLIGHT_DECRYPTIONS` of them (1000 by default). The front layer must also wait for an answer longer than the proxy does (`KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT`, 60 s by default).
+Size the front layer's limits for the connector:
+
+- connections per client: at least the relayer's requests in flight. Each takes one HTTP/1.1 connection, and an endpoint replica holds up to `KMS_CONNECTOR_MAX_IN_FLIGHT_DECRYPTIONS` of them (1000 by default);
+- response timeout: longer than the proxy's (`KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT`, 60 s by default).
 
 ## Installing the Chart
 
