@@ -50,7 +50,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
     IProtocolConfigBaseShim private constant PROTOCOL_CONFIG = IProtocolConfigBaseShim(protocolConfigAdd);
 
     // -----------------------------------------------------------------------------------------
-    // ERC-7201 namespaced storage
+    // Structs
     // -----------------------------------------------------------------------------------------
 
     /// @dev The state of one epoch of a host chain.
@@ -81,15 +81,6 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         mapping(uint256 epoch => Epoch) epochs;
     }
 
-    /// @custom:storage-location erc7201:fhevm.storage.CiphertextRoots
-    struct CiphertextRootsStorage {
-        mapping(uint64 chainId => HostChain chain) chains;
-    }
-
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.CiphertextRoots")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant CIPHERTEXT_ROOTS_STORAGE_LOCATION =
-        0x3cb20319aa5e29e6b1c7b40fc8b1cf52b6eafa219f4e9b747b4b0c9dc1f12000;
-
     /// @dev In-memory helper: the current and previous coprocessor contexts, read from ProtocolConfig
     ///      once per call by `_loadContexts`.
     struct Contexts {
@@ -99,6 +90,19 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         uint256 currentThreshold;
         uint256 previousThreshold;
     }
+
+    // -----------------------------------------------------------------------------------------
+    // ERC-7201 namespaced storage
+    // -----------------------------------------------------------------------------------------
+
+    /// @custom:storage-location erc7201:fhevm.storage.CiphertextRoots
+    struct CiphertextRootsStorage {
+        mapping(uint64 chainId => HostChain chain) chains;
+    }
+
+    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.CiphertextRoots")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant CIPHERTEXT_ROOTS_STORAGE_LOCATION =
+        0x3cb20319aa5e29e6b1c7b40fc8b1cf52b6eafa219f4e9b747b4b0c9dc1f12000;
 
     // -----------------------------------------------------------------------------------------
     // Constructor and initialization
@@ -188,7 +192,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         HostChain storage chain = _hostChain(chainId);
         Epoch storage epochState = chain.epochs[epoch];
         if (epochState.hasPosted[msg.sender]) {
-            revert RootAlreadyPosted(chainId, epoch, msg.sender);
+            revert EpochRootAlreadyPosted(chainId, epoch, msg.sender);
         }
         Contexts memory contexts = _loadContexts();
         if (!_isCoprocessorTxSender(contexts, msg.sender)) {
@@ -206,7 +210,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
             epochState.postedRoots.push(root);
         }
         senders.push(msg.sender);
-        emit RootPosted(chainId, epoch, msg.sender, root);
+        emit EpochRootPosted(chainId, epoch, msg.sender, root);
 
         if (!recorded) {
             _tryRecordEpochRoot(chainId, epoch, contexts);
@@ -221,7 +225,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
             revert EpochRootAlreadyRecorded(chainId, epoch);
         }
         if (!_tryRecordEpochRoot(chainId, epoch, _loadContexts())) {
-            revert NoRootReachesThreshold(chainId, epoch);
+            revert NoEpochRootReachesThreshold(chainId, epoch);
         }
     }
 

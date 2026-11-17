@@ -65,7 +65,7 @@ interface ICiphertextRoots {
      * @param sender The coprocessor tx sender that posted.
      * @param root The posted root.
      */
-    event RootPosted(uint64 indexed chainId, uint256 indexed epoch, address indexed sender, bytes32 root);
+    event EpochRootPosted(uint64 indexed chainId, uint256 indexed epoch, address indexed sender, bytes32 root);
 
     /**
      * @notice Emitted once per (host chain, epoch), when a root reaches a context's majority threshold.
@@ -121,7 +121,7 @@ interface ICiphertextRoots {
     /// @param chainId The host chain ID.
     /// @param epoch The epoch number.
     /// @param sender The sender.
-    error RootAlreadyPosted(uint64 chainId, uint256 epoch, address sender);
+    error EpochRootAlreadyPosted(uint64 chainId, uint256 epoch, address sender);
 
     /// @notice The (host chain, epoch) already has a recorded root.
     /// @param chainId The host chain ID.
@@ -131,7 +131,7 @@ interface ICiphertextRoots {
     /// @notice No posted root of the (host chain, epoch) reaches a majority threshold.
     /// @param chainId The host chain ID.
     /// @param epoch The epoch number.
-    error NoRootReachesThreshold(uint64 chainId, uint256 epoch);
+    error NoEpochRootReachesThreshold(uint64 chainId, uint256 epoch);
 
     /// @notice The (host chain, epoch) has no recorded root.
     /// @param chainId The host chain ID.
@@ -268,9 +268,9 @@ interface ICiphertextRoots {
      *      coprocessor context, and may post once per (host chain, epoch), for any epoch, however
      *      late the post.
      *      Records the first posted root that reaches a context's majority threshold, if none is yet.
-     *      Reverts with `NoEpochSchedule` if the host chain has no schedule, `RootAlreadyPosted` if
-     *      the sender posted for the epoch and `NotCoprocessorTxSender` if the sender is in neither
-     *      context.
+     *      Reverts with `NoEpochSchedule` if the host chain has no schedule, `EpochRootAlreadyPosted`
+     *      if the sender posted for the epoch and `NotCoprocessorTxSender` if the sender is in
+     *      neither context.
      * @param chainId The host chain ID.
      * @param epoch The epoch number.
      * @param root The root of the sender's tree for the epoch.
@@ -281,8 +281,8 @@ interface ICiphertextRoots {
      * @notice Records the first posted root that reaches a majority threshold.
      * @dev Permissionless, anyone can call it.
      *      Reverts with `NoEpochSchedule` if the host chain has no schedule, `EpochRootAlreadyRecorded`
-     *      if the epoch has a recorded root and `NoRootReachesThreshold` if no posted root reaches a
-     *      threshold.
+     *      if the epoch has a recorded root and `NoEpochRootReachesThreshold` if no posted root
+     *      reaches a threshold.
      * @param chainId The host chain ID.
      * @param epoch The epoch number.
      */

@@ -600,7 +600,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
 
     function test_postRootEmitsAndStores() public {
         vm.expectEmit(true, true, true, true, address(ciphertextRoots));
-        emit ICiphertextRoots.RootPosted(CHAIN_ID, EPOCH, nodeA, ROOT_1);
+        emit ICiphertextRoots.EpochRootPosted(CHAIN_ID, EPOCH, nodeA, ROOT_1);
         _post(nodeA, EPOCH, ROOT_1);
 
         bytes32[] memory roots = ciphertextRoots.getPostedRoots(CHAIN_ID, EPOCH);
@@ -663,7 +663,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
 
         // A late post is still accepted and stored.
         vm.expectEmit(true, true, true, true, address(ciphertextRoots));
-        emit ICiphertextRoots.RootPosted(CHAIN_ID, EPOCH, nodeD, ROOT_1);
+        emit ICiphertextRoots.EpochRootPosted(CHAIN_ID, EPOCH, nodeD, ROOT_1);
         _post(nodeD, EPOCH, ROOT_1);
         assertEq(ciphertextRoots.getRootSenders(CHAIN_ID, EPOCH, ROOT_1).length, 4);
         _assertRecorded(EPOCH, ROOT_1);
@@ -718,7 +718,9 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     function test_revertPostRootAlreadyPosted() public {
         _post(nodeA, EPOCH, ROOT_1);
         vm.prank(nodeA);
-        vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.RootAlreadyPosted.selector, CHAIN_ID, EPOCH, nodeA));
+        vm.expectRevert(
+            abi.encodeWithSelector(ICiphertextRoots.EpochRootAlreadyPosted.selector, CHAIN_ID, EPOCH, nodeA)
+        );
         ciphertextRoots.postRoot(CHAIN_ID, EPOCH, ROOT_2);
     }
 
@@ -832,7 +834,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _post(nodeB, EPOCH, ROOT_1);
         _post(nodeF, EPOCH, ROOT_1);
         _assertNotRecorded(EPOCH);
-        vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NoRootReachesThreshold.selector, CHAIN_ID, EPOCH));
+        vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NoEpochRootReachesThreshold.selector, CHAIN_ID, EPOCH));
         ciphertextRoots.recordEpochRoot(CHAIN_ID, EPOCH);
     }
 
@@ -961,7 +963,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         protocolConfigMock.destroyContext(CONTEXT_1);
 
         // The mock reverts on reads of a destroyed context, so this proves they are never made.
-        vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NoRootReachesThreshold.selector, CHAIN_ID, EPOCH));
+        vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NoEpochRootReachesThreshold.selector, CHAIN_ID, EPOCH));
         ciphertextRoots.recordEpochRoot(CHAIN_ID, EPOCH);
     }
 
@@ -976,7 +978,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     function test_revertRecordEpochRootNoRootReachesThreshold() public {
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
-        vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NoRootReachesThreshold.selector, CHAIN_ID, EPOCH));
+        vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NoEpochRootReachesThreshold.selector, CHAIN_ID, EPOCH));
         ciphertextRoots.recordEpochRoot(CHAIN_ID, EPOCH);
     }
 
