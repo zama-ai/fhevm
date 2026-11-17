@@ -33,6 +33,9 @@ jobs:
               - kms-connector/Cargo.*
               - kms-connector/.cargo/**
               - .github/actions/kms-git-auth/**
+              - shared/**
+              - gateway-contracts/rust_bindings/**
+              - host-contracts/rust_bindings/**
 
   dependencies-check:
     name: kms-connector-dependency-analysis/dependencies-check (bpr)
