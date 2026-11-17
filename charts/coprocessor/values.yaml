@@ -1861,11 +1861,13 @@ padWorkerShared:
     s3BucketName: {}
     # Use `prfService.limits.padPendingMaxAgeSeconds`: older pending rows are not computed.
     pendingMaxAgeSeconds: 600
-    # Required with `padWorkers`. The GC deletes uploaded or failed rows older than this. Use the same
-    # age in the S3 lifecycle rule on `pads/`.
-    outputMaxAgeSeconds:
-    # The ct64 of rows older than this is deleted. Unmask then computes it again.
-    ct64MaxAgeSeconds: 3600
+    # The GC deletes uploaded or failed rows (the ct128) older than this. `0` keeps all rows. Expire
+    # the `pads/` objects with an S3 lifecycle rule on the bucket. S3 counts whole days: use the
+    # number of days at or above this age (1 day for the default).
+    ct128MaxAgeSeconds: 3600
+    # The GC deletes the ct64 older than this. Set it to at least `ct128MaxAgeSeconds`. Empty or `0`
+    # keeps all ct64: Unmask uses them.
+    ct64MaxAgeSeconds:
 
   # Signer of the PRF output attestations: the coprocessor signer, as the sns-worker has.
   wallet:

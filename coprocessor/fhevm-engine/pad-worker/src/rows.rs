@@ -73,7 +73,8 @@ pub async fn claim(
 }
 
 /// Writes the outputs and the attestation; the trigger sends `pad_ready`. Returns false if the row
-/// was deleted or completed.
+/// was deleted or completed. The ct64 row gets a copy of the attestation. An existing ct64 stays:
+/// it has the same bytes.
 pub async fn write_output(
     pool: &PgPool,
     claim: &Claim,
@@ -81,10 +82,11 @@ pub async fn write_output(
     ct128: &[u8],
     attestation: &PrfOutputAttestation,
 ) -> sqlx::Result<bool> {
+    let mut tx = pool.begin().await?;
     let result = sqlx::query!(
         "UPDATE pads
             SET ciphertext128 = $4, ciphertext_digest = $5, ciphertext128_digest = $6,
-                signer = $7, signature = $8, attestation_version = $9, ciphertext64 = $10
+                signer = $7, signature = $8, attestation_version = $9
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3
             AND signature IS NULL AND NOT is_error",
         i32::from(claim.prf_instance),
@@ -96,11 +98,31 @@ pub async fn write_output(
         attestation.signer.as_slice(),
         attestation.signature,
         i16::from(u8::from(attestation.version)),
-        ct64,
     )
-    .execute(pool)
+    .execute(tx.as_mut())
     .await?;
-    Ok(result.rows_affected() == 1)
+    if result.rows_affected() != 1 {
+        return Ok(false);
+    }
+    sqlx::query!(
+        "INSERT INTO pad_ct64 (prf_instance, label, pad_length, ciphertext64, ciphertext_digest,
+                               ciphertext128_digest, signer, signature, attestation_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT DO NOTHING",
+        i32::from(claim.prf_instance),
+        claim.label.as_slice(),
+        i32::from(claim.pad_length),
+        ct64,
+        attestation.ciphertext_digest.as_slice(),
+        attestation.sns_ciphertext_digest.as_slice(),
+        attestation.signer.as_slice(),
+        attestation.signature,
+        i16::from(u8::from(attestation.version)),
+    )
+    .execute(tx.as_mut())
+    .await?;
+    tx.commit().await?;
+    Ok(true)
 }
 
 /// Fails the row for good. The trigger then sends `pad_ready`.
@@ -288,13 +310,13 @@ pub async fn delete_expired_pending(
     .await
 }
 
-/// Clears the ct64 of the rows of all instances older than `max_age`. The digest stays.
-pub async fn clear_old_ct64(pool: &PgPool, max_age: Duration) -> sqlx::Result<u64> {
+/// Deletes the ct64 of all instances older than `max_age`.
+pub async fn delete_old_ct64(pool: &PgPool, max_age: Duration) -> sqlx::Result<u64> {
     in_batches(|| {
         sqlx::query!(
-            "UPDATE pads SET ciphertext64 = NULL WHERE ctid IN (
-                 SELECT ctid FROM pads
-                  WHERE ciphertext64 IS NOT NULL AND created_at <= NOW() - make_interval(secs => $1)
+            "DELETE FROM pad_ct64 WHERE ctid IN (
+                 SELECT ctid FROM pad_ct64
+                  WHERE created_at <= NOW() - make_interval(secs => $1)
                   LIMIT $2
                     FOR UPDATE SKIP LOCKED)",
             max_age.as_secs_f64(),
@@ -321,14 +343,11 @@ where
     }
 }
 
-/// The bytes of all stored ct64.
+/// The disk size of `pad_ct64` and its index. It reads no rows: the table only grows.
 pub async fn stored_ct64_bytes(pool: &PgPool) -> sqlx::Result<i64> {
-    sqlx::query_scalar!(
-        r#"SELECT COALESCE(SUM(OCTET_LENGTH(ciphertext64)), 0)::BIGINT AS "bytes!"
-             FROM pads WHERE ciphertext64 IS NOT NULL"#,
-    )
-    .fetch_one(pool)
-    .await
+    sqlx::query_scalar!(r#"SELECT pg_total_relation_size('pad_ct64') AS "bytes!""#)
+        .fetch_one(pool)
+        .await
 }
 
 /// The age in seconds of the oldest row of an instance, for each state.
