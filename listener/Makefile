@@ -47,6 +47,8 @@ test-e2e-consumer: clean-e2e-containers
 # ── listener_core e2e (Postgres via DATABASE_URL + Redis container) ───────────
 # Uses $DATABASE_URL if set; otherwise starts a throwaway Postgres container.
 # pg_isready over TCP (-h 127.0.0.1) skips the image's socket-only init phase.
+# SQLX_OFFLINE: compile sqlx::query! macros against the committed .sqlx cache, not the
+# fresh (unmigrated) DB. #[sqlx::test] still uses DATABASE_URL at runtime and applies migrations.
 test-e2e-listener: clean-e2e-containers
 	@if [ -z "$$DATABASE_URL" ]; then \
 	  docker run -d --name $(PG_CONTAINER) -e POSTGRES_PASSWORD=postgres \
@@ -56,6 +58,7 @@ test-e2e-listener: clean-e2e-containers
 	    sleep 1; \
 	  done; \
 	fi
+	SQLX_OFFLINE=true \
 	DATABASE_URL=$${DATABASE_URL:-postgres://postgres:postgres@localhost:$(PG_PORT)/postgres} \
 	  cargo test -p listener_core --lib -- --ignored reorg_abandon; \
 	status=$$?; \
