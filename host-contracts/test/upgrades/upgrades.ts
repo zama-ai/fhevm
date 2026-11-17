@@ -2,7 +2,12 @@ import { expect } from 'chai';
 import type { ContractFactory, Signer } from 'ethers';
 import { ethers, upgrades } from 'hardhat';
 
-import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import {
+  CRS_COUNTER_BASE,
+  EPOCH_COUNTER_BASE,
+  KEY_COUNTER_BASE,
+  KMS_CONTEXT_COUNTER_BASE,
+} from '../../tasks/utils/kmsGenerationConstants';
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
 import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
@@ -46,7 +51,14 @@ describe('Upgrades', function () {
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+        args: [
+          KMS_CONTEXT_COUNTER_BASE + 1n,
+          EPOCH_COUNTER_BASE + 1n,
+          buildProtocolConfigNodes(),
+          buildProtocolConfigThresholds(),
+          '',
+          [],
+        ],
       },
     });
     await pc.waitForDeployment();
