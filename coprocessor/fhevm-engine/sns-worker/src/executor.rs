@@ -506,6 +506,48 @@ async fn fetch_and_execute_sns_tasks(
     Ok(Some((maybe_remaining, tasks_processed)))
 }
 
+/// Pre-acquire this batch's digest-mirror locks in a common order.
+///
+/// The expression must match `20260704120000_stripe_digest_mirror_locks.sql`,
+/// including the outer hash and chain identifier. Ordering the handles would
+/// not order these locks. This prevents stripe-only cycles between SNS batches
+/// using this helper; other writers and row-lock cycles still require retries.
+pub(super) async fn lock_digest_mirror_stripes(
+    db_txn: &mut Transaction<'_, Postgres>,
+    tasks: &[HandleItem],
+) -> Result<(), sqlx::Error> {
+    let (chain_ids, handles): (Vec<_>, Vec<_>) = tasks
+        .iter()
+        .map(|task| (task.host_chain_id.as_i64(), task.handle.clone()))
+        .unzip();
+    if handles.is_empty() {
+        return Ok(());
+    }
+
+    // The volatile locking call is an outer output expression: PostgreSQL
+    // evaluates it after sorting by lock_key. DISTINCT also precedes locking,
+    // so this is one round trip and one acquisition per distinct advisory key.
+    sqlx::query!(
+        r#"
+        SELECT pg_advisory_xact_lock(lock_key)
+        FROM (
+            SELECT DISTINCT hashtextextended(
+                host_chain_id::text || ':digest-mirror:' ||
+                abs(hashtextextended(encode(handle, 'hex'), 0) % 256)::text,
+                0
+            ) AS lock_key
+            FROM unnest($1::bigint[], $2::bytea[]) AS batch(host_chain_id, handle)
+        ) AS stripes
+        ORDER BY lock_key
+        "#,
+        &chain_ids,
+        &handles,
+    )
+    .execute(db_txn.as_mut())
+    .await?;
+    Ok(())
+}
+
 /// Queries the database for a fixed number of tasks.
 #[tracing::instrument(name = "db_fetch_tasks", skip_all, fields(count = tracing::field::Empty))]
 pub async fn query_sns_tasks(
@@ -579,10 +621,14 @@ pub async fn query_sns_tasks(
     Ok(Some(tasks))
 }
 
-async fn enqueue_upload_tasks(
+pub(super) async fn enqueue_upload_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
+    // This is the batch's first digest-mirror write. Acquire all its stripes
+    // before a row trigger can take them in task order. Do not hold them while
+    // computing CT128 or storing the large ciphertext blobs above.
+    lock_digest_mirror_stripes(db_txn, tasks).await?;
     for task in tasks.iter() {
         // false = the handle's provenance was deleted by reorg cleanup while
         // this batch was computing; its publication is cancelled (logged by
