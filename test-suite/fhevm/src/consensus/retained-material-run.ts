@@ -3,6 +3,7 @@ import { chmod, mkdir } from "node:fs/promises";
 import { envPath, STATE_DIR, TEST_SUITE_CONTAINER } from "../layout";
 import type { State } from "../types";
 import { readEnvFile } from "../utils/fs";
+import { keyVerificationEnv } from "../utils/key-verification-env";
 import { run, runWithHeartbeat } from "../utils/process";
 
 /** Host-side snapshots survive replacement of the E2E container during rollout. */
@@ -37,6 +38,7 @@ export async function runRetainedMaterial(state: State, phase: "seed" | "verify"
       ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", "FHEVM_EXECUTOR_CONTRACT_ADDRESS"],
       ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "PROTOCOL_CONFIG_CONTRACT_ADDRESS"],
     ]) overrides[name!] = required(index === 0 ? name! : `HOST_CHAIN_${index}_${suffix}`);
+    Object.assign(overrides, keyVerificationEnv(env, index));
     if (["retired-check", "retired-recover"].includes(phase)) {
       for (const lane of ["sns", "tfhe"]) await run(["docker", "exec", "-i", TEST_SUITE_CONTAINER, "sh", "-c", 'cat > "$1"', "sh", `${remote}.retired-${lane}.json`],
         { input: await Bun.file(`${snapshot}.retired-${lane}.json`).text() });
