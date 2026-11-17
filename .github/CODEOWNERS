@@ -21,6 +21,7 @@
 
 # Coprocessor Team ownership
 /coprocessor/ @zama-ai/fhevm-coprocessor
+/coprocessor/fhevm-engine/coprocessor-api/ @zama-ai/fhevm-coprocessor @zama-ai/mpc-devs
 
 # Listener ownership
 /listener/ @zama-ai/listener-guild

@@ -6,16 +6,20 @@ pub mod operation_recovery;
 const DECRYPTION_TABLES: &[&str] = &[
     "public_decryption_requests",
     "user_decryption_requests",
+    "pad_decryption_requests",
     "public_decryption_responses",
     "user_decryption_responses",
+    "pad_decryption_responses",
 ];
 
 /// DB table names of the operations handled by the KMS connector.
 const OPERATION_TABLES: &[&str] = &[
     "public_decryption_requests",
     "user_decryption_requests",
+    "pad_decryption_requests",
     "public_decryption_responses",
     "user_decryption_responses",
+    "pad_decryption_responses",
     "prep_keygen_requests",
     "keygen_requests",
     "crsgen_requests",
@@ -30,4 +34,6 @@ const OPERATION_TABLES: &[&str] = &[
     "epoch_result_responses",
     "kms_context_destroyed",
     "kms_epoch_destroyed",
+    "kms_context_destruction_responses",
+    "kms_epoch_destruction_responses",
 ];

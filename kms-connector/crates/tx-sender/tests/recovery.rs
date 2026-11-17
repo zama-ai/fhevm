@@ -10,7 +10,8 @@ use connector_utils::{
                 insert_rand_user_decryption_request,
             },
             responses::{
-                insert_rand_crsgen_response, insert_rand_epoch_result_response,
+                insert_rand_context_destruction_response, insert_rand_crsgen_response,
+                insert_rand_epoch_destruction_response, insert_rand_epoch_result_response,
                 insert_rand_keygen_response, insert_rand_new_kms_context_response,
                 insert_rand_prep_keygen_response, insert_rand_public_decrypt_response,
                 insert_rand_user_decrypt_response,
@@ -49,6 +50,8 @@ const LONG_INTERVAL: Duration = Duration::from_secs(120);
 #[case::epoch_result_response("EpochResultResponse")]
 #[case::kms_context_destroyed("KmsContextDestroyed")]
 #[case::kms_epoch_destroyed("KmsEpochDestroyed")]
+#[case::context_destruction_response("ContextDestructionResponse")]
+#[case::epoch_destruction_response("EpochDestructionResponse")]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn unlocks_old_under_process(#[case] operation: &str) -> anyhow::Result<()> {
@@ -279,6 +282,16 @@ async fn insert_operation_in_db_and_get_id(
                 .await?
                 .epochId
         }
+        "ContextDestructionResponse" => {
+            insert_rand_context_destruction_response(db, None, Some(status))
+                .await?
+                .context_id
+        }
+        "EpochDestructionResponse" => {
+            insert_rand_epoch_destruction_response(db, None, Some(status))
+                .await?
+                .epoch_id
+        }
         _ => panic!("Unexpected operation type"),
     };
     Ok(id)
@@ -320,6 +333,12 @@ async fn get_operation_status(
         "EpochResultResponse" => "SELECT status FROM epoch_result_responses WHERE epoch_id = $1",
         "KmsContextDestroyed" => "SELECT status FROM kms_context_destroyed WHERE context_id = $1",
         "KmsEpochDestroyed" => "SELECT status FROM kms_epoch_destroyed WHERE epoch_id = $1",
+        "ContextDestructionResponse" => {
+            "SELECT status FROM kms_context_destruction_responses WHERE context_id = $1"
+        }
+        "EpochDestructionResponse" => {
+            "SELECT status FROM kms_epoch_destruction_responses WHERE epoch_id = $1"
+        }
         _ => panic!("Unexpected operation type"),
     };
     let status: OperationStatus = sqlx::query(query)

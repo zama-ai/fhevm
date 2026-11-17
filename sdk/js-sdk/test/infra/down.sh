@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Stop the whole test infra: both anvils, the gateway, and any leftover Next dev
+# Stop the whole test infra: the anvils, the gateway, and any leftover Next dev
 # server. Force-kills whatever holds the ports, so it also cleans up reused
 # anvils that up.sh's Ctrl-C leaves running (stopAnvils only stops what it
-# spawned). Ports mirror test/infra/topology.ts + browser-next (Next on 3334).
+# spawned). Ports mirror test/infra/config.ts + browser-next (Next on 3334).
 
-PORTS=(8544 8546 8590 3334)
+PORTS=(8546 8590 3334)
 
 for p in "${PORTS[@]}"; do
   pids="$(lsof -ti "tcp:${p}" 2>/dev/null || true)"

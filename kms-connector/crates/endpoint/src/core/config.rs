@@ -49,9 +49,13 @@ pub struct Config {
     /// The maximum number of handles a single decryption request can contain.
     #[serde(default = "default_max_handles_per_decryption")]
     pub max_handles_per_decryption: NonZeroUsize,
-    /// The host chain ids accepted in ciphertext handles.
+    /// The host chain ids accepted in ciphertext handles and pad witnesses.
     #[serde(deserialize_with = "deserialize_one_or_many")]
     pub supported_chain_ids: Vec<u64>,
+
+    /// The maximum number of pads of a single pad decryption request.
+    #[serde(default = "default_max_pads")]
+    pub max_pads: NonZeroUsize,
 
     /// The service name used for tracing.
     #[serde(default = "default_service_name")]
@@ -97,6 +101,10 @@ fn default_max_allowed_contracts() -> usize {
     10
 }
 
+fn default_max_pads() -> NonZeroUsize {
+    NonZeroUsize::new(10).unwrap()
+}
+
 // Default implementation for testing purpose
 impl Default for Config {
     fn default() -> Self {
@@ -113,6 +121,7 @@ impl Default for Config {
             max_allowed_contracts: default_max_allowed_contracts(),
             max_handles_per_decryption: default_max_handles_per_decryption(),
             supported_chain_ids: vec![11155111],
+            max_pads: default_max_pads(),
             service_name: default_service_name(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),
@@ -142,6 +151,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS");
             env::remove_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION");
             env::remove_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS");
+            env::remove_var("KMS_CONNECTOR_MAX_PADS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_MONITORING_ENDPOINT");
             env::remove_var("KMS_CONNECTOR_HEALTHCHECK_TIMEOUT");
@@ -175,6 +185,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS", "3");
             env::set_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION", "20");
             env::set_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS", "1,31337");
+            env::set_var("KMS_CONNECTOR_MAX_PADS", "4");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_MONITORING_ENDPOINT", "127.0.0.1:9101");
             env::set_var("KMS_CONNECTOR_HEALTHCHECK_TIMEOUT", "7s");
@@ -195,6 +206,7 @@ mod tests {
         assert_eq!(config.max_allowed_contracts, 3);
         assert_eq!(config.max_handles_per_decryption.get(), 20);
         assert_eq!(config.supported_chain_ids, vec![1, 31337]);
+        assert_eq!(config.max_pads.get(), 4);
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(
             config.monitoring_endpoint,

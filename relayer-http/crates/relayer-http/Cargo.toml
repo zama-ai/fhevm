@@ -18,12 +18,15 @@ config.workspace = true
 fhevm-sig-auth.workspace = true
 humantime-serde.workspace = true
 kms-connector-api.workspace = true
+prometheus.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_path_to_error.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
@@ -31,6 +34,8 @@ uuid.workspace = true
 
 [dev-dependencies]
 futures-util.workspace = true
+log.workspace = true
+regex.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "test-util"] }
 tokio-rustls.workspace = true
 tower.workspace = true

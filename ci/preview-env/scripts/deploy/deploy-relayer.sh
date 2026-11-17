@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Relayer migrate, relayer, and idle test-suite (common chart).
-# Usage: deploy-relayer.sh <migrate|relayer|test-suite>
+# Relayer migrate, relayer, relayer-http, and idle test-suite (common chart).
+# Usage: deploy-relayer.sh <migrate|relayer|relayer-http|test-suite>
 # Env: NAMESPACE, COMMON_CHART, COMMON_CHART_VERSION, TAGS_JSON,
-# NB_KMS_CORE, DEPLOY_POLYGON, POLYGON_HTTP, POLYGON_CHAIN_ID, RPC_SECRET_NAME (relayer only).
+# NB_KMS_CORE, DEPLOY_POLYGON, POLYGON_HTTP, POLYGON_CHAIN_ID, RPC_SECRET_NAME (relayer only),
+# HOST_CHAIN_ID (relayer-http only).
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -64,6 +65,61 @@ case "${kind}" in
     # and the admin endpoint stay ClusterIP-only. Sets RELAYER_TS_URL for the
     # deploy summary / PR comment (fhevm-internal#2000).
     bash "${script_dir}/expose-relayer-tailscale.sh"
+    ;;
+  relayer-http)
+    # The config is the local stack's template with the overlay's preview-only
+    # fields merged over it, then filled in from the deploy as
+    # renderRelayerHttpConfig (test-suite/fhevm/src/generate/config.ts) does.
+    # One endpoint per party from the kms-connector-http ConfigMap that
+    # deploy-kms-connector.sh publishes: its proxy URL, and as audience the
+    # tx-sender address that proxy accepts (the lists are aligned by party).
+    endpoints=$(kubectl get configmap kms-connector-http -n "${NAMESPACE}" -o json | jq -c '
+      .data | [(."endpoint-urls" // "" | split(",")), (."tx-sender-addresses" // "" | split(","))]
+      | transpose | to_entries | map({name: "kms_\(.key + 1)", url: .value[0], audience: .value[1]})')
+    if ! jq -e 'length > 0 and all(.[]; .url and .audience)' <<<"${endpoints}" >/dev/null; then
+      echo "::error::kms-connector-http endpoint-urls and tx-sender-addresses are empty or not one per party" >&2
+      exit 1
+    fi
+    n=$(jq length <<<"${endpoints}")
+    protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
+    require_nonempty "${protocol_config}" "host-sc-addresses[protocol_config.address] is empty"
+    require_nonempty "${HOST_CHAIN_ID:-}" "HOST_CHAIN_ID is not set"
+    chains="[${HOST_CHAIN_ID}]"
+    if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
+      chains="[${HOST_CHAIN_ID}, ${POLYGON_CHAIN_ID:-80002}]"
+    fi
+    # Same thresholds as the relayer and the contracts (wire-contracts-values.sh):
+    # n-t for public and user decrypt, so a public decrypt never returns fewer
+    # signatures than PUBLIC_DECRYPTION_THRESHOLD. FhevmSig is signed for the
+    # first host chain, as the local stack does.
+    public_t=$(kms_reconstruct "${n}")
+    user_t=$(kms_reconstruct "${n}")
+    http_values=$(mktemp --suffix=.yaml)
+    cp ci/preview-env/relayer/values-relayer-http-e2e.yaml "${http_values}"
+    TEMPLATE=test-suite/fhevm/templates/config/relayer-http.yaml ENDPOINTS="${endpoints}" \
+      CHAINS="${chains}" CHAIN_ID="${HOST_CHAIN_ID}" PROTOCOL_CONFIG="${protocol_config}" \
+      PUBLIC_T="${public_t}" USER_T="${user_t}" yq -i '
+      .configmapFiles.files."config.yaml" |= (load(strenv(TEMPLATE)) * . |
+        .http.supported_chain_ids = env(CHAINS) |
+        .kms_aggregator.public_decrypt.threshold = env(PUBLIC_T) |
+        .kms_aggregator.user_decrypt.threshold = env(USER_T) |
+        .kms_aggregator.auth.chain_id = env(CHAIN_ID) |
+        .kms_aggregator.auth.protocol_config = strenv(PROTOCOL_CONFIG) |
+        .kms_aggregator.endpoints = env(ENDPOINTS)
+      )' "${http_values}"
+    echo "relayer-http: ${n} endpoints, public/user thresholds ${public_t}/${user_t}, chains ${chains}"
+    # No dependency at startup (/healthz is ready as soon as it serves), so a
+    # short wait is enough.
+    helm upgrade --install relayer-http "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+      -n "${NAMESPACE}" -f "${http_values}" \
+      --set-string "image.tag=$(jq -r .relayer_http <<<"${TAGS_JSON}")" \
+      --wait --timeout=5m
+    # Publish :3002 on the tailnet next to the relayer, as relayer-http-<ns>.
+    # Sets RELAYER_HTTP_TS_URL for the deploy summary / PR comment.
+    bash "${script_dir}/expose-relayer-tailscale.sh" relayer-http 3002 RELAYER_HTTP_TS_URL
+    # Both relayers on one URL via the shared preview Kong. Sets
+    # RELAYER_UNIFIED_URL; no-op with a warning if kong-preview is not installed.
+    bash "${script_dir}/expose-relayer-kong.sh"
     ;;
   test-suite)
     helm upgrade --install test-suite "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \

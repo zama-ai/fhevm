@@ -1,5 +1,6 @@
 import { expect } from 'chai';
-import { ethers, network } from 'hardhat';
+
+import { ethers, isInProcessNetwork } from '../hardhat.js';
 
 import {
   createInstances,
@@ -10,9 +11,10 @@ import {
   decrypt128,
   decrypt256,
   decryptBool,
-} from '../instance';
-import { getSigners, initSigners } from '../signers';
-import { deployRandFixture } from './Rand.fixture';
+} from '../instance.js';
+import { getSigners, initSigners } from '../signers.js';
+import { evmSnapshot } from '../utils.js';
+import { deployRandFixture } from './Rand.fixture.js';
 
 describe('Rand', function () {
   before(async function () {
@@ -86,7 +88,7 @@ describe('Rand', function () {
       values.push(value);
     }
     // Make sure we actually generate 16 bit integers.
-    expect(has16bit).to.be.true;
+    expect(has16bit).to.equal(true);
     // Expect at least two different generated values.
     const unique = new Set(values);
     expect(unique.size).to.be.greaterThanOrEqual(2);
@@ -122,7 +124,7 @@ describe('Rand', function () {
       values.push(value);
     }
     // Make sure we actually generate 32 bit integers.
-    expect(has32bit).to.be.true;
+    expect(has32bit).to.equal(true);
     // Expect at least two different generated values.
     const unique = new Set(values);
     expect(unique.size).to.be.greaterThanOrEqual(2);
@@ -156,7 +158,7 @@ describe('Rand', function () {
         has64bit = true;
       }
       // Make sure we actually generate 64 bit integers.
-      expect(has64bit).to.be.true;
+      expect(has64bit).to.equal(true);
       values.push(value);
     }
 
@@ -194,7 +196,7 @@ describe('Rand', function () {
       }
       values.push(value);
       // Make sure we actually generate 128 bit integers.
-      expect(has128bit).to.be.true;
+      expect(has128bit).to.equal(true);
     }
     // Expect at least 4 different generated values.
     const unique = new Set(values);
@@ -230,7 +232,7 @@ describe('Rand', function () {
       }
       values.push(value);
       // Make sure we actually generate 256 bit integers.
-      expect(has256bit).to.be.true;
+      expect(has256bit).to.equal(true);
     }
     // Expect at least 5 different generated values.
     const unique = new Set(values);
@@ -252,10 +254,10 @@ describe('Rand', function () {
     expect(unique.size).to.be.greaterThanOrEqual(5);
   });
 
-  it('8 and 16 bits generate and decrypt with hardhat snapshots [skip-on-coverage]', async function () {
-    if (network.name === 'hardhat') {
+  it('8 and 16 bits generate and decrypt with hardhat snapshots', async function () {
+    if (isInProcessNetwork) {
       // snapshots are only possible in hardhat node, i.e in mocked mode
-      this.snapshotId = await ethers.provider.send('evm_snapshot');
+      this.snapshotId = await evmSnapshot();
       const values: bigint[] = [];
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate8();
@@ -270,7 +272,7 @@ describe('Rand', function () {
       expect(unique.size).to.be.greaterThanOrEqual(2);
 
       await ethers.provider.send('evm_revert', [this.snapshotId]);
-      this.snapshotId = await ethers.provider.send('evm_snapshot');
+      this.snapshotId = await evmSnapshot();
 
       const values2: bigint[] = [];
       for (let i = 0; i < 5; i++) {
@@ -300,7 +302,7 @@ describe('Rand', function () {
         values3.push(value);
       }
       // Make sure we actually generate 16 bit integers.
-      expect(has16bit).to.be.true;
+      expect(has16bit).to.equal(true);
       // Expect at least two different generated values.
       const unique3 = new Set(values3);
       expect(unique3.size).to.be.greaterThanOrEqual(2);

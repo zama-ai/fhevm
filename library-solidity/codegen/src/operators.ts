@@ -1,5 +1,5 @@
-import { OperatorArguments, ReturnType } from './common';
-import type { Operator } from './common';
+import { OperatorArguments, ReturnType } from './common.js';
+import type { Operator } from './common.js';
 
 /**
  * A list of all supported operators with their respective properties.

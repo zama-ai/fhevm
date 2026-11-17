@@ -175,10 +175,10 @@ and case collisions, drops non-strings; throws); `normalizeRelayerQuery`; `optio
      `RelayerHttpFetchError` with status;
    - **size and parse**: too long → `RelayerHttpFetchError` (500-char excerpt); `JSON.parse` failure
      → `RelayerHttpFetchError`, whatever the status;
-   - **status and shape**: non-ok + `_isRelayerHttpErrorBody` (non-empty `code`/`message`, UUIDv7
+   - **status and shape**: non-ok + `_isRelayerHttpErrorBody` (non-empty `code`/`message`, UUIDv4
      `requestId`) → logged `RelayerHttpResponseError({ url, status, code, responseMessage, requestId })`
      — **the branch to retry**; other non-ok → `RelayerHttpUnexpectedResponseError`. Ok →
-     `USER_DECRYPT`: envelope (`status === 'succeeded'`, UUIDv7 `requestId`), non-empty
+     `USER_DECRYPT`: envelope (`status === 'succeeded'`, UUIDv4 `requestId`), non-empty
      `result.result`, each share `payload` hex no-0x, 65-byte `signature`, required `extraData` →
      the shares; `PUBLIC_DECRYPT`: same envelope, `decryptedValue` hex no-0x, non-empty 65-byte
      `signatures`, `extraData` hex with 0x → `result`; a failed assertion → `RelayerHttpResultError`.

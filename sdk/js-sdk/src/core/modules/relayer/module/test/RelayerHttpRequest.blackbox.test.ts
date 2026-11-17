@@ -24,13 +24,13 @@ const TEXT_PLAIN = 'text/plain;charset=UTF-8';
 const PUBLIC_RESULT = { signatures: ['ab'.repeat(65)], decryptedValue: '00'.repeat(32), extraData: '0x00' };
 const OK_TEXT = JSON.stringify({
   status: 'succeeded',
-  requestId: '01890a5d-ac96-7000-8000-000000000000',
+  requestId: '01890a5d-ac96-4000-8000-000000000000',
   result: PUBLIC_RESULT,
 });
 const ERROR_TEXT = JSON.stringify({
   code: 'overloaded',
   message: 'busy',
-  requestId: '01890a5d-ac96-7000-8000-000000000001',
+  requestId: '01890a5d-ac96-4000-8000-000000000001',
 });
 
 type FetchFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -38,9 +38,9 @@ type Script = (error: RelayerHttpResponseError, attempt: number) => number | und
 type Step = (init?: RequestInit) => Response | Promise<Response>;
 type Outcome = { ok: true; value: unknown; timers: number } | { ok: false; reason: unknown; timers: number };
 
-// The relayer issues UUIDv7 request ids; k picks a distinct, valid one.
+// relayer-http issues UUIDv4 request ids; k picks a distinct, valid one.
 function rid(k: number): string {
-  return `01890a5d-ac96-7000-8000-${`${k}`.padStart(12, '0')}`;
+  return `01890a5d-ac96-4000-8000-${`${k}`.padStart(12, '0')}`;
 }
 
 // Body read is supplied by the test: resolved text, or a hook run when the body is read.
@@ -843,7 +843,7 @@ describe('leaks', () => {
       steps: [
         () =>
           new TextResponse(
-            '{"status":"succeeded","requestId":"01890a5d-ac96-7000-8000-000000000000","result":{}}',
+            '{"status":"succeeded","requestId":"01890a5d-ac96-4000-8000-000000000000","result":{}}',
             200,
           ),
       ],
@@ -2738,15 +2738,15 @@ describe('security', () => {
   describe('relayer-http error body recognition', () => {
     const notRelayerBodies: Array<[string, string]> = [
       ['missing requestId', JSON.stringify({ code: 'overloaded', message: 'busy' })],
-      ['missing message', JSON.stringify({ code: 'overloaded', requestId: '01890a5d-ac96-7000-8000-000000000001' })],
-      ['missing code', JSON.stringify({ message: 'busy', requestId: '01890a5d-ac96-7000-8000-000000000001' })],
+      ['missing message', JSON.stringify({ code: 'overloaded', requestId: '01890a5d-ac96-4000-8000-000000000001' })],
+      ['missing code', JSON.stringify({ message: 'busy', requestId: '01890a5d-ac96-4000-8000-000000000001' })],
       [
         'non-string code',
-        JSON.stringify({ code: 503, message: 'busy', requestId: '01890a5d-ac96-7000-8000-000000000001' }),
+        JSON.stringify({ code: 503, message: 'busy', requestId: '01890a5d-ac96-4000-8000-000000000001' }),
       ],
       [
         'an array',
-        JSON.stringify([{ code: 'overloaded', message: 'busy', requestId: '01890a5d-ac96-7000-8000-000000000001' }]),
+        JSON.stringify([{ code: 'overloaded', message: 'busy', requestId: '01890a5d-ac96-4000-8000-000000000001' }]),
       ],
       ['null', 'null'],
     ];
@@ -2773,7 +2773,7 @@ describe('security', () => {
       stubFetch(
         () =>
           new TextResponse(
-            JSON.stringify({ code: 'brand_new', message: 'm', requestId: '01890a5d-ac96-7000-8000-000000000001' }),
+            JSON.stringify({ code: 'brand_new', message: 'm', requestId: '01890a5d-ac96-4000-8000-000000000001' }),
             503,
           ),
       );
@@ -2892,7 +2892,7 @@ describe('security', () => {
     it('counts UTF-16 code units, not bytes', async () => {
       const wide = JSON.stringify({
         status: 'succeeded',
-        requestId: '01890a5d-ac96-7000-8000-000000000000',
+        requestId: '01890a5d-ac96-4000-8000-000000000000',
         note: 'é'.repeat(1000),
         result: PUBLIC_RESULT,
       });

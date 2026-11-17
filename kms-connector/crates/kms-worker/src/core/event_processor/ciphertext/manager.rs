@@ -1,4 +1,8 @@
-use super::{VerifiedCiphertexts, s3};
+use super::{
+    VerifiedCiphertexts,
+    pool::{CiphertextPool, Slot},
+    s3,
+};
 use crate::core::{
     Config,
     event_processor::{ProcessingError, RequestCheckError, RequestCheckKind},
@@ -15,7 +19,7 @@ use ciphertext_attestation::{
 use futures::future::try_join_all;
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::TypedCiphertext;
-use std::{collections::HashMap, num::NonZeroUsize};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
@@ -27,6 +31,9 @@ use tracing::{debug, info};
 pub struct CiphertextManager<P: Provider> {
     /// Periodically-synced mirror of the on-chain Coprocessor registry.
     registry: CoprocessorRegistry<P>,
+
+    /// Buffers that ciphertext bodies are downloaded into.
+    pool: Arc<CiphertextPool>,
 
     /// HTTP client for the attestation HEAD fan-out and the ciphertext retrieval.
     s3_client: BoundedClient,
@@ -44,6 +51,7 @@ where
         config: &Config,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<Self> {
+        let pool = CiphertextPool::from_config(config)?;
         let registry = CoprocessorRegistry::connect(
             provider,
             config.gateway_config_contract.address,
@@ -55,6 +63,7 @@ where
 
         Ok(Self {
             registry,
+            pool,
             s3_client: s3::s3_client_from_config(config)?,
             retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
         })
@@ -75,8 +84,8 @@ where
             handles.len()
         );
 
-        let verified = resolve_handles(handles, |handle| {
-            self.verify_and_retrieve_handle(&registry, handle)
+        let verified = resolve_handles(handles, &self.pool, |handle, slot| {
+            self.verify_and_retrieve_handle(&registry, handle, slot)
         })
         .await?;
 
@@ -93,6 +102,7 @@ where
         &self,
         registry: &CoprocessorRegistrySnapshot,
         handle: B256,
+        slot: Slot,
     ) -> Result<ResolvedHandle, ProcessingError> {
         let consensus = fetch_attestations_and_check_consensus(&self.s3_client, handle, registry)
             .await
@@ -120,6 +130,7 @@ where
             &consensus.material,
             &winning_buckets,
             self.retrieval_attempts,
+            slot,
         )
         .await?;
 
@@ -136,26 +147,41 @@ struct ResolvedHandle {
     ciphertext: TypedCiphertext,
 }
 
+/// Resolves each distinct handle once, with its own buffer from `pool`, and returns the
+/// ciphertexts in the order of `handles`, duplicates included. All buffers are reserved before
+/// any handle is resolved.
 async fn resolve_handles<F, Fut>(
     handles: &[B256],
+    pool: &Arc<CiphertextPool>,
     resolve: F,
 ) -> Result<VerifiedCiphertexts, ProcessingError>
 where
-    F: Fn(B256) -> Fut,
+    F: Fn(B256, Slot) -> Fut,
     Fut: Future<Output = Result<ResolvedHandle, ProcessingError>>,
 {
-    let mut unique = Vec::with_capacity(handles.len());
+    let mut distinct = Vec::with_capacity(handles.len());
     let mut indices = HashMap::with_capacity(handles.len());
     for handle in handles {
         indices.entry(handle).or_insert_with(|| {
-            let index = unique.len();
-            unique.push(handle);
+            let index = distinct.len();
+            distinct.push(handle);
             index
         });
     }
-    let resolved = try_join_all(unique.iter().map(|&handle| resolve(*handle))).await?;
+    // Blocks until there are enough free buffers to fit all ciphertexts.
+    let slots = pool
+        .reserve(distinct.len())
+        .await
+        .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
+    let resolved = try_join_all(
+        distinct
+            .iter()
+            .zip(slots)
+            .map(|(&handle, slot)| resolve(*handle, slot)),
+    )
+    .await?;
     let mut verified = aggregate_resolved_handles(resolved)?;
-    if unique.len() < handles.len() {
+    if distinct.len() < handles.len() {
         // TypedCiphertext clones share the large Bytes payload, preserving every wire entry.
         verified.ciphertexts = handles
             .iter()
@@ -207,12 +233,15 @@ impl<P> CiphertextManager<P>
 where
     P: Provider + Clone + 'static,
 {
-    /// Test constructor: an empty registry and default config.
+    /// Test constructor: an empty registry, default config, and a one-byte pool. The pool is
+    /// leaked, and the tests using this never download a ciphertext.
     pub fn for_test(provider: P) -> Self {
+        let config = Config::default();
         Self {
             registry: CoprocessorRegistry::for_test(provider),
-            s3_client: s3::s3_client_from_config(&Config::default()).expect("S3 client"),
-            retrieval_attempts: Config::default().s3_ciphertext_retrieval_attempts,
+            pool: CiphertextPool::new(NonZeroUsize::MIN, NonZeroUsize::MIN),
+            s3_client: s3::s3_client_from_config(&config).expect("S3 client"),
+            retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
         }
     }
 }
@@ -229,7 +258,7 @@ mod tests {
         let a = B256::repeat_byte(1);
         let b = B256::repeat_byte(2);
         let calls = RefCell::new(Vec::new());
-        let verified = resolve_handles(&[b, a, b, a, a], |handle| {
+        let verified = resolve_handles(&[b, a, b, a, a], &test_pool(), |handle, _| {
             calls.borrow_mut().push(handle);
             future::ready(Ok(resolved(U256::ONE, handle[0])))
         })
@@ -264,6 +293,10 @@ mod tests {
             entries[4].ciphertext.as_ptr()
         );
         assert_eq!(verified.key_id, U256::ONE);
+    }
+
+    fn test_pool() -> Arc<CiphertextPool> {
+        CiphertextPool::new(NonZeroUsize::new(4).unwrap(), NonZeroUsize::MIN)
     }
 
     fn resolved(key_id: U256, handle_byte: u8) -> ResolvedHandle {

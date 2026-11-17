@@ -9,7 +9,7 @@ import { InvalidPropertyError } from '../../../../base/errors/InvalidPropertyErr
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/user-decrypt';
-const VALID_REQUEST_ID = '018f4d2e-7c3a-7b1e-8c2d-abcdef123456';
+const VALID_REQUEST_ID = '9b2c1f4e-3a5d-4e6f-8a7b-1c2d3e4f5a6b';
 
 function successBody(): string {
   return JSON.stringify({

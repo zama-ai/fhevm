@@ -117,6 +117,7 @@ jobs:
           - 'test-suite/e2e/**'
           - 'library-solidity/**'
           - 'sdk/cli-js-sdk/**'
+          - 'sdk/js-sdk/**'
 
   build:
     needs: [is-latest-commit, check-changes, compute-sdk-version]

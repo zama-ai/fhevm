@@ -3,9 +3,9 @@ use alloy::primitives::U256;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
-        CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponse, KmsResponseKind,
-        NewKmsContextResponse, PrepKeygenResponse, ProtocolEvent, PublicDecryptionResponse,
-        UserDecryptionResponse,
+        ContextDestructionResponse, CrsgenResponse, EpochDestructionResponse, EpochResultResponse,
+        KeygenResponse, KmsResponse, KmsResponseKind, NewKmsContextResponse, PrepKeygenResponse,
+        ProtocolEvent, PublicDecryptionResponse, UserDecryptionResponse,
         db::{KeyDigestDbItem, OperationStatus, RequestSource},
     },
 };
@@ -79,12 +79,22 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
                 self.publish_epoch_result(r, created_at, otlp_context)
                     .await?
             }
+            KmsResponseKind::ContextDestruction(r) => {
+                self.publish_context_destruction(r, created_at, otlp_context)
+                    .await?
+            }
+            KmsResponseKind::EpochDestruction(r) => {
+                self.publish_epoch_destruction(r, created_at, otlp_context)
+                    .await?
+            }
         };
 
         if query_result.rows_affected() == 1 {
             info!("Successfully stored response in DB!");
         } else {
-            warn!("Unexpected query result while publishing response: {query_result:?}");
+            // Another task already stored a response for this request (e.g. it was re-picked
+            // after `under_process` timed out).
+            info!("Response already stored in DB, skipping");
         }
         Ok(())
     }
@@ -269,9 +279,57 @@ impl DbKmsResponsePublisher {
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO new_kms_context_responses(context_id, created_at, otlp_context)
-            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            "INSERT INTO new_kms_context_responses(
+                context_id, signature, extra_data, created_at, otlp_context
+            )
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             response.context_id.as_le_slice(),
+            response.signature,
+            response.extra_data,
+            created_at,
+            bc2wrap::serialize(&otlp_ctx)?
+        )
+        .execute(&self.db_pool)
+        .await
+        .map_err(anyhow::Error::from)
+    }
+
+    async fn publish_context_destruction(
+        &self,
+        response: ContextDestructionResponse,
+        created_at: DateTime<Utc>,
+        otlp_ctx: PropagationContext,
+    ) -> anyhow::Result<PgQueryResult> {
+        sqlx::query!(
+            "INSERT INTO kms_context_destruction_responses(
+                context_id, signature, extra_data, created_at, otlp_context
+            )
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            response.context_id.as_le_slice(),
+            response.signature,
+            response.extra_data,
+            created_at,
+            bc2wrap::serialize(&otlp_ctx)?
+        )
+        .execute(&self.db_pool)
+        .await
+        .map_err(anyhow::Error::from)
+    }
+
+    async fn publish_epoch_destruction(
+        &self,
+        response: EpochDestructionResponse,
+        created_at: DateTime<Utc>,
+        otlp_ctx: PropagationContext,
+    ) -> anyhow::Result<PgQueryResult> {
+        sqlx::query!(
+            "INSERT INTO kms_epoch_destruction_responses(
+                epoch_id, signature, extra_data, created_at, otlp_context
+            )
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            response.epoch_id.as_le_slice(),
+            response.signature,
+            response.extra_data,
             created_at,
             bc2wrap::serialize(&otlp_ctx)?
         )
@@ -288,13 +346,16 @@ impl DbKmsResponsePublisher {
     ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
             "INSERT INTO epoch_result_responses(
-                context_id, epoch_id, keys, crs_list, created_at, otlp_context
+                context_id, epoch_id, keys, crs_list, signature, extra_data, created_at,
+                otlp_context
             )
-            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
             response.context_id.as_le_slice(),
             response.epoch_id.as_le_slice(),
             response.keys,
             response.crs_list,
+            response.signature,
+            response.extra_data,
             created_at,
             bc2wrap::serialize(&otlp_ctx)?
         )
@@ -407,6 +468,51 @@ impl DbKmsResponsePublisher {
                 RETURNING decryption_id, set_config('synchronous_commit', 'off', true)
             )
             UPDATE user_decryption_requests AS request SET status = 'failed'
+            FROM written_response
+            WHERE request.decryption_id = written_response.decryption_id",
+            decryption_id.as_le_slice(),
+            error_code.as_str(),
+            error_details,
+            extra_data,
+            Utc::now(),
+            bc2wrap::serialize(otlp_ctx)?,
+        )
+        .execute(&self.db_pool)
+        .await?;
+        log_error_publication_result(query_result, error_code);
+        Ok(())
+    }
+
+    /// Stores the rejection of a pad decryption request (always HTTP-sourced).
+    ///
+    /// A retry may override a previous error row, but never a successful response.
+    pub async fn publish_pad_decryption_error(
+        &self,
+        decryption_id: U256,
+        error_code: ErrorCode,
+        error_details: &str,
+        extra_data: &[u8],
+        otlp_ctx: &PropagationContext,
+    ) -> anyhow::Result<()> {
+        // Same shape as `publish_public_decryption_error`, so always committed asynchronously.
+        let query_result = sqlx::query!(
+            "WITH written_response AS (
+                INSERT INTO pad_decryption_responses AS existing (
+                    decryption_id, error_code, error_details, extra_data, created_at,
+                    otlp_context, status
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, 'completed')
+                ON CONFLICT (decryption_id) DO UPDATE SET
+                    error_code = EXCLUDED.error_code,
+                    error_details = EXCLUDED.error_details,
+                    extra_data = EXCLUDED.extra_data,
+                    created_at = EXCLUDED.created_at,
+                    otlp_context = EXCLUDED.otlp_context,
+                    status = EXCLUDED.status
+                WHERE existing.encrypted_payload IS NULL
+                RETURNING decryption_id, set_config('synchronous_commit', 'off', true)
+            )
+            UPDATE pad_decryption_requests AS request SET status = 'failed'
             FROM written_response
             WHERE request.decryption_id = written_response.decryption_id",
             decryption_id.as_le_slice(),

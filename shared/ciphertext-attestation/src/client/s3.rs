@@ -37,8 +37,6 @@ pub struct BoundedClient {
     /// The `GET` ceiling, global rather than per bucket: ciphertexts are big, so too many
     /// buffered at once would exhaust memory whichever buckets they came from.
     get_semaphore: Option<Arc<Semaphore>>,
-    /// Ceiling on the size of a single ciphertext body, in bytes.
-    max_ciphertext_size: Option<NonZeroUsize>,
     /// Deadline of a single ciphertext `GET`.
     get_timeout: Option<Duration>,
 }
@@ -58,7 +56,6 @@ impl BoundedClient {
             head_timeout,
             context_id,
             get_semaphore: None,
-            max_ciphertext_size: None,
             get_timeout: None,
         }
     }
@@ -70,7 +67,6 @@ impl BoundedClient {
         head_timeout: Duration,
         context_id: U256,
         max_concurrent_gets: NonZeroUsize,
-        max_ciphertext_size: NonZeroUsize,
         get_timeout: Duration,
     ) -> Self {
         Self {
@@ -80,7 +76,6 @@ impl BoundedClient {
             head_timeout,
             context_id,
             get_semaphore: Some(Arc::new(Semaphore::new(max_concurrent_gets.get()))),
-            max_ciphertext_size: Some(max_ciphertext_size),
             get_timeout: Some(get_timeout),
         }
     }
@@ -119,26 +114,25 @@ impl BoundedClient {
         attestation_from_http_headers(response.headers())
     }
 
-    /// Retrieves the ciphertext body of `handle` from `bucket` and verifies it against the
-    /// attested digest.
+    /// Retrieves the ciphertext body of `handle` from `bucket` into `buf`, verifies it against
+    /// the attested digest, and returns its length. The body may not exceed `buf.len()`. On error,
+    /// the content of `buf` is unspecified.
     pub async fn fetch_ciphertext(
         &self,
         bucket: &str,
         handle: B256,
         expected_digest: B256,
-    ) -> Result<Vec<u8>, FetchCiphertextError> {
-        let (Some(get_semaphore), Some(max_ciphertext_size), Some(get_timeout)) = (
-            &self.get_semaphore,
-            self.max_ciphertext_size,
-            self.get_timeout,
-        ) else {
+        buf: &mut [u8],
+    ) -> Result<usize, FetchCiphertextError> {
+        let (Some(get_semaphore), Some(get_timeout)) = (&self.get_semaphore, self.get_timeout)
+        else {
             return Err(FetchCiphertextError::NotConfigured);
         };
         let _permit = get_semaphore
             .acquire()
             .await
             .expect("S3 GET semaphore closed");
-        let ceiling = max_ciphertext_size.get();
+        let limit = buf.len();
 
         let url = rfc023_ciphertext_url(bucket, handle, self.context_id);
         let mut response = self
@@ -156,25 +150,27 @@ impl BoundedClient {
             )));
         }
 
-        let content_length = response.content_length().unwrap_or(ceiling as u64);
-        if content_length > ceiling as u64 {
-            return Err(FetchCiphertextError::TooLarge { ceiling });
+        if response.content_length().unwrap_or(0) > limit as u64 {
+            return Err(FetchCiphertextError::TooLarge { limit });
         }
 
-        let mut body = Vec::with_capacity(content_length as usize);
+        let mut len = 0;
         while let Some(chunk) = response
             .chunk()
             .await
             .map_err(|e| FetchCiphertextError::Http(e.to_string()))?
         {
-            // An unannounced body is only caught here, once it has actually overrun the ceiling.
-            if body.len() + chunk.len() > ceiling {
-                return Err(FetchCiphertextError::TooLarge { ceiling });
+            // An unannounced body is only caught here, when a chunk would take the total past the
+            // buffer. The chunk is not copied in that case.
+            let end = len + chunk.len();
+            if end > limit {
+                return Err(FetchCiphertextError::TooLarge { limit });
             }
-            body.extend_from_slice(&chunk);
+            buf[len..end].copy_from_slice(&chunk);
+            len = end;
         }
 
-        let actual = keccak_b256(&body);
+        let actual = keccak_b256(&buf[..len]);
         if actual != expected_digest {
             return Err(FetchCiphertextError::DigestMismatch {
                 expected: expected_digest,
@@ -182,7 +178,7 @@ impl BoundedClient {
             });
         }
 
-        Ok(body)
+        Ok(len)
     }
 
     /// The `HEAD` ceiling of `bucket`, created on first use.
@@ -231,8 +227,8 @@ pub enum FetchCiphertextError {
     NotConfigured,
     #[error("GET request failed: {0}")]
     Http(String),
-    #[error("ciphertext body exceeds the ceiling of {ceiling} bytes")]
-    TooLarge { ceiling: usize },
+    #[error("ciphertext body exceeds the buffer of {limit} bytes")]
+    TooLarge { limit: usize },
     #[error("ciphertext digest mismatch: expected {expected}, got {actual}")]
     DigestMismatch { expected: B256, actual: B256 },
 }
@@ -298,15 +294,14 @@ mod tests {
         )
     }
 
-    /// The same, with a single `GET` permit and the given body ceiling.
-    fn ciphertext_client(max_ciphertext_size: usize) -> BoundedClient {
+    /// The same, with a single `GET` permit.
+    fn ciphertext_client() -> BoundedClient {
         BoundedClient::for_attestations_and_ciphertexts(
             Client::new(),
             NonZeroUsize::MIN,
             Duration::from_secs(5),
             CONTEXT_ID,
             NonZeroUsize::MIN,
-            NonZeroUsize::new(max_ciphertext_size).unwrap(),
             Duration::from_secs(5),
         )
     }
@@ -382,13 +377,12 @@ mod tests {
             Duration::from_secs(5),
             CONTEXT_ID,
             NonZeroUsize::MIN,
-            NonZeroUsize::new(1024).unwrap(),
             Duration::from_millis(100),
         );
 
         let get = tokio::time::timeout(
             Duration::from_secs(5),
-            bounded.fetch_ciphertext(&bucket, B256::ZERO, B256::ZERO),
+            bounded.fetch_ciphertext(&bucket, B256::ZERO, B256::ZERO, &mut [0; 1024]),
         )
         .await
         .expect("the GET should have ended on its deadline");
@@ -401,14 +395,14 @@ mod tests {
     /// each handle getting a ceiling of its own.
     #[tokio::test]
     async fn get_ceiling_is_shared_across_handles() {
-        let client = ciphertext_client(1024);
+        let client = ciphertext_client();
         let permit = client.acquire_get_for_test().await;
 
         // The only permit is held, so no handle can start retrieving.
         for handle in [B256::ZERO, B256::repeat_byte(0x02)] {
             let gated = tokio::time::timeout(
                 Duration::from_millis(200),
-                client.fetch_ciphertext(UNREACHABLE_BUCKET, handle, B256::ZERO),
+                client.fetch_ciphertext(UNREACHABLE_BUCKET, handle, B256::ZERO, &mut [0; 1024]),
             )
             .await;
             assert!(
@@ -423,7 +417,7 @@ mod tests {
         // the `GET` was issued once the permit freed.
         let result = tokio::time::timeout(
             Duration::from_secs(5),
-            client.fetch_ciphertext(UNREACHABLE_BUCKET, B256::ZERO, B256::ZERO),
+            client.fetch_ciphertext(UNREACHABLE_BUCKET, B256::ZERO, B256::ZERO, &mut [0; 1024]),
         )
         .await
         .expect("retrieval should have resumed");
@@ -451,28 +445,28 @@ mod tests {
         (url, accept_loop)
     }
 
-    /// A body above the ceiling is turned down, announced or not. Every served body here hashes to
-    /// the digest asked for, so the ceiling is the only thing that can reject one — and the body
-    /// that fits proves as much.
+    /// A body larger than the buffer is turned down before the buffer overflows.
     #[tokio::test]
     async fn oversized_ciphertext_bodies_are_rejected() {
-        const CEILING: usize = 1024;
+        const BUF_LEN: usize = 1024;
 
         for (body_len, announce_length, expected_ok) in [
-            (CEILING, true, true),
-            (4 * CEILING, true, false),
-            (4 * CEILING, false, false),
+            (BUF_LEN, true, true),
+            (4 * BUF_LEN, true, false),
+            (4 * BUF_LEN, false, false),
         ] {
-            let body = vec![0u8; body_len];
+            let body = vec![7u8; body_len];
             let digest = keccak_b256(&body);
-            let (bucket, accept_loop) = ciphertext_bucket(body, announce_length).await;
+            let (bucket, accept_loop) = ciphertext_bucket(body.clone(), announce_length).await;
+            let mut buf = [0u8; BUF_LEN];
 
-            let result = ciphertext_client(CEILING)
-                .fetch_ciphertext(&bucket, B256::ZERO, digest)
+            let result = ciphertext_client()
+                .fetch_ciphertext(&bucket, B256::ZERO, digest, &mut buf)
                 .await;
 
             match (expected_ok, &result) {
-                (true, Ok(_)) | (false, Err(FetchCiphertextError::TooLarge { .. })) => {}
+                (true, Ok(len)) => assert_eq!(&buf[..*len], body.as_slice()),
+                (false, Err(FetchCiphertextError::TooLarge { limit: BUF_LEN })) => {}
                 _ => panic!("{body_len} bytes announced as {announce_length}: {result:?}"),
             }
 
@@ -480,14 +474,17 @@ mod tests {
         }
     }
 
-    /// A body that fits the ceiling but does not hash to the attested digest is not the ciphertext
-    /// consensus vouched for.
     #[tokio::test]
     async fn a_body_failing_the_digest_check_is_rejected() {
         let (bucket, accept_loop) = ciphertext_bucket(vec![0u8; 32], true).await;
 
-        let result = ciphertext_client(1024)
-            .fetch_ciphertext(&bucket, B256::ZERO, keccak_b256(b"another ciphertext"))
+        let result = ciphertext_client()
+            .fetch_ciphertext(
+                &bucket,
+                B256::ZERO,
+                keccak_b256(b"another ciphertext"),
+                &mut [0; 1024],
+            )
             .await;
         assert!(matches!(
             result,
@@ -497,11 +494,28 @@ mod tests {
         accept_loop.abort();
     }
 
+    /// Bytes left in a reused buffer by an earlier body are neither hashed nor returned.
+    #[tokio::test]
+    async fn stale_bytes_in_the_buffer_are_ignored() {
+        let body = vec![3u8; 64];
+        let digest = keccak_b256(&body);
+        let (bucket, accept_loop) = ciphertext_bucket(body.clone(), true).await;
+        let mut buf = [0xffu8; 1024];
+
+        let len = ciphertext_client()
+            .fetch_ciphertext(&bucket, B256::ZERO, digest, &mut buf)
+            .await
+            .unwrap();
+        assert_eq!(&buf[..len], body.as_slice());
+
+        accept_loop.abort();
+    }
+
     /// A HEAD-only client says it has no GET capacity rather than issuing a request without one.
     #[tokio::test]
     async fn a_head_only_client_cannot_fetch_ciphertexts() {
         let result = single_permit_client()
-            .fetch_ciphertext(UNREACHABLE_BUCKET, B256::ZERO, B256::ZERO)
+            .fetch_ciphertext(UNREACHABLE_BUCKET, B256::ZERO, B256::ZERO, &mut [0; 1024])
             .await;
         assert!(matches!(result, Err(FetchCiphertextError::NotConfigured)));
     }

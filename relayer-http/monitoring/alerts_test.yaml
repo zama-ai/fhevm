@@ -1,0 +1,255 @@
+# promtool unit tests of alerts.yaml: `make -C relayer-http/dev check-alerts`.
+rule_files:
+  - alerts.yaml
+evaluation_interval: 1m
+
+tests:
+  - name: server errors above 5% for 10 minutes fire
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_requests_total{flow="user_decrypt",outcome="failed",code="timeout"}'
+        values: '0+6x30'
+      - series: 'relayer_http_requests_total{flow="user_decrypt",outcome="succeeded",code="ok"}'
+        values: '0+94x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: RelayerHttpServerErrors
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: RelayerHttpServerErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "relayer-http answers more than 5% of its requests with a server error"
+              description: "6% of the requests of the last 5 minutes failed (5xx)."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpservererrors"
+
+  - name: server errors below 5% stay quiet
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_requests_total{flow="user_decrypt",outcome="failed",code="timeout"}'
+        values: '0+2x30'
+      - series: 'relayer_http_requests_total{flow="user_decrypt",outcome="succeeded",code="ok"}'
+        values: '0+98x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpServerErrors
+        exp_alerts: []
+
+  - name: p95 request latency above the call deadline fraction fires
+    interval: 1m
+    input_series:
+      # Every request lands in the (4 s, 5 s] bucket: p95 is just under 5 s, above 4 s.
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="2.5"}'
+        values: '0+0x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="4"}'
+        values: '0+0x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="5"}'
+        values: '0+60x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="+Inf"}'
+        values: '0+60x30'
+      # A flood of fast 400s, abandoned requests and router fallbacks must not mask the slow successes.
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="rejected",le="0.005"}'
+        values: '0+6000x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="rejected",le="+Inf"}'
+        values: '0+6000x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="cancelled",le="0.005"}'
+        values: '0+6000x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="cancelled",le="+Inf"}'
+        values: '0+6000x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="none",outcome="rejected",le="0.005"}'
+        values: '0+6000x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="none",outcome="rejected",le="+Inf"}'
+        values: '0+6000x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpSlowRequests
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              flow: user_decrypt
+            exp_annotations:
+              summary: "relayer-http user_decrypt requests are close to the call deadline"
+              description: "The 95th percentile of user_decrypt requests is 4.95s, above 0.8 x the call timeout (5 s by default)."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpslowrequests"
+
+  - name: requests at 2.6 s stay quiet
+    interval: 1m
+    input_series:
+      # Every request takes 2.6 s: in the (2.5 s, 4 s] bucket, p95 is 3.9 s, below the 4 s threshold.
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="2.5"}'
+        values: '0+0x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="4"}'
+        values: '0+60x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="5"}'
+        values: '0+60x30'
+      - series: 'relayer_http_request_duration_seconds_bucket{flow="user_decrypt",outcome="succeeded",le="+Inf"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpSlowRequests
+        exp_alerts: []
+
+  - name: one KMS node failing more than half of its attempts fires for that node only
+    interval: 1m
+    input_series:
+      # kms_00: 6 of 10 attempts fail; kms_01: 1 of 10.
+      - series: 'relayer_http_kms_attempt_errors_total{kms_node="kms_00",flow="user_decrypt",code="upstream_transient"}'
+        values: '0+6x30'
+      - series: 'relayer_http_kms_attempts_sum{kms_node="kms_00",flow="user_decrypt"}'
+        values: '0+10x30'
+      - series: 'relayer_http_kms_attempt_errors_total{kms_node="kms_01",flow="user_decrypt",code="rate_limited"}'
+        values: '0+1x30'
+      - series: 'relayer_http_kms_attempts_sum{kms_node="kms_01",flow="user_decrypt"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpKmsNodeFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              kms_node: kms_00
+            exp_annotations:
+              summary: "More than half of the attempts to KMS node kms_00 fail"
+              description: "60% of the attempts to kms_00 failed with an error that blames the node or the path to it (client-caused errors and cut attempts not counted) over the last 5 minutes."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpkmsnodefailing"
+
+  - name: errors that do not blame the node never fire the node alert
+    interval: 1m
+    input_series:
+      # Every attempt to each node fails, but with a client-caused code, a cut, or a panic of the relayer.
+      - series: 'relayer_http_kms_attempt_errors_total{kms_node="kms_00",flow="user_decrypt",code="acl_denied"}'
+        values: '0+10x30'
+      - series: 'relayer_http_kms_attempt_errors_total{kms_node="kms_01",flow="user_decrypt",code="cancelled"}'
+        values: '0+10x30'
+      - series: 'relayer_http_kms_attempt_errors_total{kms_node="kms_02",flow="public_decrypt",code="panic"}'
+        values: '0+10x30'
+      - series: 'relayer_http_kms_attempt_errors_total{kms_node="kms_03",flow="public_decrypt",code="malformed"}'
+        values: '0+10x30'
+      - series: 'relayer_http_kms_attempts_sum{kms_node="kms_00",flow="user_decrypt"}'
+        values: '0+10x30'
+      - series: 'relayer_http_kms_attempts_sum{kms_node="kms_01",flow="user_decrypt"}'
+        values: '0+10x30'
+      - series: 'relayer_http_kms_attempts_sum{kms_node="kms_02",flow="public_decrypt"}'
+        values: '0+10x30'
+      - series: 'relayer_http_kms_attempts_sum{kms_node="kms_03",flow="public_decrypt"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpKmsNodeFailing
+        exp_alerts: []
+
+  # The counters start at 0 with the process (`Metrics::new`, `announce_nodes`): the series below do too, so a first
+  # occurrence is an increase and the alert sees it.
+  - name: an internal error fires at once
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_requests_total{flow="user_decrypt",outcome="failed",code="internal"}'
+        values: '0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'relayer_http_kms_attempt_errors_total{kms_node="kms_00",flow="user_decrypt",code="panic"}'
+        values: '0+0x30'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: RelayerHttpInternalErrors
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: RelayerHttpInternalErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "relayer-http hit an internal error"
+              description: "1 internal error(s) in the last 5 minutes: requests that ended with the code internal (an internal error or a panic), or a panic in a KMS node call. A relayer defect, not the KMS nodes or the client."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpinternalerrors"
+      # Later the error is out of the 5 minute window.
+      - eval_time: 12m
+        alertname: RelayerHttpInternalErrors
+        exp_alerts: []
+
+  - name: a panic in a node call fires at once
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_requests_total{flow="user_decrypt",outcome="failed",code="internal"}'
+        values: '0+0x30'
+      - series: 'relayer_http_kms_attempt_errors_total{kms_node="kms_00",flow="user_decrypt",code="panic"}'
+        values: '0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: RelayerHttpInternalErrors
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: RelayerHttpInternalErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "relayer-http hit an internal error"
+              description: "1 internal error(s) in the last 5 minutes: requests that ended with the code internal (an internal error or a panic), or a panic in a KMS node call. A relayer defect, not the KMS nodes or the client."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpinternalerrors"
+
+  - name: other failures are not internal errors
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_requests_total{flow="user_decrypt",outcome="failed",code="timeout"}'
+        values: '0+6x30'
+      - series: 'relayer_http_requests_total{flow="user_decrypt",outcome="failed",code="internal"}'
+        values: '0+0x30'
+      - series: 'relayer_http_kms_attempt_errors_total{kms_node="kms_00",flow="user_decrypt",code="upstream_transient"}'
+        values: '0+6x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpInternalErrors
+        exp_alerts: []
+
+  - name: a signer failing for 5 minutes fires
+    interval: 1m
+    input_series:
+      # Starts at 0 with the process (`Metrics::new`), as in production.
+      - series: 'relayer_http_signer_errors_total{flow="user_decrypt"}'
+        values: '0+6x30'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: RelayerHttpSignerFailing
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: RelayerHttpSignerFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "relayer-http cannot sign its calls to the KMS nodes"
+              description: "Signing a connector call failed 30 time(s) in the last 5 minutes: the signing key is unreachable or refuses, and no request reaches the KMS nodes it affects."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpsignerfailing"
+
+  - name: a call slot wait above 100 ms fires
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_kms_call_slot_wait_seconds_bucket{flow="user_decrypt",le="0.25"}'
+        values: '0+60x30'
+      - series: 'relayer_http_kms_call_slot_wait_seconds_bucket{flow="user_decrypt",le="0.1"}'
+        values: '0+0x30'
+      - series: 'relayer_http_kms_call_slot_wait_seconds_bucket{flow="user_decrypt",le="+Inf"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpCallSlotWaitHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "relayer-http attempts wait for an outbound call slot"
+              description: "The 95th percentile wait for a call slot is 242.5ms. The pod is saturated: scale out."
+              runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpcallslotwaithigh"
+
+  - name: no slot wait stays quiet
+    interval: 1m
+    input_series:
+      - series: 'relayer_http_kms_call_slot_wait_seconds_bucket{flow="user_decrypt",le="0.005"}'
+        values: '0+60x30'
+      - series: 'relayer_http_kms_call_slot_wait_seconds_bucket{flow="user_decrypt",le="+Inf"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: RelayerHttpCallSlotWaitHigh
+        exp_alerts: []

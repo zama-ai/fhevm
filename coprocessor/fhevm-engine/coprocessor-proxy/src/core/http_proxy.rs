@@ -1,9 +1,10 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
-use crate::core::{ErrorCode, ErrorResponse, Proxy, Route, RouteError, match_route};
+use crate::core::{Proxy, Route, RouteError, match_route};
 use alloy::primitives::Address;
 use async_trait::async_trait;
 use bytes::Bytes;
+use coprocessor_api::{ErrorCode, ErrorResponse};
 use fhevm_sig_auth::AuthError;
 use http::{
     HeaderValue, StatusCode,
@@ -38,7 +39,7 @@ static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
 
 /// The signer the proxy authenticated, EIP-55 checksummed: prf-service's caller. Any inbound value
 /// is dropped first.
-pub const X_FHEVM_SIGNER: HeaderName = HeaderName::from_static("x-fhevm-signer");
+pub const X_FHEVM_SIGNER: HeaderName = HeaderName::from_static(fhevm_sig_auth::SIGNER_HEADER);
 // The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
@@ -55,6 +56,10 @@ const NO_STORE: &str = "no-store";
 /// How long a client connection can stay idle between two requests. Pingora otherwise waits for the
 /// next request on a reused connection without a limit.
 pub const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The longest time for one write to a client. A client that stops reading is then disconnected,
+/// and prf-service frees its body. Pingora has no limit by default.
+pub const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// How long a request signed by an unknown signer waits for a poll of the KMS tx-senders that
 /// started after it, before it is checked again.
@@ -88,7 +93,7 @@ impl Proxy {
         header.insert_header(CONTENT_TYPE, "application/json")?;
         header.insert_header(CONTENT_LENGTH, body.len().to_string())?;
         header.insert_header(CACHE_CONTROL, NO_STORE)?;
-        if status == StatusCode::UNAUTHORIZED {
+        if status == StatusCode::UNAUTHORIZED.as_u16() {
             // A `HEAD` answer has no body, so the challenge carries the code too (RFC-038, as in
             // RFC 9449). The codes are fixed identifiers, so they need no escaping.
             let challenge = format!(
@@ -133,6 +138,7 @@ impl ProxyHttp for Proxy {
         } else {
             session.set_keepalive(Some(CLIENT_IDLE_TIMEOUT.as_secs()));
         }
+        session.set_write_timeout(Some(CLIENT_WRITE_TIMEOUT));
         Ok(())
     }
 
@@ -282,7 +288,7 @@ impl ProxyHttp for Proxy {
             if let Err(e) = self.respond_with_error(session, error, None).await {
                 error!("Failed to send error response to downstream: {e}");
             }
-            status.as_u16()
+            status
         } else {
             let code = default_error_code(e);
             if code > 0 {
@@ -333,13 +339,17 @@ impl ProxyHttp for Proxy {
     }
 }
 
-/// Converts an `AuthError` into an `ErrorResponse` with its `auth_*` code. Only an expired header is
-/// retryable, after re-signing. An unknown signer is not, as in RFC-038's error table, although
-/// connectors still retry it in their retry step.
+/// Converts an `AuthError` into an `ErrorResponse` with the code of the failing step.
 fn auth_error_response(error: &AuthError) -> ErrorResponse {
-    let code = ErrorCode::Auth {
-        code: error.code(),
-        retryable: matches!(error, AuthError::Expired),
+    let code = match error {
+        AuthError::Missing => ErrorCode::AuthMissing,
+        AuthError::Malformed(_) => ErrorCode::AuthMalformed,
+        AuthError::QueryString => ErrorCode::AuthQueryString,
+        AuthError::Expired => ErrorCode::AuthExpired,
+        AuthError::TooLongLived => ErrorCode::AuthTooLongLived,
+        AuthError::InvalidSignature(_) => ErrorCode::AuthInvalidSignature,
+        AuthError::UnknownSigner(_) => ErrorCode::AuthUnknownSigner,
+        AuthError::BodyMismatch => ErrorCode::AuthBodyMismatch,
     };
     ErrorResponse::new(code, error.to_string())
 }
@@ -404,18 +414,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_expired_auth_rejections_are_retryable() {
-        let expired = auth_error_response(&AuthError::Expired);
-        assert_eq!(expired.code.as_str(), "auth_expired");
-        assert!(expired.retryable);
-
-        let unknown = auth_error_response(&AuthError::UnknownSigner(Address::ZERO));
-        assert_eq!(unknown.code.as_str(), "auth_unknown_signer");
-        assert!(!unknown.retryable);
-
-        let missing = auth_error_response(&AuthError::Missing);
-        assert_eq!(missing.code.as_str(), "auth_missing");
-        assert!(!missing.retryable);
+    fn answers_each_auth_failure_with_its_fhevm_sig_auth_code() {
+        for error in [
+            AuthError::Missing,
+            AuthError::Malformed("bad"),
+            AuthError::QueryString,
+            AuthError::Expired,
+            AuthError::TooLongLived,
+            AuthError::InvalidSignature("bad".into()),
+            AuthError::UnknownSigner(Address::ZERO),
+            AuthError::BodyMismatch,
+        ] {
+            assert_eq!(auth_error_response(&error).code.as_str(), error.code());
+        }
     }
 
     #[test]

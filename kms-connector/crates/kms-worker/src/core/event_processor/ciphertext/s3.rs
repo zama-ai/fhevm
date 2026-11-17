@@ -2,7 +2,10 @@
 //! across the winning-group buckets, and reports the retrieval metrics.
 
 use crate::{
-    core::{config::Config, event_processor::ProcessingError},
+    core::{
+        config::Config,
+        event_processor::{ProcessingError, ciphertext::pool::Slot},
+    },
     monitoring::metrics::{S3_CIPHERTEXT_RETRIEVAL_COUNTER, S3_CIPHERTEXT_RETRIEVAL_ERRORS},
 };
 use alloy::{primitives::B256, transports::http::Client};
@@ -29,13 +32,12 @@ pub fn s3_client_from_config(config: &Config) -> anyhow::Result<BoundedClient> {
         config.s3_head_timeout,
         COPROCESSOR_CONTEXT_ID_V1,
         config.s3_max_concurrent_gets,
-        config.s3_max_ciphertext_size,
         config.s3_get_timeout,
     ))
 }
 
 /// Retrieves the SNS ciphertext of `handle` from a bucket in the winning consensus group and
-/// verifies it against the attested digest.
+/// verifies it against the attested digest. The body is written into `slot`.
 ///
 /// Tries every winning-group bucket before moving on to the next attempt, up to `attempts` times.
 pub async fn retrieve_verified_ciphertext(
@@ -44,6 +46,7 @@ pub async fn retrieve_verified_ciphertext(
     material: &ConsensusMaterial,
     winning_buckets: &[String],
     attempts: NonZeroUsize,
+    mut slot: Slot,
 ) -> Result<TypedCiphertext, ProcessingError> {
     // A handle that carries no valid FHE type is malformed; retrying cannot fix it.
     let fhe_type = extract_fhe_type_from_handle(&handle).map_err(|e| {
@@ -65,20 +68,25 @@ pub async fn retrieve_verified_ciphertext(
     for attempt in 1..=attempts.get() {
         for bucket in winning_buckets {
             match client
-                .fetch_ciphertext(bucket, handle, material.sns_ciphertext_digest)
+                .fetch_ciphertext(
+                    bucket,
+                    handle,
+                    material.sns_ciphertext_digest,
+                    slot.buffer_mut(),
+                )
                 .await
             {
-                Ok(body) => {
+                Ok(len) => {
                     S3_CIPHERTEXT_RETRIEVAL_COUNTER.inc();
                     debug!(
                         %handle,
                         "Ciphertext retrieved and verified: format {}, length {}, FHE type {:?}",
                         ct_format.as_str_name(),
-                        body.len(),
+                        len,
                         fhe_type
                     );
                     return Ok(TypedCiphertext {
-                        ciphertext: body.into(),
+                        ciphertext: slot.into_bytes(len),
                         external_handle: handle.to_vec(),
                         fhe_type: fhe_type as i32,
                         ciphertext_format: ct_format.into(),
@@ -121,10 +129,14 @@ fn grpc_ciphertext_format(format: CiphertextFormat) -> GrpcCiphertextFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::event_processor::ProcessingErrorKind;
+    use crate::core::event_processor::{ProcessingErrorKind, ciphertext::pool::CiphertextPool};
     use alloy::primitives::U256;
     use ciphertext_attestation::keccak_b256;
-    use tokio::{io::AsyncWriteExt, net::TcpListener, task::JoinHandle};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        task::JoinHandle,
+    };
 
     fn material() -> ConsensusMaterial {
         ConsensusMaterial {
@@ -144,6 +156,16 @@ mod tests {
         .unwrap()
     }
 
+    /// A buffer from a one-slot pool.
+    async fn slot() -> Slot {
+        CiphertextPool::new(NonZeroUsize::MIN, NonZeroUsize::new(1024).unwrap())
+            .reserve(1)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap()
+    }
+
     /// An empty winning-group set is a recoverable consensus failure: there is nowhere to fetch
     /// from, and a retry may resolve a different winning group.
     #[tokio::test]
@@ -154,6 +176,7 @@ mod tests {
             &material(),
             &[],
             NonZeroUsize::new(3).unwrap(),
+            slot().await,
         )
         .await;
         assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Recoverable));
@@ -170,6 +193,7 @@ mod tests {
             &material(),
             &["http://127.0.0.1:1".to_string()],
             NonZeroUsize::new(3).unwrap(),
+            slot().await,
         )
         .await;
         assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Irrecoverable));
@@ -181,6 +205,8 @@ mod tests {
         let url = format!("http://{}", listener.local_addr().unwrap());
         let accept_loop = tokio::spawn(async move {
             while let Ok((mut stream, _)) = listener.accept().await {
+                // Read the request first: closing with unread data resets the connection.
+                let _ = stream.read(&mut [0u8; 4096]).await;
                 let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
                 let _ = stream.write_all(head.as_bytes()).await;
                 let _ = stream.write_all(&body).await;
@@ -208,10 +234,43 @@ mod tests {
             &material,
             &["http://127.0.0.1:1".to_string(), good_bucket],
             NonZeroUsize::MIN,
+            slot().await,
         )
         .await
         .expect("the second bucket should have served the ciphertext");
         assert_eq!(result.ciphertext, vec![0u8; 64]);
+
+        accept_loop.abort();
+    }
+
+    /// The ciphertext's payload is the pool buffer, which returns to the pool when dropped.
+    #[tokio::test]
+    async fn the_payload_lives_in_the_pool_buffer() {
+        let body = vec![5u8; 64];
+        let digest = keccak_b256(&body);
+        let (bucket, accept_loop) = ciphertext_bucket(body.clone()).await;
+        let material = ConsensusMaterial {
+            sns_ciphertext_digest: digest,
+            ..material()
+        };
+        let pool = CiphertextPool::new(NonZeroUsize::MIN, NonZeroUsize::new(1024).unwrap());
+        let slot = pool.reserve(1).await.unwrap().pop().unwrap();
+
+        let ciphertext = retrieve_verified_ciphertext(
+            &single_permit_client(),
+            B256::ZERO,
+            &material,
+            &[bucket],
+            NonZeroUsize::MIN,
+            slot,
+        )
+        .await
+        .unwrap();
+        assert_eq!(ciphertext.ciphertext, body);
+        assert_eq!(pool.available(), 0);
+
+        drop(ciphertext);
+        assert_eq!(pool.available(), 1);
 
         accept_loop.abort();
     }

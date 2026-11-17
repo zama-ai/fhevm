@@ -31,17 +31,6 @@ export type CanonicalSnapshot = {
   blockHash: string;
 };
 
-// RPC providers must disable caching so this check re-fetches the block after the state reads.
-export async function assertCanonicalSnapshotBlockHash(
-  canonicalProvider: Provider,
-  snapshot: Pick<CanonicalSnapshot, 'blockNumber' | 'blockHash'>,
-): Promise<void> {
-  const block = await canonicalProvider.getBlock(snapshot.blockNumber);
-  if (block === null || block.hash === null || block.hash !== snapshot.blockHash) {
-    throw new Error(`Canonical block ${snapshot.blockNumber} is missing or its hash changed during the read; retry.`);
-  }
-}
-
 // Reads the canonical ProtocolConfig's current KMS context, pinned to one finalized block, for
 // exports and mirror tasks. Pass blockNumber to pin to a finalized historical block (the export
 // artifact's blockNumber) so a DAO signer can reproduce a snapshot byte-for-byte even after a later
@@ -130,7 +119,11 @@ export async function readCanonicalSnapshot(
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
 
-  await assertCanonicalSnapshotBlockHash(canonicalProvider, { blockNumber, blockHash });
+  // RPC providers must disable caching so this re-fetches the block after the state reads.
+  const refetched = await canonicalProvider.getBlock(blockNumber);
+  if (refetched?.hash !== blockHash) {
+    throw new Error(`Canonical block ${blockNumber} is missing or its hash changed during the read; retry.`);
+  }
 
   return {
     protocolConfigAddress: getAddress(canonicalProtocolConfigAddress),
@@ -158,25 +151,10 @@ export async function buildCanonicalUpgradeProposal(
     `Mirroring ProtocolConfig ${snapshot.protocolConfigAddress} from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber} (${snapshot.blockHash}): contextId=${snapshot.currentKmsContextId}, epochId=${snapshot.currentEpochId}, kmsNodes=${snapshot.kmsNodes.length}.`,
   );
 
-  // initializeFromCanonical takes KmsNodeParams (txSender/signer/ip/storageUrl plus MPC metadata:
-  // partyId, mpcIdentity, caCert, storagePrefix). Only the first four are persisted in the on-chain
-  // KmsNode struct, so the MPC metadata can't be read back from canonical and isn't part of the
-  // mirrored state. _storeKmsContext neither stores nor validates those fields, so we fill them with
-  // deterministic placeholders; the replica's stored node set still matches canonical exactly. The
-  // fresh deploy path numbers party ids from 1 (KMS_NODE_PARTY_ID_0="1"), while the mirror path
-  // numbers them from 0.
-  const kmsNodeParams = snapshot.kmsNodes.map((node, index) => ({
-    ...node,
-    partyId: index,
-    mpcIdentity: '',
-    caCert: '0x',
-    storagePrefix: '',
-  }));
-
   return buildUpgradeProposal(hre, {
     proxyAddress,
     contractName: 'contracts/ProtocolConfigReplica.sol:ProtocolConfigReplica',
     innerFunctionName: 'initializeFromCanonical',
-    decodedArgs: [snapshot.currentKmsContextId, snapshot.currentEpochId, kmsNodeParams, snapshot.thresholds],
+    decodedArgs: [snapshot.currentKmsContextId, snapshot.currentEpochId, snapshot.kmsNodes, snapshot.thresholds],
   });
 }

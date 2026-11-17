@@ -49,14 +49,12 @@ contract ProtocolConfigMock {
         uint256 prepKeygenId;
         uint256 keyId;
         KeyDigest[] keyDigests;
-        bytes signature;
     }
 
     struct EpochCrsResult {
         uint256 crsId;
         uint256 maxBitLength;
         bytes crsDigest;
-        bytes signature;
     }
 
     event NewKmsContext(
@@ -78,12 +76,32 @@ contract ProtocolConfigMock {
 
     event KmsContextCreationConfirmation(
         uint256 indexed kmsContextId,
-        address indexed txSender,
-        bool isPreviousTxSender,
-        bool isNewTxSender
+        address indexed signer,
+        bytes signature,
+        bytes extraData
     );
 
-    event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 dataHash);
+    event EpochActivationConfirmation(
+        uint256 indexed epochId,
+        address indexed signer,
+        bytes32 epochMaterialHash,
+        bytes signature,
+        bytes extraData
+    );
+
+    event KmsContextDestructionConfirmation(
+        uint256 indexed destroyedContextId,
+        address indexed signer,
+        bytes signature,
+        bytes extraData
+    );
+
+    event KmsEpochDestructionConfirmation(
+        uint256 indexed destroyedEpochId,
+        address indexed signer,
+        bytes signature,
+        bytes extraData
+    );
 
     event KmsContextDestroyed(uint256 indexed kmsContextId);
 
@@ -97,16 +115,39 @@ contract ProtocolConfigMock {
         emit KmsEpochDestroyed(epochId);
     }
 
-    function confirmKmsContextCreation(uint256 kmsContextId) external {
-        emit KmsContextCreationConfirmation(kmsContextId, msg.sender, true, true);
+    function confirmKmsContextCreation(
+        uint256 kmsContextId,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external {
+        emit KmsContextCreationConfirmation(kmsContextId, msg.sender, signature, extraData);
     }
 
     function confirmEpochActivation(
         uint256 epochId,
         EpochKeyResult[] calldata,
-        EpochCrsResult[] calldata
+        EpochCrsResult[] calldata,
+        bytes calldata,
+        bytes calldata signature,
+        bytes calldata extraData
     ) external {
-        emit EpochActivationConfirmation(epochId, msg.sender, bytes32(0));
+        emit EpochActivationConfirmation(epochId, msg.sender, bytes32(0), signature, extraData);
+    }
+
+    function confirmKmsContextDestruction(
+        uint256 destroyedContextId,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external {
+        emit KmsContextDestructionConfirmation(destroyedContextId, msg.sender, signature, extraData);
+    }
+
+    function confirmKmsEpochDestruction(
+        uint256 destroyedEpochId,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external {
+        emit KmsEpochDestructionConfirmation(destroyedEpochId, msg.sender, signature, extraData);
     }
 
     function defineNewKmsContextAndEpoch(

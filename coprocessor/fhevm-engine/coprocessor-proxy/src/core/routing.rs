@@ -4,6 +4,7 @@
 //! The proxy checks the shape of a path only. The service behind a route checks the encoding of
 //! its path parameters.
 
+use coprocessor_api::PRF_OUTPUT_ROUTE;
 use http::Method;
 
 /// The routes the proxy forwards.
@@ -31,7 +32,7 @@ struct RouteEntry {
 
 const ROUTES: [RouteEntry; 1] = [RouteEntry {
     route: Route::Prf,
-    pattern: "/v1/prf/{prf}/labels/{label}/{padLength}",
+    pattern: PRF_OUTPUT_ROUTE,
     methods: &[Method::GET, Method::HEAD],
 }];
 

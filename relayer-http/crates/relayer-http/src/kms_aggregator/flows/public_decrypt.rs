@@ -1,11 +1,12 @@
 //! Public decrypt: every node returns the same plaintext; identical `(decryptedResult, extraData)` answers are
 //! counted together and the largest group is the answer, with that group's signatures only.
 
-use alloy::primitives::B256;
 use kms_connector_api::{
     PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest, PublicDecryptionResponse,
 };
 use serde::Serialize;
+
+use crate::metrics::FlowName;
 
 use super::{Flow, RejectReason, check_signature, hex};
 
@@ -37,16 +38,8 @@ impl Flow for PublicDecrypt {
     type Output = PublicDecryptOutput;
     /// No optional check on public decrypt in this version.
     type Checks = ();
-    const NAME: &'static str = "public_decrypt";
+    const NAME: FlowName = FlowName::PublicDecrypt;
     const ROUTE: &'static str = PUBLIC_DECRYPTION_ROUTE;
-
-    fn decryption_id(request: &Self::Request) -> B256 {
-        request.id()
-    }
-
-    fn handles(request: &Self::Request) -> Vec<B256> {
-        request.ctHandles.clone()
-    }
 
     fn check(
         (): &(),
@@ -90,7 +83,7 @@ impl Flow for PublicDecrypt {
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::{Bytes, b256};
+    use alloy::primitives::{B256, Bytes};
     use serde_json::json;
 
     use super::*;
@@ -107,18 +100,6 @@ mod tests {
             signature: mock::signature(node),
             extra_data: mock::extra_data_v2(),
         }
-    }
-
-    #[test]
-    fn id_and_handles_come_from_the_request() {
-        assert_eq!(PublicDecrypt::decryption_id(&request()), PUBLIC_REQUEST_ID);
-        assert_eq!(
-            PublicDecrypt::handles(&request()),
-            vec![
-                b256!("0x1111111111111111111111111111111111111111111111111111111111111111"),
-                b256!("0x2222222222222222222222222222222222222222222222222222222222222222"),
-            ]
-        );
     }
 
     #[test]

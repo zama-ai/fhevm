@@ -1,6 +1,7 @@
 //! actix-web wiring of the `v1` routes.
 
 pub mod decrypt;
+pub mod pad_decrypt;
 pub mod public_decrypt;
 pub mod user_decrypt;
 pub mod version;
@@ -21,7 +22,8 @@ use actix_web::{
 use anyhow::anyhow;
 use connector_utils::monitoring::http::{self as telemetry, RequestObservation};
 use kms_connector_api::{
-    ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
+    ErrorCode, ErrorResponse, PAD_DECRYPTION_ROUTE, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE,
+    VERSION_ROUTE,
 };
 use sqlx::{Pool, Postgres};
 use std::{net::SocketAddr, sync::Arc};
@@ -68,6 +70,10 @@ pub fn run_server(state: AppState, endpoint: SocketAddr) -> anyhow::Result<Serve
                 .route(
                     USER_DECRYPTION_ROUTE,
                     web::post().to(user_decrypt::user_decrypt),
+                )
+                .route(
+                    PAD_DECRYPTION_ROUTE,
+                    web::post().to(pad_decrypt::pad_decrypt),
                 );
         })
     })
@@ -105,7 +111,8 @@ async fn trace_request<B: MessageBody>(
     next: Next<B>,
     observation: RequestObservation,
 ) -> Result<ServiceResponse<B>, actix_web::Error> {
-    Span::current().set_parent(telemetry::extract_context(|name| {
+    // Only fails if the span is filtered out or no OTel layer is set (tests): no span is exported then.
+    let _ = Span::current().set_parent(telemetry::extract_context(|name| {
         req.headers().get(name).and_then(|v| v.to_str().ok())
     }));
     record_response(next.call(req).await, observation, &Span::current())

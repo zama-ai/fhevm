@@ -368,6 +368,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test operators
 ./fhevm-cli test --grep "oversized shift and rotate" --verbose
 ./fhevm-cli test operators --grep "edge cases" --verbose
+./fhevm-cli test erc20 --decrypt-without-gateway   # decrypt without the gateway chain, through relayer-http (/v4); needs a stack that runs it
 ./fhevm-cli pause host
 ./fhevm-cli unpause host
 

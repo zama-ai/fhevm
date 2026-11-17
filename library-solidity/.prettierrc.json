@@ -3,7 +3,7 @@
   "plugins": ["prettier-plugin-solidity"],
   "overrides": [
     {
-      "files": ["*.ts", ".js", ".cjs"],
+      "files": ["*.ts", "*.js", "*.cjs", "*.mjs"],
       "options": {
         "singleQuote": true
       }

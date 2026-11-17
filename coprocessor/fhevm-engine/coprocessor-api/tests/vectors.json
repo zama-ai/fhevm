@@ -1,0 +1,63 @@
+{
+  "prfOutputPaths": {
+    "canonical": [
+      {
+        "path": "/v1/prf/0/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/1",
+        "prf": 0,
+        "label": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        "padLength": 1
+      },
+      {
+        "path": "/v1/prf/7/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+        "prf": 7,
+        "label": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        "padLength": 64
+      },
+      {
+        "path": "/v1/prf/65535/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/2048",
+        "prf": 65535,
+        "label": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        "padLength": 2048
+      }
+    ],
+    "rejected": [
+      "/v1/prf/00/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v1/prf/01/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v1/prf/+1/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v1/prf//labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v1/prf/65536/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v1/prf/%30/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v1/prf/0/labels/00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF/64",
+      "/v1/prf/0/labels/0x112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v1/prf/0/labels/0112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v1/prf/0/labels/%300112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v1/prf/0/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/0",
+      "/v1/prf/0/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/064",
+      "/v1/prf/0/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/2049",
+      "/v1/prf/0/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64/",
+      "/v1/prf/0/label/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64",
+      "/v2/prf/0/labels/00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff/64"
+    ]
+  },
+  "prfAttestationHeader": "x-prf-attestation",
+  "errors": [
+    { "code": "malformed", "status": 400, "retryable": false },
+    { "code": "non_canonical_path", "status": 400, "retryable": false },
+    { "code": "auth_missing", "status": 401, "retryable": false },
+    { "code": "auth_malformed", "status": 401, "retryable": false },
+    { "code": "auth_query_string", "status": 401, "retryable": false },
+    { "code": "auth_expired", "status": 401, "retryable": true },
+    { "code": "auth_too_long_lived", "status": 401, "retryable": false },
+    { "code": "auth_invalid_signature", "status": 401, "retryable": false },
+    { "code": "auth_unknown_signer", "status": 401, "retryable": false },
+    { "code": "auth_body_mismatch", "status": 401, "retryable": false },
+    { "code": "not_found", "status": 404, "retryable": false },
+    { "code": "unknown_prf", "status": 404, "retryable": false },
+    { "code": "method_not_allowed", "status": 405, "retryable": false },
+    { "code": "concurrency_limited", "status": 429, "retryable": true },
+    { "code": "prf_evaluation_failed", "status": 500, "retryable": false },
+    { "code": "upstream_transient", "status": 502, "retryable": true },
+    { "code": "unavailable", "status": 503, "retryable": true },
+    { "code": "timeout", "status": 504, "retryable": true }
+  ]
+}

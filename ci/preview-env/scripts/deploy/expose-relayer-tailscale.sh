@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# Publish the relayer HTTP API on the zws-dev tailnet (Tailscale IngressClass).
-# Only port 3000 is a backend: metrics 9898 and enable_admin_endpoint stay
-# ClusterIP-only. The hostname is relayer-<namespace> so two previews cannot
-# collide. Deleting the namespace deletes the Ingress and the operator drops
-# the MagicDNS name.
+# Publish a relayer HTTP API on the zws-dev tailnet (Tailscale IngressClass).
+# Usage: expose-relayer-tailscale.sh [service] [port] [url-var]
+#   defaults: relayer 3000 RELAYER_TS_URL; relayer-http uses
+#   relayer-http 3002 RELAYER_HTTP_TS_URL.
+# Only that port is a backend: the relayer's metrics 9898 and
+# enable_admin_endpoint stay ClusterIP-only. The hostname is
+# <service>-<namespace> so two previews cannot collide. Deleting the namespace
+# deletes the Ingress and the operator drops the MagicDNS name.
 # Env: NAMESPACE. Optional TAILSCALE_HOSTNAME (used only as a fallback suffix).
 set -euo pipefail
 
 : "${NAMESPACE:?}"
+service="${1:-relayer}"
+port="${2:-3000}"
+url_var="${3:-RELAYER_TS_URL}"
 
-host="relayer-${NAMESPACE}"
+host="${service}-${NAMESPACE}"
 # tailscale-operator-zws-dev.diplodocus-boa.ts.net -> diplodocus-boa.ts.net
 tailnet="${TAILSCALE_HOSTNAME#*.}"
 tailnet="${tailnet:-diplodocus-boa.ts.net}"
@@ -18,9 +24,9 @@ kubectl apply -n "${NAMESPACE}" -f - <<EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: relayer
+  name: ${service}
   labels:
-    app.kubernetes.io/name: relayer
+    app.kubernetes.io/name: ${service}
     app.kubernetes.io/component: tailscale-ingress
   annotations:
     # Same tag gitops uses for other zws-dev Tailscale Services, so existing
@@ -39,15 +45,15 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: relayer
+                name: ${service}
                 port:
-                  number: 3000
+                  number: ${port}
 EOF
 
 echo "Waiting for Tailscale Ingress ${host} to get a MagicDNS hostname..."
 reported=""
 for _ in $(seq 1 36); do
-  reported=$(kubectl get ingress relayer -n "${NAMESPACE}" \
+  reported=$(kubectl get ingress "${service}" -n "${NAMESPACE}" \
     -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
   if [[ -n "${reported}" ]]; then
     break
@@ -56,7 +62,7 @@ for _ in $(seq 1 36); do
 done
 
 if [[ -z "${reported}" ]]; then
-  echo "::warning::Ingress/relayer has no hostname after 3m; publishing the expected MagicDNS name anyway"
+  echo "::warning::Ingress/${service} has no hostname after 3m; publishing the expected MagicDNS name anyway"
   reported="${host}.${tailnet}"
 fi
 
@@ -65,7 +71,7 @@ if [[ "${reported}" != *.* ]]; then
   reported="${reported}.${tailnet}"
 fi
 url="https://${reported}"
-echo "Relayer Tailscale URL: ${url}"
+echo "${service} Tailscale URL: ${url}"
 if [[ -n "${GITHUB_ENV:-}" ]]; then
-  echo "RELAYER_TS_URL=${url}" >> "${GITHUB_ENV}"
+  echo "${url_var}=${url}" >> "${GITHUB_ENV}"
 fi

@@ -8,7 +8,6 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LIB="ethers,viem"
 SKIP_START=false
 CHAIN="localstack"
-VALID_CHAINS=(localstack localstack_v14)
 
 usage() {
     cat <<EOF
@@ -20,31 +19,9 @@ Options:
   --ethlib ethers          Run only the ethers test suite.
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
-  --chain, -c <name>       Chain forwarded to localstack-restart.sh and used as
-                           the CHAIN env var when invoking vitest. One of:
-                           ${VALID_CHAINS[*]}.
-                           Default: ${CHAIN}.
   --skip-start             Skip localstack-restart.sh before and localstack-stop.sh after running tests.
   --help                   Print this help message and exit.
 EOF
-}
-
-is_valid_chain() {
-    local candidate="$1"
-    local c
-    for c in "${VALID_CHAINS[@]}"; do
-        if [[ "$c" == "$candidate" ]]; then
-            return 0
-        fi
-    done
-    return 1
-}
-
-require_arg_value() {
-    if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
-        echo "Error: ${1} requires a value." >&2
-        exit 1
-    fi
 }
 
 format_duration() {
@@ -73,11 +50,6 @@ while [[ $# -gt 0 ]]; do
             LIB="${1#--ethlib=}"
             shift
             ;;
-        --chain|-c)
-            require_arg_value "$1" "${2:-}"
-            CHAIN="$2"
-            shift 2
-            ;;
         --skip-start)
             SKIP_START=true
             shift
@@ -92,11 +64,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-if ! is_valid_chain "$CHAIN"; then
-    echo "Error: invalid --chain '$CHAIN'. Expected one of: ${VALID_CHAINS[*]}." >&2
-    exit 1
-fi
 
 RUN_ETHERS=0
 RUN_VIEM=0
@@ -119,7 +86,7 @@ STOP_DURATION=0
 
 SETUP_START=$SECONDS
 if [ "$SKIP_START" = false ]; then
-  "$SCRIPT_DIR/localstack-restart.sh" --chain "$CHAIN" --force
+  "$SCRIPT_DIR/localstack-restart.sh" --force
 fi
 SETUP_DURATION=$(( SECONDS - SETUP_START ))
 

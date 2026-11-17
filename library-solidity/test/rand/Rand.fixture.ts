@@ -1,7 +1,6 @@
-import { ethers } from 'hardhat';
-
-import type { Rand } from '../../typechain-types';
-import { getSigners } from '../signers';
+import type { Rand } from '../../typechain-types/index.js';
+import { ethers } from '../hardhat.js';
+import { getSigners } from '../signers.js';
 
 export async function deployRandFixture(): Promise<Rand> {
   const signers = await getSigners();
@@ -10,5 +9,5 @@ export async function deployRandFixture(): Promise<Rand> {
   const contract = await contractFactory.connect(signers.alice).deploy();
   await contract.waitForDeployment();
 
-  return contract as unknown as Rand;
+  return contract;
 }

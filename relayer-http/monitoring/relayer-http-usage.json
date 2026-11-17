@@ -1,0 +1,180 @@
+{
+  "title": "relayer-http client stats",
+  "uid": "relayer-http-usage",
+  "description": "How clients use the relayer, counted from the summary lines over the selected range: volume per flow, users, contracts, repeats of one request and what made clients retry (monitoring/design.md, Usage and Dashboards).",
+  "tags": ["relayer-http"],
+  "links": [],
+  "templating": {
+    "list": [
+      {"name": "loki", "label": "Loki", "type": "datasource", "query": "loki", "current": {}, "hide": 0},
+      {"name": "app", "label": "Loki app", "type": "textbox", "query": "relayer-http", "current": {"text": "relayer-http", "value": "relayer-http"}, "hide": 0},
+      {
+        "name": "instance", "label": "Instance", "type": "query",
+        "datasource": {"type": "loki", "uid": "${loki}"},
+        "query": {"label": "instance", "stream": "{app=\"$app\"}", "type": 1, "refId": "LokiVariableQueryEditor-VariableQuery"},
+        "definition": "label_values({app=\"$app\"},instance)",
+        "includeAll": true, "multi": true, "allValue": ".*", "current": {"text": "All", "value": "$__all"}, "refresh": 2, "sort": 1
+      },
+      {
+        "name": "flow", "label": "Flow (repeats)", "type": "custom",
+        "description": "Filters the Repeats and retries row only; the other panels name their flow.",
+        "query": "user_decrypt,public_decrypt,none",
+        "includeAll": true, "multi": true, "allValue": ".*", "current": {"text": "All", "value": "$__all"}, "hide": 0
+      }
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "refresh": "",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "text", "id": 1, "title": "", "transparent": true,
+      "gridPos": {"h": 2, "w": 24, "x": 0, "y": 0},
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"display:flex;gap:8px;align-items:center\"><a href=\"/d/relayer-http?${__url_time_range}&${app:queryparam}&${instance:queryparam}\" style=\"padding:4px 16px;border-radius:4px;border:1px solid #6e7681;text-decoration:none\">Operator</a><a href=\"/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}\" style=\"padding:4px 16px;border-radius:4px;border:1px solid #6e7681;text-decoration:none\">Lookup</a><a href=\"/d/relayer-http-usage?${__url_time_range}&${app:queryparam}&${instance:queryparam}\" style=\"padding:4px 16px;border-radius:4px;background-color:#3d71d9;color:#ffffff;font-weight:600;text-decoration:none\">Client stats</a></div>"
+      }
+    },
+    {"type": "row", "id": 100, "title": "Summary (selected range)", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 2}},
+    {
+      "type": "stat", "id": 101, "title": "Requests by flow",
+      "description": "Requests answered in the range, by flow; `none` is a request answered before its flow was known.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 5, "x": 0, "y": 3},
+      "targets": [{"expr": "sum by (fields_flow) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" [$__range]))", "legendFormat": "{{fields_flow}}", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}}}, {"id": "rowsToFields", "options": {"mappings": [{"fieldName": "fields_flow", "handlerKey": "field.name"}, {"fieldName": "Value #A", "handlerKey": "field.value"}]}}],
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "0", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "orientation": "horizontal", "text": {"titleSize": 13, "valueSize": 18}}
+    },
+    {
+      "type": "stat", "id": 102, "title": "Succeeded: public decrypt",
+      "description": "Share of the public decrypt requests in the range that succeeded (2xx), every outcome counted.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 4, "x": 5, "y": 3},
+      "targets": [{"expr": "sum(count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow = \"public_decrypt\" | fields_outcome = \"succeeded\" [$__range])) / sum(count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow = \"public_decrypt\" [$__range]))", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "fieldConfig": {"defaults": {"decimals": 1, "noValue": "-", "unit": "percentunit"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 103, "title": "Succeeded: user decrypt",
+      "description": "Share of the user decrypt requests in the range that succeeded (2xx), every outcome counted.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 4, "x": 9, "y": 3},
+      "targets": [{"expr": "sum(count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow = \"user_decrypt\" | fields_outcome = \"succeeded\" [$__range])) / sum(count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow = \"user_decrypt\" [$__range]))", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "fieldConfig": {"defaults": {"decimals": 1, "noValue": "-", "unit": "percentunit"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 104, "title": "Distinct users",
+      "description": "Distinct user addresses of the user decrypt requests in the range.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 4, "x": 13, "y": 3},
+      "targets": [{"expr": "count(sum by (fields_user_address) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow = \"user_decrypt\" | fields_user_address != \"none\" [$__range])))", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "fieldConfig": {"defaults": {"noValue": "0"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 105, "title": "Distinct contract sets",
+      "description": "Distinct values of contract_addresses of the user decrypt requests in the range: one comma-separated set per request, so a request on two contracts counts as their pair.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 3, "x": 17, "y": 3},
+      "targets": [{"expr": "count(sum by (fields_contract_addresses) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow = \"user_decrypt\" | fields_contract_addresses != \"none\" [$__range])))", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "fieldConfig": {"defaults": {"noValue": "0"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 106, "title": "Requests sent more than once",
+      "description": "decryption_ids seen in more than one request in the range, both flows: the same request content sent again (client retries, or several clients).",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 3},
+      "targets": [{"expr": "count(sum by (fields_decryption_id) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_decryption_id != \"none\" [$__range])) > 1)", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "fieldConfig": {"defaults": {"noValue": "0"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {"type": "row", "id": 200, "title": "Who uses it (user decrypt)", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7}},
+    {
+      "type": "table", "id": 201, "title": "Top contracts",
+      "description": "The 20 contract sets with the most user decrypt requests in the range. Click one to list its requests in the lookup.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "topk(20, sum by (contract_addresses) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow = \"user_decrypt\" | fields_contract_addresses != \"none\" | label_format contract_addresses=fields_contract_addresses [$__range])))", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [
+        {"id": "labelsToFields", "options": {"mode": "columns"}},
+        {"id": "merge", "options": {}},
+        {"id": "organize", "options": {"excludeByName": {"Time": true}, "renameByName": {"Value #A": "requests"}}},
+        {"id": "sortBy", "options": {"sort": [{"field": "requests", "desc": true}]}}
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "requests"}, "properties": [{"id": "custom.width", "value": 90}]},
+          {"matcher": {"id": "byName", "options": "contract_addresses"}, "properties": [{"id": "links", "value": [{"title": "Requests on this contract set", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&var-search=${__value.raw}"}]}]}
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"}
+    },
+    {
+      "type": "table", "id": 202, "title": "Top users",
+      "description": "The 20 user addresses with the most user decrypt requests in the range. Click one to list its requests in the lookup.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "topk(20, sum by (user_address) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow = \"user_decrypt\" | fields_user_address != \"none\" | label_format user_address=fields_user_address [$__range])))", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [
+        {"id": "labelsToFields", "options": {"mode": "columns"}},
+        {"id": "merge", "options": {}},
+        {"id": "organize", "options": {"excludeByName": {"Time": true}, "renameByName": {"Value #A": "requests"}}},
+        {"id": "sortBy", "options": {"sort": [{"field": "requests", "desc": true}]}}
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "requests"}, "properties": [{"id": "custom.width", "value": 90}]},
+          {"matcher": {"id": "byName", "options": "user_address"}, "properties": [{"id": "links", "value": [{"title": "Requests of this user", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&var-search=${__value.raw}"}]}]}
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"}
+    },
+    {
+      "type": "timeseries", "id": 203, "title": "Requests of the top contracts",
+      "description": "User decrypt requests per interval of the 5 busiest contract sets at each point.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
+      "targets": [{"expr": "topk(5, sum by (contract_addresses) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow = \"user_decrypt\" | fields_contract_addresses != \"none\" | label_format contract_addresses=fields_contract_addresses [$__interval])))", "legendFormat": "{{contract_addresses}}", "queryType": "range", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "bars", "stacking": {"mode": "normal"}}}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {"type": "row", "id": 300, "title": "Repeats and retries", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26}},
+    {
+      "type": "table", "id": 301, "title": "Requests sent more than once, by outcome",
+      "description": "Each decryption_id seen in more than one request in the range, with how many of its tries ended in each outcome; follows the Flow (repeats) box. Click one to see every try in the lookup.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 12, "w": 16, "x": 0, "y": 27},
+      "targets": [{"expr": "sum by (decryption_id, outcome) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow =~ \"$flow\" | fields_decryption_id != \"none\" | label_format decryption_id=fields_decryption_id, outcome=fields_outcome [$__range])) and on (decryption_id) (sum by (decryption_id) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow =~ \"$flow\" | fields_decryption_id != \"none\" | label_format decryption_id=fields_decryption_id [$__range])) > 1)", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [
+        {"id": "labelsToFields", "options": {"mode": "columns"}},
+        {"id": "merge", "options": {}},
+        {"id": "groupingToMatrix", "options": {"columnField": "outcome", "rowField": "decryption_id", "valueField": "Value #A", "emptyValue": "zero"}},
+        {"id": "calculateField", "options": {"mode": "reduceRow", "reduce": {"reducer": "sum"}, "alias": "tries"}},
+        {"id": "sortBy", "options": {"sort": [{"field": "tries", "desc": true}]}}
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {"matcher": {"id": "byType", "options": "number"}, "properties": [{"id": "custom.width", "value": 90}]},
+          {"matcher": {"id": "byType", "options": "string"}, "properties": [{"id": "displayName", "value": "decryption_id"}, {"id": "links", "value": [{"title": "Every try of this request", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&var-search=${__value.raw}"}]}]}
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"}
+    },
+    {
+      "type": "bargauge", "id": 302, "title": "Codes of requests sent more than once",
+      "description": "The answer codes of every try of a decryption_id seen more than once, following the Flow (repeats) box: what made clients send the request again (a transient code), and how the repeats ended.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 12, "w": 8, "x": 16, "y": 27},
+      "targets": [{"expr": "sum by (code) (sum by (decryption_id, code) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow =~ \"$flow\" | fields_decryption_id != \"none\" | label_format decryption_id=fields_decryption_id, code=fields_code [$__range])) and on (decryption_id) (sum by (decryption_id) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_flow =~ \"$flow\" | fields_decryption_id != \"none\" | label_format decryption_id=fields_decryption_id [$__range])) > 1))", "legendFormat": "{{code}}", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}}}, {"id": "rowsToFields", "options": {"mappings": [{"fieldName": "code", "handlerKey": "field.name"}, {"fieldName": "Value #A", "handlerKey": "field.value"}]}}],
+      "fieldConfig": {"defaults": {"noValue": "0", "decimals": 0, "color": {"mode": "fixed", "fixedColor": "blue"}}, "overrides": []},
+      "options": {"orientation": "horizontal", "displayMode": "basic", "namePlacement": "left", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    }
+  ]
+}

@@ -308,6 +308,12 @@ additionalResources:
                     configMapKeyRef:
                       name: host-sc-addresses
                       key: protocol_config.address
+                # The SDK checks the FHE key and CRS against KMSGeneration.
+                - name: KMS_GENERATION_CONTRACT_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: host-sc-addresses
+                      key: kms_generation.address
                 # See values-test-suite-workflow-e2e.yaml for the full rationale: account
                 # #9 deploys/keygen's and STAYS the ACL owner (no ownership transfer), so
                 # this.deployer (#9) == ACL.owner() (#9) and every HCU block-cap subtest

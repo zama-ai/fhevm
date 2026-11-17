@@ -1,5 +1,6 @@
 {
   "name": "@fhevm/e2e-suite",
+  "private": true,
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.2",
     "@nomicfoundation/hardhat-ethers": "^3.1.3",

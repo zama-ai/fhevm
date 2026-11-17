@@ -1,10 +1,38 @@
 import { assert, expect } from 'chai';
-import hre from 'hardhat';
+import type { ContractTransactionResponse } from 'ethers';
 
-import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleEuint } from '../utils';
-import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
+import type { EncryptedERC20 } from '../../typechain-types/index.js';
+import { chainId as networkChainId, ethers } from '../hardhat.js';
+
+import { createInstances } from '../instance.js';
+import { type Signers, getSigners, initSigners } from '../signers.js';
+import { userDecryptSingleEuint } from '../utils.js';
+import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture.js';
+
+type Signer = Signers['alice'];
+
+const HANDLE_OPERATIONS = ['transfer', 'approve', 'transferFrom'] as const;
+type HandleOperation = (typeof HANDLE_OPERATIONS)[number];
+
+// Calls `operation` with an existing ciphertext handle (the bytes32 overloads, no input proof).
+function callWithHandle(
+  erc20: EncryptedERC20,
+  caller: Signer,
+  operation: HandleOperation,
+  from: Signer,
+  to: Signer,
+  amount: string,
+): Promise<ContractTransactionResponse> {
+  const contract = erc20.connect(caller);
+  switch (operation) {
+    case 'transfer':
+      return contract['transfer(address,bytes32)'](to.address, amount);
+    case 'approve':
+      return contract['approve(address,bytes32)'](to.address, amount);
+    case 'transferFrom':
+      return contract['transferFrom(address,address,bytes32)'](from.address, to.address, amount);
+  }
+}
 
 describe('EncryptedERC20', function () {
   before(async function () {
@@ -30,8 +58,8 @@ describe('EncryptedERC20', function () {
     // Byte 21 was set to 0xff.
     expect(balanceHandleAlice.slice(44, 46)).to.eq('ff');
     // Bytes 22-29 must be the chainId
-    const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
-    assert(chainId, 'Host chainId not set');
+    const chainId = networkChainId;
+    assert(chainId !== undefined, 'Host chainId not set');
     expect(balanceHandleAlice.slice(46, 62)).to.eq(chainId.toString(16).padStart(16, '0'));
     // Byte30: type is euint64 (so position 5 in the FheType enum)
     expect(balanceHandleAlice.slice(62, 64)).to.eq('05');
@@ -55,34 +83,25 @@ describe('EncryptedERC20', function () {
     expect(totalSupply).to.equal(1000n);
   });
 
-  for (const operation of ['transfer', 'approve', 'transferFrom']) {
-    const funcSig =
-      operation === 'transferFrom' ? 'transferFrom(address,address,bytes32)' : `${operation}(address,bytes32)`;
-
+  for (const operation of HANDLE_OPERATIONS) {
     it(`should reject ${operation} with a handle the caller cannot access`, async function () {
       await (await this.erc20.mint(1000)).wait();
       const amount = await this.erc20.balanceOf(this.signers.alice.address);
-      const args =
-        operation === 'transferFrom'
-          ? [this.signers.alice.address, this.signers.bob.address, amount]
-          : [this.signers.bob.address, amount];
 
-      await expect(this.erc20.connect(this.signers.bob).getFunction(funcSig)(...args)).to.be.reverted;
+      await expect(
+        callWithHandle(this.erc20, this.signers.bob, operation, this.signers.alice, this.signers.bob, amount),
+      ).to.be.revert(ethers);
     });
 
     it(`should allow ${operation} with a handle the caller can access`, async function () {
       await (await this.erc20.mint(1000)).wait();
       const amount = await this.erc20.balanceOf(this.signers.alice.address);
-      const args =
-        operation === 'transferFrom'
-          ? [this.signers.alice.address, this.signers.bob.address, amount]
-          : [this.signers.bob.address, amount];
 
       if (operation === 'transferFrom') {
         await (await this.erc20['approve(address,bytes32)'](this.signers.bob.address, amount)).wait();
       }
       const caller = operation === 'transferFrom' ? this.signers.bob : this.signers.alice;
-      await expect(this.erc20.connect(caller).getFunction(funcSig)(...args))
+      await expect(callWithHandle(this.erc20, caller, operation, this.signers.alice, this.signers.bob, amount))
         .to.emit(this.erc20, operation === 'approve' ? 'Approval' : 'Transfer')
         .withArgs(this.signers.alice.address, this.signers.bob.address);
     });

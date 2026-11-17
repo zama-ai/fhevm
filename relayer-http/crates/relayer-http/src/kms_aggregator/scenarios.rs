@@ -1,26 +1,28 @@
 //! Runs every `scenarios/*.yaml` file against the aggregator with the mock connector, under paused tokio time.
 //! Adding a scenario = adding a file; `cargo test yaml_scenarios` runs them all and lists every failure.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::Duration;
 
 use kms_connector_api::{ErrorCode, PublicDecryptionRequest, UserDecryptionRequest};
 use serde::Deserialize;
 use tokio::time::Instant;
-use tokio_util::sync::CancellationToken;
 
-use super::aggregator::{AggregationError, Aggregator};
+use super::aggregator::{AggregationError, Aggregator, Tally};
 use super::config::UserChecks;
 use super::flows::Flow;
 use super::flows::public_decrypt::PublicDecrypt;
 use super::flows::user_decrypt::UserDecrypt;
 use super::mock::{MockClient, PUBLIC_REQUEST_JSON, Reply, USER_REQUEST_JSON};
+use crate::metrics::Metrics;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Scenario {
-    flow: FlowName,
+    flow: ScenarioFlow,
     threshold: usize,
     #[serde(with = "humantime_serde")]
     timeout: Duration,
@@ -42,7 +44,7 @@ fn default_delay() -> Duration {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum FlowName {
+enum ScenarioFlow {
     UserDecrypt,
     PublicDecrypt,
 }
@@ -70,6 +72,18 @@ struct Expect {
     attempts: Option<u32>,
     /// Shares (user decrypt) or signatures (public decrypt) in the answer.
     responses: Option<usize>,
+    /// What the per-node metrics recorded, summed over the nodes.
+    metrics: Option<ExpectMetrics>,
+}
+
+/// `answered`: observations of `relayer_http_kms_attempt_duration_seconds` (attempts that got an answer or were
+/// cut). `errors`: `relayer_http_kms_attempt_errors_total` per `code`; a code left out must be zero.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExpectMetrics {
+    answered: u64,
+    #[serde(default)]
+    errors: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -88,6 +102,12 @@ struct Observed {
     dominant: Option<ErrorCode>,
     attempts: u32,
     responses: Option<usize>,
+    /// Attempts that got an answer or were cut, from the metrics.
+    answered: u64,
+    /// Failed attempts per code, from the metrics.
+    errors: BTreeMap<String, u64>,
+    /// Label values outside their enumerated set, and broken metric invariants.
+    metric_errors: Vec<String>,
 }
 
 fn load(path: &Path) -> Result<Scenario, String> {
@@ -111,43 +131,106 @@ async fn run<F: Flow>(
         .collect();
     let mock = MockClient::new(scripts.clone(), scenario.delay);
     let caller = mock.clone().caller(scenario.timeout, scenario.max_retries);
-    let aggregator =
-        Aggregator::<F>::new(caller, scenario.threshold, checks, CancellationToken::new());
+    let metrics = caller.metrics().clone();
+    let aggregator = Aggregator::<F>::new(caller, scenario.threshold, checks);
     let started = Instant::now();
-    let result = aggregator.run("scenario", request).await;
+    let result = aggregator
+        .run("scenario", request, &mut Tally::default())
+        .await;
     let elapsed = started.elapsed();
     let attempts = (0..scripts.len()).map(|n| mock.attempts(n)).sum();
+    let (answered, errors, metric_errors) =
+        node_metrics(&metrics, F::NAME.as_str(), scripts.len(), attempts);
+    let observed = |outcome, counted, dominant, responses| Observed {
+        outcome,
+        counted,
+        elapsed,
+        dominant,
+        attempts,
+        responses,
+        answered,
+        errors: errors.clone(),
+        metric_errors: metric_errors.clone(),
+    };
     match result {
-        Ok(output) => Observed {
-            outcome: Outcome::Ok,
-            counted: responses(&output),
-            elapsed,
-            dominant: None,
-            attempts,
-            responses: Some(responses(&output)),
-        },
+        Ok(output) => observed(
+            Outcome::Ok,
+            responses(&output),
+            None,
+            Some(responses(&output)),
+        ),
         Err(AggregationError::Timeout {
             counted, dominant, ..
-        }) => Observed {
-            outcome: Outcome::Timeout,
-            counted,
-            elapsed,
-            dominant,
-            attempts,
-            responses: None,
-        },
+        }) => observed(Outcome::Timeout, counted, dominant, None),
         Err(AggregationError::ThresholdNotReached {
             counted, dominant, ..
-        }) => Observed {
-            outcome: Outcome::ThresholdNotReached,
-            counted,
-            elapsed,
-            dominant,
-            attempts,
-            responses: None,
-        },
+        }) => observed(Outcome::ThresholdNotReached, counted, dominant, None),
         Err(other) => panic!("unexpected error: {other}"),
     }
+}
+
+/// Sums the per-node metrics of one run and checks them on every scenario, expectation or not: each label value
+/// is in its set (`OBSERVABILITY.md`, Metrics), every node call is recorded once, every attempt the mock received
+/// is counted once in the attempts per call.
+fn node_metrics(
+    metrics: &Metrics,
+    flow: &str,
+    nodes: usize,
+    received: u32,
+) -> (u64, BTreeMap<String, u64>, Vec<String>) {
+    let (mut answered, mut calls, mut errors_by_code, mut errors) =
+        (0, 0, BTreeMap::new(), Vec::new());
+    let label = |labels: &BTreeMap<String, String>, name: &str| {
+        labels.get(name).cloned().unwrap_or_default()
+    };
+    for ((name, labels), count) in crate::metrics::tests::samples(metrics) {
+        // The alerting counters start at 0 for every flow and node (`Metrics::new`): not part of the run.
+        if count == 0 {
+            continue;
+        }
+        if label(&labels, "flow") != flow {
+            errors.push(format!("{name}: flow {:?}", label(&labels, "flow")));
+        }
+        let node = label(&labels, "kms_node");
+        let known_node = node
+            .strip_prefix("node-")
+            .and_then(|i| i.parse::<usize>().ok())
+            .is_some_and(|i| i < nodes);
+        // The call slot is the pod's and the wait after the threshold the aggregation's, not a node's.
+        let per_node = !matches!(
+            name.as_str(),
+            "relayer_http_kms_call_slot_wait_seconds"
+                | "relayer_http_kms_wait_after_threshold_seconds"
+        );
+        if per_node && !known_node {
+            errors.push(format!("{name}: kms_node {node:?}"));
+        }
+        match name.as_str() {
+            "relayer_http_kms_attempts" => calls += count,
+            "relayer_http_kms_attempt_duration_seconds" => answered += count,
+            "relayer_http_kms_call_slot_wait_seconds" => {}
+            // One run, one wait at most.
+            "relayer_http_kms_wait_after_threshold_seconds" if count == 1 => {}
+            "relayer_http_kms_attempt_errors_total" => {
+                let code = label(&labels, "code");
+                if code != "cancelled" && ErrorCode::from_str(&code).is_err() {
+                    errors.push(format!("{name}: code {code:?}"));
+                }
+                *errors_by_code.entry(code).or_default() += count;
+            }
+            other => errors.push(format!("unexpected metric {other}")),
+        }
+    }
+    if calls != nodes as u64 {
+        errors.push(format!("{calls} node calls recorded for {nodes} nodes"));
+    }
+    let attempts = crate::metrics::tests::histogram_sum(metrics, "relayer_http_kms_attempts");
+    if attempts != f64::from(received) {
+        errors.push(format!(
+            "{attempts} attempts recorded per call, {received} received by the nodes"
+        ));
+    }
+    (answered, errors_by_code, errors)
 }
 
 /// Every mismatch between `expect` and `observed`, one per line.
@@ -194,6 +277,21 @@ fn compare(expect: &Expect, observed: &Observed) -> String {
             .responses
             .map_or("none".to_owned(), |v| v.to_string()),
     );
+    if let Some(metrics) = &expect.metrics {
+        check(
+            "metrics.answered",
+            Some(metrics.answered.to_string()),
+            observed.answered.to_string(),
+        );
+        check(
+            "metrics.errors",
+            Some(format!("{:?}", metrics.errors)),
+            format!("{:?}", observed.errors),
+        );
+    }
+    for error in &observed.metric_errors {
+        let _ = writeln!(report, "  metrics: {error}");
+    }
     report
 }
 
@@ -210,12 +308,12 @@ async fn run_file(path: &Path) -> Result<(), String> {
         );
     }
     let observed = match scenario.flow {
-        FlowName::UserDecrypt => {
+        ScenarioFlow::UserDecrypt => {
             let request: UserDecryptionRequest = serde_json::from_str(USER_REQUEST_JSON).unwrap();
             let checks = scenario.checks.unwrap_or_default();
             run::<UserDecrypt>(&scenario, request, checks, |o| o.result.len()).await
         }
-        FlowName::PublicDecrypt => {
+        ScenarioFlow::PublicDecrypt => {
             if scenario.checks.is_some() {
                 return Err("`checks` applies to user_decrypt only".to_owned());
             }
@@ -288,6 +386,7 @@ fn compare_reports_every_mismatch() {
         dominant: None,
         attempts: Some(13),
         responses: None,
+        metrics: None,
     };
     let observed = Observed {
         outcome: Outcome::Timeout,
@@ -296,6 +395,9 @@ fn compare_reports_every_mismatch() {
         dominant: Some(ErrorCode::AclDenied),
         attempts: 13,
         responses: None,
+        answered: 0,
+        errors: BTreeMap::new(),
+        metric_errors: Vec::new(),
     };
     let report = compare(&expect, &observed);
     assert!(

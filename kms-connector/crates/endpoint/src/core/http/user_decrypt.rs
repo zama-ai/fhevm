@@ -85,7 +85,7 @@ impl DecryptionRoute for UserRoute {
                     extra_data: row.extra_data.into(),
                 }))
             }
-            // Should be unreachable thanks to the `payload_or_error` CHECK constraint.
+            // The database's `payload_or_error` CHECK constraint forbids this state.
             _ => Err(ErrorResponse::new(
                 ErrorCode::Unknown,
                 "inconsistent response row",

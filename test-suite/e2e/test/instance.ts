@@ -1,4 +1,5 @@
-import { mainnet, sepolia } from '@fhevm/sdk/chains';
+import { defineFhevmChain, mainnet, sepolia } from '@fhevm/sdk/chains';
+import { JsonRpcProvider } from 'ethers';
 import { network } from 'hardhat';
 import { vars } from 'hardhat/config';
 
@@ -86,11 +87,49 @@ if (!relayerUrl) throw new Error('RELAYER_URL is required');
 
 // API key is a secret - support hardhat vars for secure storage
 // Auth is optional since internal smoke tests don't go through Kong
-const apiKey = process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '');
+// Trimmed: a Secret created with a trailing newline would otherwise be rejected as a header value.
+const apiKey = (process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '')).trim();
 const auth = apiKey ? { __type: 'ApiKeyHeader' as const, value: apiKey } : undefined;
 
 // Host-chain KMSGeneration: the SDK reads FHE key / CRS digests from it.
 const kmsGenerationAddress = requireKmsGenerationAddress(defaults?.kmsGenerationAddress);
+
+type KeyVerification = NonNullable<Parameters<typeof FhevmSdk.create>[0]['keyVerification']>;
+
+/**
+ * KMSGeneration lives on the canonical host only. When this run targets another
+ * host chain, the fhevm CLI sets KEY_VERIFICATION_* to the canonical chain's
+ * values, and the FHE key / CRS digests are read through that chain instead of
+ * the host under test. Unset on the canonical host: it reads KMSGeneration directly.
+ */
+const keyVerification: KeyVerification | undefined = (() => {
+  const rpcUrl = process.env.KEY_VERIFICATION_RPC_URL;
+  if (!rpcUrl) return undefined;
+  const address = (name: string) => requireEnv(process.env[name], name) as `0x${string}`;
+  return {
+    chain: defineFhevmChain({
+      id: Number(requireEnv(process.env.KEY_VERIFICATION_CHAIN_ID, 'KEY_VERIFICATION_CHAIN_ID')),
+      fhevm: {
+        contracts: {
+          acl: { address: address('KEY_VERIFICATION_ACL_CONTRACT_ADDRESS') },
+          inputVerifier: { address: address('KEY_VERIFICATION_INPUT_VERIFIER_CONTRACT_ADDRESS') },
+          kmsVerifier: { address: address('KEY_VERIFICATION_KMS_VERIFIER_CONTRACT_ADDRESS') },
+          protocolConfig: { address: address('KEY_VERIFICATION_PROTOCOL_CONFIG_CONTRACT_ADDRESS') },
+          kmsGeneration: { address: kmsGenerationAddress as `0x${string}` },
+        },
+        relayerUrl,
+        gateway: {
+          id: gatewayChainID,
+          contracts: {
+            decryption: { address: verifyingContractAddressDecryption as `0x${string}` },
+            inputVerification: { address: verifyingContractAddressInputVerification as `0x${string}` },
+          },
+        },
+      },
+    }),
+    client: new JsonRpcProvider(rpcUrl) as unknown as KeyVerification['client'],
+  };
+})();
 
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
   const instances: FhevmInstances = {} as FhevmInstances;
@@ -110,7 +149,7 @@ export const createInstance = async (overrides: { readonly fheEncryptionKey?: Fh
     inputVerifierContractAddress: inputAdd,
     aclContractAddress: aclAddress,
     ...(protocolConfigAddress ? { protocolConfigAddress } : {}),
-    kmsGenerationAddress,
+    ...(keyVerification ? { keyVerification } : { kmsGenerationAddress }),
     rpcUrl: (network.config as { url: string }).url,
     relayerUrl,
     gatewayChainId: gatewayChainID,

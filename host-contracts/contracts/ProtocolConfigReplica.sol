@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
 import {IProtocolConfigReplica} from "./interfaces/IProtocolConfigReplica.sol";
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
-import {KmsThresholds, KmsNodeParams, PcrValues} from "./shared/Structs.sol";
+import {KmsThresholds, KmsNode} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
@@ -48,7 +48,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
      *      Later canonical updates use `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch`.
      * @param canonicalContextId The active Ethereum KMS context ID to preserve.
      * @param canonicalEpochId The active Ethereum epoch ID to preserve.
-     * @param canonicalKmsNodeParams The active Ethereum KMS node set, including MPC metadata.
+     * @param canonicalNodes The active Ethereum KMS node set.
      * @param canonicalThresholds The active Ethereum thresholds.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
@@ -56,7 +56,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
     function initializeFromCanonical(
         uint256 canonicalContextId,
         uint256 canonicalEpochId,
-        KmsNodeParams[] calldata canonicalKmsNodeParams,
+        KmsNode[] calldata canonicalNodes,
         KmsThresholds calldata canonicalThresholds
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         if (canonicalContextId < KMS_CONTEXT_COUNTER_BASE + 1) {
@@ -66,12 +66,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
             revert InvalidKmsEpoch(canonicalEpochId);
         }
 
-        _storeAndActivateKmsContextAndEpoch(
-            canonicalContextId,
-            canonicalEpochId,
-            canonicalKmsNodeParams,
-            canonicalThresholds
-        );
+        _storeAndActivateKmsContextAndEpoch(canonicalContextId, canonicalEpochId, canonicalNodes, canonicalThresholds);
     }
 
     /**
@@ -90,10 +85,8 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
     function mirrorKmsContextAndEpoch(
         uint256 contextId,
         uint256 epochId,
-        KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds,
-        string calldata softwareVersion,
-        PcrValues[] calldata pcrValues
+        KmsNode[] calldata nodes,
+        KmsThresholds calldata thresholds
     ) external virtual onlyACLOwner {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 latestActiveKmsContextId = $.latestActiveKmsContextId;
@@ -105,8 +98,14 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
             revert NonIncreasingEpochId(epochId, currentEpochId);
         }
 
-        _storeAndActivateKmsContextAndEpoch(contextId, epochId, kmsNodeParams, thresholds);
-        emit MirrorKmsContextAndEpoch(contextId, epochId, kmsNodeParams, thresholds, softwareVersion, pcrValues);
+        // A canonical proxy upgraded in place can hold a Pending context above the active one.
+        uint256 currentKmsContextId = $.currentKmsContextId;
+        if (contextId <= currentKmsContextId) {
+            revert NonIncreasingKmsContextId(contextId, currentKmsContextId);
+        }
+
+        _storeAndActivateKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
+        emit MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
     }
 
     /// @inheritdoc IProtocolConfigReplica
@@ -121,7 +120,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
         }
 
         $.epochCounter = epochId;
-        _activateEpoch(epochId, contextId);
+        _activateKmsContextAndEpoch(contextId, epochId);
         emit MirrorKmsEpoch(contextId, epochId);
     }
 

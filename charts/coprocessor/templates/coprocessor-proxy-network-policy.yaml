@@ -6,6 +6,19 @@
 {{- if not $policy.ports }}
 {{- fail "coprocessorProxy.prfServiceNetworkPolicy.ports must list the prf-service pod ports" }}
 {{- end }}
+{{- /* With prf-service in this release, the policy must admit its PRF port. */}}
+{{- if .Values.prfService.enabled }}
+{{- $http := toString (int .Values.prfService.ports.http) }}
+{{- $admitted := false }}
+{{- range $policy.ports }}
+{{- if has (toString .port) (list $http "http") }}
+{{- $admitted = true }}
+{{- end }}
+{{- end }}
+{{- if not $admitted }}
+{{- fail (printf "coprocessorProxy.prfServiceNetworkPolicy.ports must include prfService.ports.http (%s)" $http) }}
+{{- end }}
+{{- end }}
 {{- range $policy.extraIngress }}
 {{- if not .from }}
 {{- fail "coprocessorProxy.prfServiceNetworkPolicy.extraIngress rules must set `from`: a rule without it admits every source" }}

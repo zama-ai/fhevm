@@ -1,0 +1,84 @@
+# Prometheus alert rules of relayer-http (OBSERVABILITY.md, Alerts and dashboards).
+# Imported by hand. Tested by alerts_test.yaml (`make -C relayer-http/dev check-alerts`); every metric and label named
+# here is checked against the code by `cargo nextest run`.
+# The thresholds are first guesses, not validated against production traffic: tune them with it.
+groups:
+  - name: relayer-http
+    rules:
+      - alert: RelayerHttpServerErrors
+        expr: |
+          sum(rate(relayer_http_requests_total{outcome="failed"}[5m]))
+            / sum(rate(relayer_http_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "relayer-http answers more than 5% of its requests with a server error"
+          description: "{{ $value | humanizePercentage }} of the requests of the last 5 minutes failed (5xx)."
+          runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpservererrors"
+
+      - alert: RelayerHttpSlowRequests
+        # 4 s is 0.8 x the default kms_aggregator.call.timeout (5 s): requests are about to hit the deadline.
+        # Not the 4xx the client caused, nor the requests it abandoned, nor the router fallbacks (flow `none`): they
+        # are fast, and would mask slow requests. Failures stay: a timeout is a slow failure.
+        expr: |
+          histogram_quantile(0.95, sum by (flow, le) (rate(relayer_http_request_duration_seconds_bucket{flow!="none", outcome!~"rejected|cancelled"}[5m]))) > 4
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "relayer-http {{ $labels.flow }} requests are close to the call deadline"
+          description: "The 95th percentile of {{ $labels.flow }} requests is {{ $value | humanizeDuration }}, above 0.8 x the call timeout (5 s by default)."
+          runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpslowrequests"
+
+      - alert: RelayerHttpKmsNodeFailing
+        # Only the codes that mean the node, or the path to it, is unhealthy: not the client-caused connector codes,
+        # not `cancelled` (the relayer cut the attempt), not `panic` (the relayer's own task). The list is
+        # `metrics::not_node_health()`, checked by `cargo nextest run`. A hung node shows in the latency instead.
+        expr: |
+          sum by (kms_node) (rate(relayer_http_kms_attempt_errors_total{code!~"malformed|unsupported_attestation_type|acl_denied|user_signature_rejected|user_decryption_expired|ciphertext_not_found|unprocessable|cancelled|panic"}[5m]))
+            / sum by (kms_node) (rate(relayer_http_kms_attempts_sum[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than half of the attempts to KMS node {{ $labels.kms_node }} fail"
+          description: "{{ $value | humanizePercentage }} of the attempts to {{ $labels.kms_node }} failed with an error that blames the node or the path to it (client-caused errors and cut attempts not counted) over the last 5 minutes."
+          runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpkmsnodefailing"
+
+      - alert: RelayerHttpCallSlotWaitHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(relayer_http_kms_call_slot_wait_seconds_bucket[5m]))) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "relayer-http attempts wait for an outbound call slot"
+          description: "The 95th percentile wait for a call slot is {{ $value | humanizeDuration }}. The pod is saturated: scale out."
+          runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpcallslotwaithigh"
+
+      - alert: RelayerHttpInternalErrors
+        # Both counters start at 0 with the process (`Metrics::new`, `announce_nodes`), so a first occurrence is
+        # an increase.
+        expr: |
+          sum(increase(relayer_http_requests_total{code="internal"}[5m]))
+            + sum(increase(relayer_http_kms_attempt_errors_total{code="panic"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "relayer-http hit an internal error"
+          description: "{{ $value | humanize }} internal error(s) in the last 5 minutes: requests that ended with the code internal (an internal error or a panic), or a panic in a KMS node call. A relayer defect, not the KMS nodes or the client."
+          runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpinternalerrors"
+
+      - alert: RelayerHttpSignerFailing
+        # The counter starts at 0 with the process, so a first failure is an increase.
+        expr: |
+          sum(increase(relayer_http_signer_errors_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "relayer-http cannot sign its calls to the KMS nodes"
+          description: "Signing a connector call failed {{ $value | humanize }} time(s) in the last 5 minutes: the signing key is unreachable or refuses, and no request reaches the KMS nodes it affects."
+          runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpsignerfailing"

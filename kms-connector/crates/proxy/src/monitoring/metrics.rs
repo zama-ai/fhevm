@@ -1,5 +1,7 @@
 use connector_utils::monitoring::http::HttpMetrics;
-use kms_connector_api::{PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE};
+use kms_connector_api::{
+    PAD_DECRYPTION_ROUTE, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
+};
 use std::sync::LazyLock;
 
 /// Proxy request counts by route, status, and code, request durations by route, and active
@@ -16,6 +18,7 @@ pub(crate) fn init() {
     for route in [
         PUBLIC_DECRYPTION_ROUTE,
         USER_DECRYPTION_ROUTE,
+        PAD_DECRYPTION_ROUTE,
         VERSION_ROUTE,
     ] {
         HTTP_METRICS

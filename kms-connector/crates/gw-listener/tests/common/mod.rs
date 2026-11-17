@@ -341,6 +341,7 @@ pub async fn poll_db_for_event(
 
 pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Result<()> {
     match event {
+        ProtocolEventKind::PadDecryption(_) => unreachable!("pad decryption has no on-chain event"),
         ProtocolEventKind::PublicDecryption(e) => {
             for r in rows {
                 if e.extraData.to_vec() == r.try_get::<Vec<u8>, _>("extra_data")? {

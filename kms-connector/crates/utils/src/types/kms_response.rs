@@ -2,21 +2,18 @@ use crate::{
     monitoring::otlp::PropagationContext,
     types::{
         KmsGrpcResponse,
-        db::{KeyDigestDbItem, KeyType, OperationStatus, RequestSource},
+        db::{KeyDigestDbItem, OperationStatus, RequestSource},
         request_id_to_u256,
     },
 };
-use alloy::{hex, primitives::U256, sol_types::SolValue};
+use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
-use fhevm_host_bindings::protocol_config::{
-    IKMSGeneration::KeyDigest,
-    IProtocolConfig::{EpochCrsResult, EpochKeyResult},
-};
 use kms_grpc::{
     kms::v1::{
-        CrsGenResult, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
-        KeyGenResult, PublicDecryptionResponse as GrpcPublicDecryptionResponse, SigningSchemeType,
-        TypedSignature, UserDecryptionResponse as GrpcUserDecryptionResponse,
+        CrsGenResult, DestroyMpcContextResponse, DestroyMpcEpochResponse,
+        EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult, KeyGenResult,
+        NewMpcContextResponse, PublicDecryptionResponse as GrpcPublicDecryptionResponse, RequestId,
+        SigningSchemeType, TypedSignature, UserDecryptionResponse as GrpcUserDecryptionResponse,
     },
     rpc_types::abi_encode_plaintexts,
 };
@@ -45,6 +42,8 @@ pub enum KmsResponseKind {
     Crsgen(CrsgenResponse),
     NewKmsContext(NewKmsContextResponse),
     EpochResult(EpochResultResponse),
+    ContextDestruction(ContextDestructionResponse),
+    EpochDestruction(EpochDestructionResponse),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -83,21 +82,43 @@ pub struct CrsgenResponse {
     pub signature: Vec<u8>,
 }
 
+/// Signed `ContextCreationConfirmation` of a new KMS context.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NewKmsContextResponse {
     pub context_id: U256,
+    pub signature: Vec<u8>,
+    pub extra_data: Vec<u8>,
 }
 
-/// Result of an MPC epoch creation.
+/// Signed `ContextDestructionConfirmation` of a destroyed KMS context.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContextDestructionResponse {
+    pub context_id: U256,
+    pub signature: Vec<u8>,
+    pub extra_data: Vec<u8>,
+}
+
+/// Signed `EpochDestructionConfirmation` of a destroyed KMS epoch.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EpochDestructionResponse {
+    pub epoch_id: U256,
+    pub signature: Vec<u8>,
+    pub extra_data: Vec<u8>,
+}
+
+/// Signed `EpochActivationConfirmation` of a new MPC epoch.
 ///
-/// `keys` and `crs_list` are the ABI-encoded `EpochKeyResult[]` / `EpochCrsResult[]` arrays
-/// expected by `confirmEpochActivation`.
+/// `keys` and `crs_list` are the ABI-encoded `EpochKeyResult[]` and `EpochCrsResult[]` arrays
+/// expected by `confirmEpochActivation`, sorted by id. They are read from `KMSGeneration` by the
+/// kms-worker, as the KMS Core does not return them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EpochResultResponse {
     pub context_id: U256,
     pub epoch_id: U256,
     pub keys: Vec<u8>,
     pub crs_list: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub extra_data: Vec<u8>,
 }
 
 impl KmsResponse {
@@ -175,6 +196,16 @@ impl KmsResponse {
                 status as OperationStatus,
                 r.epoch_id.as_le_slice()
             ),
+            KmsResponseKind::ContextDestruction(r) => sqlx::query!(
+                "UPDATE kms_context_destruction_responses SET status = $1 WHERE context_id = $2",
+                status as OperationStatus,
+                r.context_id.as_le_slice()
+            ),
+            KmsResponseKind::EpochDestruction(r) => sqlx::query!(
+                "UPDATE kms_epoch_destruction_responses SET status = $1 WHERE epoch_id = $2",
+                status as OperationStatus,
+                r.epoch_id.as_le_slice()
+            ),
         };
 
         match query.execute(db).await {
@@ -217,21 +248,17 @@ impl KmsResponseKind {
             KmsGrpcResponse::Crsgen(grpc_response) => {
                 CrsgenResponse::process(grpc_response).map(Self::Crsgen)
             }
-            KmsGrpcResponse::NewKmsContext { context_id } => {
-                Ok(Self::NewKmsContext(NewKmsContextResponse { context_id }))
+            KmsGrpcResponse::NewKmsContext(grpc_response) => {
+                NewKmsContextResponse::process(grpc_response).map(Self::NewKmsContext)
             }
-            KmsGrpcResponse::EpochResult {
-                context_id,
-                epoch_id,
-                grpc_response,
-            } => {
-                let (keys, crs_list) = encode_epoch_result(grpc_response)?;
-                Ok(Self::EpochResult(EpochResultResponse {
-                    context_id,
-                    epoch_id,
-                    keys,
-                    crs_list,
-                }))
+            KmsGrpcResponse::EpochResult(grpc_response) => {
+                EpochResultResponse::process(grpc_response).map(Self::EpochResult)
+            }
+            KmsGrpcResponse::ContextDestruction(grpc_response) => {
+                ContextDestructionResponse::process(grpc_response).map(Self::ContextDestruction)
+            }
+            KmsGrpcResponse::EpochDestruction(grpc_response) => {
+                EpochDestructionResponse::process(grpc_response).map(Self::EpochDestruction)
             }
             KmsGrpcResponse::NoResponseExpected => {
                 Err(anyhow!("No response expected from KMS. Nothing to process"))
@@ -253,47 +280,6 @@ fn ecdsa_signature(signatures: Vec<TypedSignature>, legacy: Vec<u8>) -> anyhow::
         None if !legacy.is_empty() => Ok(legacy),
         None => Err(anyhow!("KMS response carries no ECDSA256K1 signature")),
     }
-}
-
-/// Converts the Core's `EpochResultResponse` into the ABI-encoded `(EpochKeyResult[],
-/// EpochCrsResult[])` payload expected by `confirmEpochActivation`.
-fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
-    let (mut keys, mut crs_list) = (vec![], vec![]);
-    for key in response.reshare_responses {
-        let Some(key_id) = key.request_id.map(request_id_to_u256).transpose()? else {
-            return Err(anyhow!("KeyGenResult missing key_id"));
-        };
-        let Some(preproc_id) = key.preprocessing_id.map(request_id_to_u256).transpose()? else {
-            return Err(anyhow!("KeyGenResult missing preprocessing_id"));
-        };
-        let mut key_digests = vec![];
-        for kd in key.key_digests {
-            key_digests.push(KeyDigest {
-                keyType: kd.key_type.parse::<KeyType>()? as u8,
-                digest: kd.digest.into(),
-            });
-        }
-        keys.push(EpochKeyResult {
-            prepKeygenId: preproc_id,
-            keyId: key_id,
-            keyDigests: key_digests,
-            signature: ecdsa_signature(key.signatures, key.external_signature)?.into(),
-        });
-    }
-
-    for crs in response.crs_responses {
-        let Some(crs_id) = crs.request_id.map(request_id_to_u256).transpose()? else {
-            return Err(anyhow!("CrsGenResult missing request_id"));
-        };
-        crs_list.push(EpochCrsResult {
-            crsId: crs_id,
-            maxBitLength: U256::from(crs.max_num_bits),
-            crsDigest: crs.crs_digest.into(),
-            signature: ecdsa_signature(crs.signatures, crs.external_signature)?.into(),
-        });
-    }
-
-    Ok((keys.abi_encode(), crs_list.abi_encode()))
 }
 
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
@@ -367,6 +353,34 @@ pub fn from_new_kms_context_response_row(row: &PgRow) -> anyhow::Result<KmsRespo
         otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::NewKmsContext(NewKmsContextResponse {
             context_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
+            signature: row.try_get("signature")?,
+            extra_data: row.try_get("extra_data")?,
+        }),
+        created_at: row.try_get("created_at")?,
+        source: RequestSource::OnChain,
+    })
+}
+
+pub fn from_context_destruction_response_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    Ok(KmsResponse {
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        kind: KmsResponseKind::ContextDestruction(ContextDestructionResponse {
+            context_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
+            signature: row.try_get("signature")?,
+            extra_data: row.try_get("extra_data")?,
+        }),
+        created_at: row.try_get("created_at")?,
+        source: RequestSource::OnChain,
+    })
+}
+
+pub fn from_epoch_destruction_response_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    Ok(KmsResponse {
+        otlp_context: bc2wrap::deserialize_slice(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        kind: KmsResponseKind::EpochDestruction(EpochDestructionResponse {
+            epoch_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
+            signature: row.try_get("signature")?,
+            extra_data: row.try_get("extra_data")?,
         }),
         created_at: row.try_get("created_at")?,
         source: RequestSource::OnChain,
@@ -381,6 +395,8 @@ pub fn from_epoch_result_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             epoch_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
             keys: row.try_get("keys")?,
             crs_list: row.try_get("crs_list")?,
+            signature: row.try_get("signature")?,
+            extra_data: row.try_get("extra_data")?,
         }),
         created_at: row.try_get("created_at")?,
         source: RequestSource::OnChain,
@@ -516,6 +532,67 @@ impl CrsgenResponse {
     }
 }
 
+impl NewKmsContextResponse {
+    fn process(grpc_response: NewMpcContextResponse) -> anyhow::Result<Self> {
+        let payload = grpc_response
+            .payload
+            .ok_or_else(|| anyhow!("No payload in `NewMpcContextResponse`"))?;
+        Ok(NewKmsContextResponse {
+            context_id: parse_payload_id(payload.new_context_id, "new_context_id")?,
+            signature: ecdsa_signature(grpc_response.signatures, vec![])?,
+            extra_data: payload.extra_data,
+        })
+    }
+}
+
+impl ContextDestructionResponse {
+    fn process(grpc_response: DestroyMpcContextResponse) -> anyhow::Result<Self> {
+        let payload = grpc_response
+            .payload
+            .ok_or_else(|| anyhow!("No payload in `DestroyMpcContextResponse`"))?;
+        Ok(ContextDestructionResponse {
+            context_id: parse_payload_id(payload.context_id, "context_id")?,
+            signature: ecdsa_signature(grpc_response.signatures, vec![])?,
+            extra_data: payload.extra_data,
+        })
+    }
+}
+
+impl EpochDestructionResponse {
+    fn process(grpc_response: DestroyMpcEpochResponse) -> anyhow::Result<Self> {
+        let payload = grpc_response
+            .payload
+            .ok_or_else(|| anyhow!("No payload in `DestroyMpcEpochResponse`"))?;
+        Ok(EpochDestructionResponse {
+            epoch_id: parse_payload_id(payload.epoch_id, "epoch_id")?,
+            signature: ecdsa_signature(grpc_response.signatures, vec![])?,
+            extra_data: payload.extra_data,
+        })
+    }
+}
+
+impl EpochResultResponse {
+    fn process(grpc_response: GrpcEpochResultResponse) -> anyhow::Result<Self> {
+        let payload = grpc_response
+            .payload
+            .ok_or_else(|| anyhow!("No payload in `EpochResultResponse`"))?;
+        Ok(EpochResultResponse {
+            context_id: parse_payload_id(payload.context_id, "context_id")?,
+            epoch_id: parse_payload_id(payload.epoch_id, "epoch_id")?,
+            keys: vec![],
+            crs_list: vec![],
+            signature: ecdsa_signature(grpc_response.signatures, vec![])?,
+            extra_data: payload.extra_data,
+        })
+    }
+}
+
+/// Parses a mandatory `RequestId` field of a signed KMS Core payload.
+fn parse_payload_id(id: Option<RequestId>, field: &str) -> anyhow::Result<U256> {
+    let id = id.ok_or_else(|| anyhow!("No {field} in KMS Core payload"))?;
+    request_id_to_u256(id).map_err(|e| anyhow!("Failed to parse {field}: {e}"))
+}
+
 impl Display for KmsResponseKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -542,6 +619,12 @@ impl Display for KmsResponseKind {
                 "EpochResultResponse context #{:#066x} epoch #{:#066x}",
                 r.context_id, r.epoch_id
             ),
+            KmsResponseKind::ContextDestruction(r) => {
+                write!(f, "ContextDestructionResponse #{:#066x}", r.context_id)
+            }
+            KmsResponseKind::EpochDestruction(r) => {
+                write!(f, "EpochDestructionResponse #{:#066x}", r.epoch_id)
+            }
         }
     }
 }
@@ -557,6 +640,8 @@ impl KmsResponseKind {
             KmsResponseKind::Crsgen(_) => CRSGEN_RESPONSE_STR,
             KmsResponseKind::NewKmsContext(_) => NEW_KMS_CONTEXT_RESPONSE_STR,
             KmsResponseKind::EpochResult(_) => EPOCH_RESULT_RESPONSE_STR,
+            KmsResponseKind::ContextDestruction(_) => CONTEXT_DESTRUCTION_RESPONSE_STR,
+            KmsResponseKind::EpochDestruction(_) => EPOCH_DESTRUCTION_RESPONSE_STR,
         }
     }
 }
@@ -568,3 +653,5 @@ pub const KEYGEN_RESPONSE_STR: &str = "keygen_response";
 pub const CRSGEN_RESPONSE_STR: &str = "crsgen_response";
 pub const NEW_KMS_CONTEXT_RESPONSE_STR: &str = "new_kms_context_response";
 pub const EPOCH_RESULT_RESPONSE_STR: &str = "epoch_result_response";
+pub const CONTEXT_DESTRUCTION_RESPONSE_STR: &str = "kms_context_destruction_response";
+pub const EPOCH_DESTRUCTION_RESPONSE_STR: &str = "kms_epoch_destruction_response";

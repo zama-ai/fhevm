@@ -6,7 +6,7 @@ use alloy_primitives::B256;
 ///
 /// All fields are bound by the signature but absent from the wire form. The verifier rebuilds
 /// them from the request path.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PrfOutputRef {
     pub prf_id: u16,
     pub label: B256,

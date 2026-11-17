@@ -44,7 +44,12 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION
 # max_handles_per_decryption = 50
 
-# Host chain ids accepted in ciphertext handles (required)
+# Maximum number of pads of a single pad decryption request (optional, defaults to 10).
+# Must be equal across all KMS nodes.
+# ENV: KMS_CONNECTOR_MAX_PADS
+# max_pads = 10
+
+# Host chain ids accepted in ciphertext handles and pad witnesses (required)
 # ENV: KMS_CONNECTOR_SUPPORTED_CHAIN_IDS (comma-separated list, e.g. "11155111,1")
 supported_chain_ids = [11155111]
 

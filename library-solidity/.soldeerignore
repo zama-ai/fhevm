@@ -1,3 +1,6 @@
+# Bridge
+lib/bridge/
+
 # CI & config files
 ci/
 .github/
@@ -6,31 +9,30 @@ ci/
 node_modules/
 package.json
 package-lock.json
+package.json.publish.template
+publish/
 
 # Config & tooling
 .env*
 .eslintignore
-.eslintrc.yml
-.gitpod.yml
+eslint.config.mjs
 .lintstagedrc.json
 .npmignore
 .prettierignore
 .prettierrc.json
-.solcover.js
 .solhintignore
 hardhat.config.ts
 tsconfig.json
 commitlint.config.ts
 codegen.config.json
-mlc_config.json
 foundry.toml
 remappings.txt
 soldeer.lock
-CustomProvider.ts
 
 # Source directories not needed by consumers
 codegen/
 test/
+test_forge/
 tasks/
 examples/
 lib-js/
@@ -45,3 +47,12 @@ types/
 typechain/
 typechain-types/
 coverage/
+fhevmTemp/
+Makefile
+
+# Docs
+SECURITY.md
+
+# Ignore files
+.gitignore
+.soldeerignore

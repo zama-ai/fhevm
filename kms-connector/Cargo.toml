@@ -6,7 +6,7 @@ members = ["crates/*"]
 authors = ["Zama"]
 edition = "2024"
 license = "BSD-3-Clause-Clear"
-publish = true
+publish = false
 version = "0.15.0"
 
 [workspace.dependencies]
@@ -23,9 +23,10 @@ tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "511ac7e0521a5277e231abe729b163dcd0940e83", default-features = true }
-bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "511ac7e0521a5277e231abe729b163dcd0940e83", default-features = true }
-tfhe = { version = "=1.8.1", default-features = false }
+# Last merged KMS PR: https://github.com/zama-ai/kms/pull/989
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "f4caf6aa742b66eb57e023284363a324b8786205", default-features = true }
+bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "f4caf6aa742b66eb57e023284363a324b8786205", default-features = true }
+tfhe = { version = "=1.8.2", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
 fhevm-sig-auth = { path = "../shared/fhevm-sig-auth" }
 ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
@@ -33,7 +34,7 @@ ciphertext-attestation = { path = "../shared/ciphertext-attestation", features =
 #####################################################################
 #                       External dependencies                       #
 #####################################################################
-actix-web = "=4.15.0"
+actix-web = { version = "=4.19.0", default-features = false }
 alloy = { version = "=2.2.0", default-features = false, features = [
     "essentials",
     "provider-debug-api",
@@ -44,15 +45,14 @@ alloy = { version = "=2.2.0", default-features = false, features = [
 ] }
 anyhow = { version = "=1.0.104", default-features = false }
 async-trait = { version = "=0.1.92", default-features = false }
-aws-config = { version = "=1.8.6", default-features = false, features = [
+aws-config = { version = "=1.13.0", default-features = false, features = [
     "default-https-client",
     "rt-tokio",
 ] }
-aws-sdk-kms = { version = "=1.86.0", default-features = false, features = [
+aws-sdk-kms = { version = "=1.129.0", default-features = false, features = [
     "default-https-client",
     "rt-tokio",
 ] }
-aws-sdk-s3 = { version = "=1.105.0", default-features = true }
 bytes = { version = "=1.12.1", default-features = false }
 clap = { version = "=4.5.47", default-features = true, features = [
     "cargo",
@@ -64,15 +64,15 @@ futures = { version = "=0.3.31", default-features = false }
 git-version = { version = "=0.3.9", default-features = false }
 http = { version = "=1.4.0", default-features = false }
 humantime-serde = "=1.1.1"
-opentelemetry = "=0.30.0"
-opentelemetry-otlp = { version = "=0.30.0", features = ["grpc-tonic"] }
-opentelemetry_sdk = "=0.30.0"
-pingora = { version = "=0.9.0", default-features = false, features = [
+opentelemetry = "=0.33.1"
+opentelemetry-otlp = { version = "=0.33.1", default-features = false, features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = "=0.33.1"
+pingora = { version = "=0.9.1", default-features = false, features = [
     "openssl",
     "lb",
     "proxy",
 ] }
-pingora-limits = { version = "=0.9.0", default-features = false }
+pingora-limits = { version = "=0.9.1", default-features = false }
 prometheus = { version = "=0.14.0", default-features = false, features = ["protobuf"] }
 rustls = { version = "=0.23.46", default-features = false, features = [
     "aws-lc-rs",
@@ -95,7 +95,7 @@ sqlx = { version = "=0.8.6", default-features = false, features = [
 ] }
 strum  = { version = "0.28", default-features = false, features = ["derive"] }
 thiserror = { version = "=2.0.20", default-features = false }
-tokio = { version = "=1.47.1", default-features = false, features = [
+tokio = { version = "=1.54.1", default-features = false, features = [
     "macros",
     "rt-multi-thread",
     "signal",
@@ -104,7 +104,7 @@ tokio = { version = "=1.47.1", default-features = false, features = [
 ] }
 tokio-util = { version = "=0.7.18", default-features = false }
 tokio-stream = { version = "=0.1.17", default-features = false }
-tonic = { version = "=0.14.6", default-features = true, features = [
+tonic = { version = "=0.14.9", default-features = true, features = [
     "tls-ring",
     "tls-native-roots",
 ] }
@@ -114,8 +114,8 @@ tower = { version = "=0.5.3", default-features = false, features = [
     "util",
 ] }
 tracing = { version = "=0.1.44", default-features = true }
-tracing-opentelemetry = "=0.31.0"
-tracing-subscriber = { version = "=0.3.20", default-features = true, features = [
+tracing-opentelemetry = "=0.34.0"
+tracing-subscriber = { version = "=0.3.23", default-features = true, features = [
     "env-filter",
 ] }
 url = { version = "=2.5.8", default-features = false, features = ["serde"] }

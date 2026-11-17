@@ -42,7 +42,12 @@ pub fn init_otlp_setup(service_name: String) -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .with(OpenTelemetryLayer::new(trace_provider.tracer("otlp-layer")))
+        // Keeps the span parent settable after entering the span, so `set_parent` works inside
+        // `#[tracing::instrument]` fns.
+        .with(
+            OpenTelemetryLayer::new(trace_provider.tracer("otlp-layer"))
+                .with_context_activation(false),
+        )
         .init();
 
     global::set_text_map_propagator(TraceContextPropagator::new());

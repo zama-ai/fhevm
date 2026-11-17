@@ -11,13 +11,13 @@ const LATE_PHASE = ' after the response was received';
 const PUBLIC_RESULT = { signatures: ['ab'.repeat(65)], decryptedValue: '00'.repeat(32), extraData: '0x00' };
 const OK_TEXT = JSON.stringify({
   status: 'succeeded',
-  requestId: '01890a5d-ac96-7000-8000-000000000000',
+  requestId: '01890a5d-ac96-4000-8000-000000000000',
   result: PUBLIC_RESULT,
 });
 const ERROR_TEXT = JSON.stringify({
   code: 'overloaded',
   message: 'busy',
-  requestId: '01890a5d-ac96-7000-8000-000000000001',
+  requestId: '01890a5d-ac96-4000-8000-000000000001',
 });
 
 type FetchFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;

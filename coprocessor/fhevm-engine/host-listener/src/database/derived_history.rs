@@ -101,7 +101,9 @@ async fn load(
     // A non-empty state hash already proves FHE activity: finalized headers can
     // be pruned, then restored by a full or ACL-only replay. Losing/restoring
     // that metadata must not change the captured inventory. The empty sentinel
-    // is SHA-256 of zero bytes (consensus-detector's EMPTY_BLOCK_STATE_HASH).
+    // is SHA-256 of zero bytes (consensus-detector's EMPTY_BLOCK_STATE_HASH),
+    // stored raw. A non-empty block stores a JSON record instead (only written
+    // when fhe_event_count > 0), so it never equals the sentinel.
     // Still inspect headers so discovering FHE events in a block committed as
     // empty is detected even when its computations were already present.
     //

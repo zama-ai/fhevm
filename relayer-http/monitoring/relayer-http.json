@@ -1,0 +1,518 @@
+{
+  "title": "relayer-http operator",
+  "uid": "relayer-http",
+  "description": "Is the service answering, and which KMS node is slow or failing: from the metrics. The service over the selected range on top, then one section per flow, never mixed; open it on an alert (monitoring/design.md, Dashboards).",
+  "tags": ["relayer-http"],
+  "links": [],
+  "templating": {
+    "list": [
+      {"name": "prometheus", "label": "Prometheus", "type": "datasource", "query": "prometheus", "current": {}, "hide": 0},
+      {"name": "loki", "label": "Loki", "type": "datasource", "query": "loki", "current": {}, "hide": 0},
+      {"name": "app", "label": "Loki app", "type": "textbox", "query": "relayer-http", "current": {"text": "relayer-http", "value": "relayer-http"}, "hide": 0},
+      {
+        "name": "instance", "label": "Instance", "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+        "query": {"query": "label_values(relayer_http_requests_total, instance)", "refId": "v"},
+        "definition": "label_values(relayer_http_requests_total, instance)",
+        "includeAll": true, "multi": true, "allValue": ".*", "current": {"text": "All", "value": "$__all"}, "refresh": 2, "sort": 1
+      },
+      {
+        "name": "kms_node", "label": "KMS node", "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+        "query": {"query": "label_values(relayer_http_kms_attempts_count, kms_node)", "refId": "v"},
+        "definition": "label_values(relayer_http_kms_attempts_count, kms_node)",
+        "includeAll": true, "multi": true, "allValue": ".*", "current": {"text": "All", "value": "$__all"}, "refresh": 2, "sort": 1
+      }
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "text", "id": 1, "title": "", "transparent": true,
+      "gridPos": {"h": 2, "w": 24, "x": 0, "y": 0},
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"display:flex;gap:8px;align-items:center\"><a href=\"/d/relayer-http?${__url_time_range}&${app:queryparam}&${instance:queryparam}\" style=\"padding:4px 16px;border-radius:4px;background-color:#3d71d9;color:#ffffff;font-weight:600;text-decoration:none\">Operator</a><a href=\"/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}\" style=\"padding:4px 16px;border-radius:4px;border:1px solid #6e7681;text-decoration:none\">Lookup</a><a href=\"/d/relayer-http-usage?${__url_time_range}&${app:queryparam}&${instance:queryparam}\" style=\"padding:4px 16px;border-radius:4px;border:1px solid #6e7681;text-decoration:none\">Client stats</a></div>"
+      }
+    },
+    {"type": "row", "id": 100, "title": "Service (selected range)", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 2}},
+    {
+      "type": "stat", "id": 101, "title": "Alerts firing",
+      "description": "relayer-http alerts firing now (monitoring/alerts.yaml), from Prometheus' ALERTS series. Click for the list.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 3},
+      "links": [{"title": "relayer-http alerts", "url": "/alerting/list?search=RelayerHttp"}],
+      "targets": [{"expr": "count(ALERTS{alertstate=\"firing\", alertname=~\"RelayerHttp.*\"})", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 102, "title": "Internal errors",
+      "description": "Requests answered `internal` in the range, both flows: a relayer defect (an internal error or a panic). Any is a bug. Click to list them in the lookup.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 3},
+      "links": [{"title": "Internal errors in the lookup", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&var-search=%22code%22%3A%22internal%22"}],
+      "targets": [{"expr": "sum(increase(relayer_http_requests_total{instance=~\"$instance\", code=\"internal\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 103, "title": "Signer errors",
+      "description": "Failed attempts to sign a connector call in the range: the signing key (AWS KMS) unreachable or refusing.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 3},
+      "targets": [{"expr": "sum(increase(relayer_http_signer_errors_total{instance=~\"$instance\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 104, "title": "KMS nodes failing",
+      "description": "KMS nodes with more than half of their attempts failing in the range for a reason that blames the node, both flows: the RelayerHttpKmsNodeFailing alert's exclusions.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 3},
+      "targets": [{"expr": "count((sum by (kms_node) (increase(relayer_http_kms_attempt_errors_total{instance=~\"$instance\", code!~\"malformed|unsupported_attestation_type|acl_denied|user_signature_rejected|user_decryption_expired|ciphertext_not_found|unprocessable|cancelled|panic\"}[$__range])) / sum by (kms_node) (increase(relayer_http_kms_attempts_sum{instance=~\"$instance\"}[$__range]))) > 0.5)", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 105, "title": "Requests by flow",
+      "description": "Requests answered in the range, by flow; `none` is a request answered before its flow was known (unknown route or method).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 3},
+      "targets": [{"expr": "sum by (flow) (increase(relayer_http_requests_total{instance=~\"$instance\"}[$__range]))", "legendFormat": "{{flow}}", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "orientation": "horizontal", "text": {"titleSize": 13, "valueSize": 18}}
+    },
+    {
+      "type": "stat", "id": 106, "title": "Call slot wait p95",
+      "description": "Time an attempt waited for an outbound call slot over the range, both flows. Rising while KMS node latency is flat: the pod is saturated, scale out.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 3},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (increase(relayer_http_kms_call_slot_wait_seconds_bucket{instance=~\"$instance\"}[$__range])))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+
+    {"type": "row", "id": 200, "title": "Public decrypt", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7}},
+    {
+      "type": "stat", "id": 201, "title": "Public decrypt: requests",
+      "description": "Public decrypt requests answered in the range, every outcome.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 3, "x": 0, "y": 8},
+      "targets": [{"expr": "sum(increase(relayer_http_requests_total{flow=\"public_decrypt\", instance=~\"$instance\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 202, "title": "Public decrypt: outcomes",
+      "description": "Public decrypt requests by outcome in the range: succeeded 2xx, rejected 4xx, failed 5xx, cancelled (the client closed the connection first). Click to list the failed ones in the lookup: it searches the text \"flow\":\"public_decrypt\",\"outcome\":\"failed\", which relies on the two fields being adjacent in the summary line (endpoint/summary.rs).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 7, "x": 3, "y": 8},
+      "links": [{"title": "Failed public decrypts in the lookup", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&var-search=%22flow%22%3A%22public_decrypt%22%2C%22outcome%22%3A%22failed%22"}],
+      "targets": [{"expr": "sum by (outcome) (increase(relayer_http_requests_total{flow=\"public_decrypt\", instance=~\"$instance\"}[$__range]))", "legendFormat": "{{outcome}}", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {
+        "defaults": {"unit": "short", "decimals": 0, "noValue": "0", "color": {"mode": "fixed", "fixedColor": "text"}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "succeeded"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]},
+          {"matcher": {"id": "byName", "options": "rejected"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]},
+          {"matcher": {"id": "byName", "options": "failed"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]},
+          {"matcher": {"id": "byName", "options": "cancelled"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "purple"}}]}
+        ]
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none", "textMode": "value_and_name"}
+    },
+    {
+      "type": "stat", "id": 203, "title": "Public decrypt: succeeded",
+      "description": "Succeeded ÷ (succeeded + failed) for public decrypt: the share the relayer served. Rejected requests (client errors, 4xx) and abandoned ones are left out; the outcomes tile counts them.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 3, "x": 10, "y": 8},
+      "targets": [{"expr": "sum(increase(relayer_http_requests_total{flow=\"public_decrypt\", instance=~\"$instance\", outcome=\"succeeded\"}[$__range])) / sum(increase(relayer_http_requests_total{flow=\"public_decrypt\", instance=~\"$instance\", outcome=~\"succeeded|failed\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 0.9}, {"color": "green", "value": 0.99}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 204, "title": "Public decrypt: latency p50",
+      "description": "Receipt to answer over the range; client errors and abandoned requests left out.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 3, "x": 13, "y": 8},
+      "targets": [{"expr": "histogram_quantile(0.5, sum by (le) (increase(relayer_http_request_duration_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__range])))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 205, "title": "Public decrypt: latency p95",
+      "description": "Receipt to answer over the range; client errors and abandoned requests left out. The slow request alert fires at 0.8 x the call timeout.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 8},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (increase(relayer_http_request_duration_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__range])))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 206, "title": "Public decrypt: time spent after threshold",
+      "description": "Share of the answered public decrypt time spent after the threshold was reached, over the range: total wait over total latency (client errors and abandoned requests left out). The aggregation still collects until every KMS node finished or the deadline passed; this is the latency added for safety. A ratio of totals, exact unlike a ratio of percentiles.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 8},
+      "targets": [{"expr": "sum(increase(relayer_http_kms_wait_after_threshold_seconds_sum{flow=\"public_decrypt\", instance=~\"$instance\"}[$__range])) / sum(increase(relayer_http_request_duration_seconds_sum{flow=\"public_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 1, "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "timeseries", "id": 207, "title": "Public decrypt: requests by outcome",
+      "description": "Answered public decrypt requests per second, by outcome (succeeded 2xx, rejected 4xx, failed 5xx, cancelled).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 12},
+      "targets": [{"expr": "sum by (outcome) (rate(relayer_http_requests_total{flow=\"public_decrypt\", instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "{{outcome}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "succeeded"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]},
+          {"matcher": {"id": "byName", "options": "rejected"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]},
+          {"matcher": {"id": "byName", "options": "failed"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]},
+          {"matcher": {"id": "byName", "options": "cancelled"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "purple"}}]}
+        ]
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "timeseries", "id": 208, "title": "Public decrypt: error codes",
+      "description": "Public decrypt requests answered with an error, by API error code.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 12},
+      "targets": [{"expr": "sum by (code) (rate(relayer_http_requests_total{flow=\"public_decrypt\", instance=~\"$instance\", code!=\"ok\"}[$__rate_interval]))", "legendFormat": "{{code}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "timeseries", "id": 209, "title": "Public decrypt: latency",
+      "description": "Receipt to answer (client errors and abandoned requests left out).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 12},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum by (le) (rate(relayer_http_request_duration_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__rate_interval])))", "legendFormat": "p50", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(relayer_http_request_duration_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__rate_interval])))", "legendFormat": "p95", "refId": "B", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(relayer_http_request_duration_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__rate_interval])))", "legendFormat": "p99", "refId": "C", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "timeseries", "id": 213, "title": "Public decrypt: wait after threshold",
+      "description": "Seconds from reaching the threshold to the answer: the aggregation still collects until every KMS node finished or the deadline passed. p50 is the usual cost of waiting for every share, p99 the slow-node tail. A rise usually means one slow KMS node: see KMS node health.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 12},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum by (le) (rate(relayer_http_kms_wait_after_threshold_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "p50", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(relayer_http_kms_wait_after_threshold_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "p95", "refId": "B", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(relayer_http_kms_wait_after_threshold_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "p99", "refId": "C", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "table", "id": 210, "title": "Public decrypt: KMS node health",
+      "description": "One row per KMS node over the range. error %: failed attempts that blame the node, over attempts (the RelayerHttpKmsNodeFailing alert's exclusions). p95: attempt latency. tries/call: 1 is no retry. cut: attempts the relayer cut in flight (deadline, fail fast, client hangup); a node often cut is too slow to count. Click a node for the requests it failed or was cut from (the lookup searches its name as text: names that are prefixes of each other, such as kms-1 and kms-10, would match each other).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 16, "w": 10, "x": 0, "y": 20},
+      "targets": [
+        {"expr": "sum by (kms_node) (increase(relayer_http_kms_attempts_sum{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range]))", "instant": true, "format": "table", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "sum by (kms_node) (increase(relayer_http_kms_attempt_errors_total{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\", code!~\"malformed|unsupported_attestation_type|acl_denied|user_signature_rejected|user_decryption_expired|ciphertext_not_found|unprocessable|cancelled|panic\"}[$__range])) / sum by (kms_node) (increase(relayer_http_kms_attempts_sum{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range]))", "instant": true, "format": "table", "refId": "B", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.95, sum by (kms_node, le) (increase(relayer_http_kms_attempt_duration_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range])))", "instant": true, "format": "table", "refId": "C", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "sum by (kms_node) (increase(relayer_http_kms_attempts_sum{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range])) / sum by (kms_node) (increase(relayer_http_kms_attempts_count{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range]))", "instant": true, "format": "table", "refId": "D", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "sum by (kms_node) (increase(relayer_http_kms_attempt_errors_total{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\", code=\"cancelled\"}[$__range]))", "instant": true, "format": "table", "refId": "E", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}
+      ],
+      "transformations": [
+        {"id": "merge", "options": {}},
+        {"id": "organize", "options": {"excludeByName": {"Time": true}, "indexByName": {"kms_node": 0, "Value #A": 1, "Value #B": 2, "Value #C": 3, "Value #D": 4, "Value #E": 5}, "renameByName": {"Value #A": "attempts", "Value #B": "error %", "Value #C": "p95", "Value #D": "tries/call", "Value #E": "cut"}}},
+        {"id": "sortBy", "options": {"sort": [{"field": "kms_node"}]}}
+      ],
+      "fieldConfig": {
+        "defaults": {"noValue": "0"},
+        "overrides": [
+          {"matcher": {"id": "byType", "options": "number"}, "properties": [{"id": "custom.width", "value": 78}]},
+          {"matcher": {"id": "byName", "options": "kms_node"}, "properties": [{"id": "custom.width", "value": 80}, {"id": "links", "value": [{"title": "Requests this node failed or cut", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&var-search=${__value.raw}"}]}]},
+          {"matcher": {"id": "byName", "options": "attempts"}, "properties": [{"id": "decimals", "value": 0}]},
+          {"matcher": {"id": "byName", "options": "error %"}, "properties": [{"id": "unit", "value": "percentunit"}, {"id": "decimals", "value": 1}, {"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.1}, {"color": "red", "value": 0.5}]}}]},
+          {"matcher": {"id": "byName", "options": "p95"}, "properties": [{"id": "unit", "value": "s"}]},
+          {"matcher": {"id": "byName", "options": "tries/call"}, "properties": [{"id": "decimals", "value": 2}]},
+          {"matcher": {"id": "byName", "options": "cut"}, "properties": [{"id": "decimals", "value": 0}]}
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"}
+    },
+    {
+      "type": "timeseries", "id": 211, "title": "Public decrypt: attempt latency p95 by KMS node",
+      "description": "One HTTP round trip to the node's connector: no slot wait, no backoff. Cancelled attempts (cut at the deadline or by fail fast) are included: a hung node shows as slow.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 14, "x": 10, "y": 20},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (kms_node, le) (rate(relayer_http_kms_attempt_duration_seconds_bucket{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval])))", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "timeseries", "id": 212, "title": "Public decrypt: failed attempts by KMS node and code",
+      "description": "One series per KMS node and connector error code; `cancelled` is an attempt cut in flight (a hung node, or fail fast).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 14, "x": 10, "y": 28},
+      "targets": [{"expr": "sum by (kms_node, code) (rate(relayer_http_kms_attempt_errors_total{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval]))", "legendFormat": "{{kms_node}} {{code}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "row", "id": 220, "title": "Public decrypt: KMS nodes over time", "collapsed": true, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36},
+      "panels": [
+        {
+          "type": "timeseries", "id": 221, "title": "Public decrypt: attempts per call by KMS node",
+          "description": "Mean attempts one node call took: 1 is no retry.",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 37},
+          "targets": [{"expr": "sum by (kms_node) (rate(relayer_http_kms_attempts_sum{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval])) / sum by (kms_node) (rate(relayer_http_kms_attempts_count{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval]))", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries", "id": 222, "title": "Public decrypt: attempt error ratio by KMS node",
+          "description": "Failed attempts that blame the node or the path to it, over attempts made, per KMS node. The same exclusions as the RelayerHttpKmsNodeFailing alert.",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 37},
+          "targets": [{"expr": "sum by (kms_node) (rate(relayer_http_kms_attempt_errors_total{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\", code!~\"malformed|unsupported_attestation_type|acl_denied|user_signature_rejected|user_decryption_expired|ciphertext_not_found|unprocessable|cancelled|panic\"}[$__rate_interval])) / sum by (kms_node) (rate(relayer_http_kms_attempts_sum{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval]))", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries", "id": 223, "title": "Public decrypt: cut calls by KMS node",
+          "description": "Attempts the relayer cut in flight, per KMS node and second: at the deadline, by fail fast, or at a client hangup.",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 37},
+          "targets": [{"expr": "sum by (kms_node) (rate(relayer_http_kms_attempt_errors_total{flow=\"public_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\", code=\"cancelled\"}[$__rate_interval]))", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        }
+      ]
+    },
+
+    {"type": "row", "id": 300, "title": "User decrypt", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 37}},
+    {
+      "type": "stat", "id": 301, "title": "User decrypt: requests",
+      "description": "User decrypt requests answered in the range, every outcome.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 3, "x": 0, "y": 38},
+      "targets": [{"expr": "sum(increase(relayer_http_requests_total{flow=\"user_decrypt\", instance=~\"$instance\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "noValue": "0"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 302, "title": "User decrypt: outcomes",
+      "description": "User decrypt requests by outcome in the range: succeeded 2xx, rejected 4xx, failed 5xx, cancelled (the client closed the connection first). Click to list the failed ones in the lookup: it searches the text \"flow\":\"user_decrypt\",\"outcome\":\"failed\", which relies on the two fields being adjacent in the summary line (endpoint/summary.rs).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 7, "x": 3, "y": 38},
+      "links": [{"title": "Failed user decrypts in the lookup", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&var-search=%22flow%22%3A%22user_decrypt%22%2C%22outcome%22%3A%22failed%22"}],
+      "targets": [{"expr": "sum by (outcome) (increase(relayer_http_requests_total{flow=\"user_decrypt\", instance=~\"$instance\"}[$__range]))", "legendFormat": "{{outcome}}", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {
+        "defaults": {"unit": "short", "decimals": 0, "noValue": "0", "color": {"mode": "fixed", "fixedColor": "text"}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "succeeded"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]},
+          {"matcher": {"id": "byName", "options": "rejected"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]},
+          {"matcher": {"id": "byName", "options": "failed"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]},
+          {"matcher": {"id": "byName", "options": "cancelled"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "purple"}}]}
+        ]
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none", "textMode": "value_and_name"}
+    },
+    {
+      "type": "stat", "id": 303, "title": "User decrypt: succeeded",
+      "description": "Succeeded ÷ (succeeded + failed) for user decrypt: the share the relayer served. Rejected requests (client errors, 4xx) and abandoned ones are left out; the outcomes tile counts them.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 3, "x": 10, "y": 38},
+      "targets": [{"expr": "sum(increase(relayer_http_requests_total{flow=\"user_decrypt\", instance=~\"$instance\", outcome=\"succeeded\"}[$__range])) / sum(increase(relayer_http_requests_total{flow=\"user_decrypt\", instance=~\"$instance\", outcome=~\"succeeded|failed\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 0.9}, {"color": "green", "value": 0.99}]}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 304, "title": "User decrypt: latency p50",
+      "description": "Receipt to answer over the range; client errors and abandoned requests left out.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 3, "x": 13, "y": 38},
+      "targets": [{"expr": "histogram_quantile(0.5, sum by (le) (increase(relayer_http_request_duration_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__range])))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 305, "title": "User decrypt: latency p95",
+      "description": "Receipt to answer over the range; client errors and abandoned requests left out. The slow request alert fires at 0.8 x the call timeout.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 38},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (increase(relayer_http_request_duration_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__range])))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 306, "title": "User decrypt: time spent after threshold",
+      "description": "Share of the answered user decrypt time spent after the threshold was reached, over the range: total wait over total latency (client errors and abandoned requests left out). The aggregation still collects until every KMS node finished or the deadline passed; this is the latency added for safety. A ratio of totals, exact unlike a ratio of percentiles.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 38},
+      "targets": [{"expr": "sum(increase(relayer_http_kms_wait_after_threshold_seconds_sum{flow=\"user_decrypt\", instance=~\"$instance\"}[$__range])) / sum(increase(relayer_http_request_duration_seconds_sum{flow=\"user_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__range]))", "instant": true, "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 1, "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "timeseries", "id": 307, "title": "User decrypt: requests by outcome",
+      "description": "Answered user decrypt requests per second, by outcome (succeeded 2xx, rejected 4xx, failed 5xx, cancelled).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 42},
+      "targets": [{"expr": "sum by (outcome) (rate(relayer_http_requests_total{flow=\"user_decrypt\", instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "{{outcome}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "succeeded"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]},
+          {"matcher": {"id": "byName", "options": "rejected"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]},
+          {"matcher": {"id": "byName", "options": "failed"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]},
+          {"matcher": {"id": "byName", "options": "cancelled"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "purple"}}]}
+        ]
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "timeseries", "id": 308, "title": "User decrypt: error codes",
+      "description": "User decrypt requests answered with an error, by API error code.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 42},
+      "targets": [{"expr": "sum by (code) (rate(relayer_http_requests_total{flow=\"user_decrypt\", instance=~\"$instance\", code!=\"ok\"}[$__rate_interval]))", "legendFormat": "{{code}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "timeseries", "id": 309, "title": "User decrypt: latency",
+      "description": "Receipt to answer (client errors and abandoned requests left out).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 42},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum by (le) (rate(relayer_http_request_duration_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__rate_interval])))", "legendFormat": "p50", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(relayer_http_request_duration_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__rate_interval])))", "legendFormat": "p95", "refId": "B", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(relayer_http_request_duration_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\", outcome!~\"rejected|cancelled\"}[$__rate_interval])))", "legendFormat": "p99", "refId": "C", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "timeseries", "id": 313, "title": "User decrypt: wait after threshold",
+      "description": "Seconds from reaching the threshold to the answer: the aggregation still collects until every KMS node finished or the deadline passed. p50 is the usual cost of waiting for every share, p99 the slow-node tail. A rise usually means one slow KMS node: see KMS node health.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 42},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum by (le) (rate(relayer_http_kms_wait_after_threshold_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "p50", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(relayer_http_kms_wait_after_threshold_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "p95", "refId": "B", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(relayer_http_kms_wait_after_threshold_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "p99", "refId": "C", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "table", "id": 310, "title": "User decrypt: KMS node health",
+      "description": "One row per KMS node over the range. error %: failed attempts that blame the node, over attempts (the RelayerHttpKmsNodeFailing alert's exclusions). p95: attempt latency. tries/call: 1 is no retry. cut: attempts the relayer cut in flight (deadline, fail fast, client hangup); a node often cut is too slow to count. Click a node for the requests it failed or was cut from (the lookup searches its name as text: names that are prefixes of each other, such as kms-1 and kms-10, would match each other).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 16, "w": 10, "x": 0, "y": 50},
+      "targets": [
+        {"expr": "sum by (kms_node) (increase(relayer_http_kms_attempts_sum{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range]))", "instant": true, "format": "table", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "sum by (kms_node) (increase(relayer_http_kms_attempt_errors_total{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\", code!~\"malformed|unsupported_attestation_type|acl_denied|user_signature_rejected|user_decryption_expired|ciphertext_not_found|unprocessable|cancelled|panic\"}[$__range])) / sum by (kms_node) (increase(relayer_http_kms_attempts_sum{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range]))", "instant": true, "format": "table", "refId": "B", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "histogram_quantile(0.95, sum by (kms_node, le) (increase(relayer_http_kms_attempt_duration_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range])))", "instant": true, "format": "table", "refId": "C", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "sum by (kms_node) (increase(relayer_http_kms_attempts_sum{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range])) / sum by (kms_node) (increase(relayer_http_kms_attempts_count{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__range]))", "instant": true, "format": "table", "refId": "D", "datasource": {"type": "prometheus", "uid": "${prometheus}"}},
+        {"expr": "sum by (kms_node) (increase(relayer_http_kms_attempt_errors_total{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\", code=\"cancelled\"}[$__range]))", "instant": true, "format": "table", "refId": "E", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}
+      ],
+      "transformations": [
+        {"id": "merge", "options": {}},
+        {"id": "organize", "options": {"excludeByName": {"Time": true}, "indexByName": {"kms_node": 0, "Value #A": 1, "Value #B": 2, "Value #C": 3, "Value #D": 4, "Value #E": 5}, "renameByName": {"Value #A": "attempts", "Value #B": "error %", "Value #C": "p95", "Value #D": "tries/call", "Value #E": "cut"}}},
+        {"id": "sortBy", "options": {"sort": [{"field": "kms_node"}]}}
+      ],
+      "fieldConfig": {
+        "defaults": {"noValue": "0"},
+        "overrides": [
+          {"matcher": {"id": "byType", "options": "number"}, "properties": [{"id": "custom.width", "value": 78}]},
+          {"matcher": {"id": "byName", "options": "kms_node"}, "properties": [{"id": "custom.width", "value": 80}, {"id": "links", "value": [{"title": "Requests this node failed or cut", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&var-search=${__value.raw}"}]}]},
+          {"matcher": {"id": "byName", "options": "attempts"}, "properties": [{"id": "decimals", "value": 0}]},
+          {"matcher": {"id": "byName", "options": "error %"}, "properties": [{"id": "unit", "value": "percentunit"}, {"id": "decimals", "value": 1}, {"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.1}, {"color": "red", "value": 0.5}]}}]},
+          {"matcher": {"id": "byName", "options": "p95"}, "properties": [{"id": "unit", "value": "s"}]},
+          {"matcher": {"id": "byName", "options": "tries/call"}, "properties": [{"id": "decimals", "value": 2}]},
+          {"matcher": {"id": "byName", "options": "cut"}, "properties": [{"id": "decimals", "value": 0}]}
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"}
+    },
+    {
+      "type": "timeseries", "id": 311, "title": "User decrypt: attempt latency p95 by KMS node",
+      "description": "One HTTP round trip to the node's connector: no slot wait, no backoff. Cancelled attempts (cut at the deadline or by fail fast) are included: a hung node shows as slow.",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 14, "x": 10, "y": 50},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (kms_node, le) (rate(relayer_http_kms_attempt_duration_seconds_bucket{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval])))", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "timeseries", "id": 312, "title": "User decrypt: failed attempts by KMS node and code",
+      "description": "One series per KMS node and connector error code; `cancelled` is an attempt cut in flight (a hung node, or fail fast).",
+      "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+      "gridPos": {"h": 8, "w": 14, "x": 10, "y": 58},
+      "targets": [{"expr": "sum by (kms_node, code) (rate(relayer_http_kms_attempt_errors_total{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval]))", "legendFormat": "{{kms_node}} {{code}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "row", "id": 320, "title": "User decrypt: KMS nodes over time", "collapsed": true, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 66},
+      "panels": [
+        {
+          "type": "timeseries", "id": 321, "title": "User decrypt: attempts per call by KMS node",
+          "description": "Mean attempts one node call took: 1 is no retry.",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 67},
+          "targets": [{"expr": "sum by (kms_node) (rate(relayer_http_kms_attempts_sum{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval])) / sum by (kms_node) (rate(relayer_http_kms_attempts_count{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval]))", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries", "id": 322, "title": "User decrypt: attempt error ratio by KMS node",
+          "description": "Failed attempts that blame the node or the path to it, over attempts made, per KMS node. The same exclusions as the RelayerHttpKmsNodeFailing alert.",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 67},
+          "targets": [{"expr": "sum by (kms_node) (rate(relayer_http_kms_attempt_errors_total{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\", code!~\"malformed|unsupported_attestation_type|acl_denied|user_signature_rejected|user_decryption_expired|ciphertext_not_found|unprocessable|cancelled|panic\"}[$__rate_interval])) / sum by (kms_node) (rate(relayer_http_kms_attempts_sum{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\"}[$__rate_interval]))", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries", "id": 323, "title": "User decrypt: cut calls by KMS node",
+          "description": "Attempts the relayer cut in flight, per KMS node and second: at the deadline, by fail fast, or at a client hangup.",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 67},
+          "targets": [{"expr": "sum by (kms_node) (rate(relayer_http_kms_attempt_errors_total{flow=\"user_decrypt\", instance=~\"$instance\", kms_node=~\"$kms_node\", code=\"cancelled\"}[$__rate_interval]))", "legendFormat": "{{kms_node}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        }
+      ]
+    },
+
+    {
+      "type": "row", "id": 400, "title": "Pod", "collapsed": true, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 67},
+      "panels": [
+        {
+          "type": "timeseries", "id": 401, "title": "Call slot wait p95 by flow",
+          "description": "Time an attempt waited for an outbound call slot. Rising while KMS node latency is flat: the pod is saturated, scale out.",
+          "datasource": {"type": "prometheus", "uid": "${prometheus}"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 68},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (flow, le) (rate(relayer_http_kms_call_slot_wait_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "{{flow}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "${prometheus}"}}],
+          "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries", "id": 402, "title": "WARN lines by KMS node",
+          "description": "Warnings per node from the logs, both flows: failed attempts, failed or cut calls, rejected responses.",
+          "datasource": {"type": "loki", "uid": "${loki}"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 68},
+          "targets": [{"expr": "sum by (fields_kms_node) (count_over_time({app=\"$app\", instance=~\"$instance\"} | json | level=\"WARN\" | fields_kms_node!=\"\" [$__interval]))", "legendFormat": "{{fields_kms_node}}", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+          "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        }
+      ]
+    }
+  ]
+}

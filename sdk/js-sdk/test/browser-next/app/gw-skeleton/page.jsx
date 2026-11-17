@@ -6,9 +6,9 @@
 
 import { useEffect, useState } from 'react';
 import { createTestLogger, logError, DiagnosticsView } from '../_diag/diagnostics.jsx';
-import { CURRENT_SLOT, LEGACY_SLOT } from '../_diag/slots.js';
+import { CURRENT_SLOT } from '../_diag/slots.js';
 
-const SLOTS = [LEGACY_SLOT, CURRENT_SLOT];
+const SLOTS = [CURRENT_SLOT];
 
 export default function Page() {
   const [diagnostics, setDiagnostics] = useState({ status: 'pending', logs: [] });

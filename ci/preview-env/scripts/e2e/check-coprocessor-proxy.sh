@@ -3,8 +3,8 @@
 #   - every party's proxy rolled out with all its replicas Ready, that is answering /healthz,
 #     which needs the TLS listener up and a first read of the KMS tx-senders;
 #   - a rolling restart of every proxy under a steady load of signed requests fails none of them;
-#   - the NetworkPolicy: a test-suite pod reaches each fake prf-service's count port (9090), so it
-#     has a route to the fake, but not its PRF port (8080), which only the proxy may reach.
+#   - the NetworkPolicy: a test-suite pod reaches the metrics port (9100) of each prf-service, but
+#     not its PRF port (8090). Only the proxy can reach that port.
 # The load runs the "through a rolling restart" test of test-suite/e2e/test/coprocessorProxy in a
 # pod of the test-suite image.
 # Env: NAMESPACE, NB_COPROCESSOR, E2E_IMAGE, HOST_CHAIN_ID.
@@ -16,6 +16,10 @@ stop_file=/tmp/coprocessor-proxy-load-stop
 deployments=()
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
   deployments+=("coprocessor-${i}-coprocessor-proxy")
+done
+# prf-service is not in the restart below, so only wait for it.
+for i in $(seq 1 "${NB_COPROCESSOR}"); do
+  kubectl rollout status "deploy/coprocessor-${i}-prf-service" -n "${NAMESPACE}" --timeout=300s
 done
 
 for deploy in "${deployments[@]}"; do
@@ -39,11 +43,11 @@ restart_seconds=$((NB_COPROCESSOR * (grace + 30)))
 restart_seconds=$((restart_seconds > 600 ? restart_seconds : 600))
 load_seconds=$((restart_seconds + 60))
 
-# Probes each fake's PRF and count ports, then runs the load. JavaScript, not for the shell:
+# Probes the PRF and metrics ports of each prf-service, then runs the load. JavaScript, not for the shell:
 # shellcheck disable=SC2016
 netcheck_js='
 const net = require("net");
-const hosts = process.env.PRF_SERVICE_FAKE_COUNT_URLS.split(",").map((url) => new URL(url).hostname);
+const hosts = process.env.PRF_SERVICE_METRICS_URLS.split(",").map((url) => new URL(url).hostname);
 const probe = (host, port) => new Promise((resolve) => {
   const socket = net.connect({ host, port });
   socket.setTimeout(3000);
@@ -53,7 +57,7 @@ const probe = (host, port) => new Promise((resolve) => {
 });
 (async () => {
   for (const host of hosts) {
-    for (const port of [8080, 9090]) console.log(`networkpolicy: ${host}:${port} ${await probe(host, port)}`);
+    for (const port of [8090, 9100]) console.log(`networkpolicy: ${host}:${port} ${await probe(host, port)}`);
   }
 })();
 '
@@ -87,7 +91,7 @@ NETCHECK_JS="${netcheck_js}" POD="${pod}" LOAD_SECONDS="${load_seconds}" STOP_FI
         {"name": "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "host-sc-addresses", "key": "protocol_config.address"}}},
         {"name": "COPROCESSOR_PROXY_URLS", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "urls"}}},
         {"name": "COPROCESSOR_SIGNER_ADDRESSES", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "signer-addresses"}}},
-        {"name": "PRF_SERVICE_FAKE_COUNT_URLS", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "count-urls"}}},
+        {"name": "PRF_SERVICE_METRICS_URLS", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "prf-service-metrics-urls"}}},
         {"name": "COPROCESSOR_PROXY_METRICS_URLS", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "metrics-urls"}}},
         {"name": "KMS_CONNECTOR_PRIVATE_KEY", "valueFrom": {"secretKeyRef": {"name": "kms-connector-tx-sender-1", "key": "kms-wallet"}}}
       ]
@@ -108,9 +112,9 @@ until started_load; do
 done
 netcheck=$(kubectl logs "${pod}" -n "${NAMESPACE}" | grep '^networkpolicy:' || true)
 echo "${netcheck}"
-if [[ $(grep -c ':8080 blocked' <<<"${netcheck}") -ne ${NB_COPROCESSOR} ||
-  $(grep -c ':9090 open' <<<"${netcheck}") -ne ${NB_COPROCESSOR} ]]; then
-  echo "::error::NetworkPolicy: a test-suite pod must reach each fake prf-service's port 9090 and none's port 8080"
+if [[ $(grep -c ':8090 blocked' <<<"${netcheck}") -ne ${NB_COPROCESSOR} ||
+  $(grep -c ':9100 open' <<<"${netcheck}") -ne ${NB_COPROCESSOR} ]]; then
+  echo "::error::NetworkPolicy: a test-suite pod must reach each prf-service's port 9100 and none's port 8090"
   exit 1
 fi
 

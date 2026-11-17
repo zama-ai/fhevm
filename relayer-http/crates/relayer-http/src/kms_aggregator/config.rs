@@ -7,6 +7,8 @@ use fhevm_sig_auth::DEFAULT_MAX_AUTH_VALIDITY;
 use serde::Deserialize;
 use url::{Host, Url};
 
+use crate::metrics::MAX_KMS_NODES;
+
 /// Upper bound of every configured duration: keeps deadline arithmetic trivially safe.
 pub const MAX_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -170,6 +172,12 @@ impl KmsAggregatorConfig {
         if n == 0 {
             return fail("kms_aggregator.endpoints must not be empty".to_owned());
         }
+        // The bound of the `kms_node` label: the series budget is computed from it.
+        if n > MAX_KMS_NODES {
+            return fail(format!(
+                "kms_aggregator.endpoints must have at most {MAX_KMS_NODES} entries ({n} given)"
+            ));
+        }
         for (i, ep) in self.endpoints.iter().enumerate() {
             let at = format!("kms_aggregator.endpoints[{i}]");
             if ep.name.trim().is_empty() {
@@ -332,6 +340,15 @@ pub(crate) mod tests {
     #[test]
     fn endpoints_must_not_be_empty() {
         assert!(message(&valid(0)).contains("endpoints must not be empty"));
+    }
+
+    #[test]
+    fn endpoints_are_bounded_by_the_kms_node_label() {
+        valid(MAX_KMS_NODES).validate().unwrap();
+        assert!(
+            message(&valid(MAX_KMS_NODES + 1))
+                .contains("kms_aggregator.endpoints must have at most 13 entries (14 given)")
+        );
     }
 
     #[test]

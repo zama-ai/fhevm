@@ -8,6 +8,7 @@ pub const INTERFACE_VERSION: &str = "v1";
 
 pub const PUBLIC_DECRYPTION_ROUTE: &str = "/v1/public-decrypt";
 pub const USER_DECRYPTION_ROUTE: &str = "/v1/user-decrypt";
+pub const PAD_DECRYPTION_ROUTE: &str = "/v1/pad-decrypt";
 pub const VERSION_ROUTE: &str = "/version";
 
 /// `200` body of `/version` endpoint.

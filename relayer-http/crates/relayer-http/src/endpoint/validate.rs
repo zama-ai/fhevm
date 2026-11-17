@@ -1,7 +1,11 @@
 //! Stateless checks shared by the routes, before any fan-out: the connector's cheap handle rules (it would reject
 //! these requests anyway; failing here saves n calls) and the `extraData` format. Nothing here touches a chain.
 
+use std::fmt::Display;
+
 use alloy::primitives::B256;
+
+use crate::config::HttpConfig;
 
 /// The connector's budget for one decryption request, in plaintext bits.
 const MAX_DECRYPTION_BITS: u32 = 2048;
@@ -12,6 +16,8 @@ const MAX_DECRYPTION_BITS: u32 = 2048;
 pub struct Invalid {
     pub field: String,
     pub issue: String,
+    /// The offending value, for the DEBUG `request invalid` line only: never in the answer.
+    pub value: Option<String>,
 }
 
 impl Invalid {
@@ -19,7 +25,15 @@ impl Invalid {
         Self {
             field: field.into(),
             issue: issue.into(),
+            value: None,
         }
+    }
+
+    /// The same, naming the offending value.
+    #[must_use]
+    pub fn with_value(mut self, value: impl Display) -> Self {
+        self.value = Some(value.to_string());
+        self
     }
 }
 
@@ -50,28 +64,36 @@ pub fn decode_handle(handle: &B256) -> Result<(u64, u32), &'static str> {
     Ok((u64::from_be_bytes([c0, c1, c2, c3, c4, c5, c6, c7]), bits))
 }
 
-/// Non-empty, decryptable types, one chain id that this relayer serves, at most 2048 bits in total.
+/// Non-empty, at most `http.max_handles_per_decryption`, decryptable types, one chain id of
+/// `http.supported_chain_ids`, at most 2048 bits in total.
 pub fn handles<'a>(
     field: &str,
-    handles: impl Iterator<Item = &'a B256>,
-    chain_ids: &[u64],
+    handles: impl ExactSizeIterator<Item = &'a B256>,
+    http: &HttpConfig,
 ) -> Result<(), Invalid> {
+    let (chain_ids, max) = (&http.supported_chain_ids, http.max_handles_per_decryption);
+    if handles.len() > max {
+        return Err(Invalid::new(field, format!("at most {max} handles"))
+            .with_value(format_args!("{} handles", handles.len())));
+    }
     let (mut chain, mut bits, mut count) = (None, 0u32, 0usize);
     for (i, handle) in handles.enumerate() {
         count += 1;
-        let (chain_id, size) =
-            decode_handle(handle).map_err(|issue| Invalid::new(format!("{field}[{i}]"), issue))?;
+        let (chain_id, size) = decode_handle(handle)
+            .map_err(|issue| Invalid::new(format!("{field}[{i}]"), issue).with_value(handle))?;
         if *chain.get_or_insert(chain_id) != chain_id {
             return Err(Invalid::new(
                 format!("{field}[{i}]"),
                 "all handles must be on the same chain",
-            ));
+            )
+            .with_value(handle));
         }
         if !chain_ids.contains(&chain_id) {
             return Err(Invalid::new(
                 format!("{field}[{i}]"),
                 format!("chain id {chain_id} is not supported"),
-            ));
+            )
+            .with_value(handle));
         }
         bits = bits.saturating_add(size);
     }
@@ -82,7 +104,8 @@ pub fn handles<'a>(
         return Err(Invalid::new(
             field,
             format!("total size {bits} bits exceeds {MAX_DECRYPTION_BITS}"),
-        ));
+        )
+        .with_value(format_args!("{count} handles")));
     }
     Ok(())
 }
@@ -137,32 +160,56 @@ pub(crate) mod tests {
     #[test]
     fn handles_rules() {
         let ok = [handle(1, 4), handle(1, 0)];
-        assert_eq!(handles("h", ok.iter(), &[1, 137]), Ok(()));
         assert_eq!(
-            handles("h", [].iter(), &[1]),
+            handles("h", ok.iter(), &HttpConfig::for_tests(&[1, 137])),
+            Ok(())
+        );
+        assert_eq!(
+            handles("h", [].iter(), &HttpConfig::for_tests(&[1])),
             Err(Invalid::new("h", "must not be empty"))
         );
         assert_eq!(
-            handles("h", [handle(1, 4), handle(1, 9)].iter(), &[1]),
-            Err(Invalid::new("h[1]", "FHE type cannot be decrypted"))
+            handles(
+                "h",
+                [handle(1, 4), handle(1, 9)].iter(),
+                &HttpConfig::for_tests(&[1])
+            ),
+            Err(Invalid::new("h[1]", "FHE type cannot be decrypted").with_value(handle(1, 9)))
         );
         assert_eq!(
-            handles("h", [handle(1, 4), handle(137, 4)].iter(), &[1, 137]),
-            Err(Invalid::new(
-                "h[1]",
-                "all handles must be on the same chain"
-            ))
+            handles(
+                "h",
+                [handle(1, 4), handle(137, 4)].iter(),
+                &HttpConfig::for_tests(&[1, 137])
+            ),
+            Err(
+                Invalid::new("h[1]", "all handles must be on the same chain")
+                    .with_value(handle(137, 4))
+            )
         );
         assert_eq!(
-            handles("h", [handle(31337, 4)].iter(), &[1, 137]),
-            Err(Invalid::new("h[0]", "chain id 31337 is not supported"))
+            handles(
+                "h",
+                [handle(31337, 4)].iter(),
+                &HttpConfig::for_tests(&[1, 137])
+            ),
+            Err(Invalid::new("h[0]", "chain id 31337 is not supported")
+                .with_value(handle(31337, 4)))
         );
         let eight = vec![handle(1, 8); 8];
-        assert_eq!(handles("h", eight.iter(), &[1]), Ok(()));
+        assert_eq!(
+            handles("h", eight.iter(), &HttpConfig::for_tests(&[1])),
+            Ok(())
+        );
+        let too_many = vec![handle(1, 0); 51];
+        assert_eq!(
+            handles("h", too_many.iter(), &HttpConfig::for_tests(&[1])),
+            Err(Invalid::new("h", "at most 50 handles").with_value("51 handles"))
+        );
         let nine = vec![handle(1, 8); 9];
         assert_eq!(
-            handles("h", nine.iter(), &[1]),
-            Err(Invalid::new("h", "total size 2304 bits exceeds 2048"))
+            handles("h", nine.iter(), &HttpConfig::for_tests(&[1])),
+            Err(Invalid::new("h", "total size 2304 bits exceeds 2048").with_value("9 handles"))
         );
     }
 

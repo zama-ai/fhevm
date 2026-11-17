@@ -5,7 +5,15 @@
 # The ignored vulnerability RUSTSEC-2024-0388 is tracked by #59
 # The ignored vulnerability RUSTSEC-2025-0009 is tracked by #150
 # Vulnerability RUSTSEC-2023-0071 is not tracked: rsa used by sqlx but not included on relayer (verified with cargo tree)
-ignore = ["RUSTSEC-2024-0388", "RUSTSEC-2025-0009", "RUSTSEC-2023-0071"]
+# RUSTSEC-2026-0387 (crypto-bigint via alloy) is a low-risk timing side channel with no reachable fix, also ignored in kms-connector and coprocessor
+# RUSTSEC-2026-0459 (libsqlite3-sys) comes only via sqlx-sqlite, which is not compiled
+ignore = [
+  "RUSTSEC-2024-0388",
+  "RUSTSEC-2025-0009",
+  "RUSTSEC-2023-0071",
+  "RUSTSEC-2026-0387",
+  "RUSTSEC-2026-0459",
+]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 

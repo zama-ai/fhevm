@@ -3,16 +3,16 @@ use crate::core::event_processor::{
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
+    pad,
     protocol_config::ProtocolConfigProcessor,
 };
 use alloy::{primitives::B256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, KmsSendResponse, ProtocolEvent,
-    ProtocolEventKind, db::invalidate_kms_epoch, extra_data::parse_extra_data, u256_to_request_id,
+    ProtocolEventKind, extra_data::parse_extra_data, u256_to_request_id,
 };
 use kms_connector_api::ErrorCode;
-use kms_grpc::kms::v1::{DestroyMpcContextRequest, DestroyMpcEpochRequest};
 use sqlx::{Pool, Postgres};
 use tracing::warn;
 
@@ -44,7 +44,7 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     /// The entity used to build `ProtocolConfig` event requests (context/epoch lifecycle).
     protocol_config_processor: ProtocolConfigProcessor<HP>,
 
-    /// The DB connection pool used to invalidate destroyed KMS epochs.
+    /// The DB connection pool used to complete events expecting no response.
     db_pool: Pool<Postgres>,
 }
 
@@ -61,43 +61,41 @@ where
         &mut self,
         event: &mut Self::Event,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        if event.already_sent {
-            // Poll-only retry: we still re-run live-state checks.
-            self.check_request(event)
-                .await
+        let poll_target = KmsPollTarget::from(&event.kind);
+
+        // Requests answered synchronously are always re-sent on retry, as there is no result to
+        // poll. This relies on the requests being idempotent on the KMS Core side.
+        let send_response =
+            if matches!(poll_target, KmsPollTarget::ResultOnSend) || !event.already_sent {
+                // We optimistically prepare the request while running the checks.
+                let ((), request) = tokio::try_join!(
+                    biased;
+                    self.check_request(event),
+                    self.prepare_grpc_request(event),
+                )
                 .inspect_err(|_| event.error_counter += 1)?;
-        } else {
-            // We optimistically prepare the request while running the checks.
-            let ((), request) = tokio::try_join!(
-                biased;
-                self.check_request(event),
-                self.prepare_grpc_request(event),
-            )
-            .inspect_err(|_| event.error_counter += 1)?;
 
-            let (error_count, result) = self.kms_client.send_request(&request).await;
-            event.error_counter += error_count;
-            let send_response = result?;
-            event.already_sent = true;
+                let (error_count, result) = self.kms_client.send_request(&request).await;
+                event.error_counter += error_count;
+                let send_response = result?;
+                event.already_sent = true;
+                send_response
+            } else {
+                // Poll-only retry: we still re-run live-state checks.
+                self.check_request(event)
+                    .await
+                    .inspect_err(|_| event.error_counter += 1)?;
+                KmsSendResponse::Ack
+            };
 
-            // Invalidate epochs associated to destroyed context returned by the KMS Core.
-            // A failure must not prevent the event from completing, as retrying would result in an
-            // `NotFound` from KMS Core with no epoch IDs.
-            if let KmsSendResponse::DestroyedEpochs(epoch_ids) = send_response {
-                for epoch_id in epoch_ids {
-                    if let Err(e) = invalidate_kms_epoch(&self.db_pool, epoch_id).await {
-                        warn!("Failed to invalidate destroyed KMS epoch #{epoch_id:#066x}: {e}");
-                    }
-                }
+        let grpc_response = match send_response {
+            KmsSendResponse::Result(grpc_response) => *grpc_response,
+            KmsSendResponse::Ack => {
+                let (error_count, grpc_result) = self.kms_client.poll_result(poll_target).await;
+                event.error_counter += error_count;
+                grpc_result?
             }
-        }
-
-        let (error_count, grpc_result) = self
-            .kms_client
-            .poll_result(KmsPollTarget::from(&event.kind))
-            .await;
-        event.error_counter += error_count;
-        let grpc_response = grpc_result?;
+        };
 
         if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
             if let Err(e) = event.mark_as_completed(&self.db_pool).await {
@@ -106,8 +104,17 @@ where
             return Ok(None);
         }
 
-        let processed_response = KmsResponseKind::process(grpc_response)
+        let mut processed_response = KmsResponseKind::process(grpc_response)
             .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
+        if let (KmsResponseKind::EpochResult(response), ProtocolEventKind::NewKmsEpoch(req)) =
+            (&mut processed_response, &event.kind)
+        {
+            (response.keys, response.crs_list) = self
+                .protocol_config_processor
+                .fetch_epoch_activation_material(req)
+                .await
+                .inspect_err(|_| event.error_counter += 1)?;
+        }
         Ok(Some(processed_response))
     }
 }
@@ -212,6 +219,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 )?;
                 Ok(())
             }
+            ProtocolEventKind::PadDecryption(_) => Err(pad::unsupported()),
             ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Crsgen(req) => self.check_context(&req.extraData).await,
@@ -277,6 +285,9 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     )
                     .await
             }
+            ProtocolEventKind::PadDecryption(_) => {
+                unreachable!("pad decryptions are rejected by `check_request`")
+            }
             ProtocolEventKind::PrepKeygen(req) => {
                 self.kms_generation_processor
                     .prepare_prep_keygen_request(req)
@@ -308,16 +319,12 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_new_kms_epoch_request(req)
                     .await
             }
-            ProtocolEventKind::KmsContextDestroyed(req) => Ok(KmsGrpcRequest::DestroyMpcContext(
-                DestroyMpcContextRequest {
-                    context_id: Some(u256_to_request_id(req.kmsContextId)),
-                },
-            )),
-            ProtocolEventKind::KmsEpochDestroyed(req) => {
-                Ok(KmsGrpcRequest::DestroyMpcEpoch(DestroyMpcEpochRequest {
-                    epoch_id: Some(u256_to_request_id(req.epochId)),
-                }))
-            }
+            ProtocolEventKind::KmsContextDestroyed(req) => Ok(self
+                .protocol_config_processor
+                .prepare_destroy_kms_context_request(req)),
+            ProtocolEventKind::KmsEpochDestroyed(req) => Ok(self
+                .protocol_config_processor
+                .prepare_destroy_kms_epoch_request(req)),
         }
     }
 }
