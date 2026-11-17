@@ -30,6 +30,11 @@ jobs:
             rust-files:
               - .github/workflows/coprocessor-dependency-analysis.yml
               - coprocessor/fhevm-engine/**
+              - shared/**
+              - gateway-contracts/rust_bindings/**
+              - host-contracts/rust_bindings/**
+              - listener/Cargo.toml
+              - listener/crates/**
   dependencies-check:
     name: coprocessor-dependency-analysis/dependencies-check (bpr)
     needs: check-changes
