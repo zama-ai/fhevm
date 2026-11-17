@@ -19,4 +19,4 @@ padWorkerShared:
   config:
     s3BucketName:
       value: coprocessor-bucket
-    outputMaxAgeSeconds: 3600
+    ct64MaxAgeSeconds: 86400

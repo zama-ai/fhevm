@@ -5,7 +5,7 @@ use alloy::{
         local::PrivateKeySigner,
     },
 };
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, ensure, Context};
 use aws_config::{timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::config::{RequestChecksumCalculation, ResponseChecksumValidation};
 use clap::Parser;
@@ -60,17 +60,18 @@ struct Args {
     #[arg(long, env = "PAD_PENDING_MAX_AGE", default_value = "10m", value_parser = humantime::parse_duration)]
     pending_max_age: Duration,
 
-    /// Delete uploaded or failed rows older than this. If not set, keep all rows.
-    #[arg(long, env = "PRF_OUTPUT_MAX_AGE", value_parser = humantime::parse_duration)]
-    output_max_age: Option<Duration>,
+    /// Delete uploaded or failed rows (the ct128) older than this. `0s` keeps all rows.
+    #[arg(long, env = "PAD_CT128_MAX_AGE", default_value = "1h", value_parser = humantime::parse_duration)]
+    ct128_max_age: Duration,
+
+    /// Delete the ct64 older than this, at least `PAD_CT128_MAX_AGE`. Not set or `0s` keeps all
+    /// ct64.
+    #[arg(long, env = "PAD_CT64_MAX_AGE", value_parser = humantime::parse_duration)]
+    ct64_max_age: Option<Duration>,
 
     /// Interval of the GC and the row age metrics.
     #[arg(long, env = "PAD_GC_INTERVAL", default_value = "1m", value_parser = humantime::parse_duration)]
     gc_interval: Duration,
-
-    /// The GC clears the ct64 of rows older than this. Unmask then computes it again.
-    #[arg(long, env = "PAD_CT64_MAX_AGE", default_value = "1h", value_parser = humantime::parse_duration)]
-    ct64_max_age: Duration,
 
     /// Latency of one OPRF PBS in the mock evaluator. `0s`: no delay.
     #[arg(long, env = "PAD_MOCK_PBS_LATENCY", default_value = "13ms", value_parser = humantime::parse_duration)]
@@ -152,6 +153,22 @@ async fn signer(args: &Args) -> anyhow::Result<CoproSigner> {
     })
 }
 
+/// Returns the age of a GC, or `None` for `0s`: the GC is off.
+fn gc_age(age: Duration) -> Option<Duration> {
+    Some(age).filter(|age| !age.is_zero())
+}
+
+/// The ct64 stays at least as long as the ct128.
+fn check_ages(args: &Args) -> anyhow::Result<()> {
+    if let Some(ct64) = args.ct64_max_age.and_then(gc_age) {
+        ensure!(
+            gc_age(args.ct128_max_age).is_some_and(|ct128| ct64 >= ct128),
+            "--ct64-max-age must be at least --ct128-max-age, and --ct128-max-age must not be 0s"
+        );
+    }
+    Ok(())
+}
+
 async fn uploader(args: &Args) -> Uploader {
     let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let mut config = aws_sdk_s3::config::Builder::from(&aws_conf).timeout_config(
@@ -195,6 +212,7 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 async fn main() -> anyhow::Result<()> {
     fhevm_engine_common::handle_stack_version_flag();
     let args = Args::parse();
+    check_ages(&args)?;
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         args.log_level,
@@ -209,9 +227,9 @@ async fn main() -> anyhow::Result<()> {
         claim_timeout = ?args.claim_timeout,
         poll_interval = ?args.poll_interval,
         pending_max_age = ?args.pending_max_age,
-        output_max_age = ?args.output_max_age,
-        gc_interval = ?args.gc_interval,
+        ct128_max_age = ?args.ct128_max_age,
         ct64_max_age = ?args.ct64_max_age,
+        gc_interval = ?args.gc_interval,
         s3_bucket = args.s3_bucket,
         s3_max_concurrent_uploads = args.s3_max_concurrent_uploads,
         s3_resubmit_interval = ?args.s3_resubmit_interval,
@@ -247,9 +265,9 @@ async fn main() -> anyhow::Result<()> {
             claim_timeout: args.claim_timeout,
             poll_interval: args.poll_interval,
             pending_max_age: args.pending_max_age,
-            output_max_age: args.output_max_age,
+            ct128_max_age: gc_age(args.ct128_max_age),
+            ct64_max_age: args.ct64_max_age.and_then(gc_age),
             gc_interval: args.gc_interval,
-            ct64_max_age: args.ct64_max_age,
             drain_timeout: DRAIN_TIMEOUT,
         },
         pool,
@@ -299,6 +317,29 @@ mod tests {
         assert_eq!(args.prf_key_id, U256::from(0xab));
         assert_eq!(args.claim_timeout, Duration::from_secs(120));
         assert_eq!(args.pending_max_age, Duration::from_secs(600));
+        assert_eq!(args.ct128_max_age, Duration::from_secs(3600));
+        assert_eq!(args.ct64_max_age, None);
+    }
+
+    #[test]
+    fn refuses_a_ct64_age_below_the_ct128_age() {
+        let check = |ages: &[&str]| {
+            let mut args = vec![
+                "pad-worker",
+                "--prf-instance=1",
+                "--prf-key-id=0xab",
+                "--s3-bucket=b",
+            ];
+            args.extend(ages);
+            check_ages(&Args::try_parse_from(args).unwrap())
+        };
+        assert!(check(&[]).is_ok());
+        assert!(check(&["--ct64-max-age=0s"]).is_ok());
+        assert!(check(&["--ct128-max-age=0s", "--ct64-max-age=0s"]).is_ok());
+        assert!(check(&["--ct64-max-age=1h"]).is_ok());
+        assert!(check(&["--ct64-max-age=59m"]).is_err());
+        // The GC keeps every ct128.
+        assert!(check(&["--ct128-max-age=0s", "--ct64-max-age=1d"]).is_err());
     }
 
     #[test]

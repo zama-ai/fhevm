@@ -329,8 +329,7 @@ services:
       - --signer-type=private-key
       # e2e limits, short so the "PRF endpoint" suite reaches them; the same ages as prf-service.
       - --pending-max-age=60s
-      - --output-max-age=300s
-      - --ct64-max-age=30s
+      - --ct128-max-age=300s
       - --gc-interval=5s
       # 4 rows at once, fewer than the 8 requests in progress: the fairness test needs this.
       - --max-concurrent=4

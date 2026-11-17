@@ -11,9 +11,6 @@
 {{- if not (or $component.config.s3BucketName.value $component.config.s3BucketName.valueFrom) }}
 {{- fail "padWorkerShared.config.s3BucketName is required" }}
 {{- end }}
-{{- if not $component.config.outputMaxAgeSeconds }}
-{{- fail "padWorkerShared.config.outputMaxAgeSeconds is required, or no pads row is deleted" }}
-{{- end }}
 {{- end }}
 {{- $seen := dict }}
 {{- range $index, $worker := .Values.padWorkers }}
@@ -110,7 +107,7 @@ spec:
             - --health-check-port={{ $component.ports.healthcheck }}
             - --metrics-addr=0.0.0.0:{{ $component.ports.metrics }}
             - --pending-max-age={{ int $component.config.pendingMaxAgeSeconds }}s
-            - --output-max-age={{ int $component.config.outputMaxAgeSeconds }}s
+            - --ct128-max-age={{ int $component.config.ct128MaxAgeSeconds }}s
             {{- with $component.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -118,8 +115,10 @@ spec:
             - name: PAD_DATABASE_POOL_SIZE
               value: {{ $component.databasePoolSize | quote }}
             {{- /* Env, not a flag: a pad-worker keeps an older image, which ignores an unknown env var. */}}
+            {{- with $component.config.ct64MaxAgeSeconds }}
             - name: PAD_CT64_MAX_AGE
-              value: {{ printf "%ds" (int $component.config.ct64MaxAgeSeconds) | quote }}
+              value: {{ printf "%ds" (int .) | quote }}
+            {{- end }}
             {{- /* The pad_worker role: it writes only the outputs. */}}
             {{- with $component.databaseUser }}
             - name: DATABASE_USER

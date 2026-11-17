@@ -50,9 +50,9 @@ fn config() -> Config {
         claim_timeout: Duration::from_secs(60),
         poll_interval: Duration::from_millis(100),
         pending_max_age: Duration::from_secs(600),
-        output_max_age: None,
+        ct128_max_age: None,
+        ct64_max_age: None,
         gc_interval: Duration::from_secs(3600),
-        ct64_max_age: Duration::from_secs(3600),
         drain_timeout: Duration::from_secs(20),
     }
 }
@@ -143,7 +143,7 @@ async fn pending(pool: &PgPool, prf: u16, label: u8) -> bool {
     .unwrap()
 }
 
-/// `ciphertext128`, both digests, `signer`, `signature`, `attestation_version`.
+/// The output (ct128 or ct64), both digests, `signer`, `signature`, `attestation_version`.
 type OutputRow = (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i16);
 
 /// Counts the evaluations.
@@ -183,11 +183,25 @@ async fn computes_signs_and_writes_a_row() {
     let label = B256::repeat_byte(0xab);
     let expected = MockEvaluator.evaluate(INSTANCE, label, 64).unwrap();
     assert_eq!(row.0, expected.ct128);
-    let ct64: Vec<u8> = sqlx::query_scalar("SELECT ciphertext64 FROM pads")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(ct64, expected.ct64);
+    // `pad_ct64` has the ct64 and the same attestation.
+    let ct64_row: OutputRow = sqlx::query_as(
+        "SELECT ciphertext64, ciphertext_digest, ciphertext128_digest, signer, signature,
+                attestation_version FROM pad_ct64",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ct64_row.0, expected.ct64);
+    assert_eq!(
+        (
+            &ct64_row.1,
+            &ct64_row.2,
+            &ct64_row.3,
+            &ct64_row.4,
+            ct64_row.5
+        ),
+        (&row.1, &row.2, &row.3, &row.4, row.5)
+    );
     let attestation = PrfOutputAttestation {
         version: Version::try_from(u8::try_from(row.5).unwrap()).unwrap(),
         ciphertext_digest: B256::try_from(row.1.as_slice()).unwrap(),
@@ -468,7 +482,7 @@ async fn writes_the_output_of_a_pending_row_only() {
     assert!(rows::write_output(&pool, &claim, &[9], &[1], &attestation)
         .await
         .unwrap());
-    assert!(!rows::write_output(&pool, &claim, &[9], &[2], &attestation)
+    assert!(!rows::write_output(&pool, &claim, &[8], &[2], &attestation)
         .await
         .unwrap());
     let ct128: Vec<u8> = sqlx::query_scalar("SELECT ciphertext128 FROM pads")
@@ -476,6 +490,55 @@ async fn writes_the_output_of_a_pending_row_only() {
         .await
         .unwrap();
     assert_eq!(ct128, vec![1]);
+    assert_eq!(ct64(&pool).await, vec![vec![9]]);
+
+    // After the GC deletes the row, a new request adds it again. The stored ct64 stays.
+    sqlx::query("DELETE FROM pads")
+        .execute(&pool)
+        .await
+        .unwrap();
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    assert!(rows::write_output(&pool, &claim, &[8], &[1], &attestation)
+        .await
+        .unwrap());
+    assert_eq!(ct64(&pool).await, vec![vec![9]]);
+}
+
+/// The stored ct64, sorted by label.
+async fn ct64(pool: &PgPool) -> Vec<Vec<u8>> {
+    sqlx::query_scalar("SELECT ciphertext64 FROM pad_ct64 ORDER BY label")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+/// A ct64 of `prf` and `label`, stored `age_secs` ago.
+async fn add_ct64(pool: &PgPool, prf: u16, label: u8, age_secs: f64) {
+    sqlx::query(
+        "INSERT INTO pad_ct64 (prf_instance, label, pad_length, ciphertext64, ciphertext_digest,
+                               ciphertext128_digest, signer, signature, attestation_version,
+                               created_at)
+         VALUES ($1, $2, 64, '\\x0102', decode(repeat('00', 32), 'hex'),
+                 decode(repeat('00', 32), 'hex'), decode(repeat('00', 20), 'hex'),
+                 decode(repeat('01', 65), 'hex'), 1, NOW() - make_interval(secs => $3))",
+    )
+    .bind(i32::from(prf))
+    .bind(B256::repeat_byte(label).as_slice())
+    .bind(age_secs)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// The labels of the ct64 of `prf`, sorted.
+async fn ct64_labels(pool: &PgPool, prf: u16) -> Vec<u8> {
+    let labels: Vec<Vec<u8>> =
+        sqlx::query_scalar("SELECT label FROM pad_ct64 WHERE prf_instance = $1 ORDER BY label")
+            .bind(i32::from(prf))
+            .fetch_all(pool)
+            .await
+            .unwrap();
+    labels.iter().map(|l| l[0]).collect()
 }
 
 /// Sets `state` on the row of `label`: `uploaded`, `not_uploaded`, `failed` or `claimed` (live).
@@ -589,33 +652,34 @@ async fn the_gc_deletes_in_batches() {
 #[tokio::test]
 async fn the_gc_skips_the_rows_that_another_transaction_locks() {
     let (_instance, pool) = db().await;
-    // Rows 1 and 2: old and uploaded, with a ct64. Rows 3 and 4: expired and pending.
+    // Rows 1 and 2: old and uploaded, with an old ct64. Rows 3 and 4: expired and pending.
     for label in [1, 2] {
         add_row(&pool, INSTANCE, label, 1, 3600.0).await;
         set_state(&pool, INSTANCE, label, "uploaded").await;
+        add_ct64(&pool, INSTANCE, label, 3600.0).await;
     }
-    sqlx::query("UPDATE pads SET ciphertext64 = '\\x01'")
-        .execute(&pool)
-        .await
-        .unwrap();
     add_row(&pool, INSTANCE, 3, 1, 3600.0).await;
     add_row(&pool, INSTANCE, 4, 1, 3600.0).await;
-    // For example another GC: it locks rows 1 and 3.
+    // For example another GC: it locks rows 1 and 3, and the ct64 of row 1.
     let mut other = pool.begin().await.unwrap();
-    sqlx::query("SELECT 1 FROM pads WHERE label IN ($1, $2) FOR UPDATE")
+    for table in ["pads", "pad_ct64"] {
+        sqlx::query(&format!(
+            "SELECT 1 FROM {table} WHERE label IN ($1, $2) FOR UPDATE"
+        ))
         .bind(B256::repeat_byte(1).as_slice())
         .bind(B256::repeat_byte(3).as_slice())
         .execute(other.as_mut())
         .await
         .unwrap();
+    }
 
     let gc = async {
-        let cleared = rows::clear_old_ct64(&pool, Duration::from_secs(1800)).await?;
+        let ct64 = rows::delete_old_ct64(&pool, Duration::from_secs(1800)).await?;
         let deleted = rows::delete_old_outputs(&pool, Duration::from_secs(1800)).await?;
         let expired =
             rows::delete_expired_pending(&pool, Duration::from_secs(600), Duration::from_secs(60))
                 .await?;
-        Ok::<_, sqlx::Error>((cleared, deleted, expired))
+        Ok::<_, sqlx::Error>((ct64, deleted, expired))
     };
     let changed = tokio::time::timeout(Duration::from_secs(5), gc)
         .await
@@ -625,6 +689,7 @@ async fn the_gc_skips_the_rows_that_another_transaction_locks() {
     assert_eq!(changed, (1, 1, 1));
     other.commit().await.unwrap();
     assert_eq!(labels(&pool, INSTANCE).await, vec![1, 3]);
+    assert_eq!(ct64_labels(&pool, INSTANCE).await, vec![1]);
 }
 
 #[tokio::test]
@@ -664,32 +729,35 @@ async fn the_gc_runs_in_the_worker() {
 }
 
 #[tokio::test]
-async fn clears_the_old_ct64_and_keeps_the_digest() {
+async fn deletes_the_old_ct64_of_all_instances() {
     let (_instance, pool) = db().await;
-    for (label, age) in [(1, 3600.0), (2, 60.0)] {
-        add_row(&pool, INSTANCE, label, 1, age).await;
-        set_state(&pool, INSTANCE, label, "uploaded").await;
-    }
-    sqlx::query("UPDATE pads SET ciphertext64 = '\\x0102'")
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert_eq!(rows::stored_ct64_bytes(&pool).await.unwrap(), 4);
+    add_ct64(&pool, INSTANCE, 1, 3600.0).await;
+    add_ct64(&pool, INSTANCE, 2, 60.0).await;
+    add_ct64(&pool, INSTANCE + 1, 3, 3600.0).await;
 
-    let cleared = rows::clear_old_ct64(&pool, Duration::from_secs(1800))
+    let deleted = rows::delete_old_ct64(&pool, Duration::from_secs(1800))
         .await
         .unwrap();
 
-    assert_eq!(cleared, 1);
-    let rows: Vec<(Vec<u8>, bool, bool)> = sqlx::query_as(
-        "SELECT label, ciphertext64 IS NULL, ciphertext_digest IS NOT NULL FROM pads ORDER BY label",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    let states: Vec<(u8, bool, bool)> = rows.into_iter().map(|(l, c, d)| (l[0], c, d)).collect();
-    assert_eq!(states, vec![(1, true, true), (2, false, true)]);
-    assert_eq!(rows::stored_ct64_bytes(&pool).await.unwrap(), 2);
+    assert_eq!(deleted, 2);
+    assert_eq!(ct64_labels(&pool, INSTANCE).await, vec![2]);
+    assert!(ct64_labels(&pool, INSTANCE + 1).await.is_empty());
+}
+
+#[tokio::test]
+async fn the_ct64_outlives_its_pads_row() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, INSTANCE, 1, 1, 3600.0).await;
+    set_state(&pool, INSTANCE, 1, "uploaded").await;
+    add_ct64(&pool, INSTANCE, 1, 3600.0).await;
+
+    rows::delete_old_outputs(&pool, Duration::from_secs(1800))
+        .await
+        .unwrap();
+
+    assert!(labels(&pool, INSTANCE).await.is_empty());
+    assert_eq!(ct64_labels(&pool, INSTANCE).await, vec![1]);
+    assert!(rows::stored_ct64_bytes(&pool).await.unwrap() > 0);
 }
 
 #[tokio::test]
