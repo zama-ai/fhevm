@@ -1,0 +1,87 @@
+name: trivy
+
+# SCA: scan of the npm/pnpm/bun lockfiles for known-vulnerable dependencies
+# (Aqua Security's Trivy). All findings are uploaded as SARIF to the GitHub Security tab.
+# The job fails on HIGH/CRITICAL findings, only in the changed lockfiles on pull requests.
+
+on:
+  pull_request:
+    paths:
+      - "**/package-lock.json"
+      - "**/pnpm-lock.yaml"
+      - "**/bun.lock"
+      - ".github/workflows/trivy.yml"
+  schedule:
+    # Catch newly-disclosed CVEs against unchanged dependencies.
+    - cron: "0 6 * * 1"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  scan:
+    name: trivy/scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: "read" # Required to checkout repository code
+      pull-requests: "read" # Required to read pull request information
+      security-events: "write" # Required to upload SARIF results
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: "false"
+
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          list-files: json
+          filters: |
+            lockfiles:
+              - added|modified: "**/package-lock.json"
+              - added|modified: "**/pnpm-lock.yaml"
+              - added|modified: "**/bun.lock"
+            workflow:
+              - .github/workflows/trivy.yml
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          scanners: "vuln"
+          skip-files: "**/Cargo.lock"
+          format: "sarif"
+          output: "trivy-results.sarif"
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      - name: Check lockfiles for HIGH/CRITICAL vulnerabilities
+        env:
+          TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+          CHANGED_LOCKFILES: ${{ steps.filter.outputs.lockfiles_files }}
+          SCAN_ALL: ${{ github.event_name != 'pull_request' || steps.filter.outputs.workflow == 'true' }}
+        run: |
+          if [ "$SCAN_ALL" = "true" ]; then
+            lockfiles=$(git ls-files '*package-lock.json' '*pnpm-lock.yaml' '*bun.lock')
+          else
+            lockfiles=$(jq -r '.[]' <<< "$CHANGED_LOCKFILES")
+          fi
+          failed=0
+          for lockfile in $lockfiles; do
+            echo "::group::$lockfile"
+            if ! trivy fs --skip-db-update --scanners vuln --severity CRITICAL,HIGH --exit-code 1 "$lockfile"; then
+              failed=1
+              echo "::error file=$lockfile::HIGH/CRITICAL vulnerabilities found"
+            fi
+            echo "::endgroup::"
+          done
+          exit "$failed"
