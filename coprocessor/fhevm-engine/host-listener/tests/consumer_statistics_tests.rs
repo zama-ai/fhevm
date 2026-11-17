@@ -206,3 +206,68 @@ async fn detect_gap_seen_by_consumer_reports_duplicates_once(
 
     Ok(())
 }
+
+async fn consumer_block_numbers(
+    pool: &sqlx::PgPool,
+) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT block_number FROM host_chain_consumer_blocks
+         WHERE chain_id = 42 ORDER BY block_number",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Counted rows received more than a day before the newest block are
+/// deleted; recent and uncounted rows stay, and gap statistics still see the
+/// newest block after the prune.
+#[tokio::test]
+#[serial(db)]
+async fn prune_consumer_blocks_keeps_the_last_day_and_uncounted_rows(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (database, pool, _db_instance) = setup_db().await?;
+    mark_seen_blocks(&database, &[1, 2, 3, 4, 5, 6]).await?;
+    // Counts 1..=4 (below the newest block 6 minus margin 1).
+    database.detect_gap_seen_by_consumer(1).await?;
+    // Blocks 1, 2 (counted) and 5 (uncounted) were received two days ago.
+    sqlx::query(
+        "UPDATE host_chain_consumer_blocks
+            SET created_at = NOW() - INTERVAL '2 days'
+          WHERE chain_id = 42 AND block_number IN (1, 2, 5)",
+    )
+    .execute(&pool)
+    .await?;
+
+    assert_eq!(database.prune_consumer_blocks().await?, 2);
+    assert_eq!(consumer_block_numbers(&pool).await?, vec![3, 4, 5, 6]);
+    assert_eq!(database.prune_consumer_blocks().await?, 0);
+
+    // The newest block still anchors the statistics: 8 leaves a gap at 7.
+    mark_seen_blocks(&database, &[8, 9]).await?;
+    let stats = database.detect_gap_seen_by_consumer(0).await?;
+    assert_eq!(stats.number_of_new_gaps, 1);
+    assert_eq!(stats.total_new_gap_size, 1);
+    Ok(())
+}
+
+/// The cutoff follows the newest block, not the clock: a consumer that
+/// stopped receiving keeps its last day of history.
+#[tokio::test]
+#[serial(db)]
+async fn prune_consumer_blocks_follows_the_newest_block_not_the_clock(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (database, pool, _db_instance) = setup_db().await?;
+    mark_seen_blocks(&database, &[1, 2, 3]).await?;
+    database.detect_gap_seen_by_consumer(0).await?;
+    sqlx::query(
+        "UPDATE host_chain_consumer_blocks
+            SET created_at = NOW() - INTERVAL '3 days'
+          WHERE chain_id = 42",
+    )
+    .execute(&pool)
+    .await?;
+
+    assert_eq!(database.prune_consumer_blocks().await?, 0);
+    assert_eq!(consumer_block_numbers(&pool).await?, vec![1, 2, 3]);
+    Ok(())
+}

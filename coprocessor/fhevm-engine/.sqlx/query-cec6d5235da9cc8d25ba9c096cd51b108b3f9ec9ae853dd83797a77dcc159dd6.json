@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT p.block_number FROM host_chain_blocks_valid p\n            WHERE p.block_status = 'pending' AND p.block_number <= $1\n              AND p.chain_id = $2\n              AND ($3::BIGINT IS NULL OR p.block_number >= $3 OR EXISTS (\n                  SELECT 1 FROM host_chain_blocks_valid n\n                   WHERE n.chain_id = p.chain_id\n                     AND n.block_status = 'finalized'\n                     AND n.block_number BETWEEN p.block_number - 1\n                                            AND p.block_number + 1))\n            ORDER BY p.block_number ASC\n            LIMIT 10\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cec6d5235da9cc8d25ba9c096cd51b108b3f9ec9ae853dd83797a77dcc159dd6"
+}

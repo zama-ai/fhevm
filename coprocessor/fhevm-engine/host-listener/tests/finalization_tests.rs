@@ -3,7 +3,10 @@
 //! because finalization destructively cleans up the orphaned siblings.
 
 use fhevm_engine_common::chain_id::ChainId;
-use host_listener::database::ingest::update_finalized_blocks_aux;
+use host_listener::cmd::block_history::BlockSummary;
+use host_listener::database::ingest::{
+    ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
+};
 use host_listener::database::tfhe_event_propagate::Database;
 use serial_test::serial;
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
@@ -272,4 +275,161 @@ async fn finalization_accepts_linked_chain_and_orphans_sibling() {
         Some("orphaned"),
         "fork sibling of a finalized block is orphaned"
     );
+}
+
+/// A pending row below the retained history (an old block redelivered after
+/// its neighbours were pruned) has no finalized link. Finalization must not
+/// pick it, or it heads every batch and stops it: the blocks above the tip
+/// still finalize and the stale row is left alone.
+#[tokio::test]
+#[serial(db)]
+async fn finalization_skips_pending_rows_below_the_retained_history() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (stale, a, b) = (b32(0x55), b32(0xA0), b32(0xB1));
+    let tip = 50_000_i64;
+
+    seed_block(&db, 5, &stale, &b32(0x54), "pending").await;
+    seed_block(&db, tip, &a, &b32(0x09), "finalized").await;
+    seed_block(&db, tip + 1, &b, &a, "pending").await;
+
+    let chain = [
+        (5u64, stale.clone()),
+        (tip as u64, a.clone()),
+        (tip as u64 + 1, b.clone()),
+    ];
+    let result = update_finalized_blocks_aux(&mut db, tip as u64 + 1, 0, |n| {
+        let hash = chain
+            .iter()
+            .find(|(num, _)| *num == n)
+            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h))
+            .expect("requested block");
+        async move { Ok(hash) }
+    })
+    .await
+    .expect("finalize above the stale row");
+
+    assert_eq!(result.missing_canonical_block, None);
+    assert_eq!(block_status(&db, &b).await.as_deref(), Some("finalized"));
+    assert_eq!(block_status(&db, &stale).await.as_deref(), Some("pending"));
+}
+
+fn non_final_block(
+    number: u64,
+    hash: &[u8],
+    parent: &[u8],
+) -> BlockLogs<alloy::rpc::types::Log> {
+    BlockLogs {
+        logs: vec![],
+        summary: BlockSummary {
+            number,
+            hash: alloy::primitives::FixedBytes::<32>::from_slice(hash),
+            parent_hash: alloy::primitives::FixedBytes::<32>::from_slice(
+                parent,
+            ),
+            timestamp: 1_790_000_000,
+        },
+        catchup: false,
+        finalized: false,
+    }
+}
+
+async fn ingest_non_final(
+    db: &mut Database,
+    block: &BlockLogs<alloy::rpc::types::Log>,
+) {
+    ingest_block_logs(
+        ChainId::try_from(CHAIN_ID).unwrap(),
+        db,
+        block,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        },
+    )
+    .await
+    .expect("ingest")
+    .require_complete()
+    .expect("complete");
+}
+
+/// Final is final: a non-finalized delivery below the retained finalized
+/// history is dropped instead of admitted as pending (it could never be
+/// linked). A block above the tip is admitted as usual.
+#[tokio::test]
+#[serial(db)]
+async fn non_finalized_block_below_the_retained_history_is_ignored() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (old, a, b) = (b32(0x55), b32(0xA0), b32(0xB1));
+    let tip = 50_000_u64;
+    seed_block(&db, tip as i64, &a, &b32(0x09), "finalized").await;
+
+    ingest_non_final(&mut db, &non_final_block(5, &old, &b32(0x54))).await;
+    assert_eq!(block_status(&db, &old).await, None);
+
+    ingest_non_final(&mut db, &non_final_block(tip + 1, &b, &a)).await;
+    assert_eq!(block_status(&db, &b).await.as_deref(), Some("pending"));
+}
+
+/// The spaced prune runs once, then skips calls until its window elapses,
+/// even when rows became prunable meanwhile; the unspaced prune still runs.
+#[tokio::test]
+#[serial(db)]
+async fn spaced_prune_skips_calls_within_its_window() {
+    let (db, _inst) = fresh_db(CHAIN_ID).await;
+    let pool = db.pool().await;
+    let age = |hash: Vec<u8>| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "UPDATE host_chain_blocks_valid
+                    SET created_at = NOW() - INTERVAL '8 days'
+                  WHERE block_hash = $1",
+            )
+            .bind(hash)
+            .execute(&pool)
+            .await
+            .expect("age seeded block");
+        }
+    };
+    let (first, second) = (b32(0x11), b32(0x12));
+    seed_block(&db, 100, &first, &b32(0), "finalized").await;
+    age(first.clone()).await;
+
+    assert_eq!(
+        db.prune_finalized_block_history_spaced(20_000)
+            .await
+            .expect("first spaced prune"),
+        1
+    );
+
+    // A row becomes prunable right after: the next spaced call is skipped.
+    seed_block(&db, 101, &second, &b32(0), "finalized").await;
+    age(second.clone()).await;
+    assert_eq!(
+        db.prune_finalized_block_history_spaced(20_000)
+            .await
+            .expect("spaced prune within its window"),
+        0
+    );
+    assert_eq!(
+        block_status(&db, &second).await.as_deref(),
+        Some("finalized")
+    );
+
+    // Callers that need it now still prune unspaced.
+    assert_eq!(
+        db.prune_finalized_block_history(20_000)
+            .await
+            .expect("unspaced prune"),
+        1
+    );
+    assert_eq!(block_status(&db, &second).await, None);
 }
