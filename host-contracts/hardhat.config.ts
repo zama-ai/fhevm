@@ -14,6 +14,7 @@ import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
+import './tasks/coprocessorConfigMigration';
 import './tasks/coprocessorContext';
 import './tasks/examples/cOFT';
 import './tasks/examples/handlesList';

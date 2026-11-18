@@ -259,8 +259,10 @@ task('task:deployEmptyUUPSProxies')
       await run('task:setBridgeAddress', { address: ethers.ZeroAddress });
     }
 
-    // Deployed last, so the addresses of the proxies above do not change.
-    await run('task:deployEmptyProxyForCoprocessorConfig');
+    // Set CoprocessorConfig Address. Deployed last, so the addresses of the proxies above do not
+    // change.
+    const coprocessorConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setCoprocessorConfigAddress', { address: coprocessorConfigAddress });
   });
 
 task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, { ethers, upgrades, run }) {
@@ -279,26 +281,6 @@ task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, 
   const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setBridgeAddress', { address: proxyAddress });
   process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS = proxyAddress;
-});
-
-// Adds the CoprocessorConfig empty proxy to a host stack deployed before CoprocessorConfig existed.
-// task:deployCoprocessorConfig (or its DAO path) then initializes it.
-task('task:deployEmptyProxyForCoprocessorConfig').setAction(async function (_, { ethers, upgrades, run }) {
-  ensureAddressesDirectoryExists();
-
-  if (readExistingHostEnv().COPROCESSOR_CONFIG_CONTRACT_ADDRESS) {
-    console.warn(
-      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains COPROCESSOR_CONFIG_CONTRACT_ADDRESS.',
-    );
-    return;
-  }
-
-  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
-  await run('compile:specific', { contract: 'contracts/emptyProxy' });
-
-  const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setCoprocessorConfigAddress', { address: proxyAddress });
-  process.env.COPROCESSOR_CONFIG_CONTRACT_ADDRESS = proxyAddress;
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -923,7 +905,7 @@ task(
 
 // Builds the upgradeToAndCall(initializeFromEmptyProxy(...)) payload that defines the first
 // coprocessor context from the COPROCESSOR_* env variables, after deploying the implementation.
-async function buildCoprocessorConfigInitProposal(hre: HardhatRuntimeEnvironment) {
+export async function buildCoprocessorConfigInitProposal(hre: HardhatRuntimeEnvironment) {
   const initArgs = buildCoprocessorContextArgs();
   // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild.
   await hre.run('compile:specific', { contract: 'contracts' });
@@ -935,29 +917,9 @@ async function buildCoprocessorConfigInitProposal(hre: HardhatRuntimeEnvironment
   });
 }
 
-// DAO path for initializing the canonical CoprocessorConfig on a chain whose ACL owner is the DAO.
-// Devnet equivalent: task:deployCoprocessorConfig.
-task(
-  'task:prepareDeployCoprocessorConfig',
-  'Deploys a CoprocessorConfig implementation and prints DAO upgrade calldata that defines the first coprocessor context from the COPROCESSOR_* env variables',
-)
-  .addOptionalParam(
-    'verifyContract',
-    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
-    true,
-    types.boolean,
-  )
-  .setAction(async function ({ verifyContract }, hre) {
-    const preparedUpgrade = await buildCoprocessorConfigInitProposal(hre);
-    printUpgradeProposal(preparedUpgrade);
-    if (verifyContract) {
-      await verifyProposalImplementation(hre, preparedUpgrade);
-    }
-    return preparedUpgrade;
-  });
-
-// Initializes the CoprocessorConfig empty proxy with the deployer key: the same payload the DAO
-// path prints, so what runs on devnet is byte-identical to what the DAO signs.
+// Initializes the CoprocessorConfig empty proxy with the deployer key. A live chain whose ACL owner is
+// the DAO uses task:prepareDeployCoprocessorConfig instead (coprocessorConfigMigration.ts), which
+// prints the same payload.
 task('task:deployCoprocessorConfig').setAction(async function (_, hre) {
   const prepared = await buildCoprocessorConfigInitProposal(hre);
   await executeUpgradeProposal(hre, prepared);

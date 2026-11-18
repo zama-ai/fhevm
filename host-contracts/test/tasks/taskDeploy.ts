@@ -192,44 +192,6 @@ describe('task:deployEmptyUUPSProxies', function () {
   });
 });
 
-describe('task:deployEmptyProxyForCoprocessorConfig', function () {
-  let originalEnvHost: string;
-  let originalAddressesSol: string;
-  const originalProcessAddress = process.env.COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
-
-  beforeEach(function () {
-    originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
-    originalAddressesSol = fs.readFileSync(HOST_ADDRESSES_SOL_FILE, 'utf-8');
-  });
-
-  afterEach(function () {
-    fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
-    fs.writeFileSync(HOST_ADDRESSES_SOL_FILE, originalAddressesSol);
-    if (originalProcessAddress === undefined) {
-      delete process.env.COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
-    } else {
-      process.env.COPROCESSOR_CONFIG_CONTRACT_ADDRESS = originalProcessAddress;
-    }
-  });
-
-  it('adds and records the empty proxy on a stack that has none', async function () {
-    fs.writeFileSync(HOST_ENV_FILE, originalEnvHost.replace(/^COPROCESSOR_CONFIG_CONTRACT_ADDRESS=.*\n?/m, ''));
-
-    await run('task:deployEmptyProxyForCoprocessorConfig');
-
-    const proxyAddress = readHostAddress('COPROCESSOR_CONFIG_CONTRACT_ADDRESS');
-    expect(await ethers.provider.getCode(proxyAddress)).to.not.equal('0x');
-    expect(fs.readFileSync(HOST_ADDRESSES_SOL_FILE, 'utf-8')).to.contain(
-      `address constant coprocessorConfigAdd = ${proxyAddress};`,
-    );
-  });
-
-  it('is a no-op when the stack already has one', async function () {
-    await run('task:deployEmptyProxyForCoprocessorConfig');
-    expect(fs.readFileSync(HOST_ENV_FILE, 'utf-8')).to.equal(originalEnvHost);
-  });
-});
-
 describe('task:assertNoPendingKeyManagementRequest', function () {
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);

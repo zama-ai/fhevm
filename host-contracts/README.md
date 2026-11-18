@@ -228,11 +228,16 @@ A coprocessor context is an immutable snapshot of the coprocessor set and its ma
 Context IDs carry the type byte `0x09`, so the first context is `0x0900...0001`.
 
 - **Canonical**: `initializeFromEmptyProxy` defines the first context from the `COPROCESSOR_*` env
-  variables (`task:deployCoprocessorConfig` on devnet, `task:prepareDeployCoprocessorConfig` for the DAO
-  payload). A stack deployed before `CoprocessorConfig` first gets its empty proxy with
-  `task:deployEmptyProxyForCoprocessorConfig`. `defineNewCoprocessorContext` and
+  variables (`task:deployCoprocessorConfig`). `defineNewCoprocessorContext` and
   `destroyCoprocessorContext` change it later (`tasks/coprocessorContext.ts`, a `task:build…Calldata`
   task for the DAO path and a broadcasting task for devnet).
+- **Live chains deployed before `CoprocessorConfig`**: `tasks/coprocessorConfigMigration.ts` holds the
+  one-time tooling, deleted once every live chain runs `CoprocessorConfig`.
+  `task:deployEmptyProxyForCoprocessorConfig` adds the empty proxy. `task:prepareDeployCoprocessorConfig
+--gateway-rpc-url … --gateway-config-address …` prints the DAO payload for the first context, after
+  checking the `COPROCESSOR_*` signers, storage URLs and threshold against `GatewayConfig` and the chain's
+  `InputVerifier` (`task:checkCoprocessorSetAgainstGateway` runs the check alone). The Ethereum transaction
+  senders and the PRF endpoint URLs have no live counterpart, so the task prints them for review.
 - **Replica**: `initializeFromCanonical` lands the replica on canonical's current context. Export it
   with `task:exportCanonicalCoprocessorConfig`, then apply it with
   `task:deployCoprocessorConfigFromCanonical` (devnet) or `task:prepareDeployCoprocessorConfigFromCanonical`
