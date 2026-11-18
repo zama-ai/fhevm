@@ -50,6 +50,14 @@ class TestCache extends LatestValueCache<TestContext, object, TestValue> {
   protected override ttl(context: TestContext): number {
     return context.ttlMs;
   }
+
+  protected override async fetchVersion(context: TestContext, parameters: object): Promise<string> {
+    return (await this.#fetchFn(context, parameters, undefined)).version;
+  }
+
+  public override currentParameters(): object {
+    return {};
+  }
 }
 
 /** A cache over an on-chain value `onChain`, whose reads can be held back with `hold()`. */

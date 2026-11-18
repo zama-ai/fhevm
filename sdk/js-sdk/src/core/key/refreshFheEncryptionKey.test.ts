@@ -18,7 +18,7 @@ import {
   ensureFheEncryptionKeyDownload,
   fheEncryptionKeyCacheForTests,
   getFheEncryptionKeySlot,
-  refreshFheEncryptionKey,
+  keyMaterialCache,
 } from './ensureFheEncryptionKeyDownload.js';
 import { RelayerResponseInputProofRejectedError } from '../errors/RelayerResponseInputProofRejectedError.js';
 import { recordCacheUsage } from '../caching/cacheUsage-p.js';
@@ -138,8 +138,8 @@ function makeWorld(options: { readonly labelIds?: boolean; readonly unverified?:
 type Client = ReturnType<ReturnType<typeof makeWorld>['newClient']>;
 const fetchBytes = (client: Client) => fetchFheEncryptionKeyBytes(client, { fhevmContext });
 const fetchVersion = async (client: Client) => (await ensureFheEncryptionKeyDownload(client, { fhevmContext })).version;
-const refresh = (client: Client, staleVersion?: string) =>
-  refreshFheEncryptionKey(client, { fhevmContext, staleVersion });
+const refresh = async (client: Client, staleVersion?: string) =>
+  (await keyMaterialCache.refresh(client, { fhevmContext }, staleVersion)).version;
 
 beforeEach(() => {
   fheEncryptionKeyCacheForTests.clear();

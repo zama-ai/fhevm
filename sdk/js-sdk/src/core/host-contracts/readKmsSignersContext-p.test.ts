@@ -8,14 +8,22 @@ import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
 import { invalidateVersionCache } from './HostContractVersion-p.js';
 import {
+  kmsContextCache,
   kmsContextVersion,
   permitRequestStaleContextError,
   readCurrentKmsSignersContext,
   readKmsSignersContextFromPermitExtraData,
-  refreshCurrentKmsContext,
 } from './readKmsSignersContext-p.js';
 import { createKmsExtraDataV0, createKmsExtraDataV1, createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
 import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
+
+/** Reads the current KMS context again; resolves to its version. */
+async function refreshCurrentKmsContext(
+  client: Parameters<typeof kmsContextCache.currentParameters>[0],
+  staleVersion: string | undefined,
+): Promise<string> {
+  return (await kmsContextCache.refresh(client, kmsContextCache.currentParameters(client), staleVersion)).version;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/host-contracts/readKmsSignersContext-p.test.ts

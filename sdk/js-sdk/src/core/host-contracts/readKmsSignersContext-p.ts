@@ -60,7 +60,7 @@ class KmsContextCache extends LatestValueCache<Context, Parameters, KmsContextVa
 
   /** The context this client uses now, whatever its age. Never reads. */
   public peekCurrent(context: Context & { readonly chain: FhevmChain }): CachedValue<KmsContextValue> | undefined {
-    return this.peek(this.getSlotKey(context, _currentKmsContextParameters(context)));
+    return this.peek(this.getSlotKey(context, this.currentParameters(context)));
   }
 
   protected override async fetch(
@@ -79,9 +79,28 @@ class KmsContextCache extends LatestValueCache<Context, Parameters, KmsContextVa
     });
     return { version, value: Object.freeze({ extraData, signers, threshold }) };
   }
+
+  // Any failure of a KMS request handed to the relayer (an error, a timeout,
+  // an abort): the KMS reports a refused context no other way. The request
+  // records the context only then, so earlier errors (bad input, an ACL
+  // denial) never get here.
+  public override mayBeStale(): boolean {
+    return true;
+  }
+
+  public override currentParameters(context: Context & { readonly chain: FhevmChain }): Parameters {
+    return _currentKmsContextParameters(context);
+  }
+
+  // The ids only, without the signers.
+  protected override async fetchVersion(context: Context, params: Parameters): Promise<string> {
+    const extraData = await _readCurrentKmsExtraData(context, params);
+    return kmsContextVersion(extraData.kmsContextId, extraData.kmsEpochId);
+  }
 }
 
-const kmsContextCache = new KmsContextCache();
+/** @internal The KMS context cache, shared by every client in the thread. */
+export const kmsContextCache = new KmsContextCache();
 
 /** The cache version of a KMS context: `contextId:epochId`, as 32-byte hex. */
 export function kmsContextVersion(kmsContextId: bigint, kmsEpochId: bigint): string {
@@ -93,25 +112,6 @@ function _currentKmsContextParameters(context: Context & { readonly chain: Fhevm
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   };
-}
-
-/**
- * Reads the current KMS context again (see `LatestValueCache.refresh`).
- *
- * @returns the cache version of the current context.
- */
-export async function refreshCurrentKmsContext(
-  context: Context & { readonly chain: FhevmChain },
-  staleVersion: string | undefined,
-): Promise<string> {
-  const { version } = await kmsContextCache.refresh(context, _currentKmsContextParameters(context), staleVersion);
-  return version;
-}
-
-/** Reads the version of the current KMS context, without caching it. */
-export async function readCurrentKmsContextVersion(context: Context & { readonly chain: FhevmChain }): Promise<string> {
-  const extraData = await _readCurrentKmsExtraData(context, _currentKmsContextParameters(context));
-  return kmsContextVersion(extraData.kmsContextId, extraData.kmsEpochId);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

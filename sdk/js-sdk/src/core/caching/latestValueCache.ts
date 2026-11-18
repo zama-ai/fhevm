@@ -1,4 +1,6 @@
 import type { FhevmCacheName } from '../types/cache.js';
+import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 import { getCacheTtl } from './cacheOptions-p.js';
 
@@ -76,6 +78,26 @@ export abstract class LatestValueCache<TContext extends { readonly options: obje
     return getCacheTtl(context, this.cacheName);
   }
 
+  /**
+   * Reads only the current version, caching nothing: cheaper than
+   * {@link fetch} (e.g. the key ids, not the key).
+   */
+  protected abstract fetchVersion(context: TContext, parameters: TParams): Promise<string>;
+
+  /**
+   * For `retryOnStaleCache`: whether a failed request's error may come from a
+   * stale value of this cache. By default never: the request is not run again.
+   */
+  public mayBeStale(_context: TContext, _error: unknown): boolean {
+    return false;
+  }
+
+  /** The parameters of the value the client uses now. */
+  public abstract currentParameters(
+    context: TContext & { readonly chain: FhevmChain },
+    fhevmContext: FhevmClientFrozenContext,
+  ): TParams;
+
   /** The current value: the cached one while younger than the client's TTL, else read. */
   public get(context: TContext, parameters: TParams): Promise<CachedValue<TValue>> {
     const ttlMs = this.ttl(context);
@@ -102,6 +124,23 @@ export abstract class LatestValueCache<TContext extends { readonly options: obje
     const joined = slot.pendingRead !== undefined;
     const cached = await this.#readOrRetry(slot, context, parameters);
     return joined && cached.version === staleVersion ? this.#readOrRetry(slot, context, parameters) : cached;
+  }
+
+  /** {@link refresh} of the value the client uses now. */
+  public refreshCurrent(
+    context: TContext & { readonly chain: FhevmChain },
+    fhevmContext: FhevmClientFrozenContext,
+    staleVersion?: string,
+  ): Promise<CachedValue<TValue>> {
+    return this.refresh(context, this.currentParameters(context, fhevmContext), staleVersion);
+  }
+
+  /** The version of the value the client uses now, read again; caches nothing. */
+  public readCurrentVersion(
+    context: TContext & { readonly chain: FhevmChain },
+    fhevmContext: FhevmClientFrozenContext,
+  ): Promise<string> {
+    return this.fetchVersion(context, this.currentParameters(context, fhevmContext));
   }
 
   /** The value cached in slot `slotKey`, whatever its age. Never reads. */
