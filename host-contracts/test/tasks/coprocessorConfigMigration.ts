@@ -189,6 +189,19 @@ describe('CoprocessorConfig migration tasks', function () {
   });
 
   const gatewayParams = () => ({ gatewayRpcUrl: gatewayRpc.url, gatewayConfigAddress: GATEWAY_CONFIG_ADDRESS });
+  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+
+  function patchHostEnv(key: string, value: string): void {
+    const content = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
+    fs.writeFileSync(HOST_ENV_FILE, content.replace(new RegExp(`^${key}=.*`, 'm'), `${key}=${value}`));
+  }
+
+  // Points .env.host at an InputVerifier initialized from the COPROCESSOR_* env set, since other test
+  // files change the signers of the shared one.
+  async function useFreshInputVerifier(): Promise<void> {
+    patchHostEnv('INPUT_VERIFIER_CONTRACT_ADDRESS', await deployFreshEmptyUUPSProxy(deployer));
+    await run('task:deployInputVerifier');
+  }
 
   describe('task:deployEmptyProxyForCoprocessorConfig', function () {
     it('adds and records the empty proxy on a stack that has none', async function () {
@@ -210,6 +223,8 @@ describe('CoprocessorConfig migration tasks', function () {
   });
 
   describe('task:checkCoprocessorSetAgainstGateway', function () {
+    beforeEach(useFreshInputVerifier);
+
     it('passes when the COPROCESSOR_* set matches GatewayConfig and InputVerifier', async function () {
       await run('task:checkCoprocessorSetAgainstGateway', gatewayParams());
     });
@@ -224,16 +239,11 @@ describe('CoprocessorConfig migration tasks', function () {
   });
 
   describe('task:prepareDeployCoprocessorConfig', function () {
+    beforeEach(useFreshInputVerifier);
+
     it('prepares DAO calldata for the checked COPROCESSOR_* set without mutating the proxy', async function () {
-      const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
       const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
-      fs.writeFileSync(
-        HOST_ENV_FILE,
-        originalEnvHost.replace(
-          /^COPROCESSOR_CONFIG_CONTRACT_ADDRESS=.*/m,
-          `COPROCESSOR_CONFIG_CONTRACT_ADDRESS=${proxyAddress}`,
-        ),
-      );
+      patchHostEnv('COPROCESSOR_CONFIG_CONTRACT_ADDRESS', proxyAddress);
 
       const implementationBefore = await upgrades.erc1967.getImplementationAddress(proxyAddress);
       const prepared = await run('task:prepareDeployCoprocessorConfig', { ...gatewayParams(), verifyContract: false });
