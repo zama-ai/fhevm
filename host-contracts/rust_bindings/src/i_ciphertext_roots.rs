@@ -17,6 +17,7 @@ interface ICiphertextRoots {
     error EpochLengthNull();
     error EpochRootAlreadyPosted(uint64 chainId, uint256 epoch, address sender);
     error EpochRootAlreadyRecorded(uint64 chainId, uint256 epoch);
+    error EpochRootNull();
     error EpochScheduleAlreadySet(uint64 chainId);
     error FromEpochTooLow(uint64 chainId, uint256 fromEpoch, uint256 minFromEpoch);
     error HostChainNullId();
@@ -565,6 +566,11 @@ interface ICiphertextRoots {
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "EpochRootNull",
+    "inputs": []
   },
   {
     "type": "error",
@@ -1621,6 +1627,80 @@ error EpochRootAlreadyRecorded(uint64 chainId, uint256 epoch);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.epoch),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EpochRootNull()` and selector `0xe509250a`.
+```solidity
+error EpochRootNull();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EpochRootNull;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EpochRootNull> for UnderlyingRustTuple<'_> {
+            fn from(value: EpochRootNull) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EpochRootNull {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EpochRootNull {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EpochRootNull()";
+            const SELECTOR: [u8; 4] = [229u8, 9u8, 37u8, 10u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -5822,6 +5902,8 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
         #[allow(missing_docs)]
         EpochRootAlreadyRecorded(EpochRootAlreadyRecorded),
         #[allow(missing_docs)]
+        EpochRootNull(EpochRootNull),
+        #[allow(missing_docs)]
         EpochScheduleAlreadySet(EpochScheduleAlreadySet),
         #[allow(missing_docs)]
         FromEpochTooLow(FromEpochTooLow),
@@ -5858,6 +5940,7 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
             [195u8, 33u8, 111u8, 25u8],
             [199u8, 132u8, 245u8, 75u8],
             [203u8, 171u8, 212u8, 126u8],
+            [229u8, 9u8, 37u8, 10u8],
             [253u8, 112u8, 59u8, 24u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
@@ -5874,6 +5957,7 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
             ::core::stringify!(FromEpochTooLow),
             ::core::stringify!(EpochLengthNull),
             ::core::stringify!(NoEpochRootRecorded),
+            ::core::stringify!(EpochRootNull),
             ::core::stringify!(EpochRootAlreadyRecorded),
         ];
         /// The signatures in the same order as `SELECTORS`.
@@ -5890,6 +5974,7 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
             <FromEpochTooLow as alloy_sol_types::SolError>::SIGNATURE,
             <EpochLengthNull as alloy_sol_types::SolError>::SIGNATURE,
             <NoEpochRootRecorded as alloy_sol_types::SolError>::SIGNATURE,
+            <EpochRootNull as alloy_sol_types::SolError>::SIGNATURE,
             <EpochRootAlreadyRecorded as alloy_sol_types::SolError>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
@@ -5917,7 +6002,7 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
     impl alloy_sol_types::SolInterface for ICiphertextRootsErrors {
         const NAME: &'static str = "ICiphertextRootsErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 13usize;
+        const COUNT: usize = 14usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5935,6 +6020,9 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
                 }
                 Self::EpochRootAlreadyRecorded(_) => {
                     <EpochRootAlreadyRecorded as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::EpochRootNull(_) => {
+                    <EpochRootNull as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EpochScheduleAlreadySet(_) => {
                     <EpochScheduleAlreadySet as alloy_sol_types::SolError>::SELECTOR
@@ -6110,6 +6198,17 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
                     NoEpochRootRecorded
                 },
                 {
+                    fn EpochRootNull(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICiphertextRootsErrors> {
+                        <EpochRootNull as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(ICiphertextRootsErrors::EpochRootNull)
+                    }
+                    EpochRootNull
+                },
+                {
                     fn EpochRootAlreadyRecorded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICiphertextRootsErrors> {
@@ -6273,6 +6372,17 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
                     NoEpochRootRecorded
                 },
                 {
+                    fn EpochRootNull(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICiphertextRootsErrors> {
+                        <EpochRootNull as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ICiphertextRootsErrors::EpochRootNull)
+                    }
+                    EpochRootNull
+                },
+                {
                     fn EpochRootAlreadyRecorded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICiphertextRootsErrors> {
@@ -6321,6 +6431,9 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
                     <EpochRootAlreadyRecorded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
+                }
+                Self::EpochRootNull(inner) => {
+                    <EpochRootNull as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::EpochScheduleAlreadySet(inner) => {
                     <EpochScheduleAlreadySet as alloy_sol_types::SolError>::abi_encoded_size(
@@ -6391,6 +6504,12 @@ function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLengt
                 }
                 Self::EpochRootAlreadyRecorded(inner) => {
                     <EpochRootAlreadyRecorded as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::EpochRootNull(inner) => {
+                    <EpochRootNull as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

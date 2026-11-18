@@ -703,6 +703,12 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         ciphertextRoots.postEpochRoot(CHAIN_ID, EPOCH, ROOT_1);
     }
 
+    function test_revertPostEpochRootNullRoot() public {
+        vm.prank(nodeA);
+        vm.expectRevert(ICiphertextRoots.EpochRootNull.selector);
+        ciphertextRoots.postEpochRoot(CHAIN_ID, EPOCH, bytes32(0));
+    }
+
     function test_revertPostEpochRootNoEpochSchedule() public {
         vm.prank(nodeA);
         vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NoEpochSchedule.selector, OTHER_CHAIN_ID));

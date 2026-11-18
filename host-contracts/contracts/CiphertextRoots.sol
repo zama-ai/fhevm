@@ -61,10 +61,8 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         mapping(bytes32 root => address[] senders) rootSenders;
         /// @notice Whether a sender already posted.
         mapping(address sender => bool posted) hasPosted;
-        /// @notice The recorded root, meaningful once `recorded` is set to true.
+        /// @notice The recorded root, zero while no root is recorded.
         bytes32 root;
-        /// @notice Whether a root is recorded.
-        bool recorded;
     }
 
     /// @dev The state of one host chain.
@@ -189,6 +187,10 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
 
     /// @inheritdoc ICiphertextRoots
     function postEpochRoot(uint64 chainId, uint256 epoch, bytes32 root) external virtual {
+        // A zero root would read as no recorded root.
+        if (root == bytes32(0)) {
+            revert EpochRootNull();
+        }
         HostChain storage chain = _hostChain(chainId);
         Epoch storage epochState = chain.epochs[epoch];
         if (epochState.hasPosted[msg.sender]) {
@@ -201,7 +203,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
 
         // First record a root that a context change already brought to a threshold, if any, so that
         // the first root to reach a threshold wins. Then add the post and try to record again.
-        bool recorded = epochState.recorded || _tryRecordEpochRoot(chainId, epoch, contexts);
+        bool recorded = epochState.root != bytes32(0) || _tryRecordEpochRoot(chainId, epoch, contexts);
 
         epochState.hasPosted[msg.sender] = true;
         // A root posted for the first time joins the epoch's list of distinct roots.
@@ -221,7 +223,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
     function recordEpochRoot(uint64 chainId, uint256 epoch) external virtual {
         HostChain storage chain = _hostChain(chainId);
         Epoch storage epochState = chain.epochs[epoch];
-        if (epochState.recorded) {
+        if (epochState.root != bytes32(0)) {
             revert EpochRootAlreadyRecorded(chainId, epoch);
         }
         if (!_tryRecordEpochRoot(chainId, epoch, _loadContexts())) {
@@ -333,11 +335,11 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
 
     /// @inheritdoc ICiphertextRoots
     function getEpochRoot(uint64 chainId, uint256 epoch) external view virtual returns (bytes32) {
-        Epoch storage epochState = _hostChain(chainId).epochs[epoch];
-        if (!epochState.recorded) {
+        bytes32 root = _hostChain(chainId).epochs[epoch].root;
+        if (root == bytes32(0)) {
             revert NoEpochRoot(chainId, epoch);
         }
-        return epochState.root;
+        return root;
     }
 
     /// @inheritdoc ICiphertextRoots
@@ -461,20 +463,23 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         return false;
     }
 
-    /// @dev Records the epoch's root and emits `EpochRootRecorded`. Reverts if the epoch already has one.
+    /// @dev Records the epoch's root and emits `EpochRootRecorded`. Reverts for a zero root and if the
+    ///      epoch already has one.
     function _recordEpochRoot(
         uint64 chainId,
         uint256 epoch,
         bytes32 root,
         uint256 coprocessorContextId
     ) internal virtual {
+        if (root == bytes32(0)) {
+            revert EpochRootNull();
+        }
         HostChain storage chain = _hostChain(chainId);
         Epoch storage epochState = chain.epochs[epoch];
-        if (epochState.recorded) {
+        if (epochState.root != bytes32(0)) {
             revert EpochRootAlreadyRecorded(chainId, epoch);
         }
         epochState.root = root;
-        epochState.recorded = true;
         if (!chain.anyRootRecorded) {
             chain.anyRootRecorded = true;
             chain.highestRecordedEpoch = epoch;

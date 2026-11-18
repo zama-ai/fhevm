@@ -88,6 +88,9 @@ interface ICiphertextRoots {
     /// @notice The epoch length is zero.
     error EpochLengthNull();
 
+    /// @notice The posted root is zero.
+    error EpochRootNull();
+
     /// @notice The host chain already has an epoch schedule.
     /// @param chainId The host chain ID.
     error EpochScheduleAlreadySet(uint64 chainId);
@@ -268,9 +271,9 @@ interface ICiphertextRoots {
      *      coprocessor context, and may post once per (host chain, epoch), for any epoch, however
      *      late the post.
      *      Records the first posted root that reaches a context's majority threshold, if none is yet.
-     *      Reverts with `NoEpochSchedule` if the host chain has no schedule, `EpochRootAlreadyPosted`
-     *      if the sender posted for the epoch and `NotCoprocessorTxSender` if the sender is in
-     *      neither context.
+     *      Reverts with `EpochRootNull` for a zero root, `NoEpochSchedule` if the host chain has no
+     *      schedule, `EpochRootAlreadyPosted` if the sender posted for the epoch and
+     *      `NotCoprocessorTxSender` if the sender is in neither context.
      * @param chainId The host chain ID.
      * @param epoch The epoch number.
      * @param root The root of the sender's tree for the epoch.
