@@ -70,7 +70,10 @@ async function main() {
   assert.equal(new Set(outputs.map((output) => output.handle)).size, target, 'every output must be fresh');
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+// SDK WASM worker threads can keep Node alive after the awaited work completes.
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
