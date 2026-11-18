@@ -59,34 +59,48 @@ async function fetchChain(origin, slot) {
   });
 }
 
+// The SDK runtime config is global and set once, but React StrictMode (Next dev) runs
+// the page effect twice: the first (cancelled) run would set a config whose logger and
+// locateFile write into ITS logs array, so the second run would never see the SDK's
+// "using 'locateFile'" line. Route both through a module-level sink that always points
+// at the currently active run.
+let activeSink = { log: () => {}, logger: undefined };
+
+const sinkLogger = {
+  debug: (m) => activeSink.logger?.debug(m),
+  info: (m) => activeSink.logger?.info(m),
+  warn: (m) => activeSink.logger?.warn(m),
+  error: (m, cause) => activeSink.logger?.error(m, cause),
+};
+
 // Route every TFHE asset (tfhe_bg.v*.wasm, tfhe-worker.v*.mjs) at the gateway's
 // same-origin raw-asset route — this is what opts each asset into URL loading.
-function makeLocateFile(origin, log) {
+function makeLocateFile(origin) {
   return (filename) => {
     const url = new URL(`${origin}/gw/asset/${filename}`);
-    log(`  [locateFile] ${filename} -> ${url.href}`);
+    activeSink.log(`  [locateFile] ${filename} -> ${url.href}`);
     return url;
   };
 }
 
-function applyRuntimeConfig(has, set, origin, log, logger) {
+function applyRuntimeConfig(has, set, origin) {
   if (!has()) {
     set({
       singleThread: !USE_MT,
       numberOfThreads: USE_MT ? MT_THREAD_COUNT : 0,
       wasmAssetLoadMode: WASM_LOAD,
-      locateFile: makeLocateFile(origin, log),
-      logger,
+      locateFile: makeLocateFile(origin),
+      logger: sinkLogger,
     });
   }
 }
 
-async function createClient(chain, rpcUrl, origin, log, logger) {
+async function createClient(chain, rpcUrl, origin) {
   if (LIB === 'viem') {
     const { createFhevmEncryptClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } = await import('@fhevm/sdk/viem');
     const { createPublicClient, http } = await import('viem');
     const { anvil } = await import('viem/chains');
-    applyRuntimeConfig(hasFhevmRuntimeConfig, setFhevmRuntimeConfig, origin, log, logger);
+    applyRuntimeConfig(hasFhevmRuntimeConfig, setFhevmRuntimeConfig, origin);
     const publicClient = createPublicClient({ chain: { ...anvil, id: chain.id }, transport: http(rpcUrl) });
     return createFhevmEncryptClient({ chain, publicClient });
   }
@@ -94,7 +108,7 @@ async function createClient(chain, rpcUrl, origin, log, logger) {
     const { createFhevmEncryptClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } =
       await import('@fhevm/sdk/ethers');
     const { ethers } = await import('ethers');
-    applyRuntimeConfig(hasFhevmRuntimeConfig, setFhevmRuntimeConfig, origin, log, logger);
+    applyRuntimeConfig(hasFhevmRuntimeConfig, setFhevmRuntimeConfig, origin);
     return createFhevmEncryptClient({ chain, provider: new ethers.JsonRpcProvider(rpcUrl) });
   }
   throw new Error(`Unknown NEXT_PUBLIC_FHEVM_TEST_LIB: ${LIB}`);
@@ -106,6 +120,7 @@ export default function Page() {
   useEffect(() => {
     let cancelled = false;
     const { logs, log, logger } = createTestLogger();
+    activeSink = { log, logger };
 
     async function run() {
       try {
@@ -113,7 +128,7 @@ export default function Page() {
         log(`lib=${LIB} threads=${THREADS} wasmLoad=${WASM_LOAD}`);
 
         const chain = await fetchChain(origin, CURRENT_SLOT);
-        const client = await createClient(chain, `${origin}/gw/${CURRENT_SLOT}/rpc`, origin, log, logger);
+        const client = await createClient(chain, `${origin}/gw/${CURRENT_SLOT}/rpc`, origin);
 
         await client.init();
         const info = await client.runtime.encrypt.getTfheModuleInfo({ tfheVersion: client.tfheVersion });
