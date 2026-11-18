@@ -9348,6 +9348,7 @@ name = "tfhe-worker"
 version = "0.7.0"
 dependencies = [
  "alloy",
+ "anyhow",
  "bigdecimal",
  "chrono",
  "clap",
