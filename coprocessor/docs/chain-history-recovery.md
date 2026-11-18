@@ -180,8 +180,127 @@ commitments. Do not merely clear `manifest_published` or rewrite the existing
 immutable revision. A general manifest revision protocol remains outside this
 change.
 
-Gateway history containment, checkpoint bootstrapping and Gateway reorg detection
-are outside this change. No Gateway checkpoint insertion is required at rollout.
+## Gateway history containment
+
+The Gateway listener's durable cursor is a height, so a height alone cannot
+distinguish the block it previously scanned from a same-height replacement.
+The Gateway checkpoint table records each admitted block hash and parent hash
+by source, BCS/GCS role, chain and height. The listener fetches canonical
+headers for every bounded log range, rejects logs whose block hash disagrees,
+and compares each header with retained checkpoints and adjacent parents under
+the per-chain history lock. Checkpoint admission and cursor updates share the
+cutover fence. A random cursor revision prevents a range fetched before a
+rewind or promotion from committing an obsolete watermark. The listener keeps
+the current cursor and its preceding 64 blocks; the extra anchor supports the
+64-block restart replay. An unfinished replay retains its older checkpoints
+and predecessor anchor until that obligation is completed.
+
+On startup, a nonzero cursor without a checkpoint is treated as an unverified
+legacy baseline and halts for operator recovery. With a verified cursor, the
+listener requests the last 64 blocks of InputVerification request and final
+response events, retaining any older unfinished range. Startup and the steady
+loop process that obligation in chunks of at most 64 blocks; a surviving
+replica can adopt it without creating a new generation, even on an idle chain.
+Matching history is safe to replay through the existing idempotent proof
+handlers. Readiness and cutover remain closed until the durable obligation
+completes. Completion retains its original stack role across promotion. A changed checkpoint or parent records the
+expected and observed hashes in `public.chain_recovery_halts`, revokes the
+Gateway dry-run latch, closes readiness and prevents cursor advancement. The
+listener does not delete or replace an existing proof row: the service cannot
+prove from its schema whether that row has already been consumed or published.
+That conservative choice requires audited operator recovery for changed
+history.
+
+GCS window alignment pins the rewind anchor before lowering its cursor. During
+cutover, GCS checkpoints are promoted with the cursor; an identity conflict
+records a halt and aborts the merge. Gateway readiness requires verified
+checkpoints for both the GCS and BCS cursor in addition to the existing window,
+replay and unresolved-proof checks.
+
+### Gateway rollout baseline
+
+The migration creates the checkpoint table but cannot infer trusted identities
+for existing cursors. Before starting binaries with this policy, stop the
+Gateway listeners and controllers, take a database snapshot, and verify each
+nonzero BCS and GCS cursor against an independently trusted canonical RPC for
+the configured Gateway chain. Record the block hash and parent hash together
+with the RPC/source and audit reference. Insert one `source='gateway'` row per
+role at its verified cursor height. Do not populate a checkpoint from an
+unreviewed RPC response: that would bless a possible fork as the baseline. If
+the cursor identity or already-consumed work cannot be reconciled, keep the
+fleet stopped and rebuild from an audited checkpoint. A zero or absent cursor
+does not need a legacy checkpoint.
+
+After migration and verified baseline seeding, deploy the repaired listeners,
+workers and controllers together. All participants sharing the database must
+honor the durable halt. A pre-migration binary does not enforce it.
+
+Use `gateway_history_baseline` from the matching release to check and seed each
+verified cursor. Run it from `coprocessor/fhevm-engine`, with the target database
+configured through the normal database environment settings. The following
+values must come from the independent audit above, not a fresh unreviewed RPC
+sample:
+
+```sh
+cargo run --locked -p fhevm-engine-common --bin gateway_history_baseline -- \
+  --schema public --chain-id <gateway-chain-id> --block-number <verified-cursor> \
+  --block-hash <verified-block-hash> --parent-hash <verified-parent-hash> \
+  --audit-reference <incident-or-change-reference>
+```
+
+This is a dry run. Repeat with `--apply` only after reviewing the supplied
+identities; retain the JSON receipt with the snapshot and audit evidence. For
+Green, use that release's exact `gcs-<stack-version>` schema instead of `public`.
+The command takes the exclusive cutover lock with a five-second lock deadline,
+checks that the cursor still has the verified height, and refuses conflicting
+retained checkpoints or unresolved halts. It is idempotent for the same baseline.
+It never advances a cursor, clears a halt, or repairs already-consumed work.
+
+The 64-block Gateway replay is requested once per process startup. A scan-loop
+retry after an RPC failure or a replica's cursor advance resumes any durable
+pending generation; it does not start another replay window. A genuine process
+restart still requests a new bounded replay. Replayed final proof responses
+clean up requests whose accepted ciphertexts are already present, but requests
+without a final response and races with verification can still repeat work.
+
+### Gateway recovery limits
+
+Automatic replay covers only the latest 64 cursor blocks and depends on the
+historical RPC returning canonical, complete logs and headers. History older
+than the retained checkpoint window is not audited automatically. A process
+can have exposed a proof to downstream work before a contradiction is seen;
+containment cannot undo consumed proofs, submitted transactions or published
+artifacts. An unfinished replay remains readiness-blocking until a replacement
+listener completes it or an operator resolves it as part of a verified rebuild.
+Do not clear a halt or replay row solely to restore readiness. For a confirmed
+fork, follow the audited recovery procedure below, reconcile external effects,
+and record the verified baseline before resolving the halt.
+
+### Historical executor admission
+
+Executor versions refer to `FHEVMExecutor.getVersion()`, not the coprocessor
+release or proxy initializer version. Scalar range checks for trivial encryption,
+binary operations and MulDiv begin at executor v0.7 (commit `1515d36df5`). The
+uint8 shift cap was introduced later in `fb301b1d35` without a version bump.
+Version-based ingestion therefore accepts the earlier v0.7 shift range; it
+cannot enforce the tighter cap until it has implementation-specific activation
+evidence. Tests cover historical values across the 0.6/0.7 boundary.
+
+With executor metadata enabled, RPC/transport errors while resolving the parent
+or an upgrade prevent admission/publication and retry the block. Providers must
+serve the requested canonical historical state unless the coprocessor already
+has the version on its canonical parent row. A successful empty response before
+proxy deployment, or a successfully returned unrecognized version string,
+retains legacy admission. Publishers without executor metadata remain wire
+compatible; absence of that optional feature is not a successful version lookup.
+
+The executor metadata migration adds its CHECK constraints as `NOT VALID` to
+avoid scanning per-block history while holding the schema-change lock. New and
+updated rows are checked immediately. After rollout, validate the two
+`host_chain_blocks_valid_executor_*` constraints separately with `ALTER TABLE
+... VALIDATE CONSTRAINT` on public and any retained Green tables during an
+appropriate maintenance window. A lock timeout during migration should be
+retried after the conflicting transaction has drained.
 
 These checks do not certify all historical data. Replay is bounded and depends
 on trustworthy historical RPC responses. Work can be consumed or published
@@ -196,9 +315,10 @@ canonical identity; ambiguous pre-upgrade history requires investigation.
 ## Deployment and recovery
 
 Use the existing migration and upgrade process. Apply the safety-table migration
-before starting the new binaries. All writers/controllers sharing the database
-must use the repaired build before relying on containment; older binaries do
-not honor the halt. No additional Gateway rollout phase is required.
+before starting the new binaries. For a legacy Gateway deployment, complete the
+verified baseline procedure above before enabling the listener. All
+writers/controllers sharing the database must use the repaired build before
+relying on containment; older binaries do not honor the halt.
 
 Inspect obligations and conflicts:
 
@@ -220,6 +340,13 @@ For a confirmed conflict:
 3. Restore a coherent verified checkpoint or rebuild affected state with the
    deployment's approved recovery procedure. If external effects cannot be
    reconciled, keep the fleet stopped and escalate for protocol recovery.
+   This includes `public.listener_block_checkpoints` for every affected
+   source, stack role and chain: replace or remove conflicting fork anchors
+   only as part of that audited state rebuild, including predecessors in the
+   retained replay window. Merely replacing the cursor's checkpoint leaves
+   predecessor/successor checks able to rediscover the conflict and halt again.
+   Preserve the original anchors in the incident snapshot. The baseline-seeding
+   command deliberately refuses to perform this recovery.
 4. With services stopped, resolve only the audited halt IDs under the exclusive
    cutover lock, recording the recovery reference. Do not clear halts merely to
    make readiness green. Reset replay obligations only for an audited rebuilt
