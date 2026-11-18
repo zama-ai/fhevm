@@ -1,3 +1,6 @@
+#[path = "abi_envelope_preflight.rs"]
+mod abi_envelope_preflight;
+
 use alloy::primitives::Log;
 use alloy::sol_types::SolEventInterface;
 
@@ -14,15 +17,18 @@ pub fn classify<T: SolEventInterface>(
     log: &Log,
     known_selectors: &[[u8; 32]],
 ) -> DecodedEvent<T> {
-    if let Ok(event) = T::decode_log(log) {
-        return DecodedEvent::Decoded(event);
-    }
-    if log
+    let known = log
         .data
         .topics()
         .first()
-        .is_some_and(|topic| known_selectors.contains(&topic.0))
-    {
+        .is_some_and(|topic| known_selectors.contains(&topic.0));
+    if known && !abi_envelope_preflight::dynamic_event_payload_fits(log) {
+        return DecodedEvent::MalformedKnown;
+    }
+    if let Ok(event) = T::decode_log(log) {
+        return DecodedEvent::Decoded(event);
+    }
+    if known {
         DecodedEvent::MalformedKnown
     } else {
         DecodedEvent::Unknown
