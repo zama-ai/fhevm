@@ -327,8 +327,7 @@ impl ProxyHttp for Proxy {
         }
         upstream_request.insert_header(X_FORWARDED_PROTO, self.config.scheme())?;
 
-        // The first body read comes next. Connecting to the endpoint took some of
-        // `request_read_timeout`, so that read only gets what is left of it too.
+        // Caps the first body read to what is left of `request_read_timeout`.
         session.set_read_timeout(Some(self.body_read_budget(ctx)));
         Ok(())
     }
