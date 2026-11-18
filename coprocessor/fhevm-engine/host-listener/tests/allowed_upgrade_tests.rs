@@ -10,8 +10,12 @@ use alloy::rpc::types::Log;
 use alloy::sol_types::SolEvent;
 use fhevm_engine_common::chain_id::ChainId;
 use host_listener::cmd::block_history::BlockSummary;
-use host_listener::contracts::{AclContract, TfheContract};
-use host_listener::database::ingest::{ingest_block_logs, BlockLogs};
+use host_listener::contracts::{
+    AclContract, KMSGeneration, ProtocolConfig, TfheContract,
+};
+use host_listener::database::ingest::{
+    ingest_block_logs, BlockLogs, IngestOptions,
+};
 use host_listener::database::tfhe_event_propagate::Database;
 use serial_test::serial;
 
@@ -39,6 +43,24 @@ fn block() -> BlockSummary {
         parent_hash: FixedBytes::with_last_byte(0xb0),
         timestamp: 1_790_000_000,
     }
+}
+
+fn set_dynamic_length_to_max(log: &mut Log, offset_word_position: usize) {
+    let mut data = log.inner.data.data.to_vec();
+    let offset_word_end = offset_word_position + 32;
+    let offset_word = data
+        .get(offset_word_position..offset_word_end)
+        .expect("dynamic offset word is present");
+    let tail_offset = u64::from_be_bytes(
+        offset_word[24..32]
+            .try_into()
+            .expect("ABI offset is one word"),
+    ) as usize;
+    let length_word_end = tail_offset + 32;
+    data.get_mut(tail_offset..length_word_end)
+        .expect("dynamic array length word is present")
+        .fill(0xff);
+    log.inner.data.data = alloy::primitives::Bytes::from(data);
 }
 
 #[tokio::test]
@@ -381,6 +403,206 @@ async fn malformed_known_envelopes_rollback_and_allow_valid_retry(
     }
     ingest(&mut db, &block, valid(), false).await?;
     assert_eq!(computation_flags(&pool, handle).await?, (true, false));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn oversized_dynamic_acl_and_executor_envelopes_rollback(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let block = block();
+    let tx_hash = FixedBytes::with_last_byte(0x93);
+    db.poller_set_last_caught_up_block(ChainId::try_from(42_u64)?, 99)
+        .await?;
+
+    let mut acl_log = rpc_log(
+        &AclContract::AllowedForDecryption {
+            caller: Address::ZERO,
+            handlesList: vec![computed_handle(0x23)],
+        },
+        &block,
+        tx_hash,
+        0,
+    );
+    set_dynamic_length_to_max(&mut acl_log, 0);
+    let acl_error = ingest(&mut db, &block, vec![acl_log], false)
+        .await
+        .expect_err("oversized known ACL event must fail the block");
+    assert!(
+        acl_error.to_string().contains("malformed known ACL"),
+        "{acl_error}"
+    );
+
+    let mut executor_log = rpc_log(
+        &TfheContract::FheSum {
+            caller: Address::ZERO,
+            values: vec![computed_handle(0x24)],
+            result: computed_handle(0x25),
+        },
+        &block,
+        tx_hash,
+        0,
+    );
+    set_dynamic_length_to_max(&mut executor_log, 0);
+    let executor_error = ingest(&mut db, &block, vec![executor_log], false)
+        .await
+        .expect_err("oversized known executor event must fail the block");
+    assert!(
+        executor_error.to_string().contains("malformed known TFHE"),
+        "{executor_error}"
+    );
+
+    let counts: (i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM computations),
+                (SELECT COUNT(*) FROM allowed_handles),
+                (SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id=42)",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(counts, (0, 0, 0), "rejected blocks must be atomic");
+    let cursor: i64 = sqlx::query_scalar(
+        "SELECT last_caught_up_block FROM host_listener_poller_state WHERE chain_id=42",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(cursor, 99, "rejected blocks must not advance the cursor");
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn oversized_dynamic_kms_activation_envelope_rolls_back(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let block = block();
+    let tx_hash = FixedBytes::with_last_byte(0x94);
+    let kms_address = Address::with_last_byte(0x44);
+    db.poller_set_last_caught_up_block(ChainId::try_from(42_u64)?, 99)
+        .await?;
+
+    let mut kms_log = rpc_log(
+        &KMSGeneration::ActivateCrs {
+            crsId: U256::ZERO,
+            kmsNodeStorageUrls: vec![],
+            crsDigest: alloy::primitives::Bytes::from(vec![1]),
+        },
+        &block,
+        tx_hash,
+        0,
+    );
+    kms_log.inner.address = kms_address;
+    // ActivateCrs consumes its storage URLs and digest to record activation.
+    set_dynamic_length_to_max(&mut kms_log, 32);
+
+    let block_logs = BlockLogs {
+        logs: vec![kms_log],
+        summary: block,
+        catchup: false,
+        finalized: false,
+    };
+    let error = ingest_block_logs(
+        ChainId::try_from(42_u64)?,
+        &mut db,
+        &block_logs,
+        &None,
+        &None,
+        &Some(kms_address),
+        &None,
+        &None,
+        OPTIONS,
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("malformed known KMS"), "{error}");
+
+    let valid_blocks: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id=42",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(valid_blocks, 0, "rejected KMS block must be atomic");
+    let cursor: i64 = sqlx::query_scalar(
+        "SELECT last_caught_up_block FROM host_listener_poller_state WHERE chain_id=42",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(cursor, 99, "rejected KMS block must not advance cursor");
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn oversized_dynamic_upgrade_proposal_envelope_rolls_back(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let block = block();
+    let tx_hash = FixedBytes::with_last_byte(0x95);
+    let protocol_config_address = Address::with_last_byte(0x45);
+    db.poller_set_last_caught_up_block(ChainId::try_from(42_u64)?, 99)
+        .await?;
+
+    let mut protocol_config_log = rpc_log(
+        &ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::ZERO,
+            softwareVersion: "test".to_string(),
+            chainUpgradeWindows: vec![],
+            gwStartBlock: 0,
+        },
+        &block,
+        tx_hash,
+        0,
+    );
+    protocol_config_log.inner.address = protocol_config_address;
+    // CoprocessorUpgradeProposed's first non-indexed field is a dynamic string.
+    set_dynamic_length_to_max(&mut protocol_config_log, 0);
+
+    let block_logs = BlockLogs {
+        logs: vec![protocol_config_log],
+        summary: block,
+        catchup: false,
+        finalized: false,
+    };
+    let options = IngestOptions {
+        is_protocol_config_listener: true,
+        ..OPTIONS
+    };
+    let error = ingest_block_logs(
+        ChainId::try_from(42_u64)?,
+        &mut db,
+        &block_logs,
+        &None,
+        &None,
+        &None,
+        &Some(protocol_config_address),
+        &None,
+        options,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("malformed known ProtocolConfig"),
+        "{error}"
+    );
+
+    let valid_blocks: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id=42",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        valid_blocks, 0,
+        "rejected ProtocolConfig block must be atomic"
+    );
+    let cursor: i64 = sqlx::query_scalar(
+        "SELECT last_caught_up_block FROM host_listener_poller_state WHERE chain_id=42",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        cursor, 99,
+        "rejected ProtocolConfig block must not advance cursor"
+    );
     Ok(())
 }
 
