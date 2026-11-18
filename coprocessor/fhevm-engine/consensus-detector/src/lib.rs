@@ -518,6 +518,11 @@ struct WindowState {
     deadlines: HashMap<i64, Instant>,
     /// The attempt's member set, resolved once from `gw_start_block`.
     members: Vec<decision::Member>,
+    /// Every verified decision record read for the attempt. A record read once
+    /// stays counted, even when its bucket stops serving it.
+    seen: decision::Seen,
+    /// How many of `seen` this operator has republished.
+    relayed: usize,
 }
 
 /// The attempt is over: a chain passed its deadline with no anchor, or every
@@ -641,6 +646,8 @@ where
         gateway.reset();
         window_state.deadlines.clear();
         window_state.members.clear();
+        window_state.seen = decision::Seen::default();
+        window_state.relayed = 0;
         window_state.tracked_window = active.clone();
     }
     let Some((proposal_id, proposal_block, stack_version, windows)) = active else {
@@ -685,7 +692,8 @@ where
         }
     }
     let members = window_state.members.clone();
-    // Warn once per attempt: fewer than four members tolerate no fault.
+    // Fewer than four members tolerate no fault. Warn when the member set is
+    // resolved: at the start of the attempt, and again after a restart.
     if members_unresolved && decision::max_faulty(members.len()) == 0 {
         warn!(
             members = members.len(),
@@ -861,67 +869,89 @@ where
     // members, roll back on `abort` from `abort_threshold` members. With at
     // most `max_faulty` malicious or silent members the two cannot both
     // happen, so a member that serves `quorum` to some peers and `abort` or
-    // nothing to others can neither split the fleet nor hold it in progress
-    // (fhevm-internal#2284). Below both thresholds this operator waits.
+    // nothing to others cannot split the fleet (fhevm-internal#2284). Below
+    // both thresholds this operator waits.
     let addresses = members
         .iter()
         .map(|m| m.address.as_str())
         .collect::<Vec<_>>();
     let cutover_threshold = decision::cutover_threshold(members.len());
     let abort_threshold = decision::abort_threshold(members.len());
-    let (mut quorums, mut aborts) = (0usize, 0usize);
-    let mut records = Vec::with_capacity(members.len());
+
+    // Read each member's own record and the records it republished. A record
+    // is signed, so one that a peer passes on counts like one read from its
+    // signer: a member cannot show its record to some peers only.
+    let mut read = Vec::new();
     for member in &members {
-        let record = match &own {
+        read.extend(match &own {
             // Our own record is already in hand. Do not fetch it twice.
             Some(record) if Some(&member.address) == own_name.as_ref() => Some(record.clone()),
             _ => decision::get(http, member, &proposal_id, proposal_block).await,
-        };
-        // A member on another release cannot cut over with this fleet.
-        if let (Some(record), Some(stack_version)) = (&record, &stack_version) {
-            if &record.payload.target_stack_version != stack_version
-                || record.payload.target_consensus_version != consensus_version
-            {
-                warn!(
-                    member = member.address,
-                    member_stack_version = record.payload.target_stack_version,
-                    member_consensus_version = record.payload.target_consensus_version,
-                    own_stack_version = stack_version,
-                    own_consensus_version = consensus_version,
-                    "a member signed a different release"
-                );
-            }
-        }
-        let record = record.filter(|r| r.payload.addresses() == addresses);
-        // Every abort read this pass is logged, so the trail names which
-        // members fed an abort tally even when it stays below the threshold.
-        match record.as_ref().map(|r| r.payload.decision) {
-            Some(decision::Decision::Quorum) => quorums += 1,
-            Some(decision::Decision::Abort) => {
-                aborts += 1;
-                info!(
-                    member = member.address,
-                    proposal_block,
-                    aborts,
-                    abort_threshold,
-                    remaining_to_threshold = abort_threshold.saturating_sub(aborts),
-                    "member decision record reads abort"
-                );
-            }
-            None => {}
-        }
-        records.push(record);
+        });
+        read.extend(
+            decision::get_relay(http, member, &proposal_id, proposal_block, members.len()).await,
+        );
     }
-    let decisions: Vec<Option<decision::Decision>> = records
-        .iter()
-        .map(|r| r.as_ref().map(|r| r.payload.decision))
-        .collect();
+    for record in read {
+        if !record.is_valid_from_member(&members, &proposal_id, proposal_block)
+            || record.payload.addresses() != addresses
+        {
+            continue;
+        }
+        // A member on another release does not vote on this cutover: its
+        // record counts neither way, like a silent member.
+        if stack_version.as_ref().is_some_and(|stack_version| {
+            &record.payload.target_stack_version != stack_version
+                || record.payload.target_consensus_version != consensus_version
+        }) {
+            warn!(
+                member = record.payload.signer,
+                member_stack_version = record.payload.target_stack_version,
+                member_consensus_version = record.payload.target_consensus_version,
+                own_stack_version = ?stack_version,
+                own_consensus_version = consensus_version,
+                "a member signed a different release; its record is not counted"
+            );
+            continue;
+        }
+        let (signer, is_abort) = (
+            record.payload.signer.clone(),
+            record.payload.decision == decision::Decision::Abort,
+        );
+        // Every abort is logged when first read, so the trail names which
+        // members fed an abort tally even when it stays below the threshold.
+        if window_state.seen.add(record) && is_abort {
+            let aborts = window_state.seen.count(decision::Decision::Abort);
+            info!(
+                member = signer,
+                proposal_block,
+                aborts,
+                abort_threshold,
+                remaining_to_threshold = abort_threshold.saturating_sub(aborts),
+                "member decision record reads abort"
+            );
+        }
+    }
+    let seen = &window_state.seen;
+
+    // Pass the records on. A failed write retries on the next pass.
+    if let (true, Some(client), Some(bucket)) = (fleet.writes, fleet.s3, fleet.bucket) {
+        if seen.records().len() > window_state.relayed
+            && decision::put_relay(client, bucket, &proposal_id, proposal_block, seen.records())
+                .await
+                .is_ok()
+        {
+            window_state.relayed = seen.records().len();
+        }
+    }
+    let quorums = seen.count(decision::Decision::Quorum);
+    let aborts = seen.count(decision::Decision::Abort);
 
     // Our own published record is one vote like any other. It no longer
     // decides alone: with a cutover threshold below the member count, a
     // cutover can exist without our signature.
     let own_decision = own.as_ref().map(|r| r.payload.decision);
-    match decision::fleet_outcome(&decisions, cutover_threshold, abort_threshold) {
+    match decision::fleet_outcome(quorums, aborts, cutover_threshold, abort_threshold) {
         Some(decision::Decision::Abort) => {
             warn!(
                 chains = windows.len(),
@@ -954,10 +984,8 @@ where
             let anchors = match own.filter(|_| own_decision == Some(decision::Decision::Quorum)) {
                 Some(record) => record.payload.anchors,
                 None => {
-                    let peers: Vec<&[(i64, i64)]> = records
-                        .iter()
-                        .flatten()
-                        .filter(|r| r.payload.decision == decision::Decision::Quorum)
+                    let peers: Vec<&[(i64, i64)]> = seen
+                        .with(decision::Decision::Quorum)
                         .map(|r| r.payload.anchors.as_slice())
                         .collect();
                     decision::fleet_anchors(
@@ -995,9 +1023,8 @@ where
         None => {
             let waiting: Vec<&str> = members
                 .iter()
-                .zip(&decisions)
-                .filter(|(_, decision)| decision.is_none())
-                .map(|(member, _)| member.address.as_str())
+                .map(|member| member.address.as_str())
+                .filter(|address| !seen.has_signer(address))
                 .collect();
             info!(
                 waiting = ?waiting,
@@ -1200,6 +1227,8 @@ where
         tracked_window: None,
         deadlines: HashMap::new(),
         members: Vec::new(),
+        seen: decision::Seen::default(),
+        relayed: 0,
     };
 
     // The consensus poll cadence: re-attempt S3 every commitment_poll_interval,

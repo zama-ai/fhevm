@@ -8,6 +8,10 @@
 //! malicious or down (see `fleet_outcome`). Its own record is one vote among
 //! the others: an operator that recorded `abort` still cuts over with the
 //! fleet. Below both thresholds it waits.
+//!
+//! Every operator also republishes the records it has read (see [`Seen`]). A
+//! record is signed, so it stays valid when a peer passes it on, and a member
+//! that serves its record to one peer only cannot keep it from the others.
 
 use alloy::primitives::{keccak256, Address, Signature};
 use aws_sdk_s3::error::ProvideErrorMetadata;
@@ -98,6 +102,64 @@ impl Record {
             .recover_address_from_prehash(&self.payload.digest().into())
             .is_ok_and(|recovered| recovered == expected)
     }
+
+    /// True when a member of `members` signed the record for this attempt.
+    /// Used for a record that a peer passed on: the bucket it came from says
+    /// nothing, so the signer is looked up in the member set.
+    pub(crate) fn is_valid_from_member(
+        &self,
+        members: &[Member],
+        proposal_id: &[u8],
+        proposal_block: i64,
+    ) -> bool {
+        members
+            .iter()
+            .find(|member| member.address == self.payload.signer)
+            .and_then(Member::parsed_address)
+            .is_some_and(|signer| self.is_valid_from(signer, proposal_id, proposal_block))
+    }
+}
+
+/// Every verified record this operator has read for one attempt, from the
+/// signer's bucket or passed on by a peer. It holds at most one record per
+/// member and decision. A faulty member can sign both decisions: it then
+/// counts in both tallies, which the thresholds already allow for (see
+/// [`fleet_outcome`]).
+#[derive(Debug, Default)]
+pub(crate) struct Seen(Vec<Record>);
+
+impl Seen {
+    /// Keeps `record` when it is the first one for its signer and decision.
+    /// The caller has verified it. Returns whether it was kept.
+    pub(crate) fn add(&mut self, record: Record) -> bool {
+        let known = self.0.iter().any(|seen| {
+            seen.payload.signer == record.payload.signer
+                && seen.payload.decision == record.payload.decision
+        });
+        if !known {
+            self.0.push(record);
+        }
+        !known
+    }
+
+    /// How many members signed `decision`.
+    pub(crate) fn count(&self, decision: Decision) -> usize {
+        self.with(decision).count()
+    }
+
+    pub(crate) fn with(&self, decision: Decision) -> impl Iterator<Item = &Record> {
+        self.0
+            .iter()
+            .filter(move |record| record.payload.decision == decision)
+    }
+
+    pub(crate) fn has_signer(&self, address: &str) -> bool {
+        self.0.iter().any(|record| record.payload.signer == address)
+    }
+
+    pub(crate) fn records(&self) -> &[Record] {
+        &self.0
+    }
 }
 
 impl Member {
@@ -127,7 +189,12 @@ pub(crate) fn members_of(members: &[(Address, String)]) -> Vec<Member> {
 }
 
 pub(crate) fn key(proposal_id: &[u8], proposal_block: i64) -> String {
-    keyed(&hex::encode(proposal_id), proposal_block)
+    keyed(&hex::encode(proposal_id), proposal_block, OUTCOME)
+}
+
+/// Where an operator republishes the records it has read (see [`Seen`]).
+pub(crate) fn relay_key(proposal_id: &[u8], proposal_block: i64) -> String {
+    keyed(&hex::encode(proposal_id), proposal_block, RELAY)
 }
 
 /// The key as shown in logs: the proposal id abbreviated like the state-hash
@@ -136,11 +203,17 @@ fn log_key(proposal_id: &[u8], proposal_block: i64) -> String {
     keyed(
         &crate::state_hash::display_proposal_id(proposal_id),
         proposal_block,
+        OUTCOME,
     )
 }
 
-fn keyed(proposal_hex: &str, proposal_block: i64) -> String {
-    format!("decision/proposal={proposal_hex}/attempt={proposal_block}/outcome.json")
+/// This operator's own record.
+const OUTCOME: &str = "outcome.json";
+/// The records this operator has read, its own included.
+const RELAY: &str = "seen.json";
+
+fn keyed(proposal_hex: &str, proposal_block: i64, object: &str) -> String {
+    format!("decision/proposal={proposal_hex}/attempt={proposal_block}/{object}")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -275,7 +348,76 @@ pub(crate) async fn get(
     Some(record)
 }
 
-/// The fleet decision over one record per member, assuming at most
+/// Republish the records this operator has read. The object is replaced as the
+/// set grows. It carries no signature of its own: each record inside is signed
+/// by its member, and a reader verifies each one.
+pub(crate) async fn put_relay(
+    client: &Client,
+    bucket: &str,
+    proposal_id: &[u8],
+    proposal_block: i64,
+    records: &[Record],
+) -> anyhow::Result<()> {
+    let key = relay_key(proposal_id, proposal_block);
+    let body = serde_json::to_vec(records)?;
+    client
+        .put_object()
+        .bucket(bucket)
+        .key(&key)
+        .content_type("application/json")
+        .body(ByteStream::from(body))
+        .send()
+        .await
+        .map_err(|err| {
+            warn!(bucket, key, error = %err, "decision record relay write failed; retrying next pass");
+            anyhow::anyhow!("decision record relay write failed: {err}")
+        })?;
+    info!(
+        bucket,
+        key,
+        records = records.len(),
+        "decision records relayed"
+    );
+    Ok(())
+}
+
+/// Read the records one member republished. They are NOT verified here: the
+/// caller checks each one against the member set. An absent or unreadable
+/// object, or one with more than two records per member, yields nothing.
+pub(crate) async fn get_relay(
+    http: &reqwest::Client,
+    member: &Member,
+    proposal_id: &[u8],
+    proposal_block: i64,
+    members: usize,
+) -> Vec<Record> {
+    let url = format!(
+        "{}/{}",
+        member.url.trim_end_matches('/'),
+        relay_key(proposal_id, proposal_block)
+    );
+    let Ok(response) = http.get(&url).send().await else {
+        return Vec::new();
+    };
+    if !response.status().is_success() {
+        return Vec::new();
+    }
+    let Ok(body) = response.bytes().await else {
+        return Vec::new();
+    };
+    let records: Vec<Record> = serde_json::from_slice(&body).unwrap_or_default();
+    if records.len() > 2 * members {
+        warn!(
+            url,
+            records = records.len(),
+            "decision record relay is oversized; ignoring"
+        );
+        return Vec::new();
+    }
+    records
+}
+
+/// The fleet decision over the records read, assuming at most
 /// [`max_faulty`] members are malicious or down.
 ///
 /// A record lives in its signer's own bucket, so a malicious member can serve
@@ -284,26 +426,31 @@ pub(crate) async fn get(
 /// rollback set always share an honest member, who signs only one record:
 /// `cutover_threshold + abort_threshold > members + max_faulty`. A cutover
 /// seen by one honest operator then rules out a rollback seen by another,
-/// whatever the faulty members serve to whom (fhevm-internal#2284), and
-/// `max_faulty` silent or flipped records can no longer hold the rest of the
-/// fleet in progress.
+/// whatever the faulty members serve to whom (fhevm-internal#2284). When all
+/// honest members signed the same decision, they reach its threshold alone,
+/// so `max_faulty` silent or flipped records cannot hold them. When the honest
+/// members split below both thresholds, nothing is decided and the fleet
+/// waits on blue.
 ///
-/// `None` means wait: an absent or unreadable record is not a decision.
+/// `quorums` and `aborts` are the numbers of members that signed each
+/// decision (see [`Seen::count`]). `None` means wait: an absent or unreadable
+/// record is not a decision.
 pub(crate) fn fleet_outcome(
-    records: &[Option<Decision>],
+    quorums: usize,
+    aborts: usize,
     cutover_threshold: usize,
     abort_threshold: usize,
 ) -> Option<Decision> {
-    if records.is_empty() {
+    // No members, no decision.
+    if cutover_threshold == 0 || abort_threshold == 0 {
         return None;
     }
-    let count = |wanted: Decision| records.iter().filter(|r| **r == Some(wanted)).count();
     // Both cannot hold under the assumption. If it is broken, stay on blue:
     // a rollback can be retried, a cutover cannot be undone.
-    if count(Decision::Abort) >= abort_threshold {
+    if aborts >= abort_threshold {
         return Some(Decision::Abort);
     }
-    if count(Decision::Quorum) >= cutover_threshold {
+    if quorums >= cutover_threshold {
         return Some(Decision::Quorum);
     }
     None
@@ -477,6 +624,121 @@ mod tests {
         );
     }
 
+    /// `fleet_outcome` over one optional decision per member.
+    fn outcome(records: &[Option<Decision>], cutover: usize, abort: usize) -> Option<Decision> {
+        let count = |wanted: Decision| records.iter().filter(|r| **r == Some(wanted)).count();
+        fleet_outcome(
+            count(Decision::Quorum),
+            count(Decision::Abort),
+            cutover,
+            abort,
+        )
+    }
+
+    #[test]
+    fn no_members_decide_nothing() {
+        assert_eq!(
+            fleet_outcome(0, 0, cutover_threshold(0), abort_threshold(0)),
+            None
+        );
+        assert_eq!(fleet_outcome(0, 0, 0, 0), None);
+    }
+
+    #[test]
+    fn relay_key_sits_next_to_the_record() {
+        assert_eq!(
+            relay_key(&[0xab, 0xcd], 7),
+            "decision/proposal=abcd/attempt=7/seen.json"
+        );
+    }
+
+    /// A record passed on by a peer verifies against the member set, not
+    /// against the bucket it was read from.
+    #[tokio::test]
+    async fn a_relayed_record_verifies_against_the_member_set() {
+        let (member, outsider) = (PrivateKeySigner::random(), PrivateKeySigner::random());
+        let members = member_list(&[member.address(), addr(9)]);
+        let (_, record) = signed(&member, Decision::Quorum, &members).await;
+        assert!(record.is_valid_from_member(&members, &[0x01], 5));
+        assert!(!record.is_valid_from_member(&members, &[0x02], 5));
+        assert!(!record.is_valid_from_member(&members, &[0x01], 6));
+
+        // A signer outside the set, even one that names itself a member.
+        let with_outsider = member_list(&[member.address(), outsider.address()]);
+        let (_, record) = signed(&outsider, Decision::Quorum, &with_outsider).await;
+        assert!(!record.is_valid_from_member(&members, &[0x01], 5));
+
+        // A record that names a member but carries another key's signature.
+        let (_, mut forged) = signed(&outsider, Decision::Quorum, &with_outsider).await;
+        forged.payload.signer = name_of(member.address());
+        assert!(!forged.is_valid_from_member(&with_outsider, &[0x01], 5));
+    }
+
+    /// One record per member and decision. A member that signs both decisions
+    /// counts once in each tally.
+    #[tokio::test]
+    async fn seen_keeps_one_record_per_member_and_decision() {
+        let (a, b) = (PrivateKeySigner::random(), PrivateKeySigner::random());
+        let members = member_list(&[a.address(), b.address()]);
+        let mut seen = Seen::default();
+
+        assert!(seen.add(signed(&a, Decision::Quorum, &members).await.1));
+        assert!(!seen.add(signed(&a, Decision::Quorum, &members).await.1));
+        assert!(seen.add(signed(&a, Decision::Abort, &members).await.1));
+        assert!(seen.add(signed(&b, Decision::Quorum, &members).await.1));
+
+        assert_eq!(seen.count(Decision::Quorum), 2);
+        assert_eq!(seen.count(Decision::Abort), 1);
+        assert_eq!(seen.records().len(), 3);
+        assert!(seen.has_signer(&name_of(b.address())));
+        assert!(!seen.has_signer(&name_of(addr(9))));
+    }
+
+    /// Four members, one faulty. Two honest members signed `quorum`, the third
+    /// timed out to `abort`, and the faulty member serves its `quorum` to the
+    /// first honest member only. That member cuts over. Its relay hands the
+    /// faulty member's record to the others, so they cut over too instead of
+    /// waiting below both thresholds.
+    #[tokio::test]
+    async fn a_relayed_record_lets_the_slower_peers_follow_a_cutover() {
+        let keys: Vec<PrivateKeySigner> = (0..4).map(|_| PrivateKeySigner::random()).collect();
+        let members = member_list(&keys.iter().map(|k| k.address()).collect::<Vec<_>>());
+        let (q, a) = (cutover_threshold(4), abort_threshold(4));
+        let h1 = signed(&keys[0], Decision::Quorum, &members).await.1;
+        let h2 = signed(&keys[1], Decision::Quorum, &members).await.1;
+        let h3 = signed(&keys[2], Decision::Abort, &members).await.1;
+        let faulty = signed(&keys[3], Decision::Quorum, &members).await.1;
+        let decide = |seen: &Seen| {
+            fleet_outcome(
+                seen.count(Decision::Quorum),
+                seen.count(Decision::Abort),
+                q,
+                a,
+            )
+        };
+
+        // The first honest member reads the faulty record and cuts over.
+        let mut first = Seen::default();
+        for record in [&h1, &h2, &h3, &faulty] {
+            first.add(record.clone());
+        }
+        assert_eq!(decide(&first), Some(Decision::Quorum));
+
+        // Another honest member reads no faulty record: undecided.
+        let mut other = Seen::default();
+        for record in [&h1, &h2, &h3] {
+            other.add(record.clone());
+        }
+        assert_eq!(decide(&other), None);
+
+        // It then reads the first member's relay and verifies each record.
+        for record in first.records() {
+            assert!(record.is_valid_from_member(&members, &[0x01], 5));
+            other.add(record.clone());
+        }
+        assert_eq!(decide(&other), Some(Decision::Quorum));
+    }
+
     #[test]
     fn key_names_the_attempt() {
         assert_eq!(
@@ -505,9 +767,9 @@ mod tests {
         assert_eq!((q, a), (4, 3));
 
         // Every member quorum, and one silent member: both cut over.
-        assert_eq!(fleet_outcome(&[Some(Quorum); 5], q, a), Some(Quorum));
+        assert_eq!(outcome(&[Some(Quorum); 5], q, a), Some(Quorum));
         assert_eq!(
-            fleet_outcome(
+            outcome(
                 &[Some(Quorum), Some(Quorum), None, Some(Quorum), Some(Quorum)],
                 q,
                 a
@@ -517,7 +779,7 @@ mod tests {
         // A member that flips to abort after a peer cut over does not hold the
         // slower peers in progress, and does not roll them back.
         assert_eq!(
-            fleet_outcome(
+            outcome(
                 &[
                     Some(Quorum),
                     Some(Quorum),
@@ -532,7 +794,7 @@ mod tests {
         );
         // Below both thresholds nothing is decided.
         assert_eq!(
-            fleet_outcome(
+            outcome(
                 &[Some(Quorum), Some(Quorum), Some(Quorum), Some(Abort), None],
                 q,
                 a
@@ -540,24 +802,24 @@ mod tests {
             None
         );
         assert_eq!(
-            fleet_outcome(
+            outcome(
                 &[Some(Abort), Some(Abort), Some(Quorum), Some(Quorum), None],
                 q,
                 a
             ),
             None
         );
-        assert_eq!(fleet_outcome(&[None; 5], q, a), None);
+        assert_eq!(outcome(&[None; 5], q, a), None);
         // The abort threshold rolls back.
         assert_eq!(
-            fleet_outcome(
+            outcome(
                 &[Some(Abort), Some(Abort), Some(Abort), Some(Quorum), None],
                 q,
                 a
             ),
             Some(Abort)
         );
-        assert_eq!(fleet_outcome(&[], q, a), None);
+        assert_eq!(outcome(&[], q, a), None);
     }
 
     /// With three members no fault is tolerated: every record is needed to
@@ -566,13 +828,10 @@ mod tests {
     fn three_members_need_every_quorum_and_roll_back_on_one_abort() {
         use Decision::{Abort, Quorum};
         let (q, a) = (cutover_threshold(3), abort_threshold(3));
-        assert_eq!(fleet_outcome(&[Some(Quorum); 3], q, a), Some(Quorum));
+        assert_eq!(outcome(&[Some(Quorum); 3], q, a), Some(Quorum));
+        assert_eq!(outcome(&[Some(Quorum), None, Some(Quorum)], q, a), None);
         assert_eq!(
-            fleet_outcome(&[Some(Quorum), None, Some(Quorum)], q, a),
-            None
-        );
-        assert_eq!(
-            fleet_outcome(&[Some(Quorum), Some(Abort), Some(Quorum)], q, a),
+            outcome(&[Some(Quorum), Some(Abort), Some(Quorum)], q, a),
             Some(Abort)
         );
     }
