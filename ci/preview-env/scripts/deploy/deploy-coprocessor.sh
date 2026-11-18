@@ -6,6 +6,10 @@
 # fleet; optional), COMMON_CHART, COMMON_CHART_VERSION, COPROCESSOR_VERSION_PIN (optional).
 set -euo pipefail
 
+# Isolated SNS load QA branch: never deploy this overlay to a shared topology.
+[[ "${NB_COPROCESSOR}" == "1" && "${BLUE_GREEN}" == "false" && "${GPU:-false}" == "false" ]]
+sns_load_overlay=(-f ci/preview-env/coprocessor/values-sns-load-qa.yaml)
+
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=../lib.sh
@@ -292,7 +296,8 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     "${fleet_json[@]}" \
     --set-string "fullnameOverride=coprocessor-${i}" \
     "${common_args[@]}" \
-    "${bcs_images[@]}"
+    "${bcs_images[@]}" \
+    "${sns_load_overlay[@]}"
 done
 
 if [[ "${with_proxy}" == "true" ]]; then

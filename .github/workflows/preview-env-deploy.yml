@@ -786,6 +786,11 @@ jobs:
           harbor-username: ${{ secrets.HARBOR_READ_LOGIN }}
           harbor-token: ${{ secrets.HARBOR_READ_TOKEN }}
 
+      - name: Pin the SNS load candidate
+        run: |
+          pinned=$(jq -c '.coprocessor_sns_worker = "c0e6428"' <<<"${TAGS_JSON}")
+          echo "TAGS_JSON=${pinned}" >> "$GITHUB_ENV"
+
       - name: Resolve chain endpoints
         run: bash ci/preview-env/scripts/resolve/resolve-chain.sh
 

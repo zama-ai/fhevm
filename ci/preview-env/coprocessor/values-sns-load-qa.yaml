@@ -1,0 +1,38 @@
+# One-shot QA branch only: one identity/database, four SNS processes.
+# All other binaries are pinned to the release base by the dispatch inputs.
+snsWorker:
+  image:
+    tag: c0e6428
+  replicas: 4
+  hpa:
+    enabled: false
+  config:
+    s3Migration:
+      mode: "no"
+  env:
+    - name: RAYON_NUM_THREADS
+      value: "4"
+  resources:
+    requests: {cpu: "4", memory: 16Gi}
+    limits: {cpu: "4", memory: 16Gi}
+  # The 0.14 binary takes two bucket flags; the current chart has one.
+  disabledArgs: ["bucket-name"]
+  extraArgs:
+    - --pg-listen-channels
+    - event_pbs_computations
+    - event_ciphertext_computed
+    - --pg-notify-channel
+    - event_ciphertext128_computed
+    - --bucket-name-ct64=$(S3_BUCKET_NAME)
+    - --bucket-name-ct128=$(S3_BUCKET_NAME)
+    - --work-items-batch-size=20
+    - --pg-pool-connections=10
+    - --enable-compression
+
+# The pinned 0.14 sender uses WebSockets. Avoid the base overlay's HTTP flag.
+txSender:
+  disabledArgs: ["multichain-acl-address"]
+  extraArgs: []
+  config:
+    gatewayUrl:
+      value: "ws://anvil-gateway-anvil-node:8546"
