@@ -6,11 +6,11 @@ mod common;
 use alloy::transports::http::reqwest::{Client, RequestBuilder, Response, StatusCode};
 use common::{
     AUDIENCE, CHAIN_ID, FakeRpc, KmsContext, PROTOCOL_CONFIG, StubPrfService, TestTls, auth_header,
-    free_addr, prf_path, sender, stub_output,
+    prf_path, sender, stub_output,
 };
 use std::{
     fs,
-    net::SocketAddr,
+    net::{SocketAddr, TcpListener},
     path::PathBuf,
     process::{ExitStatus, Stdio},
     time::Duration,
@@ -30,12 +30,18 @@ struct ProxyProcess {
 
 impl ProxyProcess {
     async fn start(prf_service: &StubPrfService, rpc: &FakeRpc, env: &[(&str, &str)]) -> Self {
-        let addr = free_addr();
-        let health = free_addr();
-        let metrics = free_addr();
+        // Reserve all three ports together so the OS cannot hand the same
+        // ephemeral port back to this process between free_addr() calls.
+        let reservations: Vec<_> = (0..3)
+            .map(|_| TcpListener::bind("127.0.0.1:0").unwrap())
+            .collect();
+        let addr = reservations[0].local_addr().unwrap();
+        let health = reservations[1].local_addr().unwrap();
+        let metrics = reservations[2].local_addr().unwrap();
         let tls = TestTls::generate(addr);
         let log_path = tls.cert_path.with_extension("log");
         let log = fs::File::create(&log_path).unwrap();
+        drop(reservations);
         let mut child = Command::new(env!("CARGO_BIN_EXE_coprocessor-proxy"))
             .kill_on_drop(true)
             .env("COPROCESSOR_PROXY_BIND_ADDRESS", addr.to_string())
@@ -67,25 +73,46 @@ impl ProxyProcess {
             .spawn()
             .unwrap();
         let client = client();
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-        loop {
-            assert!(
-                child.try_wait().unwrap().is_none(),
-                "{}",
-                fs::read_to_string(&log_path).unwrap()
-            );
-            if let Ok(response) = client.get(format!("http://{health}/healthz")).send().await
-                && response.status() == StatusCode::OK
-                && response.json::<serde_json::Value>().await.unwrap()["details"] == ""
-            {
-                break;
+        let mut last_health = "no response".to_owned();
+        // Coverage-instrumented startup can take longer on a busy CI runner.
+        // Bound the whole wait, including each HTTP response body, and retain
+        // the evidence needed to distinguish slow startup from a real failure.
+        let ready = tokio::time::timeout(Duration::from_secs(60), async {
+            loop {
+                assert!(
+                    child.try_wait().unwrap().is_none(),
+                    "{}",
+                    fs::read_to_string(&log_path).unwrap()
+                );
+                match client
+                    .get(format!("http://{health}/healthz"))
+                    .timeout(Duration::from_secs(1))
+                    .send()
+                    .await
+                {
+                    Ok(response) => {
+                        let status = response.status();
+                        match response.json::<serde_json::Value>().await {
+                            Ok(body) => {
+                                if status == StatusCode::OK && body["details"] == "" {
+                                    break;
+                                }
+                                last_health = format!("{status}: {body}");
+                            }
+                            Err(error) => last_health = format!("{status}: {error}"),
+                        }
+                    }
+                    Err(error) => last_health = error.to_string(),
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
             }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "proxy never became ready"
-            );
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
+        })
+        .await;
+        assert!(
+            ready.is_ok(),
+            "proxy never became ready; last health response: {last_health}\n{}",
+            fs::read_to_string(&log_path).unwrap()
+        );
         Self {
             child,
             addr,
