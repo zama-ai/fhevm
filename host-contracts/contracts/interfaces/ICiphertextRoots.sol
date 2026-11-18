@@ -83,10 +83,10 @@ interface ICiphertextRoots {
     // -----------------------------------------------------------------------------------------
 
     /// @notice The host chain ID is zero.
-    error InvalidChainId();
+    error HostChainNullId();
 
     /// @notice The epoch length is zero.
-    error InvalidEpochLength();
+    error EpochLengthNull();
 
     /// @notice The host chain already has an epoch schedule.
     /// @param chainId The host chain ID.
@@ -227,7 +227,7 @@ interface ICiphertextRoots {
 
     /**
      * @notice Sets a host chain's epoch schedule. DAO only, once per host chain.
-     * @dev Reverts with `InvalidChainId` for chain ID 0, `InvalidEpochLength` for epoch length 0 and
+     * @dev Reverts with `HostChainNullId` for chain ID 0, `EpochLengthNull` for epoch length 0 and
      *      `EpochScheduleAlreadySet` if the host chain has a schedule.
      * @param chainId The host chain ID.
      * @param startBlock The first host chain block of epoch 0.
@@ -240,7 +240,7 @@ interface ICiphertextRoots {
      * @dev Adds an entry to the schedule. `fromEpoch` must be after the first epoch of the
      *      schedule's last entry and after the highest epoch with a recorded root. The DAO picks
      *      it a few epochs ahead of the host chain. Reverts with
-     *      `NoEpochSchedule` if the host chain has no schedule, `InvalidEpochLength` for epoch length 0
+     *      `NoEpochSchedule` if the host chain has no schedule, `EpochLengthNull` for epoch length 0
      *      and `FromEpochTooLow` if `fromEpoch` breaks the rule above.
      * @param chainId The host chain ID.
      * @param fromEpoch The first epoch with this epoch length.
@@ -275,7 +275,7 @@ interface ICiphertextRoots {
      * @param epoch The epoch number.
      * @param root The root of the sender's tree for the epoch.
      */
-    function postRoot(uint64 chainId, uint256 epoch, bytes32 root) external;
+    function postEpochRoot(uint64 chainId, uint256 epoch, bytes32 root) external;
 
     /**
      * @notice Records the first posted root that reaches a majority threshold.

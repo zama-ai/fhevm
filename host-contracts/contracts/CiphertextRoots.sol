@@ -127,10 +127,10 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
     /// @inheritdoc ICiphertextRoots
     function setEpochSchedule(uint64 chainId, uint256 startBlock, uint256 epochLength) external virtual onlyACLOwner {
         if (chainId == 0) {
-            revert InvalidChainId();
+            revert HostChainNullId();
         }
         if (epochLength == 0) {
-            revert InvalidEpochLength();
+            revert EpochLengthNull();
         }
         HostChain storage chain = _getCiphertextRootsStorage().chains[chainId];
         if (chain.scheduleSet) {
@@ -146,7 +146,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
     /// @inheritdoc ICiphertextRoots
     function setEpochLength(uint64 chainId, uint256 fromEpoch, uint256 epochLength) external virtual onlyACLOwner {
         if (epochLength == 0) {
-            revert InvalidEpochLength();
+            revert EpochLengthNull();
         }
         HostChain storage chain = _hostChain(chainId);
         EpochScheduleEntry[] storage entries = chain.schedule.entries;
@@ -188,7 +188,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
     }
 
     /// @inheritdoc ICiphertextRoots
-    function postRoot(uint64 chainId, uint256 epoch, bytes32 root) external virtual {
+    function postEpochRoot(uint64 chainId, uint256 epoch, bytes32 root) external virtual {
         HostChain storage chain = _hostChain(chainId);
         Epoch storage epochState = chain.epochs[epoch];
         if (epochState.hasPosted[msg.sender]) {

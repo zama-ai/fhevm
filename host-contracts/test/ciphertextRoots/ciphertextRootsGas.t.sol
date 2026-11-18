@@ -23,7 +23,7 @@ contract CiphertextRootsGasTest is HostContractsDeployerTestUtils {
     uint64 internal constant CHAIN_ID = 1;
     uint256 internal constant EPOCH = 5;
     uint256 internal constant TX_BASE_GAS = 21_000;
-    /// @dev postRoot(uint64,uint256,bytes32): 4 + 3 * 32 bytes, at 16 gas per non-zero byte.
+    /// @dev postEpochRoot(uint64,uint256,bytes32): 4 + 3 * 32 bytes, at 16 gas per non-zero byte.
     uint256 internal constant TX_CALLDATA_GAS = 100 * 16;
     uint256 internal constant SECONDS_PER_YEAR = 365 days;
 
@@ -63,7 +63,7 @@ contract CiphertextRootsGasTest is HostContractsDeployerTestUtils {
             address(ciphertextRoots).balance;
             vm.prank(nodes[i]);
             uint256 gasBefore = gasleft();
-            ciphertextRoots.postRoot(CHAIN_ID, EPOCH, root);
+            ciphertextRoots.postEpochRoot(CHAIN_ID, EPOCH, root);
             uint256 postGas = gasBefore - gasleft() + TX_BASE_GAS + TX_CALLDATA_GAS;
             epochGas += postGas;
             // One line per node. The node whose post reaches the threshold records the root.

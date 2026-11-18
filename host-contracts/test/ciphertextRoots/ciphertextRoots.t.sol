@@ -82,7 +82,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
 
     function _post(address sender, uint256 epoch, bytes32 root) internal {
         vm.prank(sender);
-        ciphertextRoots.postRoot(CHAIN_ID, epoch, root);
+        ciphertextRoots.postEpochRoot(CHAIN_ID, epoch, root);
     }
 
     function _expectRecorded(uint256 epoch, bytes32 root, uint256 contextId) internal {
@@ -212,13 +212,13 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
 
     function test_revertSetEpochScheduleNullChainId() public {
         vm.prank(owner);
-        vm.expectRevert(ICiphertextRoots.InvalidChainId.selector);
+        vm.expectRevert(ICiphertextRoots.HostChainNullId.selector);
         ciphertextRoots.setEpochSchedule(0, START_BLOCK, EPOCH_LENGTH);
     }
 
     function test_revertSetEpochScheduleNullEpochLength() public {
         vm.prank(owner);
-        vm.expectRevert(ICiphertextRoots.InvalidEpochLength.selector);
+        vm.expectRevert(ICiphertextRoots.EpochLengthNull.selector);
         ciphertextRoots.setEpochSchedule(OTHER_CHAIN_ID, START_BLOCK, 0);
     }
 
@@ -270,7 +270,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
 
     function test_revertSetEpochLengthNullEpochLength() public {
         vm.prank(owner);
-        vm.expectRevert(ICiphertextRoots.InvalidEpochLength.selector);
+        vm.expectRevert(ICiphertextRoots.EpochLengthNull.selector);
         ciphertextRoots.setEpochLength(CHAIN_ID, EPOCH, 0);
     }
 
@@ -598,7 +598,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     // Post tests
     // -----------------------------------------------------------------------
 
-    function test_postRootEmitsAndStores() public {
+    function test_postEpochRootEmitsAndStores() public {
         vm.expectEmit(true, true, true, true, address(ciphertextRoots));
         emit ICiphertextRoots.EpochRootPosted(CHAIN_ID, EPOCH, nodeA, ROOT_1);
         _post(nodeA, EPOCH, ROOT_1);
@@ -612,7 +612,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _assertNotRecorded(EPOCH);
     }
 
-    function test_postRootRecordsAtMajorityThreshold() public {
+    function test_postEpochRootRecordsAtMajorityThreshold() public {
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
         _assertNotRecorded(EPOCH);
@@ -622,7 +622,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _assertRecorded(EPOCH, ROOT_1);
     }
 
-    function test_postRootTracksDistinctRoots() public {
+    function test_postEpochRootTracksDistinctRoots() public {
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_2);
         _post(nodeC, EPOCH, ROOT_1);
@@ -636,7 +636,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _assertNotRecorded(EPOCH);
     }
 
-    function test_postRootFirstRootToReachThresholdIsFinal() public {
+    function test_postEpochRootFirstRootToReachThresholdIsFinal() public {
         // Six nodes, so that two roots can each get three posts. CONTEXT_1 created at setUp is destroyed.
         protocolConfigMock.defineContext(
             CONTEXT_2,
@@ -658,7 +658,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         assertEq(ciphertextRoots.getRootSenders(CHAIN_ID, EPOCH, ROOT_2).length, 3);
     }
 
-    function test_postRootAcceptedAfterEpochRootRecorded() public {
+    function test_postEpochRootAcceptedAfterEpochRootRecorded() public {
         _record(EPOCH);
 
         // A late post is still accepted and stored.
@@ -669,14 +669,14 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _assertRecorded(EPOCH, ROOT_1);
     }
 
-    function test_postRootAnyEpochAccepted() public {
+    function test_postEpochRootAnyEpochAccepted() public {
         _post(nodeA, 0, ROOT_1);
         _post(nodeA, type(uint256).max, ROOT_1);
         assertEq(ciphertextRoots.getRootSenders(CHAIN_ID, 0, ROOT_1).length, 1);
         assertEq(ciphertextRoots.getRootSenders(CHAIN_ID, type(uint256).max, ROOT_1).length, 1);
     }
 
-    function test_postRootPreviousContextMemberAllowed() public {
+    function test_postEpochRootPreviousContextMemberAllowed() public {
         // A is only in the previous context, which is still valid.
         protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
         _post(nodeA, EPOCH, ROOT_1);
@@ -686,42 +686,42 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         assertEq(senders[0], nodeA);
     }
 
-    function test_revertPostRootDestroyedPreviousContextMember() public {
+    function test_revertPostEpochRootDestroyedPreviousContextMember() public {
         protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
         protocolConfigMock.destroyContext(CONTEXT_1);
         vm.prank(nodeA);
         vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NotCoprocessorTxSender.selector, nodeA));
-        ciphertextRoots.postRoot(CHAIN_ID, EPOCH, ROOT_1);
+        ciphertextRoots.postEpochRoot(CHAIN_ID, EPOCH, ROOT_1);
     }
 
-    function test_revertPostRootOlderContextMember() public {
+    function test_revertPostEpochRootOlderContextMember() public {
         // Context 1 stays valid but is neither current nor previous once context 3 is current.
         protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
         protocolConfigMock.defineContext(CONTEXT_3, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
         vm.prank(nodeA);
         vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NotCoprocessorTxSender.selector, nodeA));
-        ciphertextRoots.postRoot(CHAIN_ID, EPOCH, ROOT_1);
+        ciphertextRoots.postEpochRoot(CHAIN_ID, EPOCH, ROOT_1);
     }
 
-    function test_revertPostRootNoEpochSchedule() public {
+    function test_revertPostEpochRootNoEpochSchedule() public {
         vm.prank(nodeA);
         vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NoEpochSchedule.selector, OTHER_CHAIN_ID));
-        ciphertextRoots.postRoot(OTHER_CHAIN_ID, EPOCH, ROOT_1);
+        ciphertextRoots.postEpochRoot(OTHER_CHAIN_ID, EPOCH, ROOT_1);
     }
 
-    function test_revertPostRootNotCoprocessorTxSender() public {
+    function test_revertPostEpochRootNotCoprocessorTxSender() public {
         vm.prank(outsider);
         vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NotCoprocessorTxSender.selector, outsider));
-        ciphertextRoots.postRoot(CHAIN_ID, EPOCH, ROOT_1);
+        ciphertextRoots.postEpochRoot(CHAIN_ID, EPOCH, ROOT_1);
     }
 
-    function test_revertPostRootAlreadyPosted() public {
+    function test_revertPostEpochRootAlreadyPosted() public {
         _post(nodeA, EPOCH, ROOT_1);
         vm.prank(nodeA);
         vm.expectRevert(
             abi.encodeWithSelector(ICiphertextRoots.EpochRootAlreadyPosted.selector, CHAIN_ID, EPOCH, nodeA)
         );
-        ciphertextRoots.postRoot(CHAIN_ID, EPOCH, ROOT_2);
+        ciphertextRoots.postEpochRoot(CHAIN_ID, EPOCH, ROOT_2);
     }
 
     // -----------------------------------------------------------------------
@@ -783,7 +783,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     /// yet. A member of the previous context then posts root 2, which brings root 2 to the previous
     /// context's threshold. The contract records root 1: before adding a post, it first records a
     /// root that already reached a threshold.
-    function test_postRootRecordsRootThatReachedThresholdFirst() public {
+    function test_postEpochRootRecordsRootThatReachedThresholdFirst() public {
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
         _post(nodeC, EPOCH, ROOT_2);
@@ -797,7 +797,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         assertEq(ciphertextRoots.getRootSenders(CHAIN_ID, EPOCH, ROOT_2).length, 3);
     }
 
-    function test_postRootAndRecordEpochRootAgree() public {
+    function test_postEpochRootAndRecordEpochRootAgree() public {
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
         _post(nodeC, EPOCH, ROOT_2);
@@ -871,7 +871,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         ciphertextRoots.setEpochSchedule(OTHER_CHAIN_ID, START_BLOCK, EPOCH_LENGTH);
         vm.prank(nodeA);
-        ciphertextRoots.postRoot(OTHER_CHAIN_ID, EPOCH, ROOT_2);
+        ciphertextRoots.postEpochRoot(OTHER_CHAIN_ID, EPOCH, ROOT_2);
 
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
