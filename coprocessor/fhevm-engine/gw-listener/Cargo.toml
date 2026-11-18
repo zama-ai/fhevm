@@ -12,6 +12,7 @@ alloy = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true }
 clap = { workspace = true }
+futures-util = { workspace = true }
 humantime = { workspace = true }
 prometheus = { workspace = true }
 rustls = { workspace = true }
