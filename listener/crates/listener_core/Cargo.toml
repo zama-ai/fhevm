@@ -38,6 +38,8 @@ aws-sigv4            = { version = "1", optional = true }
 
 [dev-dependencies]
 test-support = { path = "../test-support" }
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["redis"] }
 
 [features]
 default = []

@@ -83,6 +83,12 @@ impl EvmListenerError {
     /// Such failures are resolved by re-arming the cursor with fresher chain data.
     pub fn is_inconsistent_snapshot(&self) -> bool {
         matches!(self, Self::CouldNotFetchBlock { source } if source.is_inconsistent_snapshot())
+            || matches!(
+                self,
+                Self::PayloadBuildError {
+                    source: PublisherError::NonCanonicalSnapshot { .. }
+                }
+            )
     }
 }
 
@@ -726,6 +732,12 @@ impl EvmListener {
             }
 
             // === ERROR PATHS ===
+            (Err(cursor_err), _) if cursor_err.is_inconsistent_snapshot() => {
+                warn!(error = %cursor_err, "Cursor snapshot was replaced while resolving executor metadata; re-arming");
+                self.record_rearm("live");
+                tokio::time::sleep(Duration::from_millis(self.loop_delay_ms)).await;
+                Ok(CursorResult::Rearm)
+            }
 
             // Cursor was cancelled because fetcher failed — return the ROOT CAUSE (fetcher's error).
             // The cursor saw cancellation via tokio::select!, but the real problem is in the fetcher.
@@ -823,6 +835,42 @@ impl EvmListener {
         }
     }
 
+    /// A second reorg can invalidate the version snapshot after a successful
+    /// block/receipt fetch (including an empty block). Abandon just as we do
+    /// for inconsistent receipts, before committing any of the walked blocks.
+    async fn publish_walk_block(
+        &self,
+        block: &FetchedBlock,
+        flow: BlockFlow,
+        blocks_collected: usize,
+    ) -> Result<bool, EvmListenerError> {
+        match publisher::publish_block_events(
+            &self.repositories,
+            block,
+            &self.provider,
+            flow,
+            &self.broker,
+            &self.event_publisher,
+            &self.publish_config,
+        )
+        .await
+        .map_err(|source| EvmListenerError::PayloadBuildError { source })
+        {
+            Ok(()) => Ok(true),
+            Err(error) if error.is_inconsistent_snapshot() => {
+                self.abandon_reorg_walk(
+                    block.block.header.number,
+                    block.block.header.hash,
+                    blocks_collected,
+                    &error,
+                )
+                .await;
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     /// Walks backwards from the reorg point to reconstruct the canonical chain.
     ///
     /// # Algorithm
@@ -896,18 +944,12 @@ impl EvmListener {
             return Ok(());
         };
 
-        publisher::publish_block_events(
-            &self.repositories,
-            &block_n,
-            &self.provider,
-            // This block is coming from the live flow, and detect the reorg processing, but was issued from the live flow.
-            BlockFlow::Live,
-            &self.broker,
-            &self.event_publisher,
-            &self.publish_config,
-        )
-        .await
-        .map_err(|source| EvmListenerError::PayloadBuildError { source })?;
+        if !self
+            .publish_walk_block(&block_n, BlockFlow::Live, 0)
+            .await?
+        {
+            return Ok(());
+        }
 
         collected_blocks.push(NewDatabaseBlock::from_rpc_block(
             &block_n.block,
@@ -1011,17 +1053,12 @@ impl EvmListener {
 
             // Publish events on-the-go. The FetchedBlock is dropped after this
             // loop iteration — only the NewDatabaseBlock (72 bytes) is retained.
-            publisher::publish_block_events(
-                &self.repositories,
-                &current_block,
-                &self.provider,
-                BlockFlow::Reorged,
-                &self.broker,
-                &self.event_publisher,
-                &self.publish_config,
-            )
-            .await
-            .map_err(|source| EvmListenerError::PayloadBuildError { source })?;
+            if !self
+                .publish_walk_block(&current_block, BlockFlow::Reorged, collected_blocks.len())
+                .await?
+            {
+                return Ok(());
+            }
 
             collected_blocks.push(NewDatabaseBlock::from_rpc_block(
                 &current_block.block,

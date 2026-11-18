@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use alloy::consensus::Transaction as _;
 use alloy::network::AnyTransactionReceipt;
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
 use alloy::rpc::types::BlockTransactions;
 use alloy::sol;
 use alloy::sol_types::SolEvent;
@@ -36,6 +36,11 @@ sol! {
 
 #[derive(Error, Debug)]
 pub enum PublisherError {
+    #[error(
+        "Executor version snapshot at block {block_number} ({block_hash}) is no longer canonical"
+    )]
+    NonCanonicalSnapshot { block_number: u64, block_hash: B256 },
+
     #[error("Failed to build payload for block {block_number}: {reason}")]
     PayloadBuildError { block_number: u64, reason: String },
 
@@ -404,10 +409,40 @@ impl FilterIndex {
     }
 }
 
-/// Resolve a block-scoped executor schedule for broker payloads. RPC failures
-/// leave the affected version unknown and do not block otherwise valid block
-/// delivery; the host listener then uses its history-compatible checks for
-/// those events.
+/// Distinguish a replaced snapshot from unavailable historical state. Check
+/// canonical identity only after a failed version read, keeping the normal
+/// path to one RPC and avoiding provider-specific error-message matching.
+async fn executor_version_at_snapshot(
+    provider: &SemEvmRpcProvider,
+    address: Address,
+    block_number: u64,
+    block_hash: B256,
+) -> Result<Option<String>, PublisherError> {
+    match provider
+        .get_executor_version_at_hash(address, block_hash)
+        .await
+    {
+        Ok(version) => Ok(version),
+        Err(error) => {
+            if let Ok(canonical) = provider.get_block_by_number(block_number).await
+                && canonical.header.number == block_number
+                && canonical.header.hash != block_hash
+            {
+                return Err(PublisherError::NonCanonicalSnapshot {
+                    block_number,
+                    block_hash,
+                });
+            }
+            Err(PublisherError::PayloadBuildError {
+                block_number,
+                reason: format!("Cannot resolve executor version at canonical snapshot: {error}"),
+            })
+        }
+    }
+}
+
+/// Resolve a block-scoped executor schedule before publishing. Unknown
+/// historical state is retried; a replaced snapshot must restart the cursor.
 async fn resolve_executor_version_metadata(
     provider: &SemEvmRpcProvider,
     fetched_block: &FetchedBlock,
@@ -419,13 +454,9 @@ async fn resolve_executor_version_metadata(
     let block_number = fetched_block.block.header.number;
     let block_hash = fetched_block.block.header.hash;
     let parent_hash = fetched_block.block.header.parent_hash;
-    let initial_version = provider
-        .get_executor_version_at_hash(proxy, parent_hash)
-        .await
-        .map_err(|error| PublisherError::PayloadBuildError {
-            block_number,
-            reason: format!("Cannot resolve executor version at canonical parent: {error}"),
-        })?;
+    let initial_version =
+        executor_version_at_snapshot(provider, proxy, block_number.saturating_sub(1), parent_hash)
+            .await?;
 
     let mut upgrades = Vec::new();
     for log in fetched_block
@@ -456,15 +487,9 @@ async fn resolve_executor_version_metadata(
 
     let mut transitions = Vec::with_capacity(upgrades.len());
     for (after_log_index, implementation) in upgrades {
-        let version = provider
-            .get_executor_version_at_hash(implementation, block_hash)
-            .await
-            .map_err(|error| PublisherError::PayloadBuildError {
-                block_number,
-                reason: format!(
-                    "Cannot resolve upgraded executor version at log {after_log_index}: {error}"
-                ),
-            })?;
+        let version =
+            executor_version_at_snapshot(provider, implementation, block_number, block_hash)
+                .await?;
         transitions.push(ExecutorVersionTransitionMetadata {
             after_log_index,
             version,
