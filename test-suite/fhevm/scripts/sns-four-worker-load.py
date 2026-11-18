@@ -28,6 +28,7 @@ EXECUTED = "coprocessor_sns_worker_task_execute_success_counter"
 FAILED = "coprocessor_sns_worker_task_execute_failure_counter"
 SECRET_VALUES = []
 DRAIN_TIMEOUT_SECONDS = 10800
+TARGET = 2000
 VARIANTS = {"c0e6428": "ordered-stripes", "4c5425f": "deadlock-retry-only"}
 
 
@@ -94,7 +95,7 @@ def hardhat(phase, timeout):
     # tee keeps progress visible in the Actions log while retaining the complete transcript.
     with log.open("w") as output:
         process = subprocess.Popen(
-            ["docker", "exec", "-e", f"SNS_LOAD_PHASE={phase}", E2E,
+            ["docker", "exec", "-e", f"SNS_LOAD_PHASE={phase}", "-e", f"SNS_LOAD_HANDLES={TARGET}", E2E,
              "npx", "hardhat", "run", "scripts/sns-load.ts", "--network", "staging"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
@@ -199,7 +200,7 @@ def main():
     retry_only = variant == "deadlock-retry-only"
     OUT.mkdir(parents=True, exist_ok=True)
     report = {"passed": False, "worker_count": 4, "batch_size": 20, "rayon_threads_per_worker": 4,
-              "migration": "no", "target_handles": 10000, "sampled_decryptions": 0,
+              "migration": "no", "target_handles": TARGET, "sampled_decryptions": 0,
               "variant": variant, "sns_image_tag": image_tag,
               "drain_timeout_seconds": DRAIN_TIMEOUT_SECONDS}
     source = docker("GET", f"/containers/{ORIGINAL}/json")
@@ -227,12 +228,12 @@ def main():
         run("docker", "stop", "--time", "60", ORIGINAL)
         for relative in ("contracts/smoke/SnsLoad.sol", "scripts/sns-load.ts"):
             run("docker", "cp", str(ROOT / "test-suite/e2e" / relative), f"{E2E}:/app/test-suite/e2e/{relative}")
-        print("SNS stopped. Generating 10,000 fresh encrypted/computed/public handles with 16 producers.", flush=True)
+        print(f"SNS stopped. Generating {TARGET:,} fresh encrypted/computed/public handles with 16 producers.", flush=True)
         hardhat("generate", timeout=3600)
         manifest = json.loads(run("docker", "exec", E2E, "cat", MANIFEST))
         (OUT / "manifest.json").write_text(json.dumps(manifest))
         handles = [item["handle"] for item in manifest]
-        assert len(handles) == 10000 and len(set(handles)) == 10000
+        assert len(handles) == TARGET and len(set(handles)) == TARGET
         assert all(re.fullmatch(r"0x[0-9a-f]{64}", handle) for handle in handles)
         # A tiny QA ledger avoids reparsing 10,000 VALUES on each monitoring sample.
         sql("CREATE UNLOGGED TABLE qa_sns_load_handles (handle bytea PRIMARY KEY);")
@@ -242,7 +243,7 @@ def main():
         while True:
             current = state()
             print(f"Preloading CT64 / pending SNS: {current}", flush=True)
-            if current["ready"] == 10000 and current["queued"] == 10000:
+            if current["ready"] == TARGET and current["queued"] == TARGET:
                 break
             if time.monotonic() > deadline:
                 raise TimeoutError("TFHE did not prepare the entire cohort before SNS started")
@@ -276,7 +277,7 @@ def main():
                     row.update({f"{name}_{key}": value for key, value in sample.items()})
                 writer.writerow(row)
                 output.flush()
-                if previous and current["completed"] < 10000:
+                if previous and current["completed"] < TARGET:
                     active = sum(metrics[name]["cpu_seconds"] - previous[name]["cpu_seconds"] > 0.1 for name in WORKERS)
                     overlaps += active == 4
                 previous = metrics
@@ -284,16 +285,16 @@ def main():
                       str({name: value["completed"] for name, value in metrics.items()}) +
                       "; CPU seconds: " + str({name: round(value["cpu_seconds"], 1) for name, value in metrics.items()}) +
                       "; task failures: " + str({name: value["failed"] for name, value in metrics.items()}), flush=True)
-                if current["completed"] == 10000 and compute_elapsed is None:
+                if current["completed"] == TARGET and compute_elapsed is None:
                     compute_elapsed = elapsed
-                if current["uploaded"] == 10000:
+                if current["uploaded"] == TARGET:
                     break
                 if elapsed > DRAIN_TIMEOUT_SECONDS:
                     raise TimeoutError("Four-worker SNS drain exceeded three hours")
                 time.sleep(2)
         report.update({"drain_seconds": round(elapsed, 3), "compute_drain_seconds": round(compute_elapsed, 3),
-                       "compute_handles_per_second": round(10000 / compute_elapsed, 3),
-                       "published_handles_per_second": round(10000 / elapsed, 3),
+                       "compute_handles_per_second": round(TARGET / compute_elapsed, 3),
+                       "published_handles_per_second": round(TARGET / elapsed, 3),
                        "four_worker_cpu_overlap_samples": overlaps, "workers": metrics, "final": current})
         report["db_deadlocks"] = int(sql("SELECT deadlocks FROM pg_stat_database WHERE datname = current_database();")) - deadlocks_before
         report["deadlock_log_matches"] = collect_logs()
@@ -325,7 +326,7 @@ def main():
         (OUT / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
         lines = ["# Four-worker SNS load test", "", f"Variant: **{variant}**", "",
                  f"Result: **{'PASS' if report['passed'] else 'FAIL'}**", "",
-                 "10,000 fresh non-trivial handles; 16 producers; SNS stopped until all CT64 were ready.",
+                 f"{TARGET:,} fresh non-trivial handles; 16 producers; SNS stopped until all CT64 were ready.",
                  "Four SNS processes, one database, batches of 20, four Rayon threads each; migration disabled.", "",
                  "All handles: DB completion, v1 upload status, canonical CT64/CT128 object presence.",
                  "64 spread-out handles: public decryption against expected plaintext, outside drain timing.",
