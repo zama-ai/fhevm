@@ -9,11 +9,15 @@ deploy_timeout="${CONTRACTS_DEPLOY_TIMEOUT:-10m}"
 # The Default DKG is about a day: BitGen alone ran past 11h, then the DKG and
 # CRS still have to finish. Test params and the insecure keygen fit in 45m.
 # v0.12 and v0.13 previews call KeyGen on kms-core directly, so Default
-# preprocessing is the real DKG. 26h covers the 24h ActivateKey wait plus CRS.
+# preprocessing is the real DKG even when the workflow flag is "insecure".
+# 26h covers the 24h ActivateKey wait plus CRS. The pod script's own wait
+# (KEYGEN_WAIT_TIMEOUT_MS) is raised to match below; the values default is 15m.
 if [[ "${FHE_PARAMS:?}" == "default" && ( "${KEYGEN:?}" == "secure" || "${KMS_CORE_TAG:-}" =~ ^v0\.1[23]\. ) ]]; then
   keygen_timeout="${KEYGEN_TIMEOUT:-26h}"
+  long_keygen="true"
 else
   keygen_timeout="${KEYGEN_TIMEOUT:-45m}"
+  long_keygen="false"
 fi
 
 kind="${1:?kind}"
@@ -82,19 +86,42 @@ fi
 echo "Resolved KMS_GENERATION_CONTRACT_ADDRESS=${KMS_GENERATION_CONTRACT_ADDRESS}"
 EOF
 )"
-      KEYGEN_EXPORT="${KEYGEN_EXPORT}" yq -i '
+      # Anvil keeps the in-namespace gateway. External chains (blockchain-dev,
+      # testnets) already patched this file to the host RPC; keygen for these
+      # contracts runs on the gateway, so put the gateway RPC and its owner back.
+      if [[ "${EXTERNAL_CHAINS:-false}" == "true" ]]; then
+        : "${GATEWAY_HTTP:?}"
+        : "${DEPLOYER_KEY_0:?}"
+        : "${GATEWAY_CHAIN_ID:?}"
+        keygen_rpc="${GATEWAY_HTTP}"
+        keygen_key="${DEPLOYER_KEY_0}"
+        keygen_chain_id="${GATEWAY_CHAIN_ID}"
+      else
+        keygen_rpc="http://anvil-gateway-anvil-node:8546"
+        keygen_key="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+        keygen_chain_id="54321"
+      fi
+      KEYGEN_EXPORT="${KEYGEN_EXPORT}" KEYGEN_RPC="${keygen_rpc}" KEYGEN_KEY="${keygen_key}" KEYGEN_CHAIN_ID="${keygen_chain_id}" yq -i '
         .scDeploy.image.name = "hub.zama.org/ghcr/zama-ai/fhevm/gateway-contracts" |
         .persistence.volumeClaim.name = "gateway-sc-deploy-workdir" |
-        (.scDeploy.env[] | select(.name == "RPC_URL").value) = "http://anvil-gateway-anvil-node:8546" |
-        (.scDeploy.env[] | select(.name == "DEPLOYER_PRIVATE_KEY").value) = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" |
+        (.scDeploy.env[] | select(.name == "RPC_URL")) = {"name": "RPC_URL", "value": strenv(KEYGEN_RPC)} |
+        (.scDeploy.env[] | select(.name == "DEPLOYER_PRIVATE_KEY")) = {"name": "DEPLOYER_PRIVATE_KEY", "value": strenv(KEYGEN_KEY)} |
+        (.scDeploy.env[] | select(.name == "CHAIN_ID").value) = strenv(KEYGEN_CHAIN_ID) |
         .scDeploy.deployCommands[0] = strenv(KEYGEN_EXPORT)
       ' "${keygen_values}"
       keygen_tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")
     fi
+    if [[ "${long_keygen}" == "true" ]]; then
+      NAME="KEYGEN_WAIT_TIMEOUT_MS" VALUE="${KEYGEN_WAIT_TIMEOUT_MS:-86400000}" yq -i \
+        '.scDeploy.env |= (map(select(.name != strenv(NAME))) + [{"name": strenv(NAME), "value": strenv(VALUE)}])' \
+        "${keygen_values}"
+      NAME="CRSGEN_WAIT_TIMEOUT_MS" VALUE="${CRSGEN_WAIT_TIMEOUT_MS:-14400000}" yq -i \
+        '.scDeploy.env |= (map(select(.name != strenv(NAME))) + [{"name": strenv(NAME), "value": strenv(VALUE)}])' \
+        "${keygen_values}"
+    fi
     # Chart 0.7.3 omits backoffLimit, so Kubernetes retries the Job 6 times.
     # Each retry runs task:triggerKeygen again and reverts with KeygenOngoing.
-    # Patch as soon as the Job exists; helm --wait keeps the pod in the cluster
-    # after the 6h Actions limit kills this step.
+    # Patch as soon as the Job exists.
     helm upgrade --install host-trigger-keygen "${CONTRACTS_CHART}" \
       -n "${NAMESPACE}" -f "${keygen_values}" \
       --set-string "scDeploy.image.tag=${keygen_tag}" \

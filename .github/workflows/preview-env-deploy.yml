@@ -704,8 +704,10 @@ jobs:
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
     # 90m covers a plain deploy; automated_tests adds the sequential e2e DAG
     # (9 tests, each recompiling contracts). Blue-green + tests runs that DAG
-    # twice (DryRunStarted, then after cutover), so allow a second suite.
-    timeout-minutes: 360
+    # twice (DryRunStarted, then after cutover). A v0.12/v0.13 Default keygen
+    # holds this job for the 26h helm wait, so the ceiling has to outlast that
+    # plus the deploy that runs before it.
+    timeout-minutes: 1920
     permissions:
       pull-requests: write # Required to comment on the PR with connection info
     env:
