@@ -261,10 +261,16 @@ ORDER BY c.dependence_chain_id;
 If any rows are returned, stop the host listener and all TFHE workers sharing
 that database, preserve a database snapshot, and record the query output. Do
 not repair a row while it is processing or owned by a worker. A row may be
-repaired directly only when it is `updated`, unowned, has at least one pending
-dependency, and contains exactly one self-edge. In that case the self-edge is
-one invalid gate; remove it and decrement the matching count atomically under
-a row lock:
+repaired directly only when it is `updated`, unowned, and contains exactly one
+self-edge. First verify that all its remaining producer dependencies are
+represented by incoming edges from pending external chains. The stored count
+must equal that external-parent count, or exceed it by exactly one; otherwise
+use an audited recovery with the coprocessor team.
+
+A self-edge does **not** prove that its gate was counted: the chain upsert can
+merge the edge without incrementing the count. Remove the edge and reconcile
+the count to the verified external parents under a row lock. Never blindly
+decrement it, which could release a real pending dependency:
 
 ```sql
 BEGIN;
@@ -275,16 +281,24 @@ FROM public.dependence_chain
 WHERE dependence_chain_id = decode('<chain-id-hex>', 'hex')
 FOR UPDATE;
 
-UPDATE public.dependence_chain
-SET dependents = array_remove(dependents, dependence_chain_id),
-    dependency_count = dependency_count - 1,
+WITH external_parents AS (
+    SELECT COUNT(*)::integer AS pending_count
+    FROM public.dependence_chain p
+    WHERE p.dependence_chain_id <> decode('<chain-id-hex>', 'hex')
+      AND p.status <> 'processed'
+      AND decode('<chain-id-hex>', 'hex') = ANY(p.dependents)
+)
+UPDATE public.dependence_chain c
+SET dependents = array_remove(c.dependents, c.dependence_chain_id),
+    dependency_count = external_parents.pending_count,
     last_updated_at = NOW()
-WHERE dependence_chain_id = decode('<chain-id-hex>', 'hex')
-  AND status = 'updated'
-  AND worker_id IS NULL
-  AND dependency_count >= 1
-  AND cardinality(array_positions(dependents, dependence_chain_id)) = 1
-RETURNING dependence_chain_id, status, worker_id, dependency_count, dependents;
+FROM external_parents
+WHERE c.dependence_chain_id = decode('<chain-id-hex>', 'hex')
+  AND c.status = 'updated'
+  AND c.worker_id IS NULL
+  AND c.dependency_count IN (external_parents.pending_count, external_parents.pending_count + 1)
+  AND cardinality(array_positions(c.dependents, c.dependence_chain_id)) = 1
+RETURNING c.dependence_chain_id, c.status, c.worker_id, c.dependency_count, c.dependents;
 
 SELECT pg_notify('work_available', '');
 COMMIT;
