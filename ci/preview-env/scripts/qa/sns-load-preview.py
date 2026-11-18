@@ -99,6 +99,29 @@ def workers():
     return [item for item in items if not item["metadata"].get("deletionTimestamp")]
 
 
+def wait_for_test_suite():
+    deadline = time.monotonic()+900
+    while True:
+        pods = json.loads(kube("get", "pods", "-l", "job-name=test-suite", "-o", "json"))["items"]
+        status = [{"name": p["metadata"]["name"], "status": p["status"]} for p in pods]
+        (OUT / "test-suite-status.json").write_text(json.dumps(status, indent=2))
+        assert len(pods) <= 1, "Multiple test-suite pods in the dedicated preview"
+        if pods:
+            pod = pods[0]
+            name = pod["metadata"]["name"]
+            if pod["status"]["phase"] in ("Failed", "Succeeded"):
+                raise RuntimeError(f"Test-suite pod exited before QA: {name}")
+            if pod["status"]["phase"] == "Running":
+                logs = redact(kube("logs", "--tail=300", name))
+                (OUT / "test-suite-startup.log").write_text(logs)
+                if "Recompiled contracts done - idling" in logs:
+                    return name
+        print(f"Waiting for test-suite startup and contract compilation: {status}", flush=True)
+        if time.monotonic() > deadline:
+            raise TimeoutError("Test-suite did not finish starting within 15 minutes; see startup diagnostics")
+        time.sleep(10)
+
+
 def scrape(index):
     pod = json.loads(kube("get", "pod", PODS[index], "-o", "json"))
     statuses = pod["status"].get("containerStatuses", [])
@@ -135,9 +158,7 @@ def main():
         assert "--work-items-batch-size=20" in container["args"]
         assert not any(item["spec"]["scaleTargetRef"]["name"] == SNS for item in
                        json.loads(kube("get", "hpa", "-o", "json"))["items"]), "SNS autoscaling is enabled"
-        jobs = json.loads(kube("get", "pods", "-l", "job-name=test-suite", "-o", "json"))["items"]
-        assert len(jobs) == 1 and jobs[0]["status"]["phase"] == "Running"
-        e2e = jobs[0]["metadata"]["name"]
+        e2e = wait_for_test_suite()
         # Existing ordinary scenario first, with all four SNS replicas present.
         remote_script(e2e, "smoke", "test add 42 to uint64 input and decrypt")
         kube("scale", "deploy/"+SNS, "--replicas=0")
