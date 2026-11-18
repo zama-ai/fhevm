@@ -1,4 +1,4 @@
-import type { FhevmCacheItem } from '../types/cache.js';
+import type { FhevmCacheName } from '../types/cache.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmBase } from '../types/coreFhevmClient.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
@@ -21,13 +21,13 @@ import { getCacheOptions } from './cacheOptions-p.js';
 type Context = FhevmBase<FhevmChain>;
 
 /**
- * Per cached item: which request errors may come from a stale value, how to
+ * Per cache: which request errors may come from a stale value, how to
  * read the value again (resolving to its version), and how to read only its
  * current version, caching nothing.
  */
-const ITEMS: Readonly<
+const CACHES: Readonly<
   Record<
-    FhevmCacheItem,
+    FhevmCacheName,
     {
       readonly mayBeStale: (context: Context, error: unknown) => boolean;
       readonly refresh: (
@@ -73,7 +73,7 @@ const ITEMS: Readonly<
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Fetches `item` again into the cache (see `LatestValueCache.refresh` for
+ * Fetches `cacheName` again into the cache (see `LatestValueCache.refresh` for
  * `invalidVersion`). Concurrent calls share one fetch.
  *
  * @throws {CachedValueInvalidError} when the value read again still has
@@ -83,24 +83,24 @@ const ITEMS: Readonly<
 export async function forceRefreshCachedValue(
   context: Context,
   parameters: {
-    readonly item: FhevmCacheItem;
+    readonly cacheName: FhevmCacheName;
     readonly invalidVersion?: string | undefined;
     readonly fhevmContext: FhevmClientFrozenContext;
   },
 ): Promise<void> {
-  const { item, invalidVersion, fhevmContext } = parameters;
-  const version = await ITEMS[item].refresh(context, fhevmContext, invalidVersion);
+  const { cacheName, invalidVersion, fhevmContext } = parameters;
+  const version = await CACHES[cacheName].refresh(context, fhevmContext, invalidVersion);
   if (invalidVersion !== undefined && version === invalidVersion) {
     throw new CachedValueInvalidError({
-      item,
+      cacheName,
       invalidVersion,
-      message: `The ${item} read again (version ${invalidVersion}) is the cached one: refreshing it cannot help.`,
+      message: `The ${cacheName} read again (version ${invalidVersion}) is the cached one: refreshing it cannot help.`,
     });
   }
 }
 
 /** A cached value a failed request used, found stale (read again, its version changed). */
-export type StaleValue = { readonly item: FhevmCacheItem; readonly version: string };
+export type StaleValue = { readonly cacheName: FhevmCacheName; readonly version: string };
 
 /**
  * Runs a request. When it fails on a cached value that turns out stale (read
@@ -134,8 +134,8 @@ export async function runWithRefreshOnInvalidity<T>(
       }
       context.runtime.config.logger?.warn?.(
         autoRefresh
-          ? `Cached ${stale.item} (version ${stale.version}) was stale and has been refreshed.`
-          : `Cached ${stale.item} (version ${stale.version}) is stale; not refreshed (autoRefreshOnInvalidity: false).`,
+          ? `Cached ${stale.cacheName} (version ${stale.version}) was stale and has been refreshed.`
+          : `Cached ${stale.cacheName} (version ${stale.version}) is stale; not refreshed (autoRefreshOnInvalidity: false).`,
       );
       // The caller gave up on an aborted request: it is not run again.
       if (_isAbort(e)) {
@@ -157,7 +157,7 @@ export async function runWithRefreshOnInvalidity<T>(
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Reads again each value the failed request used whose item may explain the
+ * Reads again each value the failed request used whose cache may explain the
  * error. The first one whose version changed is the stale one: with
  * `refresh`, the new value is cached; without, only its version is read. A
  * failed read proves nothing: it is logged, and the request's error stands.
@@ -169,20 +169,20 @@ async function _findStaleValue(
   usage: CacheUsage,
   refresh: boolean,
 ): Promise<StaleValue | undefined> {
-  for (const [item, used] of Object.entries(usage) as Array<[FhevmCacheItem, string]>) {
-    if (!ITEMS[item].mayBeStale(context, error)) {
+  for (const [cacheName, used] of Object.entries(usage) as Array<[FhevmCacheName, string]>) {
+    if (!CACHES[cacheName].mayBeStale(context, error)) {
       continue;
     }
     try {
       const current = refresh
-        ? await ITEMS[item].refresh(context, fhevmContext, used)
-        : await ITEMS[item].readVersion(context, fhevmContext);
+        ? await CACHES[cacheName].refresh(context, fhevmContext, used)
+        : await CACHES[cacheName].readVersion(context, fhevmContext);
       if (current !== used) {
-        return { item, version: used };
+        return { cacheName, version: used };
       }
     } catch (refreshError) {
       context.runtime.config.logger?.warn?.(
-        `Could not read the ${item} again (${String(refreshError)}): passing the request error on.`,
+        `Could not read the ${cacheName} again (${String(refreshError)}): passing the request error on.`,
       );
     }
   }
@@ -199,7 +199,7 @@ function _isAbort(error: unknown): boolean {
 
 function _staleValueError(stale: StaleValue, cause: unknown): CachedValueInvalidError {
   return new CachedValueInvalidError({
-    item: stale.item,
+    cacheName: stale.cacheName,
     invalidVersion: stale.version,
     cause: cause instanceof Error ? cause : undefined,
   });

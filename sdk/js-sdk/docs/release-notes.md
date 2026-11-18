@@ -31,8 +31,8 @@
   (`encryptValue` / `encryptValues`, `inputProof`) is unchanged.
 
 - **Unified caching.** The key material, KMS context and coprocessor signers share one cache: a
-  TTL per item and client (`options.cache.<item>.ttl`), automatic refresh and one retry on a stale
-  value (`options.cache.autoRefreshOnInvalidity`), `client.forceRefresh(item, { invalidVersion })`
+  TTL per cache and client (`options.cache.<cacheName>.ttl`), automatic refresh and one retry on a stale
+  value (`options.cache.autoRefreshOnInvalidity`), `client.forceRefresh(cacheName, { invalidVersion })`
   and `CachedValueInvalidError`. A long-running process now survives a key rotation, a KMS context
   switch and a coprocessor signer change without a restart. See [Caching](clients.md#caching).
 

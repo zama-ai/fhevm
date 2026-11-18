@@ -373,7 +373,7 @@ fetchFheEncryptionKeyBytes(parameters?: {
 }): Promise<FheEncryptionKeyBytes>;
 
 forceRefresh(
-  item: 'keyMaterial' | 'kmsContext' | 'coprocessorSigners',
+  cacheName: 'keyMaterial' | 'kmsContext' | 'coprocessorSigners',
   parameters?: { readonly invalidVersion?: string | undefined },
 ): Promise<void>;
 ```
@@ -413,7 +413,7 @@ createUnsignedLegacyDecryptionPermitEip712(fhevm, parameters);
 signLegacyDecryptionPermit(fhevm, parameters);
 createUnsignedUnifiedDecryptionPermitEip712(fhevm, parameters);
 signUnifiedDecryptionPermit(fhevm, parameters);
-forceRefresh(fhevm, item, parameters?);
+forceRefresh(fhevm, cacheName, parameters?);
 
 // @fhevm/sdk/actions/chain
 signDecryptionPermit(fhevm, parameters); // @deprecated, alias for signLegacyDecryptionPermit
