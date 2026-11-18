@@ -163,6 +163,11 @@ on:
           - "anvil"
           - "blockchain-dev"
           - "testnets"
+      sns_load_namespace:
+        description: "QA only: load the existing dedicated SNS preview without deploying"
+        required: false
+        default: ""
+        type: string
       lifetime:
         description: "Hours until this dispatch preview is destroyed (integer 4-96, default 8), counted from namespace creation, before the stack is ready. Ignored on PR-label deploys, which have no clock. A new dispatch is a new namespace; keep this one with preview-env extend (at most 48h per call)."
         required: false
@@ -246,12 +251,13 @@ jobs:
     name: check-labels
     runs-on: ubuntu-latest
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      inputs.sns_load_namespace == '' &&
+      (github.event_name == 'workflow_dispatch' ||
       github.event.action != 'labeled' ||
       github.event.label.name == 'preview-env-e2e' ||
       github.event.label.name == 'preview-env-e2e-tests' ||
       github.event.label.name == 'preview-env-gpu' ||
-      github.event.label.name == 'preview-env-blue-green'
+      github.event.label.name == 'preview-env-blue-green')
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
       build_images: ${{ steps.check.outputs.build_images }}
@@ -1617,3 +1623,47 @@ jobs:
             echo "This environment is **not** tied to a PR, so it is only destroyed"
             echo "manually - see preview-env-destroy.yml or clean up the namespace directly."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  sns-load-qa:
+    if: github.event_name == 'workflow_dispatch' && inputs.sns_load_namespace != ''
+    runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
+    environment: preview-env
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NAMESPACE: ${{ inputs.sns_load_namespace }}
+    steps:
+      - name: Checkout QA workload
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Setup preview tooling
+        uses: ./.github/actions/setup-preview-tooling
+        with:
+          ts-oauth-client-id: ${{ secrets.TS_FHEVM_CI_OAUTH_CLIENT_ID }}
+          ts-oauth-audience: ${{ secrets.TS_FHEVM_CI_OAUTH_AUDIENCE }}
+          ts-tags: tag:fhevm-ci
+          tailscale-hostname: tailscale-operator-zws-dev.diplodocus-boa.ts.net
+          harbor-url: ${{ secrets.HARBOR_URL }}
+          harbor-username: ${{ secrets.HARBOR_READ_LOGIN }}
+          harbor-token: ${{ secrets.HARBOR_READ_TOKEN }}
+      - name: Run 50,000 fresh outputs through four SNS replicas
+        run: python3 ci/preview-env/scripts/qa/sns-load-preview.py
+      - name: Verify conversion overlap between replicas
+        run: |
+          python3 ci/preview-env/scripts/qa/analyze-sns-overlap.py artifacts/sns-preview-load
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('artifacts/sns-preview-load/conversion-overlap.json').read_text())
+          assert d['four_worker_overlap_percent'] > 0, 'No observed conversion overlap across all four replicas'
+          PY
+      - name: Upload preview measurements
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: sns-preview-load-${{ github.run_id }}
+          path: artifacts/sns-preview-load/
+          if-no-files-found: warn
