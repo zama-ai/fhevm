@@ -14,7 +14,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[4]
 OUT = ROOT / "artifacts/sns-preview-load"
 NS = os.environ["NAMESPACE"]
-EXPECTED_NS = "fhevm-ci-rudy-6-4-kdy1tus"
+EXPECTED_NS = "fhevm-ci-rudy-6-4-kdz164j"
 TARGET = 50000
 SNS = "coprocessor-1-sns-worker"
 DB = "postgres-coprocessor-1-0"

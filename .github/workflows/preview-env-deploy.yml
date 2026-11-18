@@ -1628,9 +1628,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.sns_load_namespace != ''
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
     environment: preview-env
-    timeout-minutes: 150
+    timeout-minutes: 210
     permissions:
       contents: read
+      actions: read
       id-token: write
     env:
       NAMESPACE: ${{ inputs.sns_load_namespace }}
@@ -1639,6 +1640,11 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+      - name: Wait for the dedicated preview deployment
+        timeout-minutes: 60
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run watch 44380548163 --repo zama-ai/fhevm --interval 20 --exit-status
       - name: Setup preview tooling
         uses: ./.github/actions/setup-preview-tooling
         with:
