@@ -124,10 +124,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 let mut sleep_duration = s.conf.error_sleep_initial_secs as u64;
                 let mut needs_startup_replay = true;
                 loop {
-                    match s
-                        .run_get_logs(&d, &mut sleep_duration, &mut needs_startup_replay)
-                        .await
-                    {
+                    let result = tokio::select! {
+                        biased;
+                        _ = s.cancel_token.cancelled() => break,
+                        result = s.run_get_logs(&d, &mut sleep_duration, &mut needs_startup_replay) => result,
+                    };
+                    match result {
                         Ok(_) => {
                             info!("run_get_logs() stopped");
                             break;
@@ -1070,7 +1072,11 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     }
 
     async fn sleep_with_backoff(&self, sleep_duration: &mut u64) {
-        tokio::time::sleep(Duration::from_secs(*sleep_duration)).await;
+        tokio::select! {
+            biased;
+            _ = self.cancel_token.cancelled() => return,
+            _ = tokio::time::sleep(Duration::from_secs(*sleep_duration)) => {}
+        }
         *sleep_duration = std::cmp::min(*sleep_duration * 2, self.conf.error_sleep_max_secs as u64);
     }
 
@@ -1740,6 +1746,46 @@ mod tests {
     use test_harness::instance::ImportMode;
 
     use super::*;
+
+    #[tokio::test]
+    async fn halted_listener_cancels_during_retry_backoff() -> anyhow::Result<()> {
+        use alloy::providers::ProviderBuilder;
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let pool = Pool::<Postgres>::connect(instance.db_url()).await?;
+        chain_recovery::record_halt(
+            &pool,
+            HistoryMismatch {
+                source: ListenerSource::Gateway,
+                gcs_mode: false,
+                chain_id: 42,
+                block_number: 100,
+                expected_hash: None,
+                observed_hash: None,
+                reason: "test containment",
+            },
+        )
+        .await?;
+        let cancel = CancellationToken::new();
+        let listener = GatewayListener::new(
+            Address::ZERO,
+            ConfigSettings {
+                error_sleep_initial_secs: 60,
+                error_sleep_max_secs: 60,
+                ..Default::default()
+            },
+            cancel.clone(),
+            ProviderBuilder::new().connect_http("http://127.0.0.1:1".parse()?),
+        );
+        let mut run = Box::pin(listener.run(pool));
+        assert!(tokio::time::timeout(Duration::from_millis(100), &mut run)
+            .await
+            .is_err());
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(2), run).await??;
+        Ok(())
+    }
 
     #[tokio::test]
     async fn gateway_scan_retry_resumes_one_replay_generation() -> anyhow::Result<()> {

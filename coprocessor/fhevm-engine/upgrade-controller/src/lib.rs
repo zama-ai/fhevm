@@ -2590,11 +2590,21 @@ async fn promote_gateway_checkpoints(
     }
     let chain_id = chains[0];
     let conflict: Option<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
-        "SELECT g.block_number, b.block_hash, g.block_hash
+        "SELECT LEAST(g.block_number, b.block_number),
+                CASE WHEN b.block_number > g.block_number THEN b.parent_hash ELSE b.block_hash END,
+                CASE WHEN g.block_number > b.block_number THEN g.parent_hash ELSE g.block_hash END
          FROM public.listener_block_checkpoints g
-         JOIN public.listener_block_checkpoints b USING (source, chain_id, block_number)
+         JOIN public.listener_block_checkpoints b
+           ON b.source = g.source AND b.chain_id = g.chain_id
+          AND (b.block_number = g.block_number
+               OR b.block_number = g.block_number - 1
+               OR g.block_number = b.block_number - 1)
          WHERE g.source = 'gateway' AND g.stack_role = 'GCS' AND b.stack_role = 'BCS'
-           AND g.chain_id = $1 AND b.block_hash <> g.block_hash LIMIT 1",
+           AND g.chain_id = $1
+           AND ((b.block_number = g.block_number AND b.block_hash <> g.block_hash)
+             OR (b.block_number = g.block_number - 1 AND b.block_hash <> g.parent_hash)
+             OR (g.block_number = b.block_number - 1 AND g.block_hash <> b.parent_hash))
+         ORDER BY LEAST(g.block_number, b.block_number) LIMIT 1",
     )
     .bind(chain_id)
     .fetch_optional(&mut **tx)
@@ -4666,6 +4676,62 @@ mod tests {
         .execute(pool)
         .await
         .expect("seed consensus_epoch history");
+    }
+
+    #[tokio::test]
+    async fn gateway_promotion_checks_adjacent_retained_ranges() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.unwrap();
+        // Exercise both boundaries, a matching boundary, and legacy anchors
+        // that have no parent hash. The two roles never share a height.
+        for green_is_later in [false, true] {
+            for parent in [Some(vec![1_u8; 32]), Some(vec![9_u8; 32]), None] {
+                let mut tx = pool.begin().await.unwrap();
+                sqlx::query("DELETE FROM public.listener_block_checkpoints")
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+                let green_height = if green_is_later { 101_i64 } else { 100 };
+                for (role, height) in [("GCS", green_height), ("BCS", 201 - green_height)] {
+                    sqlx::query(
+                        "INSERT INTO public.listener_block_checkpoints
+                         (source, stack_role, chain_id, block_number, block_hash, parent_hash)
+                         VALUES ('gateway', $1, 42, $2, $3, $4)",
+                    )
+                    .bind(role)
+                    .bind(height)
+                    .bind(vec![if height == 100 { 1_u8 } else { 2 }; 32])
+                    .bind(if height == 101 { parent.clone() } else { None })
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+                }
+                sqlx::query(&format!(
+                    "INSERT INTO {GCS_SCHEMA_QUOTED}.gw_listener_last_block (dummy_id, last_block_num)
+                             VALUES (TRUE, $1) ON CONFLICT (dummy_id)
+                             DO UPDATE SET last_block_num=EXCLUDED.last_block_num",
+                ))
+                .bind(green_height)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+                let conflict = promote_gateway_checkpoints(&mut tx).await.unwrap();
+                assert_eq!(conflict.is_some(), parent == Some(vec![9_u8; 32]));
+                if let Some((chain_id, conflict)) = conflict {
+                    assert_eq!(chain_id, 42);
+                    assert_eq!(conflict.block_number, 100);
+                    assert_ne!(conflict.expected_hash, conflict.observed_hash);
+                    let blue_rows: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM public.listener_block_checkpoints WHERE stack_role='BCS'",
+                    ).fetch_one(&mut *tx).await.unwrap();
+                    assert_eq!(
+                        blue_rows, 1,
+                        "a conflict must not promote or erase evidence"
+                    );
+                }
+                tx.rollback().await.unwrap();
+            }
+        }
     }
 
     async fn seed_gateway_checkpoint(
