@@ -589,7 +589,11 @@ async fn recover_unreachable_with_parallel_workers(missing: bool) -> Result {
         "cold replay must infer a different chain"
     );
     let mut expected = vec![(root, 7), (producer, 20)];
-    for (parent, scalar, nonce, value) in [(producer, 5, 3, 25), (root, 19, 4, 26)] {
+    // root already fed the producer transaction, so its second consumer forks
+    // and seals stored_chain. The following consumer of producer must then
+    // fork too. Keep the real ingestion cache across these deliveries; an
+    // empty cache cannot discover either cross-block parent before CFI-0025.
+    for (parent, scalar, nonce, value) in [(root, 19, 4, 26), (producer, 5, 3, 25)] {
         let handle = executor.add(parent, scalar, nonce).call().await?;
         let receipt = executor
             .add(parent, scalar, nonce)
@@ -597,9 +601,8 @@ async fn recover_unreachable_with_parallel_workers(missing: bool) -> Result {
             .await?
             .get_receipt()
             .await?;
-        let mut cold = Database::new(&instance.db_url, ChainId::try_from(CHAIN)?, 128).await?;
         ingest(
-            &mut cold,
+            &mut warm,
             &block_logs(&provider, &receipt, exe, acl).await?,
             exe,
             acl,

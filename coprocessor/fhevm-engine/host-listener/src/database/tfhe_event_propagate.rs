@@ -1524,7 +1524,7 @@ impl Database {
         for (parent, child) in edges {
             parents.entry(parent).or_default().insert(child);
         }
-        let mut gate_counts = std::collections::BTreeMap::<Vec<u8>, i32>::new();
+        let mut gated_children = std::collections::BTreeSet::new();
         let mut sealed = Vec::new();
         let mut repaired = 0;
         for (parent, children) in parents {
@@ -1562,24 +1562,33 @@ impl Database {
                 .await?;
                 repaired += missing.len();
             }
-            // The parent->child relation can predate this replay while the
-            // scalar dependency_count does not include it. This occurs when
-            // an earlier partial delivery persisted the relation for an
-            // unallowed child, then the complete replay made that child
-            // eligible. Reconcile from all currently pending canonical
-            // parents instead of treating an existing relation as proof that
-            // its count was already charged.
-            for child in children {
-                *gate_counts.entry(child).or_default() += 1;
-            }
+            gated_children.extend(children);
             sealed.push(parent);
         }
-        // Set a lower bound from the complete pending parent set observed
-        // above. GREATEST keeps existing gates from earlier history, and makes
-        // replay idempotent when the parent relation was already present.
+        // The replay can cover only one transaction of a persisted chain.
+        // Count all registered pending parents, including those absent from
+        // this delivery, after adding the repaired edges. Otherwise max(old,
+        // replay_count) loses a gate when each set has a different parent.
+        // Children are locked throughout ingestion: a retiring parent cannot
+        // commit its decrement between this snapshot and the count update.
+        // Keep a higher legacy count for the worker's stale-gate repair.
         // Separate statements: a chain can be both a parent and a child, and
         // PostgreSQL cannot update a row twice in one data-modifying CTE.
-        for (child, count) in gate_counts {
+        for child in gated_children {
+            let count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM dependence_chain parent
+                 WHERE parent.status <> 'processed'
+                   AND parent.dependence_chain_id <> $1
+                   AND $1 = ANY(parent.dependents)",
+            )
+            .bind(&child)
+            .fetch_one(tx.as_mut())
+            .await?;
+            let count = i32::try_from(count).map_err(|_| {
+                SqlxError::Protocol(
+                    "pending parent count exceeds scheduler range".into(),
+                )
+            })?;
             let result = sqlx::query(
                 "UPDATE dependence_chain SET dependency_count = $2
                  WHERE dependence_chain_id = $1 AND dependency_count < $2",

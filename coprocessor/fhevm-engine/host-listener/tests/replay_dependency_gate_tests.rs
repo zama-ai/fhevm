@@ -152,6 +152,69 @@ async fn acl_replay_restores_persisted_chain_gate_once() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[serial(db)]
+async fn partial_replay_keeps_a_parent_outside_the_delivery(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let block = block();
+    let parent = FixedBytes::<32>::with_last_byte(0xb0);
+    let older_parent = FixedBytes::<32>::with_last_byte(0xb1);
+    let child = FixedBytes::<32>::with_last_byte(0xb2);
+    let input = computed_handle(0x20);
+    let output = computed_handle(0x21);
+    let mut logs = vec![
+        rpc_log(&trivial_encrypt(input), &block, parent, 0),
+        rpc_log(
+            &TfheContract::FheNeg {
+                caller: Address::ZERO,
+                ct: input,
+                result: output,
+            },
+            &block,
+            child,
+            2,
+        ),
+        rpc_log(&allowed(output), &block, child, 3),
+    ];
+    ingest(&mut db, &block, logs.clone(), false).await?;
+    // A previous transaction in this stored child chain already waits on B.
+    // This replay only covers the transaction that needs A; its logs cannot
+    // reconstruct B, but B's durable edge and charged gate must survive.
+    sqlx::query("INSERT INTO dependence_chain (dependence_chain_id, status, dependents) VALUES ($1, 'updated', ARRAY[$2::bytea])")
+        .bind(older_parent.as_slice()).bind(child.as_slice()).execute(&pool).await?;
+    sqlx::query("UPDATE dependence_chain SET dependency_count = 1 WHERE dependence_chain_id = $1")
+        .bind(child.as_slice()).execute(&pool).await?;
+    logs.push(rpc_log(&allowed(input), &block, parent, 1));
+
+    let mut worker_lock = db.pool().await.begin().await?;
+    sqlx::query("SELECT 1 FROM dependence_chain WHERE dependence_chain_id = $1 FOR NO KEY UPDATE")
+        .bind(older_parent.as_slice()).fetch_one(&mut *worker_lock).await?;
+    for _ in 0..2 {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            ingest(&mut db, &block, logs.clone(), true),
+        )
+        .await??;
+        let count: i32 = sqlx::query_scalar("SELECT dependency_count FROM dependence_chain WHERE dependence_chain_id = $1")
+            .bind(child.as_slice()).fetch_one(&pool).await?;
+        assert_eq!(count, 2, "A and the already registered B must each gate the child, even while B is locked");
+    }
+    worker_lock.rollback().await?;
+    // Model the worker retiring A and decrementing its dependent once.
+    let mut retirement = pool.begin().await?;
+    sqlx::query("UPDATE dependence_chain SET status = 'processed' WHERE dependence_chain_id = $1")
+        .bind(parent.as_slice()).execute(&mut *retirement).await?;
+    let remaining: i32 = sqlx::query_scalar("UPDATE dependence_chain SET dependency_count = dependency_count - 1 WHERE dependence_chain_id = $1 RETURNING dependency_count")
+        .bind(child.as_slice()).fetch_one(&mut *retirement).await?;
+    retirement.commit().await?;
+    assert_eq!(
+        remaining, 1,
+        "completion of A must leave the child waiting for B"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn acl_replay_does_not_gate_materialized_inputs() -> anyhow::Result<()> {
     replay_dependency_gate(true, false, false).await
 }
