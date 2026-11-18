@@ -446,10 +446,23 @@ async fn replay_uses_an_earlier_producer_instead_of_a_later_same_block_remint(
     // rank after a short later one. Force that order in this small fixture.
     sqlx::query("UPDATE computations SET schedule_order = TIMESTAMP '1970-01-01' WHERE transaction_id = $1")
         .bind(remint.as_slice()).execute(&pool).await?;
+    // A sibling observation must not erase this block's original producer
+    // index. The repair delivery below omits that original producer log.
+    let mut fork = b;
+    fork.hash = FixedBytes::repeat_byte(0xf1);
+    ingest(
+        &mut db,
+        &fork,
+        vec![rpc_log(&trivial_encrypt(input), &fork, parent, 9)],
+        false,
+    )
+    .await?;
     let mut replay =
         Database::new(&instance.db_url, ChainId::try_from(42_u64)?, 128)
             .await?;
-    ingest(&mut replay, &b, logs(true), true).await?;
+    let mut repair = logs(true);
+    repair.retain(|log| log.log_index != Some(0));
+    ingest(&mut replay, &b, repair, true).await?;
     let count: i32 = sqlx::query_scalar("SELECT dependency_count FROM dependence_chain WHERE dependence_chain_id = $1")
         .bind(child.as_slice()).fetch_one(&pool).await?;
     assert_eq!(

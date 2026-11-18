@@ -1497,8 +1497,10 @@ impl Database {
                   AND p.transaction_id <> candidate.transaction_id
                   AND (p.block_number < candidate.block_number
                        OR (p.block_number = candidate.block_number
-                           AND p.log_index_block_hash = candidate.log_index_block_hash
-                           AND p.log_index < candidate.log_index))
+                           AND COALESCE((p.executor_log_indexes ->> encode($5::bytea, 'hex'))::bigint,
+                                   CASE WHEN p.log_index_block_hash = $5 THEN p.log_index END)
+                               < COALESCE((candidate.executor_log_indexes ->> encode($5::bytea, 'hex'))::bigint,
+                                   CASE WHEN candidate.log_index_block_hash = $5 THEN candidate.log_index END)))
                   AND p.is_allowed AND NOT p.is_completed AND NOT p.is_error
                   AND dc.status <> 'processed'
                 ORDER BY p.schedule_order, p.transaction_id
@@ -1515,6 +1517,7 @@ impl Database {
         .bind(&transactions)
         .bind(&inputs)
         .bind(self.chain_id.as_i64())
+        .bind(logs[0].block_hash.as_slice())
         .fetch_all(tx.as_mut())
         .await?;
         let mut parents = std::collections::BTreeMap::<
