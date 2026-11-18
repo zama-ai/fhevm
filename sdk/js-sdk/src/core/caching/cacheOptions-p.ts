@@ -23,7 +23,7 @@ export const MAX_CACHE_TTL = CACHE_TTL_24H;
  *
  * @throws {FhevmConfigError} on a `cache` (or per-cache entry) that is not an
  * object, an unknown key, a TTL that is not an integer between 0 and 24 h, or a
- * non-boolean `autoRefreshOnInvalidity`.
+ * non-boolean `autoRefreshOnStale`.
  */
 export function resolveCacheOptions(cache: FhevmCacheOptions | undefined): ResolvedFhevmCacheOptions {
   if (cache === undefined) {
@@ -36,9 +36,9 @@ export function resolveCacheOptions(cache: FhevmCacheOptions | undefined): Resol
   }
 
   for (const key of Object.keys(cache)) {
-    if (key !== 'autoRefreshOnInvalidity' && !FHEVM_CACHE_NAMES.includes(key as FhevmCacheName)) {
+    if (key !== 'autoRefreshOnStale' && !FHEVM_CACHE_NAMES.includes(key as FhevmCacheName)) {
       throw new FhevmConfigError({
-        message: `Unknown 'options.cache.${key}': expected ${FHEVM_CACHE_NAMES.join(', ')} or autoRefreshOnInvalidity.`,
+        message: `Unknown 'options.cache.${key}': expected ${FHEVM_CACHE_NAMES.join(', ')} or autoRefreshOnStale.`,
       });
     }
   }
@@ -69,14 +69,14 @@ export function resolveCacheOptions(cache: FhevmCacheOptions | undefined): Resol
     ttl[cacheName] = valueTtl;
   }
 
-  const autoRefreshOnInvalidity = cache.autoRefreshOnInvalidity ?? true;
-  if (typeof autoRefreshOnInvalidity !== 'boolean') {
+  const autoRefreshOnStale = cache.autoRefreshOnStale ?? true;
+  if (typeof autoRefreshOnStale !== 'boolean') {
     throw new FhevmConfigError({
-      message: `'options.cache.autoRefreshOnInvalidity' must be a boolean.`,
+      message: `'options.cache.autoRefreshOnStale' must be a boolean.`,
     });
   }
 
-  return Object.freeze({ ttl: Object.freeze(ttl), autoRefreshOnInvalidity });
+  return Object.freeze({ ttl: Object.freeze(ttl), autoRefreshOnStale });
 }
 
 const DEFAULT_CACHE_OPTIONS: ResolvedFhevmCacheOptions = resolveCacheOptions({});

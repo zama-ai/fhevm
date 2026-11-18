@@ -91,9 +91,9 @@ function _currentKmsContextParameters(context: Context & { readonly chain: Fhevm
  */
 export async function refreshCurrentKmsContext(
   context: Context & { readonly chain: FhevmChain },
-  invalidVersion: string | undefined,
+  staleVersion: string | undefined,
 ): Promise<string> {
-  const { version } = await kmsContextCache.refresh(context, _currentKmsContextParameters(context), invalidVersion);
+  const { version } = await kmsContextCache.refresh(context, _currentKmsContextParameters(context), staleVersion);
   return version;
 }
 
@@ -158,7 +158,7 @@ export async function readKmsSignersContextFromPermitExtraData(
       });
     }
   }
-  // For the check after a failure (see runWithRefreshOnInvalidity).
+  // For the check after a failure (see retryOnStaleCache).
   recordCacheUsage(parameters.cacheUsage, 'kmsContext', current.version);
   return createKmsSignersContext(new WeakRef(context.runtime), {
     ...parameters,

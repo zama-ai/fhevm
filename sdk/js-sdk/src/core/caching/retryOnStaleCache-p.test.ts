@@ -13,7 +13,7 @@ import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFroz
 import { invalidateVersionCache } from '../host-contracts/HostContractVersion-p.js';
 import { ThresholdSignerError } from '../errors/SignersError.js';
 import { RelayerResponseApiError } from '../errors/RelayerResponseApiError.js';
-import { CachedValueInvalidError } from '../errors/CachedValueInvalidError.js';
+import { CachedValueStaleError } from '../errors/CachedValueStaleError.js';
 import {
   coprocessorSignersVersion,
   getCoprocessorContextSignersAndThreshold,
@@ -25,13 +25,13 @@ import { bytes32ToHandle, FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION } from '../han
 import { asBytes32 } from '../base/bytes.js';
 import { publicDecryptWithGateway as publicDecrypt } from '../kms/publicDecryptWithGateway.js';
 import { createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
-import { forceRefreshCachedValue, runWithRefreshOnInvalidity } from './refreshOnInvalidity-p.js';
+import { forceRefreshCachedValue, retryOnStaleCache } from './retryOnStaleCache-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/caching/refreshOnInvalidity-p.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/caching/retryOnStaleCache-p.test.ts
 //
 // Refresh on failure: a request failing on a stale cached value refreshes it
-// and runs once more (or throws CachedValueInvalidError when automatic
+// and runs once more (or throws CachedValueStaleError when automatic
 // refresh is off). The "request" here is a stand-in that reads the cached
 // value as encrypt / publicDecrypt do, and fails the way the relayer or the
 // signature check fails when that value is stale.
@@ -97,7 +97,7 @@ function inputProofRequest(world: World, options: { readonly badSignature?: bool
     }
     return signedBy;
   });
-  const send = () => runWithRefreshOnInvalidity(world.client, fhevmContext, run);
+  const send = () => retryOnStaleCache(world.client, fhevmContext, run);
   return { run, send };
 }
 
@@ -161,7 +161,7 @@ function publicDecryptRequest(
     }
     return context.id;
   });
-  const send = () => runWithRefreshOnInvalidity(world.client, fhevmContext, run);
+  const send = () => retryOnStaleCache(world.client, fhevmContext, run);
   return { run, send };
 }
 
@@ -214,7 +214,7 @@ describe('refresh and retry', () => {
     expect(world.reads('getCoprocessorSigners') - readsBefore).toBe(1);
   });
 
-  it('never loops: a retry failing on a stale value again throws CachedValueInvalidError', async () => {
+  it('never loops: a retry failing on a stale value again throws CachedValueStaleError', async () => {
     const world = makeWorld();
     const request = inputProofRequest(world);
     await request.send();
@@ -230,45 +230,45 @@ describe('refresh and retry', () => {
     });
 
     await expect(request.send()).rejects.toMatchObject({
-      name: 'CachedValueInvalidError',
+      name: 'CachedValueStaleError',
       cacheName: 'coprocessorSigners',
     });
     expect(request.run).toHaveBeenCalledTimes(2);
   });
 
-  it('autoRefreshOnInvalidity: false → CachedValueInvalidError → forceRefresh → retry succeeds', async () => {
-    const world = makeWorld({ autoRefreshOnInvalidity: false });
+  it('autoRefreshOnStale: false → CachedValueStaleError → forceRefresh → retry succeeds', async () => {
+    const world = makeWorld({ autoRefreshOnStale: false });
     const request = inputProofRequest(world);
     const usedVersion = coprocessorSignersVersion({ threshold: 1, signers: [SIGNER_A] });
     await request.send();
     world.chainState.coprocessorSigner = SIGNER_B;
 
     const error = await request.send().catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(CachedValueInvalidError);
-    expect(error).toMatchObject({ cacheName: 'coprocessorSigners', invalidVersion: usedVersion });
+    expect(error).toBeInstanceOf(CachedValueStaleError);
+    expect(error).toMatchObject({ cacheName: 'coprocessorSigners', staleVersion: usedVersion });
     expect((error as Error).cause).toBeInstanceOf(ThresholdSignerError);
     expect(request.run).toHaveBeenCalledTimes(2);
     // Nothing was cached: the next request still uses the old set.
-    await expect(request.send()).rejects.toBeInstanceOf(CachedValueInvalidError);
+    await expect(request.send()).rejects.toBeInstanceOf(CachedValueStaleError);
     // forceRefresh reads the new set; then the request succeeds.
     const reads = world.reads('getCoprocessorSigners');
     await forceRefreshCachedValue(world.client, {
       cacheName: 'coprocessorSigners',
-      invalidVersion: usedVersion,
+      staleVersion: usedVersion,
       fhevmContext,
     });
     expect(world.reads('getCoprocessorSigners')).toBe(reads + 1);
     await expect(request.send()).resolves.toBe(SIGNER_B);
   });
 
-  it('forceRefresh: one fetch for concurrent calls, none once replaced, CachedValueInvalidError if unchanged', async () => {
+  it('forceRefresh: one fetch for concurrent calls, none once replaced, CachedValueStaleError if unchanged', async () => {
     const world = makeWorld();
     await inputProofRequest(world).send();
     const v1 = coprocessorSignersVersion({ threshold: 1, signers: [SIGNER_A] });
     const refresh = () =>
-      forceRefreshCachedValue(world.client, { cacheName: 'coprocessorSigners', invalidVersion: v1, fhevmContext });
+      forceRefreshCachedValue(world.client, { cacheName: 'coprocessorSigners', staleVersion: v1, fhevmContext });
 
-    await expect(refresh()).rejects.toMatchObject({ name: 'CachedValueInvalidError', invalidVersion: v1 });
+    await expect(refresh()).rejects.toMatchObject({ name: 'CachedValueStaleError', staleVersion: v1 });
 
     world.chainState.coprocessorSigner = SIGNER_B;
     const readsBefore = world.reads('getCoprocessorSigners');
@@ -277,14 +277,14 @@ describe('refresh and retry', () => {
     expect(world.reads('getCoprocessorSigners') - readsBefore).toBe(1);
   });
 
-  it('onStale (a user decryption): refreshed, not run again, the onStale error with the request error as cause', async () => {
+  it('createStaleError (a user decryption): refreshed, not run again, the createStaleError error with the request error as cause', async () => {
     const world = makeWorld();
     const request = inputProofRequest(world);
     await request.send();
     world.chainState.coprocessorSigner = SIGNER_B;
 
-    const error = await runWithRefreshOnInvalidity(world.client, fhevmContext, request.run, {
-      onStale: (stale, cause) => new Error(`stale ${stale.cacheName}`, { cause }),
+    const error = await retryOnStaleCache(world.client, fhevmContext, request.run, {
+      createStaleError: (stale, cause) => new Error(`stale ${stale.cacheName}`, { cause }),
     }).catch((e: unknown) => e);
     expect((error as Error).message).toBe('stale coprocessorSigners');
     expect((error as Error).cause).toBeInstanceOf(ThresholdSignerError);
@@ -327,8 +327,8 @@ describe('KMS context', () => {
     expect(world.reads('getContextSignersAndThresholdFromExtraData') - signerReads).toBe(0);
   });
 
-  it('an aborted request on an old context (autoRefreshOnInvalidity: false): not refreshed, the abort error', async () => {
-    const world = makeWorld({ autoRefreshOnInvalidity: false });
+  it('an aborted request on an old context (autoRefreshOnStale: false): not refreshed, the abort error', async () => {
+    const world = makeWorld({ autoRefreshOnStale: false });
     const request = publicDecryptRequest(world, { failure: 'abort' });
     await request.send();
     world.chainState.kmsContextId = 6n;
@@ -340,24 +340,24 @@ describe('KMS context', () => {
     expect(world.reads('getContextSignersAndThresholdFromExtraData')).toBe(signerReads);
     await forceRefreshCachedValue(world.client, {
       cacheName: 'kmsContext',
-      invalidVersion: kmsContextVersion(5n, 1n),
+      staleVersion: kmsContextVersion(5n, 1n),
       fhevmContext,
     });
     await expect(request.send()).resolves.toBe(6n);
   });
 
-  it('a request bound to its permit (autoRefreshOnInvalidity: false): CachedValueInvalidError, not onStale', async () => {
-    const world = makeWorld({ autoRefreshOnInvalidity: false });
+  it('a request bound to its permit (autoRefreshOnStale: false): CachedValueStaleError, not createStaleError', async () => {
+    const world = makeWorld({ autoRefreshOnStale: false });
     const request = publicDecryptRequest(world, { failure: 'apiError' });
     await request.send();
     world.chainState.kmsContextId = 6n;
-    const onStale = vi.fn(() => new Error('onStale'));
+    const createStaleError = vi.fn(() => new Error('createStaleError'));
 
-    const error = await runWithRefreshOnInvalidity(world.client, fhevmContext, request.run, { onStale }).catch(
+    const error = await retryOnStaleCache(world.client, fhevmContext, request.run, { createStaleError }).catch(
       (e: unknown) => e,
     );
-    expect(error).toMatchObject({ name: 'CachedValueInvalidError', cacheName: 'kmsContext' });
-    expect(onStale).not.toHaveBeenCalled();
+    expect(error).toMatchObject({ name: 'CachedValueStaleError', cacheName: 'kmsContext' });
+    expect(createStaleError).not.toHaveBeenCalled();
   });
 });
 

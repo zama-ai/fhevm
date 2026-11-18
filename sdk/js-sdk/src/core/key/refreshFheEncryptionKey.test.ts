@@ -22,7 +22,7 @@ import {
 } from './ensureFheEncryptionKeyDownload.js';
 import { RelayerResponseInputProofRejectedError } from '../errors/RelayerResponseInputProofRejectedError.js';
 import { recordCacheUsage } from '../caching/cacheUsage-p.js';
-import { forceRefreshCachedValue, runWithRefreshOnInvalidity } from '../caching/refreshOnInvalidity-p.js';
+import { forceRefreshCachedValue, retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/key/refreshFheEncryptionKey.test.ts
@@ -138,8 +138,8 @@ function makeWorld(options: { readonly labelIds?: boolean; readonly unverified?:
 type Client = ReturnType<ReturnType<typeof makeWorld>['newClient']>;
 const fetchBytes = (client: Client) => fetchFheEncryptionKeyBytes(client, { fhevmContext });
 const fetchVersion = async (client: Client) => (await ensureFheEncryptionKeyDownload(client, { fhevmContext })).version;
-const refresh = (client: Client, invalidVersion?: string) =>
-  refreshFheEncryptionKey(client, { fhevmContext, invalidVersion });
+const refresh = (client: Client, staleVersion?: string) =>
+  refreshFheEncryptionKey(client, { fhevmContext, staleVersion });
 
 beforeEach(() => {
   fheEncryptionKeyCacheForTests.clear();
@@ -259,13 +259,13 @@ describe('key material cache', () => {
       await fetchBytes(client);
       const error = await forceRefreshCachedValue(client, {
         cacheName: 'keyMaterial',
-        invalidVersion: version(GEN1),
+        staleVersion: version(GEN1),
         fhevmContext,
       }).catch((e: unknown) => e);
       expect(error).toMatchObject({
-        name: 'CachedValueInvalidError',
+        name: 'CachedValueStaleError',
         cacheName: 'keyMaterial',
-        invalidVersion: version(GEN1),
+        staleVersion: version(GEN1),
       });
       expect(downloads).toHaveBeenCalledTimes(1);
     });
@@ -306,7 +306,7 @@ describe('key material cache', () => {
       expect(downloads).toHaveBeenCalledTimes(2);
     });
 
-    it('without invalidVersion, reads the active ids once for concurrent refreshes, downloading only a new key', async () => {
+    it('without staleVersion, reads the active ids once for concurrent refreshes, downloading only a new key', async () => {
       const { state, newClient, downloads, activeIdReads } = makeWorld();
       const client = newClient();
       await fetchBytes(client);
@@ -322,7 +322,7 @@ describe('key material cache', () => {
     });
   });
 
-  it('a download in flight across a rotation: the refresh downloads the new key, no CachedValueInvalidError', async () => {
+  it('a download in flight across a rotation: the refresh downloads the new key, no CachedValueStaleError', async () => {
     const { state, newClient, downloads } = makeWorld();
     const client = newClient();
     let release: (() => void) | undefined;
@@ -360,7 +360,7 @@ describe('encryption after a key rotation', () => {
   // A stand-in for encrypt: the coprocessors reject a proof made with a key
   // other than the active one.
   function encryptRequest(world: ReturnType<typeof makeWorld>, client: Client) {
-    const run = vi.fn(async (usage: Parameters<Parameters<typeof runWithRefreshOnInvalidity>[2]>[0]) => {
+    const run = vi.fn(async (usage: Parameters<Parameters<typeof retryOnStaleCache>[2]>[0]) => {
       const checked = await ensureFheEncryptionKeyDownload(client, { fhevmContext });
       recordCacheUsage(usage, 'keyMaterial', checked.version);
       if (checked.version !== version(world.state.chain)) {
@@ -375,7 +375,7 @@ describe('encryption after a key rotation', () => {
       }
       return checked.version;
     });
-    const send = () => runWithRefreshOnInvalidity(client, fhevmContext, run);
+    const send = () => retryOnStaleCache(client, fhevmContext, run);
     return { run, send };
   }
 
@@ -392,22 +392,22 @@ describe('encryption after a key rotation', () => {
     expect(world.downloads).toHaveBeenCalledTimes(2);
   });
 
-  it('autoRefreshOnInvalidity: false: CachedValueInvalidError with no download; forceRefresh downloads once', async () => {
+  it('autoRefreshOnStale: false: CachedValueStaleError with no download; forceRefresh downloads once', async () => {
     const world = makeWorld();
-    const client = world.newClient({ autoRefreshOnInvalidity: false });
+    const client = world.newClient({ autoRefreshOnStale: false });
     const request = encryptRequest(world, client);
     await request.send();
     world.state.chain = GEN2;
     world.state.relayer = GEN2;
 
     await expect(request.send()).rejects.toMatchObject({
-      name: 'CachedValueInvalidError',
+      name: 'CachedValueStaleError',
       cacheName: 'keyMaterial',
-      invalidVersion: version(GEN1),
+      staleVersion: version(GEN1),
     });
     // Only the active ids were read: the new key was not downloaded.
     expect(world.downloads).toHaveBeenCalledTimes(1);
-    await forceRefreshCachedValue(client, { cacheName: 'keyMaterial', invalidVersion: version(GEN1), fhevmContext });
+    await forceRefreshCachedValue(client, { cacheName: 'keyMaterial', staleVersion: version(GEN1), fhevmContext });
     expect(world.downloads).toHaveBeenCalledTimes(2);
     await expect(request.send()).resolves.toBe(version(GEN2));
   });

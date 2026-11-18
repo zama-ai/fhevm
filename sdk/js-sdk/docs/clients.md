@@ -213,7 +213,7 @@ const client = createFhevmClient({
     cache: {
       kmsContext: { ttl: 60 * 60 * 1000 }, // 1 h, in milliseconds
       coprocessorSigners: { ttl: 0 }, // no cache for this client
-      autoRefreshOnInvalidity: true, // the default
+      autoRefreshOnStale: true, // the default
     },
   },
 });
@@ -221,18 +221,18 @@ const client = createFhevmClient({
 
 - `<cacheName>.ttl`: per client, in ms. Default and maximum 24 h. `0`: no cache for this client.
 - `keyMaterial.ttl: 0`: the active ids are read on every call; the key is downloaded only after a rotation.
-- `autoRefreshOnInvalidity`: default `true`. For `false`, see [Manual refresh](#manual-refresh).
+- `autoRefreshOnStale`: default `true`. For `false`, see [Manual refresh](#manual-refresh).
 
 #### On a stale value
 
 | Situation                                                                     | The SDK                                    | You get                                                                                 |
 | ----------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------- |
 | Encryption or public decryption fails on a stale value                        | Refreshes it, logs a warning, retries once | The result                                                                              |
-| The retry fails on a stale value again                                        | Stops                                      | `CachedValueInvalidError`                                                               |
+| The retry fails on a stale value again                                        | Stops                                      | `CachedValueStaleError`                                                               |
 | The value cannot be read again (e.g. RPC error)                               | Logs a warning                             | The request's own error                                                                 |
 | Bad signature, signer set unchanged                                           | No refresh, no retry                       | `UnknownSignerError`, `ThresholdSignerError` or `DuplicateSignerError`                  |
 | User or delegated decryption, or `encryptValuesWithPad`; KMS context switched | Loads the new context, no retry            | `InvalidSignedPermitError` (`cause`: the request's error): sign a new permit            |
-| `autoRefreshOnInvalidity: false`                                              | Reads only the version, cache untouched    | `CachedValueInvalidError`; for a user decryption, `forceRefresh` then sign a new permit |
+| `autoRefreshOnStale: false`                                              | Reads only the version, cache untouched    | `CachedValueStaleError`; for a user decryption, `forceRefresh` then sign a new permit |
 
 - Concurrent requests failing on the same stale value share one refresh.
 - An aborted request is never run again: it throws its abort error.
@@ -243,18 +243,18 @@ const client = createFhevmClient({
 try {
   await client.encryptValues({ contractAddress, userAddress, values });
 } catch (err) {
-  if (!(err instanceof Error) || err.name !== 'CachedValueInvalidError') throw err;
-  const { cacheName, invalidVersion } = err as Error & { cacheName: FhevmCacheName; invalidVersion: string };
-  await client.forceRefresh(cacheName, { invalidVersion });
+  if (!(err instanceof Error) || err.name !== 'CachedValueStaleError') throw err;
+  const { cacheName, staleVersion } = err as Error & { cacheName: FhevmCacheName; staleVersion: string };
+  await client.forceRefresh(cacheName, { staleVersion });
   await client.encryptValues({ contractAddress, userAddress, values });
 }
 ```
 
-`forceRefresh(cacheName, { invalidVersion })`:
+`forceRefresh(cacheName, { staleVersion })`:
 
-- Fetches only if the cache still holds `invalidVersion` (without it: always). Concurrent calls share one fetch.
+- Fetches only if the cache still holds `staleVersion` (without it: always). Concurrent calls share one fetch.
 - Resolves once the cache holds another version; rejects with the fetch error.
-- Rejects with `CachedValueInvalidError` when the fetched value is the same: refreshing cannot help.
+- Rejects with `CachedValueStaleError` when the fetched value is the same: refreshing cannot help.
 
 #### Key rotation
 

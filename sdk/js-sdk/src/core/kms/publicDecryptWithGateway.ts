@@ -15,7 +15,7 @@ import { createPublicDecryptionProof } from '../kms/PublicDecryptionProof-p.js';
 import { checkAllowedForDecryption } from '../host-contracts/checkAllowedForDecryption.js';
 import { kmsContextVersion } from '../host-contracts/readKmsSignersContext-p.js';
 import { recordCacheUsage } from '../caching/cacheUsage-p.js';
-import { runWithRefreshOnInvalidity } from '../caching/refreshOnInvalidity-p.js';
+import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -35,7 +35,7 @@ type ReturnType = PublicDecryptionProof;
 export async function publicDecryptWithGateway(context: Context, parameters: Parameters): Promise<ReturnType> {
   // A failure after the request was sent (error, timeout, abort) checks the KMS
   // context: if it changed, the request runs once more (unless aborted).
-  return runWithRefreshOnInvalidity(context, parameters.fhevmContext, (cacheUsage) =>
+  return retryOnStaleCache(context, parameters.fhevmContext, (cacheUsage) =>
     _publicDecryptWithGateway(context, parameters, cacheUsage),
   );
 }

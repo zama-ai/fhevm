@@ -9,7 +9,7 @@ import type { TransportKeyPair } from './TransportKeyPair-p.js';
 import type { CacheUsage } from '../caching/cacheUsage-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { FhevmBase } from '../types/coreFhevmClient.js';
-import { runWithRefreshOnInvalidity } from '../caching/refreshOnInvalidity-p.js';
+import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
 import { permitRequestStaleContextError } from '../host-contracts/readKmsSignersContext-p.js';
 import { createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
 import { decryptKmsSigncryptedShares } from './decryptKmsSigncryptedShares-p.js';
@@ -45,12 +45,12 @@ export async function decryptValuesFromPairsWithGateway(fhevm: Context, paramete
   // A failure once the request is sent checks the KMS context and caches a
   // switched one, for the next permit. Not run again: the permit names the old
   // context.
-  const kmsSigncryptedShares: KmsSigncryptedShares = await runWithRefreshOnInvalidity(
+  const kmsSigncryptedShares: KmsSigncryptedShares = await retryOnStaleCache(
     fhevm,
     fhevmContext,
     (cacheUsage) => _fetchKmsSigncryptedShares(fhevm, { ...parameters, cacheUsage }),
     {
-      onStale: (_stale, error) =>
+      createStaleError: (_stale, error) =>
         permitRequestStaleContextError(
           fhevm,
           createKmsExtraDataFromBytesHex(parameters.signedPermit.eip712.message.extraData),

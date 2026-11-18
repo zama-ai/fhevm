@@ -32,16 +32,16 @@
 
 - **Unified caching.** The key material, KMS context and coprocessor signers share one cache: a
   TTL per cache and client (`options.cache.<cacheName>.ttl`), automatic refresh and one retry on a stale
-  value (`options.cache.autoRefreshOnInvalidity`), `client.forceRefresh(cacheName, { invalidVersion })`
-  and `CachedValueInvalidError`. A long-running process now survives a key rotation, a KMS context
+  value (`options.cache.autoRefreshOnStale`), `client.forceRefresh(cacheName, { staleVersion })`
+  and `CachedValueStaleError`. A long-running process now survives a key rotation, a KMS context
   switch and a coprocessor signer change without a restart. See [Caching](clients.md#caching).
 
 #### Changed
 
 - **Breaking: cache TTLs and stale-value errors.** The KMS context and coprocessor signers are
   cached for 24 h (was 15 min), the key material for 24 h (was the life of the process). A request
-  still failing on a stale value after the retry (or at once, with `autoRefreshOnInvalidity: false`)
-  throws `CachedValueInvalidError` (underlying error as `cause`) instead of the underlying error. A
+  still failing on a stale value after the retry (or at once, with `autoRefreshOnStale: false`)
+  throws `CachedValueStaleError` (underlying error as `cause`) instead of the underlying error. A
   user decryption failing after a KMS context switch throws `InvalidSignedPermitError`: sign a new
   permit. See [Caching](clients.md#caching).
 - **Breaking: `ignoreCache` removed** from `fetchFheEncryptionKeyBytes`. It had no effect; use

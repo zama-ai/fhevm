@@ -65,7 +65,7 @@ const PARAMS: Record<string, unknown> = {
   numberOfHandles: 257,
   // cache
   cacheName: 'keyMaterial',
-  invalidVersion: 'test cache version',
+  staleVersion: 'test cache version',
   // base errors
   subject: 'test subject',
   property: 'test property',

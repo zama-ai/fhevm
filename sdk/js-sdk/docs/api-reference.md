@@ -374,7 +374,7 @@ fetchFheEncryptionKeyBytes(parameters?: {
 
 forceRefresh(
   cacheName: 'keyMaterial' | 'kmsContext' | 'coprocessorSigners',
-  parameters?: { readonly invalidVersion?: string | undefined },
+  parameters?: { readonly staleVersion?: string | undefined },
 ): Promise<void>;
 ```
 

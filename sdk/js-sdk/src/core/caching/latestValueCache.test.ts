@@ -88,7 +88,7 @@ describe('createLatestValueCache', () => {
   });
 
   describe('refresh', () => {
-    it('with invalidVersion: reads once for concurrent calls, none once replaced', async () => {
+    it('with staleVersion: reads once for concurrent calls, none once replaced', async () => {
       const { cache, fetchFn, change } = makeCache();
       await cache.get({}, {}, 1_000);
       change('v2');
@@ -98,13 +98,13 @@ describe('createLatestValueCache', () => {
       expect(fetchFn).toHaveBeenCalledTimes(2);
     });
 
-    it('may return invalidVersion when the value did not change', async () => {
+    it('may return staleVersion when the value did not change', async () => {
       const { cache } = makeCache();
       await cache.get({}, {}, 1_000);
       await expect(cache.refresh({}, {}, 'v1')).resolves.toMatchObject({ version: 'v1' });
     });
 
-    it('reads once more when a joined read, started before the change, returns invalidVersion', async () => {
+    it('reads once more when a joined read, started before the change, returns staleVersion', async () => {
       const { cache, fetchFn, change, hold } = makeCache();
       await cache.get({}, {}, 1_000);
       const release = hold();

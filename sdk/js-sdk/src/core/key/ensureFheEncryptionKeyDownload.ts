@@ -124,9 +124,9 @@ function _bytesVersion(bytes: FheEncryptionKeyBytes): string {
  */
 export async function refreshFheEncryptionKey(
   context: Context,
-  parameters: Parameters & { readonly invalidVersion: string | undefined },
+  parameters: Parameters & { readonly staleVersion: string | undefined },
 ): Promise<string> {
-  const { version } = await keyMaterialCache.refresh(context, parameters, parameters.invalidVersion);
+  const { version } = await keyMaterialCache.refresh(context, parameters, parameters.staleVersion);
   return version;
 }
 

@@ -214,10 +214,10 @@ describe('FhevmHandle', () => {
 
   it('isHandleBytes32Hex / assertIsHandleBytes32Hex reject an unknown version', () => {
     // byte 30 = 0x02 (euint8), byte 31 (version) = 0x01, only version 0 is supported
-    const invalidVersionHex = `0x${'00'.repeat(30)}0201`;
+    const staleVersionHex = `0x${'00'.repeat(30)}0201`;
 
-    expect(isHandleBytes32Hex(invalidVersionHex)).toBe(false);
-    expect(() => assertIsHandleBytes32Hex(invalidVersionHex)).toThrow(FhevmHandleError);
+    expect(isHandleBytes32Hex(staleVersionHex)).toBe(false);
+    expect(() => assertIsHandleBytes32Hex(staleVersionHex)).toThrow(FhevmHandleError);
   });
 
   //////////////////////////////////////////////////////////////////////////////

@@ -23,13 +23,13 @@ export type FhevmCacheOptions = {
    * it and retries the request once (default `true`). A request signed for the
    * old value (e.g. a user decryption's permit) is not retried: the new value
    * is cached for the next permit. With `false`, the SDK throws
-   * `CachedValueInvalidError` and leaves the cache as is: call
-   * `forceRefresh(cacheName, { invalidVersion })` and retry.
+   * `CachedValueStaleError` and leaves the cache as is: call
+   * `forceRefresh(cacheName, { staleVersion })` and retry.
    */
-  readonly autoRefreshOnInvalidity?: boolean | undefined;
+  readonly autoRefreshOnStale?: boolean | undefined;
 };
 
 export type ResolvedFhevmCacheOptions = {
   readonly ttl: Readonly<Record<FhevmCacheName, number>>;
-  readonly autoRefreshOnInvalidity: boolean;
+  readonly autoRefreshOnStale: boolean;
 };

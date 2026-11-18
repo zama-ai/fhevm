@@ -24,7 +24,7 @@ import {
   assertIsSignedDecryptionPermit,
   assertSignedDecryptionPermitExtraDataSupported,
 } from '../kms/SignedDecryptionPermit-p.js';
-import { runWithRefreshOnInvalidity } from '../caching/refreshOnInvalidity-p.js';
+import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
 import { recordCacheUsage } from '../caching/cacheUsage-p.js';
 import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
 import {
@@ -141,7 +141,7 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
   //    KMS node). As for a user decryption, a failure checks the KMS context
   //    but the request is not run again: the permit names its context.
   const extraData = signedPermit.eip712.message.extraData;
-  const pads = await runWithRefreshOnInvalidity(
+  const pads = await retryOnStaleCache(
     context,
     fhevmContext,
     async (cacheUsage) => {
@@ -152,7 +152,7 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
         extraData: signedPermitExtraData,
         cacheUsage: permitUsage,
       });
-      // Recorded only once the request goes to the relayer (see refreshOnInvalidity-p).
+      // Recorded only once the request goes to the relayer (see retryOnStaleCache-p).
       recordCacheUsage(cacheUsage, 'kmsContext', permitUsage.kmsContext);
       const padDecryptResponses = await context.runtime.relayer.fetchPadShares(context, {
         payload: {
@@ -182,7 +182,7 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
           .address as ChecksummedAddress,
       });
     },
-    { onStale: (_stale, error) => permitRequestStaleContextError(context, signedPermitExtraData, error) },
+    { createStaleError: (_stale, error) => permitRequestStaleContextError(context, signedPermitExtraData, error) },
   );
   const pad = pads.get(label);
   if (pad === undefined) {

@@ -35,12 +35,12 @@ export type LatestValueCache<TContext, TParams, TValue> = {
   readonly get: (context: TContext, parameters: TParams, ttlMs: number) => Promise<CachedValue<TValue>>;
   /**
    * Reads the value again (or joins the read in flight). With
-   * `invalidVersion`: returns the cached value unread when it has another
+   * `staleVersion`: returns the cached value unread when it has another
    * version, and reads once more when a joined read (started earlier) returns
-   * `invalidVersion`. The result may still have `invalidVersion`: the caller
+   * `staleVersion`. The result may still have `staleVersion`: the caller
    * decides what that means.
    */
-  readonly refresh: (context: TContext, parameters: TParams, invalidVersion?: string) => Promise<CachedValue<TValue>>;
+  readonly refresh: (context: TContext, parameters: TParams, staleVersion?: string) => Promise<CachedValue<TValue>>;
   /** The value cached in slot `slotKey`, whatever its age. Never reads. */
   readonly peek: (slotKey: string) => CachedValue<TValue> | undefined;
   /** Stores a value read by the caller; a read in flight no longer stores its own. */
@@ -152,14 +152,14 @@ export function createLatestValueCache<TContext, TParams, TValue>(
       return readOrRetry(slot, context, parameters);
     },
 
-    refresh: async (context, parameters, invalidVersion) => {
+    refresh: async (context, parameters, staleVersion) => {
       const slot = getSlot(slotKeyFn(context, parameters));
-      if (invalidVersion !== undefined && slot.latest !== undefined && slot.latest.version !== invalidVersion) {
+      if (staleVersion !== undefined && slot.latest !== undefined && slot.latest.version !== staleVersion) {
         return slot.latest;
       }
       const joined = slot.reading !== undefined;
       const cached = await readOrRetry(slot, context, parameters);
-      return joined && cached.version === invalidVersion ? readOrRetry(slot, context, parameters) : cached;
+      return joined && cached.version === staleVersion ? readOrRetry(slot, context, parameters) : cached;
     },
 
     peek: (slotKey) => {

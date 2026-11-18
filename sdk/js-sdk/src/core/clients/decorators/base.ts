@@ -241,15 +241,15 @@ export type BaseActions = {
   /**
    * Fetches a cached value again: `'keyMaterial'` (FHE public key and CRS),
    * `'kmsContext'` or `'coprocessorSigners'`. Pass the `cacheName` and
-   * `invalidVersion` of a `CachedValueInvalidError`, then retry the request
+   * `staleVersion` of a `CachedValueStaleError`, then retry the request
    * that failed. The cache is shared by every client; concurrent calls share
    * one fetch.
    *
-   * Resolves once the cache holds a value other than `invalidVersion`.
+   * Resolves once the cache holds a value other than `staleVersion`.
    *
    * @throws {FhevmConfigError} on an unknown `cacheName`.
-   * @throws {CachedValueInvalidError} when the value fetched still has
-   * `invalidVersion`: refreshing cannot fix the failure.
+   * @throws {CachedValueStaleError} when the value fetched still has
+   * `staleVersion`: refreshing cannot fix the failure.
    * @throws the fetch error, as is.
    *
    * @example
@@ -257,9 +257,9 @@ export type BaseActions = {
    * try {
    *   await client.encryptValues({ contractAddress, userAddress, values });
    * } catch (err) {
-   *   if (err instanceof Error && err.name === 'CachedValueInvalidError') {
-   *     const { cacheName, invalidVersion } = err as Error & { cacheName: FhevmCacheName; invalidVersion: string };
-   *     await client.forceRefresh(cacheName, { invalidVersion });
+   *   if (err instanceof Error && err.name === 'CachedValueStaleError') {
+   *     const { cacheName, staleVersion } = err as Error & { cacheName: FhevmCacheName; staleVersion: string };
+   *     await client.forceRefresh(cacheName, { staleVersion });
    *     await client.encryptValues({ contractAddress, userAddress, values });
    *   }
    * }

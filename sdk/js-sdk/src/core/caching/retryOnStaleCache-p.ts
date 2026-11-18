@@ -3,7 +3,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmBase } from '../types/coreFhevmClient.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { CacheUsage } from './cacheUsage-p.js';
-import { CachedValueInvalidError } from '../errors/CachedValueInvalidError.js';
+import { CachedValueStaleError } from '../errors/CachedValueStaleError.js';
 import { RelayerResponseInputProofRejectedError } from '../errors/RelayerResponseInputProofRejectedError.js';
 import { RelayerAbortError } from '../errors/RelayerAbortError.js';
 import { DuplicateSignerError, ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
@@ -33,7 +33,7 @@ const CACHES: Readonly<
       readonly refresh: (
         context: Context,
         fhevmContext: FhevmClientFrozenContext,
-        invalidVersion: string | undefined,
+        staleVersion: string | undefined,
       ) => Promise<string>;
       readonly readVersion: (context: Context, fhevmContext: FhevmClientFrozenContext) => Promise<string>;
     }
@@ -45,8 +45,7 @@ const CACHES: Readonly<
   keyMaterial: {
     mayBeStale: (context, error) =>
       error instanceof RelayerResponseInputProofRejectedError && requiresKeyVerification(context.runtime),
-    refresh: (context, fhevmContext, invalidVersion) =>
-      refreshFheEncryptionKey(context, { fhevmContext, invalidVersion }),
+    refresh: (context, fhevmContext, staleVersion) => refreshFheEncryptionKey(context, { fhevmContext, staleVersion }),
     readVersion: (context) => readFheEncryptionKeyVersion(context),
   },
   // A coprocessor signature check failure: the signer set may have changed.
@@ -55,8 +54,8 @@ const CACHES: Readonly<
       error instanceof UnknownSignerError ||
       error instanceof ThresholdSignerError ||
       error instanceof DuplicateSignerError,
-    refresh: (context, _fhevmContext, invalidVersion) =>
-      refreshCoprocessorContextSignersAndThreshold(context, invalidVersion),
+    refresh: (context, _fhevmContext, staleVersion) =>
+      refreshCoprocessorContextSignersAndThreshold(context, staleVersion),
     readVersion: (context) => readCoprocessorSignersVersion(context),
   },
   // Any failure of a KMS request handed to the relayer (an error, a timeout,
@@ -65,7 +64,7 @@ const CACHES: Readonly<
   // denial) never get here.
   kmsContext: {
     mayBeStale: () => true,
-    refresh: (context, _fhevmContext, invalidVersion) => refreshCurrentKmsContext(context, invalidVersion),
+    refresh: (context, _fhevmContext, staleVersion) => refreshCurrentKmsContext(context, staleVersion),
     readVersion: (context) => readCurrentKmsContextVersion(context),
   },
 };
@@ -74,27 +73,27 @@ const CACHES: Readonly<
 
 /**
  * Fetches `cacheName` again into the cache (see `LatestValueCache.refresh` for
- * `invalidVersion`). Concurrent calls share one fetch.
+ * `staleVersion`). Concurrent calls share one fetch.
  *
- * @throws {CachedValueInvalidError} when the value read again still has
- * `invalidVersion`: refreshing cannot fix the failure.
+ * @throws {CachedValueStaleError} when the value read again still has
+ * `staleVersion`: refreshing cannot fix the failure.
  * @throws the fetch error.
  */
 export async function forceRefreshCachedValue(
   context: Context,
   parameters: {
     readonly cacheName: FhevmCacheName;
-    readonly invalidVersion?: string | undefined;
+    readonly staleVersion?: string | undefined;
     readonly fhevmContext: FhevmClientFrozenContext;
   },
 ): Promise<void> {
-  const { cacheName, invalidVersion, fhevmContext } = parameters;
-  const version = await CACHES[cacheName].refresh(context, fhevmContext, invalidVersion);
-  if (invalidVersion !== undefined && version === invalidVersion) {
-    throw new CachedValueInvalidError({
+  const { cacheName, staleVersion, fhevmContext } = parameters;
+  const version = await CACHES[cacheName].refresh(context, fhevmContext, staleVersion);
+  if (staleVersion !== undefined && version === staleVersion) {
+    throw new CachedValueStaleError({
       cacheName,
-      invalidVersion,
-      message: `The ${cacheName} read again (version ${invalidVersion}) is the cached one: refreshing it cannot help.`,
+      staleVersion,
+      message: `The ${cacheName} read again (version ${staleVersion}) is the cached one: refreshing it cannot help.`,
     });
   }
 }
@@ -107,22 +106,22 @@ export type StaleValue = { readonly cacheName: FhevmCacheName; readonly version:
  * again, its version changed), the new value is cached and the request runs
  * once more, except:
  * - a request bound to the stale value (e.g. a user decryption, bound to its
- *   permit's KMS context) is not run again: `onStale` gives the error to throw;
+ *   permit's KMS context) is not run again: `createStaleError` gives the error to throw;
  * - an aborted request throws its abort error;
- * - with `autoRefreshOnInvalidity: false`, only the current version is read,
- *   the cache is left as is and {@link CachedValueInvalidError} is thrown.
+ * - with `autoRefreshOnStale: false`, only the current version is read,
+ *   the cache is left as is and {@link CachedValueStaleError} is thrown.
  *
- * A retry failing on a stale value again throws {@link CachedValueInvalidError}.
+ * A retry failing on a stale value again throws {@link CachedValueStaleError}.
  * Any other failure passes through as is: no value it used may explain it, or
  * each such value is unchanged or cannot be read again.
  */
-export async function runWithRefreshOnInvalidity<T>(
+export async function retryOnStaleCache<T>(
   context: Context,
   fhevmContext: FhevmClientFrozenContext,
   run: (usage: CacheUsage) => Promise<T>,
-  runOptions?: { readonly onStale: (stale: StaleValue, error: unknown) => unknown },
+  runOptions?: { readonly createStaleError: (stale: StaleValue, error: unknown) => unknown },
 ): Promise<T> {
-  const autoRefresh = getCacheOptions(context).autoRefreshOnInvalidity;
+  const autoRefresh = getCacheOptions(context).autoRefreshOnStale;
   for (let attempt = 0; ; attempt++) {
     const usage: CacheUsage = {};
     try {
@@ -135,7 +134,7 @@ export async function runWithRefreshOnInvalidity<T>(
       context.runtime.config.logger?.warn?.(
         autoRefresh
           ? `Cached ${stale.cacheName} (version ${stale.version}) was stale and has been refreshed.`
-          : `Cached ${stale.cacheName} (version ${stale.version}) is stale; not refreshed (autoRefreshOnInvalidity: false).`,
+          : `Cached ${stale.cacheName} (version ${stale.version}) is stale; not refreshed (autoRefreshOnStale: false).`,
       );
       // The caller gave up on an aborted request: it is not run again.
       if (_isAbort(e)) {
@@ -145,7 +144,7 @@ export async function runWithRefreshOnInvalidity<T>(
         throw _staleValueError(stale, e);
       }
       if (runOptions !== undefined) {
-        throw runOptions.onStale(stale, e);
+        throw runOptions.createStaleError(stale, e);
       }
       if (attempt > 0) {
         throw _staleValueError(stale, e);
@@ -197,10 +196,10 @@ function _isAbort(error: unknown): boolean {
   );
 }
 
-function _staleValueError(stale: StaleValue, cause: unknown): CachedValueInvalidError {
-  return new CachedValueInvalidError({
+function _staleValueError(stale: StaleValue, cause: unknown): CachedValueStaleError {
+  return new CachedValueStaleError({
     cacheName: stale.cacheName,
-    invalidVersion: stale.version,
+    staleVersion: stale.version,
     cause: cause instanceof Error ? cause : undefined,
   });
 }

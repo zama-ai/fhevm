@@ -7,7 +7,7 @@ import type { InputHandle } from '../types/encryptedTypes-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { fetchVerifiedInputProof } from './fetchVerifiedInputProof.js';
 import { createZkProof } from './ZkProofBuilder-p.js';
-import { runWithRefreshOnInvalidity } from '../caching/refreshOnInvalidity-p.js';
+import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -37,7 +37,7 @@ export async function encrypt(context: Context, parameters: Parameters): Promise
   // A rotated key (input proof rejected) or a changed coprocessor signer set
   // is refreshed and the whole request runs once more: a new key needs a new
   // proof.
-  return runWithRefreshOnInvalidity(context, parameters.fhevmContext, async (cacheUsage) => {
+  return retryOnStaleCache(context, parameters.fhevmContext, async (cacheUsage) => {
     const zkProof = await createZkProof(context, {
       ...parameters,
       extraData: hardCodedExtraData,

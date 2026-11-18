@@ -16,7 +16,7 @@ describe('resolveCacheOptions', () => {
   it('defaults every TTL to 24 h and turns automatic refresh on', () => {
     expect(resolveCacheOptions(undefined)).toEqual({
       ttl: { keyMaterial: MAX_CACHE_TTL, kmsContext: MAX_CACHE_TTL, coprocessorSigners: MAX_CACHE_TTL },
-      autoRefreshOnInvalidity: true,
+      autoRefreshOnStale: true,
     });
     expect(MAX_CACHE_TTL).toBe(24 * 60 * 60 * 1000);
   });
@@ -25,10 +25,10 @@ describe('resolveCacheOptions', () => {
     const resolved = resolveCacheOptions({
       kmsContext: { ttl: 60_000 },
       coprocessorSigners: { ttl: 0 },
-      autoRefreshOnInvalidity: false,
+      autoRefreshOnStale: false,
     });
     expect(resolved.ttl).toEqual({ keyMaterial: MAX_CACHE_TTL, kmsContext: 60_000, coprocessorSigners: 0 });
-    expect(resolved.autoRefreshOnInvalidity).toBe(false);
+    expect(resolved.autoRefreshOnStale).toBe(false);
   });
 
   it.each([MAX_CACHE_TTL + 1, -1, 1.5, Number.NaN, '1000'])('rejects a TTL of %s', (ttl) => {
@@ -37,9 +37,9 @@ describe('resolveCacheOptions', () => {
     );
   });
 
-  it('rejects a non-boolean autoRefreshOnInvalidity', () => {
-    expect(() => resolveCacheOptions({ autoRefreshOnInvalidity: 'yes' as unknown as boolean })).toThrow(
-      "'options.cache.autoRefreshOnInvalidity' must be a boolean",
+  it('rejects a non-boolean autoRefreshOnStale', () => {
+    expect(() => resolveCacheOptions({ autoRefreshOnStale: 'yes' as unknown as boolean })).toThrow(
+      "'options.cache.autoRefreshOnStale' must be a boolean",
     );
   });
 
@@ -82,7 +82,7 @@ describe('client cache options', () => {
   });
 
   it('default for an internal context that is not a client', () => {
-    expect(getCacheOptions({ options: { batchRpcCalls: false } }).autoRefreshOnInvalidity).toBe(true);
+    expect(getCacheOptions({ options: { batchRpcCalls: false } }).autoRefreshOnStale).toBe(true);
   });
 
   it('rejects a per-cache entry that is not an object, and an unknown key, with FhevmConfigError', () => {

@@ -89,12 +89,12 @@ export async function readCoprocessorSignersVersion(
  */
 export async function refreshCoprocessorContextSignersAndThreshold(
   context: Context & { readonly chain: FhevmChain },
-  invalidVersion: string | undefined,
+  staleVersion: string | undefined,
 ): Promise<string> {
   const { version } = await coprocessorSignersCache.refresh(
     context,
     { address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress },
-    invalidVersion,
+    staleVersion,
   );
   return version;
 }
