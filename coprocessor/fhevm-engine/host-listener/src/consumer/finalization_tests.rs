@@ -377,7 +377,11 @@ async fn broker_applies_executor_upgrades_and_resumes_from_committed_parent() {
     )
     .await
     .unwrap();
-    let pool = db.pool().await;
+    // Ingestion reconnects after a database error. Keep the observation pool
+    // separate so it remains usable when the listener replaces its own pool.
+    let pool = sqlx::PgPool::connect(instance.db_url.as_str())
+        .await
+        .unwrap();
     let rpc = Asserter::new();
     let mut config = config();
     config.kms_generation_address = None;
