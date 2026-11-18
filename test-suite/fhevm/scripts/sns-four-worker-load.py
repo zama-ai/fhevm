@@ -29,7 +29,11 @@ FAILED = "coprocessor_sns_worker_task_execute_failure_counter"
 SECRET_VALUES = []
 DRAIN_TIMEOUT_SECONDS = 10800
 TARGET = 2000
-VARIANTS = {"c0e6428": "ordered-stripes", "4c5425f": "deadlock-retry-only"}
+STRIPE_COUNT = 4
+VARIANTS = {"4c5425f": "deadlock-retry-only"}
+qa_image_tag = os.environ.get("GITHUB_SHA", "")[:7]
+if re.fullmatch(r"[0-9a-f]{7}", qa_image_tag):
+    VARIANTS[qa_image_tag] = "ordered-stripes"
 
 
 def run(*args, stdin=None, timeout=120):
@@ -192,17 +196,34 @@ def collect_logs():
     return deadlocks
 
 
+def configure_qa_stripes():
+    assert os.environ.get("GITHUB_ACTIONS") == "true", "Disposable GitHub runner only"
+    OUT.mkdir(parents=True, exist_ok=True)
+    sql((ROOT / "coprocessor/fhevm-engine/db-migration/migrations/20261118180000_qa_four_digest_mirror_stripes.sql").read_text())
+    definitions = json.loads(sql("""
+        SELECT json_object_agg(p.proname, pg_get_functiondef(p.oid))
+        FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname IN
+          ('mirror_ciphertext_digest_branchless', 'mirror_ciphertext_digest_for_pbs_context');
+    """))
+    assert len(definitions) == 2
+    assert all(len(re.findall(r"% 4(?:[^0-9]|$)", body)) == 1 and "% 256" not in body
+               for body in definitions.values())
+    (OUT / "qa-stripe-functions.json").write_text(json.dumps(definitions, indent=2))
+    print("QA: both digest mirror trigger functions use four stripes", flush=True)
+
+
 def main():
     assert os.environ.get("GITHUB_ACTIONS") == "true", "GitHub's disposable E2E runner only"
     image_tag = os.environ.get("COPROCESSOR_SNS_WORKER_VERSION", "")
-    assert image_tag in VARIANTS, "This comparison only accepts the two reviewed SNS images"
+    assert image_tag in VARIANTS, "Use the reviewed retry image or this exact four-stripe QA image"
     variant = VARIANTS[image_tag]
     retry_only = variant == "deadlock-retry-only"
     OUT.mkdir(parents=True, exist_ok=True)
     report = {"passed": False, "worker_count": 4, "batch_size": 20, "rayon_threads_per_worker": 4,
               "migration": "no", "target_handles": TARGET, "sampled_decryptions": 0,
               "variant": variant, "sns_image_tag": image_tag,
-              "drain_timeout_seconds": DRAIN_TIMEOUT_SECONDS}
+              "drain_timeout_seconds": DRAIN_TIMEOUT_SECONDS, "stripe_count": STRIPE_COUNT}
     source = docker("GET", f"/containers/{ORIGINAL}/json")
     # Only a local, disposable Docker E2E deployment may be stopped or written to.
     database_arg = next(arg for arg in source["Config"]["Cmd"] if arg.startswith("--database-url="))
@@ -223,6 +244,7 @@ def main():
     host = docker("GET", "/info")
     report["host"] = {key: host.get(key) for key in ("NCPU", "MemTotal", "Architecture", "KernelVersion")}
     print(f"SNS comparison: {variant}, image {image_tag}, host {report['host']}", flush=True)
+    configure_qa_stripes()
     try:
         # Warm-up correctness runs through the ordinary existing E2E profile before this script.
         run("docker", "stop", "--time", "60", ORIGINAL)
@@ -311,6 +333,18 @@ def main():
             assert not missing, f"Missing canonical {prefix} objects"
         hardhat("verify", timeout=1200)
         report["sampled_decryptions"] = 64
+        report["functional_checks_passed"] = True
+        if retry_only:
+            report["immediate_retry_log_matches"] = {
+                name: (OUT / f"{name}.log").read_text().count("Database deadlock; retrying immediately")
+                for name in WORKERS
+            }
+            report["contention_reproduced"] = (
+                report["db_deadlocks"] > 0 and sum(report["immediate_retry_log_matches"].values()) > 0
+            )
+            if not report["contention_reproduced"]:
+                report["outcome"] = "inconclusive"
+                raise RuntimeError("Control did not reproduce a deadlock; comparison is inconclusive")
         report["passed"] = True
     except Exception as error:
         report["error"] = redact(str(error))
@@ -324,7 +358,7 @@ def main():
         for name in WORKERS:
             subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=60)
         (OUT / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
-        lines = ["# Four-worker SNS load test", "", f"Variant: **{variant}**", "",
+        lines = ["# Four-worker SNS load test", "", f"Variant: **{variant}**; four advisory stripes per chain (QA only)", "",
                  f"Result: **{'PASS' if report['passed'] else 'FAIL'}**", "",
                  f"{TARGET:,} fresh non-trivial handles; 16 producers; SNS stopped until all CT64 were ready.",
                  "Four SNS processes, one database, batches of 20, four Rayon threads each; migration disabled.", "",
@@ -340,4 +374,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if os.environ.get("SNS_LOAD_SETUP_ONLY") == "true":
+        configure_qa_stripes()
+    else:
+        main()

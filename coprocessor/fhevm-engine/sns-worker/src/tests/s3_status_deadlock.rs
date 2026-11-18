@@ -85,7 +85,7 @@ async fn colliding_batches(pool: &PgPool) -> TestResult<[[Vec<u8>; 2]; 2]> {
              SELECT lpad(to_hex(n), 64, '0') AS handle_hex
              FROM generate_series(1, 1024) n
          ), striped AS (
-             SELECT handle_hex, abs(hashtextextended(handle_hex, 0) % 256) AS stripe
+             SELECT handle_hex, abs(hashtextextended(handle_hex, 0) % 4) AS stripe
              FROM candidates
          )
          SELECT decode(min(handle_hex), 'hex'), decode(max(handle_hex), 'hex'), stripe
@@ -179,7 +179,7 @@ async fn normal_sns_batches_prelock_shared_stripes_without_deadlock() -> TestRes
     let [first_handles, mut second_handles] = colliding_batches(&pool).await?;
     let keys: Vec<i64> = sqlx::query_scalar(
         "SELECT hashtextextended(
-             '1:digest-mirror:' || abs(hashtextextended(encode(handle, 'hex'), 0) % 256)::text,
+             '1:digest-mirror:' || abs(hashtextextended(encode(handle, 'hex'), 0) % 4)::text,
              0
          ) FROM unnest($1::bytea[]) AS batch(handle)",
     )

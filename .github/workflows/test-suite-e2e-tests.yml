@@ -124,7 +124,7 @@ concurrency:
   group:
     ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number)
     || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}-${{ inputs.scenario
-    }}-${{ inputs.test-profile }}
+    }}-${{ inputs.test-profile }}-${{ inputs.coprocessor-sns-worker-version }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -344,6 +344,7 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           if [ "$TEST_PROFILE" = "sns-four-worker-load" ]; then
+            SNS_LOAD_SETUP_ONLY=true python3 scripts/sns-four-worker-load.py
             ./fhevm-cli test input-proof-compute-decrypt
             python3 scripts/sns-four-worker-load.py
           else
@@ -355,7 +356,7 @@ jobs:
         if: ${{ always() && env.TEST_PROFILE == 'sns-four-worker-load' }}
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: sns-four-worker-load-${{ github.run_id }}-${{ github.run_attempt }}
+          name: sns-four-worker-load-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.coprocessor-sns-worker-version }}
           path: artifacts/sns-four-worker-load/
           if-no-files-found: warn
 

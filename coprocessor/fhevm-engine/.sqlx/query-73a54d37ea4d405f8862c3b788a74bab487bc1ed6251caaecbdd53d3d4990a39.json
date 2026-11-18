@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT pg_advisory_xact_lock(lock_key)\n        FROM (\n            SELECT DISTINCT hashtextextended(\n                host_chain_id::text || ':digest-mirror:' ||\n                abs(hashtextextended(encode(handle, 'hex'), 0) % 4)::text,\n                0\n            ) AS lock_key\n            FROM unnest($1::bigint[], $2::bytea[]) AS batch(host_chain_id, handle)\n        ) AS stripes\n        ORDER BY lock_key\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pg_advisory_xact_lock",
+        "type_info": "Void"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "73a54d37ea4d405f8862c3b788a74bab487bc1ed6251caaecbdd53d3d4990a39"
+}

@@ -488,3 +488,45 @@ jobs:
       image-name: "fhevm/coprocessor/zkproof-worker"
       previous-tag-or-commit: ${{ needs.check-changes-zkproof-worker.outputs.base-commit }}
       new-tag-or-commit: ${{ github.event.after }}
+
+  qa-sns-image-tag:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - id: tag
+        env:
+          COMMIT: ${{ github.sha }}
+        run: echo "tag=${COMMIT:0:7}" >> "$GITHUB_OUTPUT"
+
+  qa-sns-retry-four-stripes:
+    needs: [build-sns-worker]
+    if: github.event_name == 'workflow_dispatch' && needs.build-sns-worker.result == 'success'
+    permissions: &qa_e2e_permissions
+      contents: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
+    secrets: inherit
+    with:
+      build: false
+      orchestrated: false
+      scenario: sns-four-worker-load
+      test-profile: sns-four-worker-load
+      coprocessor-sns-worker-version: 4c5425f
+
+  qa-sns-ordered-four-stripes:
+    needs: [build-sns-worker, qa-sns-image-tag]
+    if: github.event_name == 'workflow_dispatch' && needs.build-sns-worker.result == 'success'
+    permissions: *qa_e2e_permissions
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
+    secrets: inherit
+    with:
+      build: false
+      orchestrated: false
+      scenario: sns-four-worker-load
+      test-profile: sns-four-worker-load
+      coprocessor-sns-worker-version: ${{ needs.qa-sns-image-tag.outputs.tag }}

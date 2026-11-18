@@ -1,38 +1,20 @@
-# One-shot four-worker SNS load QA
+# Four-stripe SNS contention experiment (QA branch only)
 
-This QA branch compares PR #5000's ordered-lock SNS binary (`c0e6428`) with
-PR #4998's immediate-deadlock-retry binary (`4c5425f`) against a stack
-resolved from its release base (`31e76b13612880bfeb214fed2ff545687459860a`). It does
-not change the PR or a deployed environment.
+This experiment reduces the 256 production advisory stripes to four. Neither
+production PR is modified. The ordered-lock query and both installed mirror
+trigger functions use the same four-stripe mapping. The DB override preserves
+all other trigger logic, and is applied only to disposable GitHub Docker DBs.
 
-Dispatch `test-suite-e2e-tests.yml` on this branch with:
+Dispatch `coprocessor-docker-build.yml` on this branch with only
+`build_sns_worker=true` and every other build flag false. After the ordered
+four-stripe image builds, two matching 2,000-handle E2Es start in parallel:
+PR #4998's published `4c5425f` retry-only image and this branch's ordered image.
+Both use one DB, four SNS workers, batches of 20 and four Rayon threads each.
 
-- `build=false`
-- `scenario=sns-four-worker-load`
-- `test-profile=sns-four-worker-load`
-- `coprocessor-sns-worker-version=c0e6428` (ordered locks) or `4c5425f` (retry only)
+Both runs require complete DB/S3 coverage and 64 correct sampled decryptions.
+The retry-only control must actually observe a database deadlock; otherwise it
+reports an inconclusive comparison. Ordered locking requires zero deadlocks.
+The workload adds no artificial sleeps or barriers to create contention.
 
-The ordinary encrypted-input → add → user/public-decrypt smoke test runs first.
-Then SNS stops, 16 clients each set up a fresh encrypted input and produce 2,000
-distinct public outputs total (20 independent additions per transaction, with a
-different scalar per output). Input proofs are setup rather than regenerated for
-every batch: the benchmark targets SNS capacity. TFHE prepares
-every CT64. Four identical SNS processes start against this single operator DB,
-with batches of 20, four Rayon threads each, and S3 migration disabled. Keeping a
-prebuilt backlog separates SNS capacity from producer/proof/TFHE throughput.
-
-The test records committed handles and failures per worker, CPU time, cohort
-backlog and upload progress every two seconds. It requires all four workers to
-process tasks, observed CPU activity on all four within the same sampling
-interval. Ordered locking requires zero task failures and zero database/logged
-deadlocks; retry-only records recovered deadlocks and task failures for comparison. It checks DB
-completion and canonical CT64/CT128 object presence for every handle, then public
-decryption of 64 evenly spread handles. Decryption is outside drain timing.
-
-The Actions summary and `sns-four-worker-load-*` artifact contain the manifest,
-CSV measurements, final metrics, worker logs, PostgreSQL logs and summary. Concurrent CPU activity
-does not establish linear speedup or eliminate ordinary waits on shared stripes;
-these runs have no one-worker throughput control or unpatched baseline.
-The 2,000-handle cohort is 100 full batches of 20; at the first measured rate of
-about 1.4 handles/s, SNS processing takes roughly 24 minutes, plus setup.
-The three-hour ceiling is a failure bound rather than an expected duration.
+Image tags appear in concurrency groups and artifact names so the two reusable
+workflow legs cannot cancel one another or overwrite each other's artifacts.

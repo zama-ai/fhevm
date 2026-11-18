@@ -508,7 +508,11 @@ async fn fetch_and_execute_sns_tasks(
 
 /// Pre-acquire this batch's digest-mirror locks in a common order.
 ///
-/// The expression must match `20260704120000_stripe_digest_mirror_locks.sql`,
+/// QA ONLY: this branch uses four stripes, matching its disposable DB override.
+/// Production PR #5000 keeps 256 stripes.
+///
+/// The expression must match the four-stripe QA override of
+/// `20260704120000_stripe_digest_mirror_locks.sql`,
 /// including the outer hash and chain identifier. Ordering the handles would
 /// not order these locks. This prevents stripe-only cycles between SNS batches
 /// using this helper; other writers and row-lock cycles still require retries.
@@ -534,7 +538,7 @@ pub(super) async fn lock_digest_mirror_stripes(
         FROM (
             SELECT DISTINCT hashtextextended(
                 host_chain_id::text || ':digest-mirror:' ||
-                abs(hashtextextended(encode(handle, 'hex'), 0) % 256)::text,
+                abs(hashtextextended(encode(handle, 'hex'), 0) % 4)::text,
                 0
             ) AS lock_key
             FROM unnest($1::bigint[], $2::bytea[]) AS batch(host_chain_id, handle)
