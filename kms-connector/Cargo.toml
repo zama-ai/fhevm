@@ -30,6 +30,7 @@ tfhe = { version = "=1.8.2", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
 fhevm-sig-auth = { path = "../shared/fhevm-sig-auth" }
 ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
+coprocessor-api = { path = "../coprocessor/fhevm-engine/coprocessor-api" }
 
 #####################################################################
 #                       External dependencies                       #

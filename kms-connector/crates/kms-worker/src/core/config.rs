@@ -1,7 +1,7 @@
 use alloy::primitives::Address;
 use connector_utils::{
     config::{
-        ContractConfig, DatabaseUrl, DeserializeConfig, RpcUrl,
+        AwsKmsConfig, ContractConfig, DatabaseUrl, DeserializeConfig, RpcUrl, TestingPrivateKey,
         contract::{
             default_decryption_contract_config, default_gateway_config_contract_config,
             default_kms_generation_contract_config, default_protocol_config_contract_config,
@@ -15,6 +15,7 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
+use fhevm_sig_auth::DEFAULT_MAX_AUTH_VALIDITY;
 use serde::{Deserialize, Deserializer};
 use std::{net::SocketAddr, num::NonZeroUsize, time::Duration};
 
@@ -146,6 +147,20 @@ pub struct Config {
         default = "default_copro_registry_refresh"
     )]
     pub copro_registry_refresh: Duration,
+    /// Time budget to retrieve the PRF output of a pad from the Coprocessors, at most 5 minutes.
+    #[serde(
+        deserialize_with = "deserialize_prf_retrieval_deadline",
+        default = "default_prf_retrieval_deadline"
+    )]
+    pub prf_retrieval_deadline: Duration,
+
+    /// The private key of the wallet signing the PRF output requests.
+    ///
+    /// Intended for **testing purposes only**: production deployments should configure
+    /// `aws_kms_config` instead.
+    pub private_key: Option<TestingPrivateKey>,
+    /// The AWS KMS configuration of the wallet signing the PRF output requests.
+    pub aws_kms_config: Option<AwsKmsConfig>,
 
     /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
     #[serde(default = "default_host_rpc_max_concurrent_calls")]
@@ -286,6 +301,24 @@ fn default_copro_registry_refresh() -> Duration {
     Duration::from_secs(60)
 }
 
+fn default_prf_retrieval_deadline() -> Duration {
+    // Below the endpoint's default `decryption_timeout` (30s).
+    Duration::from_secs(20)
+}
+
+fn deserialize_prf_retrieval_deadline<'de, D>(d: D) -> Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let deadline = deserialize_non_zero_duration(d)?;
+    if deadline > DEFAULT_MAX_AUTH_VALIDITY {
+        return Err(serde::de::Error::custom(format!(
+            "must be at most {DEFAULT_MAX_AUTH_VALIDITY:?}"
+        )));
+    }
+    Ok(deadline)
+}
+
 fn default_host_rpc_max_concurrent_calls() -> NonZeroUsize {
     NonZeroUsize::new(128).unwrap()
 }
@@ -360,6 +393,9 @@ impl Default for Config {
             s3_max_ciphertext_size: default_s3_max_ciphertext_size(),
             ciphertext_pool_slots: default_ciphertext_pool_slots(),
             copro_registry_refresh: default_copro_registry_refresh(),
+            prf_retrieval_deadline: default_prf_retrieval_deadline(),
+            private_key: None,
+            aws_kms_config: None,
             host_rpc_max_concurrent_calls: default_host_rpc_max_concurrent_calls(),
             host_rpc_call_timeout: default_host_rpc_call_timeout(),
             erc1271_gas_limit: default_erc1271_gas_limit(),

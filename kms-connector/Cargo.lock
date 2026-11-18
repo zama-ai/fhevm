@@ -2639,6 +2639,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "coprocessor-api"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "ciphertext-attestation",
+ "serde",
+ "strum 0.26.3",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4403,7 +4413,9 @@ dependencies = [
  "bytes",
  "ciphertext-attestation",
  "connector-utils",
+ "coprocessor-api",
  "dashmap 6.1.0",
+ "fhevm-sig-auth",
  "fhevm_gateway_bindings",
  "fhevm_host_bindings",
  "futures",
