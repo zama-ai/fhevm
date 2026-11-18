@@ -282,10 +282,11 @@ pub(crate) async fn get(
 /// `quorum` to one peer and `abort` (or nothing) to another. Both thresholds
 /// therefore count signatures, and they are sized so that a cutover set and a
 /// rollback set always share an honest member, who signs only one record:
-/// `cutover_threshold + abort_threshold > n + f`. A cutover seen by one honest
-/// operator then rules out a rollback seen by another, whatever the faulty
-/// members serve to whom (fhevm-internal#2284), and `f` silent or flipped
-/// records can no longer hold the rest of the fleet in progress.
+/// `cutover_threshold + abort_threshold > members + max_faulty`. A cutover
+/// seen by one honest operator then rules out a rollback seen by another,
+/// whatever the faulty members serve to whom (fhevm-internal#2284), and
+/// `max_faulty` silent or flipped records can no longer hold the rest of the
+/// fleet in progress.
 ///
 /// `None` means wait: an absent or unreadable record is not a decision.
 pub(crate) fn fleet_outcome(
@@ -308,22 +309,23 @@ pub(crate) fn fleet_outcome(
     None
 }
 
-/// `f`: how many of `members` may be malicious or down. Records can be served
-/// differently to different peers, so the bound is the classic `n > 3f`:
-/// 0 of 3, 1 of 4, 1 of 5, 2 of 7.
+/// How many of `members` may be malicious or down. Records can be served
+/// differently to different peers, so the bound is the classic
+/// `members > 3 * max_faulty`: 0 of 3, 1 of 4, 1 of 5, 2 of 7.
 pub(crate) fn max_faulty(members: usize) -> usize {
     members.saturating_sub(1) / 3
 }
 
-/// `n - f`: every honest member can reach it without the faulty ones.
+/// `members - max_faulty`: every honest member can reach it without the
+/// faulty ones.
 /// 3 of 3, 3 of 4, 4 of 5, 5 of 7.
 pub(crate) fn cutover_threshold(members: usize) -> usize {
     members - max_faulty(members)
 }
 
-/// `2f + 1`: the smallest count that keeps
-/// `cutover_threshold + abort_threshold > n + f`. 1 of 3, 3 of 4, 3 of 5,
-/// 5 of 7.
+/// `2 * max_faulty + 1`: the smallest count that keeps
+/// `cutover_threshold + abort_threshold > members + max_faulty`. 1 of 3,
+/// 3 of 4, 3 of 5, 5 of 7.
 pub(crate) fn abort_threshold(members: usize) -> usize {
     2 * max_faulty(members) + 1
 }
@@ -576,9 +578,9 @@ mod tests {
     }
 
     #[test]
-    fn thresholds_follow_n_greater_than_3f() {
-        // (members, f, cutover, abort)
-        for (n, f, q, a) in [
+    fn thresholds_follow_members_greater_than_3_max_faulty() {
+        // (members, max_faulty, cutover_threshold, abort_threshold)
+        for (members, faulty, cutover, abort) in [
             (1, 0, 1, 1),
             (2, 0, 2, 1),
             (3, 0, 3, 1),
@@ -588,18 +590,18 @@ mod tests {
             (7, 2, 5, 5),
             (10, 3, 7, 7),
         ] {
-            assert_eq!(max_faulty(n), f, "f for {n}");
-            assert_eq!(cutover_threshold(n), q, "cutover for {n}");
-            assert_eq!(abort_threshold(n), a, "abort for {n}");
+            assert_eq!(max_faulty(members), faulty, "max_faulty for {members}");
+            assert_eq!(cutover_threshold(members), cutover, "cutover for {members}");
+            assert_eq!(abort_threshold(members), abort, "abort for {members}");
         }
         assert_eq!(max_faulty(0), 0);
         // A cutover set and a rollback set always share an honest member, and
         // the honest members alone reach either threshold.
-        for n in 1..=50 {
-            let f = max_faulty(n);
-            assert!(cutover_threshold(n) + abort_threshold(n) > n + f);
-            assert!(cutover_threshold(n) <= n - f);
-            assert!(abort_threshold(n) <= n - f);
+        for members in 1..=50 {
+            let faulty = max_faulty(members);
+            assert!(cutover_threshold(members) + abort_threshold(members) > members + faulty);
+            assert!(cutover_threshold(members) <= members - faulty);
+            assert!(abort_threshold(members) <= members - faulty);
         }
     }
 

@@ -664,6 +664,7 @@ where
     };
 
     // The record names the members, so a restart recovers them without the chain.
+    let members_unresolved = window_state.members.is_empty();
     if let Some(record) = own.as_ref().filter(|_| window_state.members.is_empty()) {
         window_state.members = record.payload.members.clone();
     }
@@ -684,6 +685,16 @@ where
         }
     }
     let members = window_state.members.clone();
+    // Warn once per attempt: fewer than four members tolerate no fault.
+    if members_unresolved && decision::max_faulty(members.len()) == 0 {
+        warn!(
+            members = members.len(),
+            cutover_threshold = decision::cutover_threshold(members.len()),
+            abort_threshold = decision::abort_threshold(members.len()),
+            "fewer than 4 members: no faulty or malicious member is tolerated, \
+             one member can split or hold the upgrade"
+        );
+    }
     let urls: Vec<String> = members.iter().map(|m| m.url.clone()).collect();
 
     // The attempt identity scopes every state-hash S3 key (one key family per
