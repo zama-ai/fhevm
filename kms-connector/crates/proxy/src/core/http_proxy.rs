@@ -264,9 +264,8 @@ impl ProxyHttp for Proxy {
         end_of_stream: bool,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
-        // Pingora's read timeout bounds each read, so a client sending a byte at a time would
-        // never hit it. The next read only gets what is left of `request_read_timeout`, which
-        // then bounds the whole body. Pingora waits for the answer without a read timeout.
+        // Pingora's read timeout applies per read, so we apply what is left of
+        // `request_read_timeout` to bound the whole body.
         session.set_read_timeout(Some(self.body_read_budget(ctx)));
 
         if let Some(chunk) = body {
