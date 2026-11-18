@@ -92,7 +92,10 @@ def require_faucet_funded(faucet: str, label: str) -> None:
         print(f"WARN {label} faucet config unavailable: {exc}", flush=True)
         return
     for entry in config.get("faucetStatus") or []:
-        if "out of funds" in str(entry.get("text", "")).lower():
+        # "running out of funds" is the low-balance warning and still has ETH to claim.
+        # Only the empty-wallet banner ("is out of funds") should stop the deploy.
+        text = str(entry.get("text", "")).lower()
+        if "out of funds" in text and "running out of funds" not in text:
             raise SystemExit(f"{label} faucet {faucet} is out of funds ({entry.get('text')}); refill its wallet before deploying")
 
 
