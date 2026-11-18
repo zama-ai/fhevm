@@ -222,6 +222,7 @@ const client = createFhevmClient({
 - `<cacheName>.ttl`: per client, in ms. Default and maximum 24 h. `0`: no cache for this client.
 - `keyMaterial.ttl: 0`: the active ids are read on every call; the key is downloaded only after a rotation.
 - `autoRefreshOnStale`: default `true`. For `false`, see [Manual refresh](#manual-refresh).
+- `refreshRetryDelay`: wait, in ms, between refreshing a stale value and running the failed request again. Default 1 s, maximum 10 s. The request runs again only once; a second failure on a stale value throws `CachedValueStaleError`.
 
 #### On a stale value
 

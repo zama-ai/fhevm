@@ -128,7 +128,12 @@ function makeWorld(options: { readonly labelIds?: boolean; readonly unverified?:
     config: {},
   });
   const newClient = (cache?: FhevmCacheOptions, fheEncryptionKey?: FheEncryptionKeyBytes) =>
-    createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, client: {}, runtime, options: { cache, fheEncryptionKey } });
+    createCoreFhevm(PRIVATE_ETHERS_TOKEN, {
+      chain,
+      client: {},
+      runtime,
+      options: { cache: { refreshRetryDelay: 0, ...cache }, fheEncryptionKey },
+    });
   const activeIdReads = () =>
     readContract.mock.calls.filter((call) => (call[1] as { functionName: string }).functionName === 'getActiveKeyId')
       .length;

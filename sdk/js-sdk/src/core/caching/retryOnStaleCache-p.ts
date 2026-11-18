@@ -53,10 +53,19 @@ export async function refreshCachedValue(
 /** A cached value a failed request used, found stale (read again, its version changed). */
 export type StaleValue = { readonly cacheName: FhevmCacheName; readonly version: string };
 
+export type RetryOnStaleCacheOptions = {
+  /**
+   * For a request bound to the value it used (e.g. a user decryption, bound to
+   * its permit's KMS context): on a stale value, the request is not run again;
+   * returns the error to throw.
+   */
+  readonly createStaleError: (stale: StaleValue, error: unknown) => unknown;
+};
+
 /**
  * Runs a request. When it fails on a cached value that turns out stale (read
  * again, its version changed), the new value is cached and the request runs
- * once more, except:
+ * once more, after `options.cache.refreshRetryDelay`, except:
  * - a request bound to the stale value (e.g. a user decryption, bound to its
  *   permit's KMS context) is not run again: `createStaleError` gives the error to throw;
  * - an aborted request throws its abort error;
@@ -71,41 +80,73 @@ export async function retryOnStaleCache<T>(
   context: Context,
   fhevmContext: FhevmClientFrozenContext,
   run: (usage: CacheUsage) => Promise<T>,
-  runOptions?: { readonly createStaleError: (stale: StaleValue, error: unknown) => unknown },
+  runOptions?: RetryOnStaleCacheOptions,
 ): Promise<T> {
-  const autoRefresh = getCacheOptions(context).autoRefreshOnStale;
-  for (let attempt = 0; ; attempt++) {
-    const usage: CacheUsage = {};
-    try {
-      return await run(usage);
-    } catch (e) {
-      const stale = await _findStaleValue(context, fhevmContext, e, usage, autoRefresh);
-      if (stale === undefined) {
-        throw e;
-      }
-      context.runtime.config.logger?.warn?.(
-        autoRefresh
-          ? `Cached ${stale.cacheName} (version ${stale.version}) was stale and has been refreshed.`
-          : `Cached ${stale.cacheName} (version ${stale.version}) is stale; not refreshed (autoRefreshOnStale: false).`,
-      );
-      // The caller gave up on an aborted request: it is not run again.
-      if (_isAbort(e)) {
-        throw e;
-      }
-      if (!autoRefresh) {
-        throw _staleValueError(stale, e);
-      }
-      if (runOptions !== undefined) {
-        throw runOptions.createStaleError(stale, e);
-      }
-      if (attempt > 0) {
-        throw _staleValueError(stale, e);
-      }
-    }
+  // 1. The request.
+  const firstUsage: CacheUsage = {};
+  try {
+    return await run(firstUsage);
+  } catch (e) {
+    // Throws unless a stale value was refreshed and the request may run again.
+    await _refreshForRetry(context, fhevmContext, e, firstUsage, runOptions);
+  }
+
+  // 2. Once more, on the refreshed value, after a short wait (e.g. for nodes
+  // still serving the old value). A stale value again is not retried.
+  await _sleep(getCacheOptions(context).refreshRetryDelay);
+  const secondUsage: CacheUsage = {};
+  try {
+    return await run(secondUsage);
+  } catch (e) {
+    const stale = await _refreshForRetry(context, fhevmContext, e, secondUsage, runOptions);
+    throw _staleValueError(stale, e);
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * After a failed request: finds the stale value it used (refreshed, with
+ * `autoRefreshOnStale`) and returns it when the request may run again.
+ *
+ * @throws the request error when no value it used is stale, or it was
+ * aborted (the caller gave up: it is not run again).
+ * @throws {CachedValueStaleError} with `autoRefreshOnStale: false`.
+ * @throws the error from `runOptions.createStaleError`, for a request bound to
+ * the value it used.
+ */
+async function _refreshForRetry(
+  context: Context,
+  fhevmContext: FhevmClientFrozenContext,
+  error: unknown,
+  usage: CacheUsage,
+  runOptions: RetryOnStaleCacheOptions | undefined,
+): Promise<StaleValue> {
+  const autoRefresh = getCacheOptions(context).autoRefreshOnStale;
+  const stale = await _findStaleValue(context, fhevmContext, error, usage, autoRefresh);
+  if (stale === undefined) {
+    throw error;
+  }
+  context.runtime.config.logger?.warn?.(
+    autoRefresh
+      ? `Cached ${stale.cacheName} (version ${stale.version}) was stale and has been refreshed.`
+      : `Cached ${stale.cacheName} (version ${stale.version}) is stale; not refreshed (autoRefreshOnStale: false).`,
+  );
+  if (_isAbort(error)) {
+    throw error;
+  }
+  if (!autoRefresh) {
+    throw _staleValueError(stale, error);
+  }
+  if (runOptions !== undefined) {
+    throw runOptions.createStaleError(stale, error);
+  }
+  return stale;
+}
+
+function _sleep(ms: number): Promise<void> {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+}
 
 /**
  * Reads again each value the failed request used whose cache may explain the

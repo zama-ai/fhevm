@@ -32,7 +32,7 @@
 
 - **Unified caching.** The key material, KMS context and coprocessor signers share one cache: a
   TTL per cache and client (`options.cache.<cacheName>.ttl`), automatic refresh and one retry on a stale
-  value (`options.cache.autoRefreshOnStale`), `client.forceRefreshCachedValue(cacheName, staleVersion)`
+  value (`options.cache.autoRefreshOnStale`, after `options.cache.refreshRetryDelay`, default 1 s), `client.forceRefreshCachedValue(cacheName, staleVersion)`
   and `CachedValueStaleError`. A long-running process now survives a key rotation, a KMS context
   switch and a coprocessor signer change without a restart. See [Caching](clients.md#caching).
 

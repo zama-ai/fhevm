@@ -27,9 +27,18 @@ export type FhevmCacheOptions = {
    * `forceRefreshCachedValue(cacheName, staleVersion)` and retry.
    */
   readonly autoRefreshOnStale?: boolean | undefined;
+  /**
+   * How long the SDK waits, after refreshing a stale value, before it runs the
+   * failed request again, in milliseconds (default 1 s, at most 10 s): time for
+   * the relayer and the nodes behind it to serve the new value. The request
+   * runs again only once: failing on a stale value again throws
+   * `CachedValueStaleError`.
+   */
+  readonly refreshRetryDelay?: number | undefined;
 };
 
 export type ResolvedFhevmCacheOptions = {
   readonly ttl: Readonly<Record<FhevmCacheName, number>>;
   readonly autoRefreshOnStale: boolean;
+  readonly refreshRetryDelay: number;
 };

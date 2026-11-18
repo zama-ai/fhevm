@@ -74,7 +74,13 @@ function makeWorld(cache?: FhevmCacheOptions, relayer: RelayerModule = {} as Rel
     relayer,
     config: { logger: { debug: undefined, warn, error: undefined } },
   });
-  const client = createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain: sepolia, client: {}, runtime, options: { cache } });
+  // No wait before the retry, unless the test sets one.
+  const client = createCoreFhevm(PRIVATE_ETHERS_TOKEN, {
+    chain: sepolia,
+    client: {},
+    runtime,
+    options: { cache: { refreshRetryDelay: 0, ...cache } },
+  });
   const reads = (functionName: string) =>
     readContract.mock.calls.filter((call) => (call[1] as { functionName: string }).functionName === functionName)
       .length;
@@ -184,6 +190,17 @@ describe('refresh and retry', () => {
     expect(request.run).toHaveBeenCalledTimes(3);
     expect(world.warn).toHaveBeenCalledTimes(1);
     expect(world.warn.mock.calls[0]?.[0]).toContain('coprocessorSigners');
+  });
+
+  it('waits refreshRetryDelay before the retry', async () => {
+    const world = makeWorld({ refreshRetryDelay: 50 });
+    const request = inputProofRequest(world);
+    await request.send();
+    world.chainState.coprocessorSigner = SIGNER_B;
+
+    const start = Date.now();
+    await expect(request.send()).resolves.toBe(SIGNER_B);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(45);
   });
 
   it('a bad signature with an unchanged set: today’s signer error, no refresh, no retry', async () => {

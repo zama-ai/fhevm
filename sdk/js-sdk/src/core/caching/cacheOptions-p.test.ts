@@ -6,17 +6,25 @@ import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
 import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
-import { getCacheOptions, getCacheTtl, MAX_CACHE_TTL, resolveCacheOptions } from './cacheOptions-p.js';
+import {
+  DEFAULT_REFRESH_RETRY_DELAY,
+  getCacheOptions,
+  getCacheTtl,
+  MAX_CACHE_TTL,
+  MAX_REFRESH_RETRY_DELAY,
+  resolveCacheOptions,
+} from './cacheOptions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/caching/cacheOptions-p.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 describe('resolveCacheOptions', () => {
-  it('defaults every TTL to 24 h and turns automatic refresh on', () => {
+  it('defaults every TTL to 24 h, automatic refresh on, refreshRetryDelay 1 s', () => {
     expect(resolveCacheOptions(undefined)).toEqual({
       ttl: { keyMaterial: MAX_CACHE_TTL, kmsContext: MAX_CACHE_TTL, coprocessorSigners: MAX_CACHE_TTL },
       autoRefreshOnStale: true,
+      refreshRetryDelay: DEFAULT_REFRESH_RETRY_DELAY,
     });
     expect(MAX_CACHE_TTL).toBe(24 * 60 * 60 * 1000);
   });
@@ -34,6 +42,17 @@ describe('resolveCacheOptions', () => {
   it.each([MAX_CACHE_TTL + 1, -1, 1.5, Number.NaN, '1000'])('rejects a TTL of %s', (ttl) => {
     expect(() => resolveCacheOptions({ keyMaterial: { ttl: ttl as number } })).toThrow(
       "'options.cache.keyMaterial.ttl' must be an integer",
+    );
+  });
+
+  it('takes a refreshRetryDelay, and 0', () => {
+    expect(resolveCacheOptions({ refreshRetryDelay: 250 }).refreshRetryDelay).toBe(250);
+    expect(resolveCacheOptions({ refreshRetryDelay: 0 }).refreshRetryDelay).toBe(0);
+  });
+
+  it.each([MAX_REFRESH_RETRY_DELAY + 1, -1, 1.5, '1000'])('rejects a refreshRetryDelay of %s', (refreshRetryDelay) => {
+    expect(() => resolveCacheOptions({ refreshRetryDelay: refreshRetryDelay as number })).toThrow(
+      "'options.cache.refreshRetryDelay' must be an integer",
     );
   });
 
