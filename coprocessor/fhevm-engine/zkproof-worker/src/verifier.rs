@@ -486,7 +486,8 @@ async fn execute_verify_proof_routine(
             let error = ExecutionError::NullInput(request_id).to_string();
             sqlx::query(
                 "UPDATE verify_proofs
-                 SET handles = ''::BYTEA, verified = false, verified_at = NOW(), last_error = $2
+                 SET handles = ''::BYTEA, verified = false, verified_at = NOW(), last_error = $2,
+                     retry_count = 0, last_retry_at = NULL
                  WHERE zk_proof_id = $1",
             )
             .bind(request_id)
@@ -670,12 +671,17 @@ async fn execute_verify_proof_routine(
                 // For local failures this stores an empty handle list. After the
                 // rejection is sent, transaction-sender clears it while waiting
                 // for the Gateway's final outcome.
+                // Verification and response submission share these columns, but
+                // must not share a retry budget. Hand the completed outcome to
+                // the sender with a fresh budget, including terminal rejections.
                 sqlx::query(
                     "UPDATE verify_proofs
                      SET handles = $1,
                          verified = $2,
                          verified_at = NOW(),
-                         last_error = $4
+                         last_error = $4,
+                         retry_count = 0,
+                         last_retry_at = NULL
                      WHERE zk_proof_id = $3",
                 )
                 .bind(handles_bytes)
