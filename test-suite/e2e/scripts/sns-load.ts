@@ -31,21 +31,28 @@ async function main() {
   const outputs: Output[] = [];
   let next = 0;
   const started = Date.now();
-  await Promise.all(
+  const clients = await Promise.all(
     Array.from({ length: producers }, async (_, producer) => {
       const signer = await getSigner(producer);
       const contract = await (await ethers.getContractFactory('SnsLoad', signer)).deploy();
       await contract.waitForDeployment();
       const address = await contract.getAddress();
+      // Proof setup is outside the measured SNS interval. Reuse the encrypted operand,
+      // varying every scalar to create fresh independent non-trivial output handles.
+      const value = BigInt(producer + 1);
+      const encrypted = await sdk.encryptUint64({ value, contractAddress: address, userAddress: signer.address });
+      const seeded = await (await contract.setInput(encrypted.handles[0], encrypted.inputProof)).wait();
+      assert(seeded && seeded.status === 1);
+      return { contract, address, value };
+    }),
+  );
+  await Promise.all(
+    clients.map(async ({ contract, address, value }) => {
       while (next < target) {
         const start = next;
         const count = Math.min(20, target - start);
         next += count;
-        const value = BigInt(start + 1);
-        const encrypted = await sdk.encryptUint64({ value, contractAddress: address, userAddress: signer.address });
-        const receipt = await (
-          await contract.produce(encrypted.handles[0], encrypted.inputProof, count, { gasLimit: 15000000 })
-        ).wait();
+        const receipt = await (await contract.produce(42 + start, count, { gasLimit: 15000000 })).wait();
         assert(receipt && receipt.status === 1);
         const batch: Output[] = [];
         for (const log of receipt.logs) {

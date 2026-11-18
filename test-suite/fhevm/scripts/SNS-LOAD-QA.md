@@ -12,8 +12,10 @@ Dispatch `test-suite-e2e-tests.yml` on this branch with:
 - `coprocessor-sns-worker-version=c0e6428`
 
 The ordinary encrypted-input → add → user/public-decrypt smoke test runs first.
-Then SNS stops, 16 clients produce 10,000 distinct public outputs from fresh
-encrypted inputs (20 independent additions per transaction), and TFHE prepares
+Then SNS stops, 16 clients each set up a fresh encrypted input and produce 10,000
+distinct public outputs total (20 independent additions per transaction, with a
+different scalar per output). Input proofs are setup rather than regenerated for
+every batch: the benchmark targets SNS capacity. TFHE prepares
 every CT64. Four identical SNS processes start against this single operator DB,
 with batches of 20, four Rayon threads each, and S3 migration disabled. Keeping a
 prebuilt backlog separates SNS capacity from producer/proof/TFHE throughput.
