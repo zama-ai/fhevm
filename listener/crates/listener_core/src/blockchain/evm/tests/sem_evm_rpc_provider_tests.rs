@@ -11,6 +11,7 @@ mod sem_evm_rpc_provider_tests {
     }
 
     #[tokio::test]
+    #[ignore = "Require stable RPC endpoints"]
     async fn report_provider_workability() {
         // 1. Force initialize tracing to stay informed during async calls
         let subscriber = FmtSubscriber::builder()
