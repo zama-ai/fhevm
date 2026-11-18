@@ -504,7 +504,8 @@ jobs:
 
   qa-sns-retry-four-stripes:
     needs: [build-sns-worker]
-    if: github.event_name == 'workflow_dispatch' && needs.build-sns-worker.result == 'success'
+    if: >-
+      !cancelled() && github.event_name == 'workflow_dispatch' && needs.build-sns-worker.result == 'success'
     permissions: &qa_e2e_permissions
       contents: read
       packages: read
@@ -520,7 +521,8 @@ jobs:
 
   qa-sns-ordered-four-stripes:
     needs: [build-sns-worker, qa-sns-image-tag]
-    if: github.event_name == 'workflow_dispatch' && needs.build-sns-worker.result == 'success'
+    if: >-
+      !cancelled() && github.event_name == 'workflow_dispatch' && needs.build-sns-worker.result == 'success'
     permissions: *qa_e2e_permissions
     uses: ./.github/workflows/test-suite-e2e-tests.yml
     secrets: inherit
