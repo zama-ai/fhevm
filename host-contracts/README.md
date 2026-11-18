@@ -86,17 +86,17 @@ Notes:
 
 ## Host Deployment Role
 
-`task:deployAllHostContracts` requires an explicit `--with-kms-generation` value:
+`task:deployAllHostContracts` and `task:deployEmptyUUPSProxies` require the host's role:
 
 ```bash
-npx hardhat task:deployAllHostContracts --with-kms-generation true   # canonical host
-npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical  # non-canonical host
+npx hardhat task:deployAllHostContracts --host-role canonical  # Ethereum
+npx hardhat task:deployAllHostContracts --host-role replica    # every other host chain
 ```
 
-`KMSGeneration` is deployed only on the canonical host chain. Non-canonical host chains
-deploy the common host contracts only. They pass `--protocol-config-source canonical`, so they
-deploy `ProtocolConfigReplica` seeded from the `CANONICAL_*` env variables (see below). The default
-`fresh` deploys `ProtocolConfig`.
+The canonical host deploys `KMSGeneration`, `ProtocolConfig` and `CoprocessorConfig`, initialized from
+the env variables. A replica deploys no `KMSGeneration`, and `ProtocolConfigReplica` and
+`CoprocessorConfigReplica` seeded from the `CANONICAL_*` and `CANONICAL_COPROCESSOR_*` env variables
+(see below).
 
 ### Canonical vs. non-canonical hosts
 
@@ -207,7 +207,7 @@ thresholds the payload encodes. They also print the chain id, block number, bloc
 `ProtocolConfig` address. An operator compares every provenance value against the artifact.
 
 When deploying a full non-canonical host stack, `task:deployAllHostContracts
---protocol-config-source canonical` runs the mirror in sequence with the other host contracts, with
+--host-role replica` runs the mirror in sequence with the other host contracts, with
 the same environment variables (this is what the fhevm-cli multi-chain stack uses, so e2e seeds
 non-canonical chains exactly like production).
 
@@ -231,6 +231,13 @@ Context IDs carry the type byte `0x09`, so the first context is `0x0900...0001`.
   variables (`task:deployCoprocessorConfig`). `defineNewCoprocessorContext` and
   `destroyCoprocessorContext` change it later (`tasks/coprocessorContext.ts`, a `task:build…Calldata`
   task for the DAO path and a broadcasting task for devnet).
+- **Live chains deployed before `CoprocessorConfig`**: `tasks/coprocessorConfigMigration.ts` holds the
+  one-time tooling, deleted once every live chain runs `CoprocessorConfig`.
+  `task:deployEmptyProxyForCoprocessorConfig` adds the empty proxy. `task:prepareDeployCoprocessorConfig
+--gateway-rpc-url … --gateway-config-address …` prints the DAO payload for the first context, after
+  checking the `COPROCESSOR_*` signers, storage URLs and threshold against `GatewayConfig` and the chain's
+  `InputVerifier` (`task:checkCoprocessorSetAgainstGateway` runs the check alone). The Ethereum transaction
+  senders and the PRF endpoint URLs have no live counterpart, so the task prints them for review.
 - **Replica**: `initializeFromCanonical` lands the replica on canonical's current context. Export it
   with `task:exportCanonicalCoprocessorConfig`, then apply it with
   `task:deployCoprocessorConfigFromCanonical` (devnet) or `task:prepareDeployCoprocessorConfigFromCanonical`
@@ -246,7 +253,7 @@ Context IDs carry the type byte `0x09`, so the first context is `0x0900...0001`.
 | `CANONICAL_COPROCESSORS`                    | JSON array     | The coprocessor set, one JSON object per coprocessor.     |
 | `CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD`  | decimal string | Majority threshold of the coprocessor context.            |
 
-`task:deployAllHostContracts --protocol-config-source canonical` also seeds the replica, so it needs
+`task:deployAllHostContracts --host-role replica` also seeds the replica, so it needs
 these variables too. Later canonical contexts are mirrored with `task:mirrorCoprocessorContext` and
 `task:mirrorCoprocessorContextDestruction` (`tasks/mirrorCoprocessorContext.ts`). A replica accepts
 gaps, so only canonical's current context is mirrored.

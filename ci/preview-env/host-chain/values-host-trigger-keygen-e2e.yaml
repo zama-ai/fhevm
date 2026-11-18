@@ -12,7 +12,7 @@
 # Our images are built at each PR's HEAD (or fall back to `latest`, see resolve-tags
 # in preview-env-deploy.yml), i.e. well past the v0.13 KMSGeneration migration: the
 # KMSGeneration contract now lives on the canonical HOST chain, not the Gateway (RFC013)
-# - host-contracts' task:deployAllHostContracts --with-kms-generation true (see
+# - host-contracts' task:deployAllHostContracts --host-role canonical (see
 # values-host-contracts-e2e.yaml) already deployed it there. Concretely,
 # gateway-contracts no longer even ships task:triggerKeygen/task:triggerCrsgen at this
 # version (they moved to host-contracts/tasks/generateKmsMaterials.ts), so this MUST

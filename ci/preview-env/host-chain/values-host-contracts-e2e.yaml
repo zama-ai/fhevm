@@ -15,8 +15,8 @@
 # anvil-host's chain id).
 #
 # This chart's own values.yaml documents the canonical reference command for
-# a single-host scenario as `task:deployAllHostContracts --with-kms-generation
-# true` (the canonical host chain owns the real KMSGeneration implementation;
+# a single-host scenario as `task:deployAllHostContracts --host-role
+# canonical` (the canonical host chain owns the real KMSGeneration implementation;
 # gateway's own KMSGeneration proxy stays an empty, unused stand-in in that
 # case) - followed here. Requires host-contracts >= v0.13.0 (see
 # preview-env-deploy.yml's env block) - the flag/ProtocolConfig split doesn't
@@ -94,7 +94,7 @@ scDeploy:
     - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
     - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
   deployCommands:
-    - npx hardhat task:deployAllHostContracts --with-kms-generation true
+    - npx hardhat task:deployAllHostContracts --host-role canonical
     # task:addHostPausers intentionally omitted — deferred to a follow-up step, same reasoning
     # as gateway-contracts' deferred task:addHostChainsToGatewayConfig.
   verifyContracts: false

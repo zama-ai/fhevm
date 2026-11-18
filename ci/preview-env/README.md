@@ -580,9 +580,8 @@ anvil with `--chain-id 80002` is indistinguishable to every fhevm component.
 
 Polygon **reuses the ETH-activated KMS key** — there is no second keygen ceremony:
 
-- `host-contracts-polygon` deploys with `--with-kms-generation false
-  --protocol-config-source canonical`, which **mirrors** the ETH ProtocolConfig (its
-  active KMS context/key) onto Polygon (`values-host-contracts-polygon-e2e.yaml`). So
+- `host-contracts-polygon` deploys with `--host-role replica`, which **mirrors** the
+  ETH ProtocolConfig (its active KMS context/key) and CoprocessorConfig onto Polygon (`values-host-contracts-polygon-e2e.yaml`). So
   it must run *after* the ETH host-contracts (the canonical source).
 - The coprocessor becomes multichain via **additive overlays**
   (`values-coprocessor-polygon-e2e.yaml` / `-poller-polygon-e2e.yaml`) that add a

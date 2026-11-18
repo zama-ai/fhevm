@@ -4,12 +4,10 @@
 # (gateway wiring, account #9 = ACL owner, dynamic KMS/coprocessor env).
 #
 # KEY DIFFERENCE - Polygon is a NON-CANONICAL host that REUSES the ETH KMS key:
-#   --with-kms-generation false        (KMSGeneration lives only on the canonical
-#                                        ETH host; Polygon has none)
-#   --protocol-config-source canonical (mirror ETH's ProtocolConfig, i.e. its
-#                                        already-activated KMS context/key, onto
-#                                        Polygon - no second DKG, matching the
-#                                        "reuse the ETH activation key" intent)
+#   --host-role replica (no KMSGeneration, which lives only on the canonical ETH
+#                        host; mirror ETH's ProtocolConfig, i.e. its already-activated
+#                        KMS context/key, and its CoprocessorConfig onto Polygon - no
+#                        second DKG, matching the "reuse the ETH activation key" intent)
 # so there is deliberately NO host-trigger-keygen step for Polygon: its coprocessor
 # reads the same shared postgres-coprocessor-<i> the ETH keygen already filled.
 #
@@ -97,7 +95,7 @@ scDeploy:
       # DeclarationError "pauserSetAdd not found" with only deployEmptyUUPSProxies). None
       # of these need local KMS env; the canonical deploy below re-runs them and owns the
       # final addresses, so the throwaway proxies are harmless on the ephemeral anvil.
-      npx hardhat task:deployEmptyUUPSProxies --with-kms-generation false
+      npx hardhat task:deployEmptyUUPSProxies --host-role replica
       npx hardhat compile:specific --contract contracts/immutable
       npx hardhat task:deployPauserSet
       canonical_head=$(node -e "const {JsonRpcProvider}=require('ethers'); new JsonRpcProvider('http://anvil-host-anvil-node:8545').getBlockNumber().then(n=>process.stdout.write(String(n)))")
@@ -118,7 +116,7 @@ scDeploy:
           export "${canonical_key}=$(printf '%s' "${canonical_b64}" | base64 -d)"
         done < <(SNAPSHOT="${snapshot}" node -e "const e=require(process.env.SNAPSHOT).export; for (const kv of Object.entries(e)) process.stdout.write(kv[0]+'\t'+Buffer.from(String(kv[1])).toString('base64')+'\n')")
       done
-      npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical
+      npx hardhat task:deployAllHostContracts --host-role replica
   verifyContracts: false
 persistence:
   enabled: true

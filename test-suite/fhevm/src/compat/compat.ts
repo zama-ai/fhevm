@@ -539,6 +539,15 @@ export const coprocessorUsesHostKmsGeneration = (state: CompatState) =>
 export const bootstrapUsesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration;
 
 /**
+ * Detects when the host image's deploy tasks take the host's role as `--host-role canonical|replica`,
+ * which replaced `--with-kms-generation` and `--protocol-config-source` in the 1.0.0 family. A replica
+ * also seeds its CoprocessorConfig from the canonical chain. Confirm the floor when 1.0.0 is cut.
+ */
+export const hostDeployUsesHostRole = (state: CompatState) =>
+  effectiveCompatOverrides(state).some((override) => override.group === "host-contracts") ||
+  !versionBeforeReleaseFamily(state.versions.env.HOST_VERSION ?? "", [1, 0, 0], { unparsed: "modern" });
+
+/**
  * Detects when host images ship canonical ProtocolConfig seeding at all (0.13.1+), so non-canonical
  * chains can seed ProtocolConfig from the canonical chain like production instead of "fresh".
  * This only answers "does the image have the task". Use `canonicalProtocolConfigSeedingUsesEnv` to

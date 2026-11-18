@@ -14,6 +14,7 @@ import {
   assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
   canonicalProtocolConfigSeedingUsesEnv,
+  hostDeployUsesHostRole,
   kmsCoreUpgradeCrossesMaterialBreak,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
@@ -787,7 +788,8 @@ const canonicalProtocolConfigSeeding = async (
     ).export;
   }
   return {
-    args: "--protocol-config-source canonical",
+    // `--host-role replica` already selects the seeding on images that take it.
+    args: hostDeployUsesHostRole(state) ? "" : "--protocol-config-source canonical",
     // The deploy task reads the reviewed snapshots from the environment, not from flags, so that
     // deployment platforms can inject the exported values as container environment variables.
     env: { ...exported.export, ...exportedCoprocessor },

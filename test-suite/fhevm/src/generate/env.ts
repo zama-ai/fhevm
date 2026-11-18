@@ -4,6 +4,7 @@
 import {
   coprocessorUsesHostKmsGeneration,
   compatPolicyForState,
+  hostDeployUsesHostRole,
   kmsConnectorUsesHostKmsGeneration,
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
@@ -105,8 +106,13 @@ const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
   }
 };
 
-const hostDeployKmsGenerationArgs = (plan: StackSpec, enabled: boolean) =>
-  requiresModernHostAddressArtifacts(plan) ? `--with-kms-generation ${enabled}` : "";
+/** The deploy task's host-role argument, in the form the host image accepts. */
+const hostDeployRoleArgs = (plan: StackSpec, canonical: boolean) => {
+  if (hostDeployUsesHostRole(plan)) {
+    return `--host-role ${canonical ? "canonical" : "replica"}`;
+  }
+  return requiresModernHostAddressArtifacts(plan) ? `--with-kms-generation ${canonical}` : "";
+};
 
 /** Applies base runtime defaults before compat or discovery-specific rewrites. */
 const applyBaseRuntimeEnv = (
@@ -610,7 +616,7 @@ export const renderEnvMaps = async (
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
   envs["host-sc"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
-  envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, true);
+  envs["host-sc"].HOST_SC_DEPLOY_ROLE_ARGS = hostDeployRoleArgs(plan, true);
   // Canonical host seeds ProtocolConfig fresh; non-canonical chains get this patched at deploy time
   // by the up flow (see `canonicalProtocolConfigSeeding`) once the canonical address exists.
   envs["host-sc"].HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = "";
@@ -703,7 +709,7 @@ export const renderEnvMaps = async (
     hostSc.RPC_URL = hostHttp;
     hostSc.CHAIN_ID = chain.chainId;
     hostSc.HOST_ADDRESS_DIR = chain.key;
-    hostSc.HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, false);
+    hostSc.HOST_SC_DEPLOY_ROLE_ARGS = hostDeployRoleArgs(plan, false);
     hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${chain.sc}-deploy`;
     hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${chain.sc}-add-pausers`;
     hostSc.NUM_COPROCESSORS = String(plan.topology.count);

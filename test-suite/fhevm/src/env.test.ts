@@ -632,18 +632,31 @@ describe("env", () => {
     expect(rendered.componentEnvs["host-node"].HOST_NODE_CHAIN_ID).toBe("543210");
     expect(rendered.componentEnvs["host-sc"].RPC_URL).toBe("http://host-node:9650");
     expect(rendered.componentEnvs["host-sc"].HOST_ADDRESS_DIR).toBe("chain-a");
-    expect(rendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS).toBe("--with-kms-generation true");
+    expect(rendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_ROLE_ARGS).toBe("--host-role canonical");
     expect(rendered.componentEnvs["test-suite"].CHAIN_ID_HOST).toBe("543210");
     expect(rendered.instanceEnvs["host-node-chain-b"]?.HOST_NODE_PORT).toBe("9750");
     expect(rendered.instanceEnvs["host-sc-chain-b"]?.CHAIN_ID).toBe("67890");
     expect(rendered.instanceEnvs["host-sc-chain-b"]?.HOST_ADDRESS_DIR).toBe("chain-b");
-    expect(rendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_KMS_GENERATION_ARGS).toBe(
-      "--with-kms-generation false",
-    );
+    expect(rendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_ROLE_ARGS).toBe("--host-role replica");
     // Rendered as an empty placeholder: the up flow patches the non-canonical chains' value with
     // the canonical seeding args once the canonical ProtocolConfig address exists on disk.
     expect(rendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS).toBe("");
     expect(rendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS).toBe("");
+    // Released images before the 1.0.0 family take the KMSGeneration flag instead of the host role.
+    const released = {
+      ...state,
+      versions: { ...state.versions, env: { ...state.versions.env, HOST_VERSION: "v0.14.5" } },
+    };
+    const releasedRendered = await renderEnvMaps(
+      { discovery: undefined },
+      stackSpecForState(released),
+      templateEnvs,
+      deriveWallet,
+    );
+    expect(releasedRendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_ROLE_ARGS).toBe("--with-kms-generation true");
+    expect(releasedRendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_ROLE_ARGS).toBe(
+      "--with-kms-generation false",
+    );
     const legacy = {
       ...state,
       versions: { ...state.versions, env: { ...state.versions.env, HOST_VERSION: "v0.12.0" } },
@@ -654,8 +667,8 @@ describe("env", () => {
       templateEnvs,
       deriveWallet,
     );
-    expect(legacyRendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS).toBe("");
-    expect(legacyRendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_KMS_GENERATION_ARGS).toBe("");
+    expect(legacyRendered.componentEnvs["host-sc"].HOST_SC_DEPLOY_ROLE_ARGS).toBe("");
+    expect(legacyRendered.instanceEnvs["host-sc-chain-b"]?.HOST_SC_DEPLOY_ROLE_ARGS).toBe("");
   });
 
   test("renders final env values without self-interpolation placeholders", async () => {

@@ -40,7 +40,7 @@ services:
       # aborting because the canonical endpoint has no code on this chain.
       - LZ_ENDPOINT_ADDRESS=
     command:
-      - npx hardhat task:deployAllHostContracts --with-kms-generation true
+      - npx hardhat task:deployAllHostContracts --host-role canonical
     depends_on:
       anvil-node:
         condition: service_started

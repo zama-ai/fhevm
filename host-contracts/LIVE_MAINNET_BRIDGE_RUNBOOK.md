@@ -76,7 +76,7 @@ export POLYGON_MAINNET_RPC_URL=<YOUR_POLYGON_MAINNET_RPC_URL>
 Then deploy all host contracts on Ethereum mainnet with:
 
 ```bash
-RPC_URL="$ETHEREUM_MAINNET_RPC_URL" npx hardhat --network mainnet task:deployAllHostContracts --with-kms-generation true
+RPC_URL="$ETHEREUM_MAINNET_RPC_URL" npx hardhat --network mainnet task:deployAllHostContracts --host-role canonical
 ```
 
 Then verify all Ethereum mainnet contracts on Etherscan via:
@@ -96,10 +96,12 @@ The `cp` is **critical** — the next chain's deploy overwrites `addresses/`.
 
 ## Step 2 — Deploy host stack on Polygon Mainnet
 
+A replica is seeded from Ethereum, so first export the canonical `ProtocolConfig` and `CoprocessorConfig` snapshots and load their `export` maps into the environment (see the README sections _Initializing a ProtocolConfigReplica from the canonical chain_ and _CoprocessorConfig_).
+
 Deploy all host contracts on Polygon mainnet with:
 
 ```bash
-RPC_URL="$POLYGON_MAINNET_RPC_URL" npx hardhat --network polygon task:deployAllHostContracts --with-kms-generation false
+RPC_URL="$POLYGON_MAINNET_RPC_URL" npx hardhat --network polygon task:deployAllHostContracts --host-role replica
 ```
 
 Then verify all Polygon mainnet contracts on Etherscan via:

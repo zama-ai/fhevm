@@ -14,6 +14,7 @@ import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
+import './tasks/coprocessorConfigMigration';
 import './tasks/coprocessorContext';
 import './tasks/examples/cOFT';
 import './tasks/examples/handlesList';
@@ -91,7 +92,7 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
-    await hre.run('task:deployAllHostContracts', { withKmsGeneration: true });
+    await hre.run('task:deployAllHostContracts', { hostRole: 'canonical' });
     // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
     // for local testing
     await hre.run('task:addHostPausers', { useInternalProxyAddress: true });
