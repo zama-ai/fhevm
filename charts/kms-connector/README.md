@@ -19,7 +19,7 @@ By default the secret must exist before the proxy starts. Set `kmsConnectorProxy
 
 ### Deployment requirement
 
-The proxy must not be reachable directly from the internet. It authenticates each request and caps its body's size and the time to send it (1 MiB and 30 s by default), but it does not protect its connections before that: Pingora 0.9 caps neither their number nor the total time a client takes to send a request head, so slow or idle connections can use up the replica's memory.
+The proxy must not be reachable directly from the internet. It authenticates each request and caps its body's size and the time to send it (1 MiB and 30 s by default). It does not protect its connections before that: Pingora 0.9 caps neither their number, nor how long they can stay idle, nor the time a client takes to send a request head, so slow or idle connections can use up the replica's memory.
 
 The chart only creates a `ClusterIP` Service for the proxy. Expose it only through an HTTP load balancer that takes the clients' connections itself and forwards a request once its head is complete. The standard exposure for operators is an AWS Application Load Balancer with AWS WAF. A TCP (layer 4) load balancer is not enough: it forwards slow and idle connections unchanged.
 
