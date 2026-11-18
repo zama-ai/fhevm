@@ -1096,9 +1096,11 @@ impl Database {
                 output_count,
                 log_index,
                 is_executor_minted,
-                log_index_block_hash
+                log_index_block_hash,
+                executor_log_indexes
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+                    CASE WHEN $17 THEN jsonb_build_object(encode($18::bytea, 'hex'), $16::bigint) ELSE '{}'::jsonb END)
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
         )
@@ -1129,17 +1131,30 @@ impl Database {
             // A provenance backfill is still a replay, not newly scheduled
             // work. Keep its result separate from INSERT's rows_affected so
             // callers repair persisted chain identities and count work once.
+            // Preserve the previous fork before updating the observation hint.
+            // The map is keyed by block hash, so a later replay of another fork
+            // cannot erase the earliest mint used by split deliveries here.
             sqlx::query(
                 "UPDATE computations
-                 SET log_index = CASE
-                         WHEN log_index_block_hash IS NOT DISTINCT FROM $4::bytea
-                         THEN LEAST(log_index, $3) ELSE $3 END,
+                 SET executor_log_indexes = executor_log_indexes
+                         || CASE WHEN is_executor_minted AND log_index_block_hash IS NOT NULL
+                              THEN jsonb_build_object(encode(log_index_block_hash, 'hex'),
+                                  LEAST(log_index, (executor_log_indexes ->> encode(log_index_block_hash, 'hex'))::bigint))
+                              ELSE '{}'::jsonb END
+                         || CASE WHEN $5 THEN jsonb_build_object(encode($4::bytea, 'hex'),
+                                  LEAST($3, (executor_log_indexes ->> encode($4::bytea, 'hex'))::bigint,
+                                      CASE WHEN log_index_block_hash = $4 THEN log_index END))
+                              ELSE '{}'::jsonb END,
+                     log_index = LEAST($3,
+                         (executor_log_indexes ->> encode($4::bytea, 'hex'))::bigint,
+                         CASE WHEN log_index_block_hash IS NOT DISTINCT FROM $4::bytea THEN log_index END),
                      log_index_block_hash = $4,
                      is_executor_minted = COALESCE(is_executor_minted, $5)
                  WHERE output_handle = $1 AND transaction_id IS NOT DISTINCT FROM $2
                    AND (log_index IS NULL OR is_executor_minted IS NULL
                         OR log_index_block_hash IS DISTINCT FROM $4::bytea
-                        OR log_index > $3)",
+                        OR log_index > $3
+                        OR ($5 AND NOT executor_log_indexes ? encode($4::bytea, 'hex')))",
             )
             .bind(output_handle)
             .bind(log.transaction_hash.map(|hash| hash.to_vec()))

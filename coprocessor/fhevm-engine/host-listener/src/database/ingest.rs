@@ -514,9 +514,12 @@ async fn persisted_prior_minted_outputs(
          )
          SELECT c.transaction_id,
                 c.output_handle,
-                c.log_index,
+                COALESCE((c.executor_log_indexes ->> encode($6::bytea, 'hex'))::bigint,
+                    CASE WHEN c.log_index_block_hash = $6 OR c.log_index_block_hash IS NULL
+                         THEN c.log_index END),
                 c.is_executor_minted,
-                c.log_index_block_hash,
+                CASE WHEN c.executor_log_indexes ? encode($6::bytea, 'hex')
+                     THEN $6 ELSE c.log_index_block_hash END,
                 r.consumer_log_index
          FROM requested r
          JOIN computations c
@@ -524,7 +527,8 @@ async fn persisted_prior_minted_outputs(
           AND c.output_handle = r.output_handle
           AND c.host_chain_id = $4
           AND (c.block_number = $5 OR c.block_number IS NULL)
-          AND (c.log_index_block_hash = $6 OR c.log_index_block_hash IS NULL)",
+          AND (c.executor_log_indexes ? encode($6::bytea, 'hex')
+               OR c.log_index_block_hash = $6 OR c.log_index_block_hash IS NULL)",
     )
     .bind(transaction_ids)
     .bind(output_handles)

@@ -83,7 +83,7 @@ async fn unknown_legacy_producer_requires_complete_block_before_mask_derivation(
         1,
     );
     ingest(&mut db, &b, vec![producer.clone()], false).await?;
-    sqlx::query("UPDATE computations SET log_index = NULL, log_index_block_hash = NULL, is_executor_minted = NULL WHERE output_handle = $1")
+    sqlx::query("UPDATE computations SET log_index = NULL, log_index_block_hash = NULL, is_executor_minted = NULL, executor_log_indexes = '{}'::jsonb WHERE output_handle = $1")
         .bind(input.as_slice()).execute(&pool).await?;
     let error = ingest(&mut db, &b, vec![consumer.clone()], true)
         .await
@@ -316,5 +316,104 @@ async fn sibling_fork_indexes_do_not_become_transaction_local_provenance(
     .fetch_one(&pool)
     .await?;
     assert_eq!(mask[31], 1, "another fork does not prove a preceding mint");
+    Ok(())
+}
+
+#[tokio::test]
+async fn returning_to_a_fork_keeps_its_earliest_producer() -> anyhow::Result<()>
+{
+    use alloy::primitives::Address;
+    use host_listener::contracts::TfheContract;
+    for legacy in [false, true] {
+        let (mut db, pool, _instance) = setup().await?;
+        let a = block();
+        let mut b = a;
+        b.hash = FixedBytes::repeat_byte(0xd1);
+        let transaction = FixedBytes::repeat_byte(31);
+        let input = computed_handle(81);
+        let output = computed_handle(82);
+        let producer = rpc_log(&trivial_encrypt(input), &a, transaction, 1);
+        ingest(&mut db, &a, vec![producer.clone()], false).await?;
+        if legacy {
+            // The new migration deliberately does not scan old rows. Their
+            // sole known observation must survive the first sibling replay.
+            sqlx::query(
+                "UPDATE computations SET executor_log_indexes='{}'::jsonb",
+            )
+            .execute(&pool)
+            .await?;
+        }
+        ingest(
+            &mut db,
+            &b,
+            vec![rpc_log(&trivial_encrypt(input), &b, transaction, 20)],
+            false,
+        )
+        .await?;
+        let consumer = rpc_log(
+            &TfheContract::FheNeg {
+                caller: Address::ZERO,
+                ct: input,
+                result: output,
+            },
+            &a,
+            transaction,
+            5,
+        );
+        // A partial return to A contains the consumer and only a later remint.
+        // Its persisted index 1, not B's 20 or the new 9, proves locality.
+        ingest(
+            &mut db,
+            &a,
+            vec![
+                consumer.clone(),
+                rpc_log(&trivial_encrypt(input), &a, transaction, 9),
+            ],
+            true,
+        )
+        .await?;
+        let mask: Vec<u8> = sqlx::query_scalar("SELECT operand_boundary_mask FROM computations WHERE output_handle=$1")
+            .bind(output.as_slice()).fetch_one(&pool).await?;
+        assert_eq!(mask, vec![0; 32]);
+        // A complete replay must agree, rather than contain an immutable-mask
+        // conflict caused by the preceding partial replay.
+        ingest(
+            &mut db,
+            &a,
+            vec![
+                producer,
+                consumer,
+                rpc_log(&allowed(output), &a, transaction, 10),
+            ],
+            true,
+        )
+        .await?;
+        let origins: serde_json::Value = sqlx::query_scalar("SELECT executor_log_indexes FROM computations WHERE output_handle=$1")
+            .bind(input.as_slice()).fetch_one(&pool).await?;
+        assert_eq!(origins[alloy::hex::encode(a.hash)], 1);
+        assert_eq!(origins[alloy::hex::encode(b.hash)], 20);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn fork_origin_migration_updates_existing_green_tables(
+) -> anyhow::Result<()> {
+    let (_db, pool, _instance) = setup().await?;
+    sqlx::raw_sql(&format!(
+        "ALTER TABLE public.computations DROP COLUMN executor_log_indexes;
+         ALTER TABLE public.computations_branch DROP COLUMN executor_log_indexes;
+         CREATE SCHEMA {GCS_SCHEMA_QUOTED};
+         CREATE TABLE {GCS_SCHEMA_QUOTED}.computations (LIKE public.computations INCLUDING ALL);
+         CREATE TABLE {GCS_SCHEMA_QUOTED}.computations_branch (LIKE public.computations_branch INCLUDING ALL);"
+    )).execute(&pool).await?;
+    sqlx::raw_sql(include_str!("../../db-migration/migrations/20261118100000_computation_fork_origins.sql"))
+        .execute(&pool).await?;
+    let columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.columns
+         WHERE table_schema IN ('public', $1) AND table_name IN ('computations', 'computations_branch')
+           AND column_name='executor_log_indexes' AND is_nullable='NO'",
+    ).bind(GCS_SCHEMA).fetch_one(&pool).await?;
+    assert_eq!(columns, 4);
     Ok(())
 }
