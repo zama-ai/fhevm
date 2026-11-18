@@ -524,9 +524,10 @@ pub(super) async fn lock_digest_mirror_stripes(
         return Ok(());
     }
 
-    // The volatile locking call is an outer output expression: PostgreSQL
-    // evaluates it after sorting by lock_key. DISTINCT also precedes locking,
-    // so this is one round trip and one acquisition per distinct advisory key.
+    // One SQL statement and one database round trip for the whole batch.
+    // DISTINCT deduplicates the keys before locking. The volatile locking call
+    // is an outer output expression, evaluated after sorting by lock_key,
+    // so each distinct advisory key is acquired once, in that order.
     sqlx::query!(
         r#"
         SELECT pg_advisory_xact_lock(lock_key)
