@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id\n            FROM ciphertext_digest\n            WHERE txn_is_sent = false\n            AND ciphertext IS NOT NULL\n            AND ciphertext128 IS NOT NULL\n            AND txn_limited_retries_count < $1\n            ORDER BY created_at ASC\n            LIMIT $2",
+  "query": "\n            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id, pending_txn_hash\n            FROM ciphertext_digest\n            WHERE txn_is_sent = false\n            AND ciphertext IS NOT NULL\n            AND ciphertext128 IS NOT NULL\n            AND txn_limited_retries_count < $1\n            ORDER BY created_at ASC\n            LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -42,6 +42,11 @@
         "ordinal": 7,
         "name": "transaction_id",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "pending_txn_hash",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
@@ -58,8 +63,9 @@
       false,
       false,
       false,
+      true,
       true
     ]
   },
-  "hash": "5f1777e5b74d10d99f96fe57fc6ffa5c8e6eb8f1e95384e014362c9c02edea1e"
+  "hash": "dbb63366b50f0983a0f5dee7de88efbff31e15923ae729c744b7e0f813763875"
 }

@@ -77,6 +77,11 @@
         "ordinal": 14,
         "name": "block_number",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 15,
+        "name": "pending_txn_hash",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
@@ -98,6 +103,7 @@
       true,
       false,
       false,
+      true,
       true,
       true
     ]

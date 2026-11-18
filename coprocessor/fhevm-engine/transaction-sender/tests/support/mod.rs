@@ -65,6 +65,14 @@ pub enum Fault {
     /// makes the "cancelled sibling leaves on-chain work with no DB record"
     /// scenario deterministic rather than a race.
     DelayResponse(Duration),
+    /// Forwards the request, so that anvil mines the transaction. Then sets
+    /// `blockHash` to zero in the receipt. This models the Arbitrum receipt of an
+    /// executed transaction before Arbitrum seals its block.
+    UnsealedReceipt,
+    /// Does not forward the request. Answers with an unsealed receipt for the
+    /// transaction. This models a block that is never sealed, for example after a
+    /// sequencer failure. The transaction and its nonce are gone.
+    RetractedReceipt,
 }
 
 #[derive(Clone, Debug)]
@@ -409,6 +417,7 @@ async fn handle(State(shared): State<Arc<Shared>>, body: Bytes) -> axum::respons
     let fault = take_fault(&shared, &methods, &parsed);
     let mut suppress = false;
     let mut hold_response = None;
+    let mut unseal = false;
 
     match fault {
         Some(Fault::DisconnectBeforeForward) => {
@@ -459,6 +468,19 @@ async fn handle(State(shared): State<Arc<Shared>>, body: Bytes) -> axum::respons
         Some(Fault::Delay(d)) => tokio::time::sleep(d).await,
         Some(Fault::SuppressResponse) => suppress = true,
         Some(Fault::DelayResponse(d)) => hold_response = Some(d),
+        Some(Fault::UnsealedReceipt) => unseal = true,
+        Some(Fault::RetractedReceipt) => {
+            use axum::response::IntoResponse;
+            let id = parsed.get("id").cloned().unwrap_or(Value::Null);
+            let raw = parsed["params"][0].as_str().unwrap_or_default();
+            let raw = alloy::hex::decode(raw).unwrap_or_default();
+            let body = serde_json::json!({
+                "jsonrpc": "2.0", "id": id,
+                "result": unsealed_receipt(alloy::primitives::keccak256(raw)),
+            });
+            record_end(&shared, &methods, began.elapsed().as_millis() as u64);
+            return axum::Json(body).into_response();
+        }
         Some(Fault::RespondWith(value)) => {
             use axum::response::IntoResponse;
             let id = parsed.get("id").cloned().unwrap_or(Value::Null);
@@ -524,6 +546,15 @@ async fn handle(State(shared): State<Arc<Shared>>, body: Bytes) -> axum::respons
                 // Upstream already applied the call; only the answer is late.
                 tokio::time::sleep(d).await;
             }
+            let bytes = if unseal {
+                let mut response: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+                if let Some(receipt) = response.get_mut("result").filter(|r| r.is_object()) {
+                    receipt["blockHash"] = Value::String(ZERO_HASH.into());
+                }
+                Bytes::from(serde_json::to_vec(&response).unwrap_or_default())
+            } else {
+                bytes
+            };
             (
                 axum::http::StatusCode::from_u16(status.as_u16())
                     .unwrap_or(axum::http::StatusCode::OK),
@@ -538,6 +569,29 @@ async fn handle(State(shared): State<Arc<Shared>>, body: Bytes) -> axum::respons
         )
             .into_response(),
     }
+}
+
+const ZERO_HASH: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Returns a successful receipt in the form that Arbitrum uses before it seals
+/// the block.
+fn unsealed_receipt(tx_hash: alloy::primitives::B256) -> Value {
+    serde_json::json!({
+        "type": "0x2",
+        "status": "0x1",
+        "cumulativeGasUsed": "0x1",
+        "logs": [],
+        "logsBloom": format!("0x{}", "00".repeat(256)),
+        "transactionHash": tx_hash,
+        "transactionIndex": "0x0",
+        "blockHash": ZERO_HASH,
+        "blockNumber": "0x1",
+        "gasUsed": "0x1",
+        "effectiveGasPrice": "0x1",
+        "from": alloy::primitives::Address::ZERO,
+        "to": alloy::primitives::Address::ZERO,
+        "contractAddress": null,
+    })
 }
 
 /// Error strings worth counting as events when they appear in a response.

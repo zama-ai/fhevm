@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE verify_proofs\n                         SET last_retry_at = NOW(),\n                             pending_txn_hash = COALESCE($2, pending_txn_hash)\n                         WHERE zk_proof_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3fc0c2962b102f8184a34d45959a79971768c0be61b3dfb699f7723a3a79633c"
+}

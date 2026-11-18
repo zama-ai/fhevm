@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id\n             FROM verify_proofs\n             WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))\n               AND retry_count < $1\n               AND (last_retry_at IS NULL OR last_retry_at <= NOW() - make_interval(secs => $3))\n             ORDER BY COALESCE(last_retry_at, created_at), zk_proof_id\n             LIMIT $2",
+  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id, pending_txn_hash\n             FROM verify_proofs\n             WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))\n               AND retry_count < $1\n               AND (last_retry_at IS NULL OR last_retry_at <= NOW() - make_interval(secs => $3))\n             ORDER BY COALESCE(last_retry_at, created_at), zk_proof_id\n             LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -47,6 +47,11 @@
         "ordinal": 8,
         "name": "transaction_id",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 9,
+        "name": "pending_txn_hash",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
@@ -65,8 +70,9 @@
       true,
       false,
       false,
+      true,
       true
     ]
   },
-  "hash": "fec9394aa81f758144ea91a99a5978e51650b61db6e74392c93ce97c2bc5c831"
+  "hash": "2dd18258cccd637f43a6bc8545195f5ad13e9a9f4042ed9da958dbf36e406837"
 }

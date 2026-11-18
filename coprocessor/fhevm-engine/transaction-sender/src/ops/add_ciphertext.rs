@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{
     metrics::{ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER, ADD_CIPHERTEXT_MATERIAL_SUCCESS_COUNTER},
-    nonce_managed_provider::NonceManagedProvider,
+    nonce_managed_provider::{unconfirmed_tx_hash, NonceManagedProvider},
     REVIEW,
 };
 
@@ -10,7 +10,7 @@ use super::common::{try_extract_non_retryable_config_error, try_into_array};
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
-    primitives::{Address, FixedBytes, U256},
+    primitives::{Address, FixedBytes, TxHash, U256},
     providers::Provider,
     rpc::types::TransactionRequest,
     transports::{RpcError, TransportErrorKind},
@@ -49,6 +49,7 @@ where
         current_limited_retries_count: i32,
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
+        pending_txn_hash: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         telemetry::record_short_hex_if_some(
             &tracing::Span::current(),
@@ -59,15 +60,16 @@ where
 
         info!(handle = h, "Processing transaction");
 
-        let receipt = match self
+        let (submission, earlier_unknown) = self
             .provider
-            .send_sync_with_overprovision(
+            .settle_or_send(
+                pending_txn_hash,
                 txn_request,
                 self.conf.gas_limit_overprovision_percent,
                 Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
             )
-            .await
-        {
+            .await;
+        let receipt = match submission {
             Ok(receipt) => receipt,
             Err(e) if self.already_added_error(&e).is_some() => {
                 warn!(
@@ -82,8 +84,15 @@ where
             Err(e) => {
                 // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
                 // Local usage are included as they might be transient due to external AWS KMS signers.
+                // Also retry these cases with no limit, and keep the hash for the
+                // next attempt:
+                // - The submission executed, but its block was not sealed in time.
+                // - The read of the earlier receipt failed.
+                let unconfirmed = unconfirmed_tx_hash(&e);
                 if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
                     || matches!(&e, RpcError::LocalUsageError(_))
+                    || unconfirmed.is_some()
+                    || earlier_unknown
                 {
                     ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                     warn!(
@@ -95,6 +104,7 @@ where
                         handle,
                         &crate::diagnostics::safe_rpc_error(&e),
                         current_unlimited_retries_count,
+                        unconfirmed,
                     )
                     .await?;
                     bail!(e);
@@ -205,7 +215,8 @@ where
             SET
                 txn_is_sent = true,
                 txn_hash = $1,
-                txn_block_number = $2
+                txn_block_number = $2,
+                pending_txn_hash = NULL
             WHERE handle = $3",
             txn_hash,
             txn_block_number,
@@ -283,7 +294,8 @@ where
             SET
             txn_limited_retries_count = txn_limited_retries_count + 1,
             txn_last_error = $1,
-            txn_last_error_at = NOW()
+            txn_last_error_at = NOW(),
+            pending_txn_hash = NULL
             WHERE handle = $2",
             err,
             handle,
@@ -298,6 +310,7 @@ where
         handle: &[u8],
         err: &str,
         current_unlimited_retries_count: i32,
+        unconfirmed_txn_hash: Option<TxHash>,
     ) -> anyhow::Result<()> {
         let compact_hex_handle = to_hex(handle);
         if current_unlimited_retries_count >= (self.conf.review_after_unlimited_retries as i32) - 1
@@ -320,10 +333,12 @@ where
             SET
             txn_unlimited_retries_count = txn_unlimited_retries_count + 1,
             txn_last_error = $1,
-            txn_last_error_at = NOW()
+            txn_last_error_at = NOW(),
+            pending_txn_hash = COALESCE($3, pending_txn_hash)
             WHERE handle = $2",
             err,
             handle,
+            unconfirmed_txn_hash.as_ref().map(|hash| hash.as_slice()),
         )
         .execute(&self.db_pool)
         .await?;
@@ -367,7 +382,7 @@ where
         // ciphertexts have been successfully uploaded to AWS S3 buckets.
         let rows = sqlx::query!(
             "
-            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
+            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id, pending_txn_hash
             FROM ciphertext_digest
             WHERE txn_is_sent = false
             AND ciphertext IS NOT NULL
@@ -462,15 +477,27 @@ where
                         row.txn_limited_retries_count,
                         row.txn_unlimited_retries_count,
                         transaction_id,
+                        row.pending_txn_hash,
                     )
                     .await
             });
         }
 
+        // Wait for all tasks in the batch, then return the first error. A dropped
+        // JoinSet cancels the other submissions. A cancelled submission can execute
+        // on chain before it records its hash.
+        let mut first_error = None;
         while let Some(res) = join_set.join_next().await {
-            res??;
+            if let Err(error) = res.map_err(anyhow::Error::from).and_then(|result| result) {
+                // Prefer BackendGone to other errors, because BackendGone stops the sender.
+                if first_error.is_none() || crate::is_backend_gone(&error) {
+                    first_error = Some(error);
+                }
+            }
         }
-
+        if let Some(error) = first_error {
+            return Err(error);
+        }
         Ok(maybe_has_more_work)
     }
 }

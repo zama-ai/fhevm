@@ -1,7 +1,7 @@
 use super::common::{is_transient_gateway_error, try_extract_non_retryable_config_error};
 use super::TransactionOperation;
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
-use crate::nonce_managed_provider::NonceManagedProvider;
+use crate::nonce_managed_provider::{unconfirmed_tx_hash, NonceManagedProvider};
 use crate::AbstractSigner;
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
@@ -86,7 +86,7 @@ where
         );
         sqlx::query!(
             "UPDATE verify_proofs
-             SET handles = NULL
+             SET handles = NULL, pending_txn_hash = NULL
              WHERE zk_proof_id = $1 AND verified = FALSE",
             zk_proof_id
         )
@@ -110,7 +110,8 @@ where
             SET
                 retry_count = retry_count + 1,
                 last_error = $2,
-                last_retry_at = NOW()
+                last_retry_at = NOW(),
+                pending_txn_hash = NULL
             WHERE zk_proof_id = $1",
             zk_proof_id,
             error
@@ -143,6 +144,7 @@ where
         locally_verified: bool,
         current_retry_count: i32,
         src_transaction_id: Option<Vec<u8>>,
+        pending_txn_hash: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         telemetry::record_short_hex_if_some(
             &tracing::Span::current(),
@@ -151,15 +153,16 @@ where
         );
         info!(zk_proof_id = txn_request.0, "Processing transaction");
 
-        let receipt = match self
+        let (submission, earlier_unknown) = self
             .provider
-            .send_sync_with_overprovision(
+            .settle_or_send(
+                pending_txn_hash,
                 txn_request.1,
                 self.conf.gas_limit_overprovision_percent,
                 Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
             )
-            .await
-        {
+            .await;
+        let receipt = match submission {
             Ok(receipt) => receipt,
             Err(e) => {
                 if let Some(InputVerificationErrors::CoprocessorAlreadyVerified(_)) =
@@ -226,7 +229,7 @@ where
                     )
                     .await?;
                     return Ok(());
-                } else if is_transient_gateway_error(&e) {
+                } else if is_transient_gateway_error(&e) || earlier_unknown {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     warn!(
                         zk_proof_id = txn_request.0,
@@ -235,9 +238,16 @@ where
                     );
                     // Keep the finite budget and last error intact, but persist
                     // the attempt so a failing batch cannot monopolize selection.
+                    // If the submission executed but its block was not sealed in time,
+                    // keep its hash. The next attempt checks it.
+                    let unconfirmed = unconfirmed_tx_hash(&e);
                     sqlx::query!(
-                        "UPDATE verify_proofs SET last_retry_at = NOW() WHERE zk_proof_id = $1",
-                        txn_request.0
+                        "UPDATE verify_proofs
+                         SET last_retry_at = NOW(),
+                             pending_txn_hash = COALESCE($2, pending_txn_hash)
+                         WHERE zk_proof_id = $1",
+                        txn_request.0,
+                        unconfirmed.as_ref().map(|hash| hash.as_slice())
                     )
                     .execute(&self.db_pool)
                     .await?;
@@ -342,7 +352,7 @@ where
             self.remove_proofs_by_retry_count().await?;
         }
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
+            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id, pending_txn_hash
              FROM verify_proofs
              WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))
                AND retry_count < $1
@@ -480,6 +490,7 @@ where
                         row.verified.expect("selected proof has a local result"),
                         row.retry_count,
                         src_transaction_id,
+                        row.pending_txn_hash,
                     )
                     .await
             });

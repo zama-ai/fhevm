@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ciphertext_digest\n            SET\n                txn_is_sent = true,\n                txn_hash = $1,\n                txn_block_number = $2,\n                pending_txn_hash = NULL\n            WHERE handle = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e4ff046c96b6d3744f694526e55e1c57a80e64f39d17f30a73647336060b1078"
+}
