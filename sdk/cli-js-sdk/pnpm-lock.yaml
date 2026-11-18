@@ -25,7 +25,7 @@ importers:
         version: 15.0.0(commander@15.0.0)
       '@fhevm/sdk':
         specifier: file:../../../js-sdk/src
-        version: file:../js-sdk/src(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
+        version: file:../js-sdk/src(typescript@5.9.3)(viem@2.54.6(typescript@5.9.3)(zod@4.4.3))
       '@pnpm/tabtab':
         specifier: ^0.5.4
         version: 0.5.4
@@ -36,8 +36,8 @@ importers:
         specifier: ^3.4.2
         version: 3.4.2
       viem:
-        specifier: ^2.50.4
-        version: 2.50.4(typescript@5.9.3)(zod@4.4.3)
+        specifier: ^2.54.6
+        version: 2.54.6(typescript@5.9.3)(zod@4.4.3)
     devDependencies:
       tsdown:
         specifier: ^0.22.2
@@ -59,7 +59,7 @@ importers:
         version: 15.0.0(commander@15.0.0)
       '@fhevm/sdk':
         specifier: file:../../../js-sdk/src
-        version: file:../js-sdk/src(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
+        version: file:../js-sdk/src(typescript@5.9.3)(viem@2.54.6(typescript@5.9.3)(zod@4.4.3))
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -70,14 +70,14 @@ importers:
         specifier: ^3.0.0
         version: 3.0.1
       piscina:
-        specifier: ^5.1.3
-        version: 5.2.0
+        specifier: ^5.3.2
+        version: 5.3.2
       undici:
-        specifier: ^7.16.0
-        version: 7.28.0
+        specifier: ^7.30.2
+        version: 7.30.2
       viem:
-        specifier: ^2.50.4
-        version: 2.50.4(typescript@5.9.3)(zod@4.4.3)
+        specifier: ^2.54.6
+        version: 2.54.6(typescript@5.9.3)(zod@4.4.3)
       zod:
         specifier: ^4.1.12
         version: 4.4.3
@@ -93,10 +93,10 @@ importers:
     dependencies:
       '@fhevm/sdk':
         specifier: file:../../../js-sdk/src
-        version: file:../js-sdk/src(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
+        version: file:../js-sdk/src(typescript@5.9.3)(viem@2.54.6(typescript@5.9.3)(zod@4.4.3))
       viem:
-        specifier: ^2.50.4
-        version: 2.50.4(typescript@5.9.3)(zod@4.4.3)
+        specifier: ^2.54.6
+        version: 2.54.6(typescript@5.9.3)(zod@4.4.3)
     devDependencies:
       vitest:
         specifier: ^3.2.4
@@ -945,8 +945,8 @@ packages:
     resolution: {integrity: sha512-AWGB9WFcRXOQs48Z/udjI5ZcZMHXwX8XPByNpOydgcGsDLIzjGizhoMWJyKAWze7AVW/2W1i+/gPX4YtKe5cyg==}
     engines: {node: '>=12.20.0'}
 
-  ox@0.14.22:
-    resolution: {integrity: sha512-nb5msL8qWbPglhIfZbGJAfw3cqiJjFMiWmACt7kgyWtLib12tcctbHufMT9Hb0Lr6Pt4k9I3dbpueTpbhvbqvA==}
+  ox@0.14.30:
+    resolution: {integrity: sha512-LI11uu+8iiM1B3CLckgd++YF1a0A2k5wDoM9ZeQMiL21BOzQs6L//BLS6hb1HSEKCyycdDIQLsVQx9MjpcC0hA==}
     peerDependencies:
       typescript: '>=5.4.0'
     peerDependenciesMeta:
@@ -970,8 +970,8 @@ packages:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
 
-  piscina@5.2.0:
-    resolution: {integrity: sha512-DszUCKeVN/5G5QKo6jAVHL8fmKnkJvQ0ACiVgY7YGCq3TUB2oznAOayvZPIAdEThvhczkXR+qm3IHsNXpFCYfA==}
+  piscina@5.3.2:
+    resolution: {integrity: sha512-vv7l/mM7B9WgrhDaudIqv1x6v4LOBRYYmpWGdWushhpbCmVHp11sUB2v4hj1CAeTGXVxuZFz6xOU1RalAiPKfQ==}
     engines: {node: '>=20.x'}
 
   postcss@8.5.16:
@@ -1121,16 +1121,16 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
-  undici@7.28.0:
-    resolution: {integrity: sha512-cRZYrTDwWznlnRiPjggAGxZXanty6M8RV1ff8Wm4LWXBp7/IG8v5DnOm74DtUBp9OONpK75YlPnIjQqX0dBDtA==}
+  undici@7.30.2:
+    resolution: {integrity: sha512-mLyPQnHwUxaM/rideoK/+KL8DaAJLRl4aBCfmX444aCSLnIaomqPLtNRe2jdCYcsk5wZzXrDIQC8ZeYNRAYyIA==}
     engines: {node: '>=20.18.1'}
 
   untildify@4.0.0:
     resolution: {integrity: sha512-KK8xQ1mkzZeg9inewmFVDNkg3l5LUhoq9kN6iWYB/CC9YMG8HA+c1Q8HwDe6dEX7kErrEVNVBO3fWsVq5iDgtw==}
     engines: {node: '>=8'}
 
-  viem@2.50.4:
-    resolution: {integrity: sha512-rf98F4s3Vlb+uJZEKfay3IbBw3CNCbVtx5Y3UIljlO2tSX420g/J0WQSYsjzBSasUFgxgsXabji14O9kGbiqgg==}
+  viem@2.54.6:
+    resolution: {integrity: sha512-OfybECKJYVmhiNqz+SHhed+O2h6niQ+0Wjg9J0b4bV+/QrvLgjxhfKO7hZqsuK1YtZ/0BErBKy708Zp+cU5T0Q==}
     peerDependencies:
       typescript: '>=5.0.4'
     peerDependenciesMeta:
@@ -1218,8 +1218,8 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
-  ws@8.20.1:
-    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
+  ws@8.21.0:
+    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -1359,14 +1359,14 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@fhevm/sdk@file:../js-sdk/src(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))':
+  '@fhevm/sdk@file:../js-sdk/src(typescript@5.9.3)(viem@2.54.6(typescript@5.9.3)(zod@4.4.3))':
     dependencies:
       '@noble/curves': 2.0.1
       '@noble/hashes': 2.0.1
       wasm-feature-detect: 1.8.0
     optionalDependencies:
       typescript: 5.9.3
-      viem: 2.50.4(typescript@5.9.3)(zod@4.4.3)
+      viem: 2.54.6(typescript@5.9.3)(zod@4.4.3)
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -1809,9 +1809,9 @@ snapshots:
 
   import-without-cache@0.4.0: {}
 
-  isows@1.0.7(ws@8.20.1):
+  isows@1.0.7(ws@8.21.0):
     dependencies:
-      ws: 8.20.1
+      ws: 8.21.0
 
   js-tokens@9.0.1: {}
 
@@ -1831,7 +1831,7 @@ snapshots:
 
   obug@2.1.2: {}
 
-  ox@0.14.22(typescript@5.9.3)(zod@4.4.3):
+  ox@0.14.30(typescript@5.9.3)(zod@4.4.3):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
       '@noble/ciphers': 1.3.0
@@ -1856,7 +1856,7 @@ snapshots:
 
   picomatch@4.0.4: {}
 
-  piscina@5.2.0:
+  piscina@5.3.2:
     optionalDependencies:
       '@napi-rs/nice': 1.1.1
 
@@ -2019,20 +2019,20 @@ snapshots:
 
   undici-types@6.21.0: {}
 
-  undici@7.28.0: {}
+  undici@7.30.2: {}
 
   untildify@4.0.0: {}
 
-  viem@2.50.4(typescript@5.9.3)(zod@4.4.3):
+  viem@2.54.6(typescript@5.9.3)(zod@4.4.3):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
       abitype: 1.2.3(typescript@5.9.3)(zod@4.4.3)
-      isows: 1.0.7(ws@8.20.1)
-      ox: 0.14.22(typescript@5.9.3)(zod@4.4.3)
-      ws: 8.20.1
+      isows: 1.0.7(ws@8.21.0)
+      ox: 0.14.30(typescript@5.9.3)(zod@4.4.3)
+      ws: 8.21.0
     optionalDependencies:
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -2122,6 +2122,6 @@ snapshots:
       siginfo: 2.0.0
       stackback: 0.0.2
 
-  ws@8.20.1: {}
+  ws@8.21.0: {}
 
   zod@4.4.3: {}
