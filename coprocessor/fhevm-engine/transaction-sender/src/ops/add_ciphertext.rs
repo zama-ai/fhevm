@@ -15,7 +15,7 @@ use alloy::{
     network::{Ethereum, TransactionBuilder},
     primitives::{Address, FixedBytes, U256},
     providers::Provider,
-    rpc::types::{BlockNumberOrTag, TransactionRequest},
+    rpc::types::{BlockId, BlockNumberOrTag, TransactionRequest},
     transports::{RpcError, TransportErrorKind},
 };
 use anyhow::{bail, Context};
@@ -31,7 +31,6 @@ use tracing::{error, info, warn};
 use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
 use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits::CiphertextCommitsErrors;
 
-const RECENT_PUBLICATION_REORG_WINDOW_BLOCKS: u64 = 256;
 const PUBLICATION_RECONCILIATION_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -251,6 +250,15 @@ where
         // Duplicate Gateway acknowledgments carry no receipt. Keep a receipt
         // already recorded by a concurrent replica, and replace the identity
         // only when this call has a successful receipt hash.
+        sqlx::query(
+            "UPDATE ciphertext_digest SET txn_finalized_at = NULL
+             WHERE handle = $1
+               AND (NOT txn_is_sent OR ($2::bytea IS NOT NULL AND txn_hash IS DISTINCT FROM $2))",
+        )
+        .bind(handle)
+        .bind(txn_hash)
+        .execute(tx.as_mut())
+        .await?;
         sqlx::query!(
             "UPDATE ciphertext_digest
             SET
@@ -302,7 +310,7 @@ where
                     if mode.is_paused() || fhevm_engine_common::chain_recovery::is_halted(&self.db_pool).await? {
                         return Ok(false);
                     }
-                    self.reconcile_recent_publications().await
+                    self.reconcile_publications().await
                 }) => result,
             };
             match result {
@@ -324,12 +332,12 @@ where
         }
     }
 
-    /// Reconcile recent receipt acknowledgments against canonical chain state.
+    /// Reconcile acknowledgments until finality has actually been observed.
     /// A canonical successful receipt preserves a sender's contribution even
     /// before quorum, when Gateway's public sender-list getter is empty. If the
     /// receipt is orphaned and Gateway has not finalized the handle through
     /// another canonical contribution, restore the row to the retry queue.
-    async fn reconcile_recent_publications(&self) -> anyhow::Result<bool> {
+    async fn reconcile_publications(&self) -> anyhow::Result<bool> {
         let Some(sender_address) = self.provider.signer_address() else {
             return Ok(false);
         };
@@ -345,22 +353,25 @@ where
             state.sweep_in_progress = true;
         }
 
-        let latest_block = self.provider.get_block_number().await?;
-        let first_reorgable_block =
-            i64::try_from(latest_block.saturating_sub(RECENT_PUBLICATION_REORG_WINDOW_BLOCKS))
-                .unwrap_or(i64::MAX);
+        // Unsupported or temporarily unavailable finality must not prevent
+        // audits, nor silently age rows out. Retain them for subsequent sweeps.
+        let finalized = self
+            .provider
+            .inner()
+            .get_block_by_number(BlockNumberOrTag::Finalized)
+            .await
+            .ok()
+            .flatten();
         let limit = self.conf.add_ciphertexts_batch_limit.max(1) as i64;
         let rows = sqlx::query(
             "SELECT handle, txn_hash, txn_block_number, key_id_gw, ciphertext, ciphertext128
              FROM ciphertext_digest
              WHERE txn_is_sent = TRUE
-               AND txn_hash IS NOT NULL
-               AND (txn_block_number IS NULL OR txn_block_number >= $1)
-               AND ($2::BYTEA IS NULL OR handle > $2)
+               AND txn_finalized_at IS NULL
+               AND ($1::BYTEA IS NULL OR handle > $1)
              ORDER BY handle ASC
-             LIMIT $3",
+             LIMIT $2",
         )
-        .bind(first_reorgable_block)
         .bind(state.cursor.clone())
         .bind(limit)
         .fetch_all(&self.db_pool)
@@ -377,76 +388,83 @@ where
             CiphertextCommits::new(self.ciphertext_commits_address, self.provider.inner());
         for row in &rows {
             let handle: Vec<u8> = row.try_get("handle")?;
+            // A failed or timed-out audit stays eligible for the next sweep,
+            // but must not starve later handles in this sweep. Finality is the
+            // durable acknowledgment; this cursor only controls pagination.
+            state.cursor = Some(handle.clone());
             let txn_hash: Option<Vec<u8>> = row.try_get("txn_hash")?;
             let txn_block_number: Option<i64> = row.try_get("txn_block_number")?;
             let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle.clone())?);
 
-            let txn_hash_bytes = txn_hash
-                .as_deref()
-                .context("reconciliation selected a sent publication without a transaction hash")?;
-            let txn_hash_bytes32 = FixedBytes::from(try_into_array::<32>(txn_hash_bytes.to_vec())?);
-
             // The Gateway's public sender-list getter only exposes contributors
             // after quorum. A successful canonical receipt is therefore the
             // evidence that preserves a pre-quorum contribution across restart.
-            let receipt = self
-                .provider
-                .inner()
-                .get_transaction_receipt(txn_hash_bytes32)
-                .await?;
-            if let Some(receipt) = receipt.as_ref() {
-                let canonical_block_hash = if let Some(block_number) = receipt.block_number {
-                    self.provider
-                        .inner()
-                        .get_block_by_number(BlockNumberOrTag::Number(block_number))
-                        .await?
-                        .map(|block| block.header.hash)
-                } else {
-                    None
-                };
-                match classify_publication_receipt(
-                    receipt.status(),
-                    receipt.block_number,
-                    receipt.block_hash,
-                    canonical_block_hash,
-                ) {
-                    PublicationReceiptCheck::CanonicalSuccess(block_number) => {
-                        let canonical_block_number = i64::try_from(block_number).context(
-                            "canonical publication block number does not fit PostgreSQL BIGINT",
-                        )?;
-                        if txn_block_number != Some(canonical_block_number) {
-                            self.update_canonical_publication_block(
-                                &handle,
-                                txn_hash_bytes,
-                                txn_block_number,
-                                canonical_block_number,
-                            )
-                            .await?;
+            if let Some(txn_hash_bytes) = txn_hash.as_deref() {
+                let txn_hash_bytes32 =
+                    FixedBytes::from(try_into_array::<32>(txn_hash_bytes.to_vec())?);
+                let receipt = self
+                    .provider
+                    .inner()
+                    .get_transaction_receipt(txn_hash_bytes32)
+                    .await?;
+                if let Some(receipt) = receipt.as_ref() {
+                    let canonical_block_hash = if let Some(block_number) = receipt.block_number {
+                        self.provider
+                            .inner()
+                            .get_block_by_number(BlockNumberOrTag::Number(block_number))
+                            .await?
+                            .map(|block| block.header.hash)
+                    } else {
+                        None
+                    };
+                    match classify_publication_receipt(
+                        receipt.status(),
+                        receipt.block_number,
+                        receipt.block_hash,
+                        canonical_block_hash,
+                    ) {
+                        PublicationReceiptCheck::CanonicalSuccess(block_number) => {
+                            let canonical_block_number = i64::try_from(block_number).context(
+                                "canonical publication block number does not fit PostgreSQL BIGINT",
+                            )?;
+                            let is_finalized = finalized
+                                .as_ref()
+                                .is_some_and(|head| head.header.number >= block_number);
+                            if txn_block_number != Some(canonical_block_number) || is_finalized {
+                                self.update_canonical_publication_block(
+                                    &handle,
+                                    txn_hash_bytes,
+                                    txn_block_number,
+                                    canonical_block_number,
+                                    is_finalized,
+                                )
+                                .await?;
+                            }
+                            state.cursor = Some(handle);
+                            continue;
                         }
-                        state.cursor = Some(handle);
-                        continue;
+                        PublicationReceiptCheck::Indeterminate => {
+                            // Missing receipt metadata or an unavailable canonical
+                            // block is not evidence that the transaction was lost.
+                            state.cursor = Some(handle);
+                            continue;
+                        }
+                        PublicationReceiptCheck::CanonicalFailure
+                        | PublicationReceiptCheck::Orphaned => {}
                     }
-                    PublicationReceiptCheck::Indeterminate => {
-                        // Missing receipt metadata or an unavailable canonical
-                        // block is not evidence that the transaction was lost.
-                        state.cursor = Some(handle);
-                        continue;
-                    }
-                    PublicationReceiptCheck::CanonicalFailure
-                    | PublicationReceiptCheck::Orphaned => {}
+                } else if self
+                    .provider
+                    .inner()
+                    .get_transaction_by_hash(txn_hash_bytes32)
+                    .await?
+                    .is_some()
+                {
+                    // Keep rows for pending or mined transactions when the RPC
+                    // cannot provide a receipt. Retrying on an incomplete backend
+                    // view could duplicate an accepted Gateway contribution.
+                    state.cursor = Some(handle);
+                    continue;
                 }
-            } else if self
-                .provider
-                .inner()
-                .get_transaction_by_hash(txn_hash_bytes32)
-                .await?
-                .is_some()
-            {
-                // Keep rows for pending or mined transactions when the RPC
-                // cannot provide a receipt. Retrying on an incomplete backend
-                // view could duplicate an accepted Gateway contribution.
-                state.cursor = Some(handle);
-                continue;
             }
 
             // No canonical receipt remains. A finalized handle only protects
@@ -498,7 +516,7 @@ where
                     && self
                         .record_finalized_material_conflict(
                             &handle,
-                            txn_hash_bytes,
+                            txn_hash.as_deref(),
                             txn_block_number,
                         )
                         .await?
@@ -508,9 +526,70 @@ where
                         "Gateway finalized this handle with material that differs from the acknowledged local publication; retaining the row for operator investigation"
                     );
                 }
+                if matches_local {
+                    if let Some(head) = &finalized {
+                        if commits
+                            .isCiphertextMaterialAdded(handle_bytes32)
+                            .block(head.header.hash.into())
+                            .call()
+                            .await?
+                        {
+                            // Consensus material is immutable in a canonical
+                            // history; the matching material now predates finality.
+                            self.mark_publication_finalized(
+                                &handle,
+                                txn_hash.as_deref(),
+                                txn_block_number,
+                            )
+                            .await?;
+                        }
+                    }
+                }
             } else if !contributors.contains(&sender_address) {
-                self.restore_retryable_publication(&handle, txn_hash.as_deref(), txn_block_number)
+                // The sender-list getter is empty before quorum. A read-only
+                // call from this sender distinguishes an existing contribution
+                // (AlreadyAdded) from one lost in a reorg, even without a hash.
+                let key_id: Vec<u8> = row.try_get("key_id_gw")?;
+                let ciphertext: Vec<u8> = row.try_get("ciphertext")?;
+                let ciphertext128: Vec<u8> = row.try_get("ciphertext128")?;
+                let material = (
+                    U256::from_be_bytes(try_into_array::<32>(key_id)?),
+                    FixedBytes::from(try_into_array::<32>(ciphertext)?),
+                    FixedBytes::from(try_into_array::<32>(ciphertext128)?),
+                );
+                if !self
+                    .has_own_contribution(
+                        handle_bytes32,
+                        material,
+                        sender_address,
+                        BlockNumberOrTag::Latest.into(),
+                    )
+                    .await?
+                {
+                    self.restore_retryable_publication(
+                        &handle,
+                        txn_hash.as_deref(),
+                        txn_block_number,
+                    )
                     .await?;
+                } else if let Some(head) = &finalized {
+                    if self
+                        .has_own_contribution(
+                            handle_bytes32,
+                            material,
+                            sender_address,
+                            head.header.hash.into(),
+                        )
+                        .await?
+                    {
+                        self.mark_publication_finalized(
+                            &handle,
+                            txn_hash.as_deref(),
+                            txn_block_number,
+                        )
+                        .await?;
+                    }
+                }
             }
             state.cursor = Some(handle);
         }
@@ -523,19 +602,71 @@ where
         Ok(state.sweep_in_progress)
     }
 
+    async fn has_own_contribution(
+        &self,
+        handle: FixedBytes<32>,
+        material: (U256, FixedBytes<32>, FixedBytes<32>),
+        sender: Address,
+        block: BlockId,
+    ) -> anyhow::Result<bool> {
+        let commits =
+            CiphertextCommits::new(self.ciphertext_commits_address, self.provider.inner());
+        match commits
+            .addCiphertextMaterial(handle, material.0, material.1, material.2)
+            .from(sender)
+            .block(block)
+            .call()
+            .await
+        {
+            Ok(_) => Ok(false),
+            Err(alloy::contract::Error::TransportError(error))
+                if self.already_added_error(&error) == Some(sender) =>
+            {
+                Ok(true)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn mark_publication_finalized(
+        &self,
+        handle: &[u8],
+        txn_hash: Option<&[u8]>,
+        txn_block_number: Option<i64>,
+    ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
+        sqlx::query(
+            "UPDATE ciphertext_digest SET txn_finalized_at = NOW()
+             WHERE handle = $1 AND txn_is_sent = TRUE
+               AND txn_hash IS NOT DISTINCT FROM $2
+               AND txn_block_number IS NOT DISTINCT FROM $3",
+        )
+        .bind(handle)
+        .bind(txn_hash)
+        .bind(txn_block_number)
+        .execute(tx.as_mut())
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn update_canonical_publication_block(
         &self,
         handle: &[u8],
         txn_hash: &[u8],
         old_block_number: Option<i64>,
         canonical_block_number: i64,
+        finalized: bool,
     ) -> anyhow::Result<()> {
         let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
             return Ok(());
         };
         sqlx::query(
             "UPDATE ciphertext_digest
-             SET txn_block_number = $1
+             SET txn_block_number = $1,
+                 txn_finalized_at = CASE WHEN $5 THEN NOW() ELSE NULL END
              WHERE handle = $2
                AND txn_is_sent = TRUE
                AND txn_hash IS NOT DISTINCT FROM $3
@@ -545,6 +676,7 @@ where
         .bind(handle)
         .bind(txn_hash)
         .bind(old_block_number)
+        .bind(finalized)
         .execute(tx.as_mut())
         .await?;
         tx.commit().await?;
@@ -562,7 +694,7 @@ where
         };
         let updated = sqlx::query(
             "UPDATE ciphertext_digest
-             SET txn_is_sent = FALSE, txn_hash = NULL, txn_block_number = NULL
+             SET txn_is_sent = FALSE, txn_hash = NULL, txn_block_number = NULL, txn_finalized_at = NULL
              WHERE handle = $1
                AND txn_is_sent = TRUE
                AND txn_hash IS NOT DISTINCT FROM $2
@@ -592,7 +724,7 @@ where
     async fn record_finalized_material_conflict(
         &self,
         handle: &[u8],
-        txn_hash: &[u8],
+        txn_hash: Option<&[u8]>,
         txn_block_number: Option<i64>,
     ) -> anyhow::Result<bool> {
         const CONFLICT: &str = "gateway-finalized-material-mismatch";
@@ -919,6 +1051,189 @@ async fn delete_ct128_from_db(
 mod publication_receipt_tests {
     use super::{classify_publication_receipt, PublicationReceiptCheck};
     use alloy::primitives::FixedBytes;
+
+    #[tokio::test]
+    async fn audits_old_and_hashless_acknowledgments_until_verified_finality() -> anyhow::Result<()>
+    {
+        use super::AddCiphertextOperation;
+        use crate::{ConfigSettings, NonceManagedProvider};
+        use alloy::{
+            primitives::{Address, B256},
+            providers::ProviderBuilder,
+            sol_types::{SolCall, SolError, SolValue},
+        };
+        use axum::{routing::post, Json, Router};
+        use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
+        use serde_json::{json, Value};
+        use std::sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Arc,
+        };
+        use test_harness::instance::{setup_test_db, ImportMode};
+        use tokio::sync::Semaphore;
+
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+        // 1: an old orphaned receipt; 2: hashless pre-quorum contribution;
+        // 3: lost hashless contribution; 4: old canonical receipt; 5: hashless
+        // contribution that already exists in the finalized chain.
+        for id in 1_u8..=7 {
+            sqlx::query("INSERT INTO ciphertext_digest
+                (handle, ciphertext, ciphertext128, key_id_gw, txn_is_sent, txn_hash, txn_block_number)
+                VALUES ($1, $2, $3, $4, TRUE, $5, $6)")
+                .bind(vec![id; 32]).bind(vec![10_u8; 32]).bind(vec![11_u8; 32])
+                .bind(vec![0_u8; 32])
+                .bind(matches!(id, 1 | 4).then_some(vec![id; 32]))
+                .bind(match id { 1 => Some(1_i64), 4 => Some(2), _ => None })
+                .execute(&pool).await?;
+        }
+        let sender = Address::repeat_byte(0x11);
+        let orphan_second = Arc::new(AtomicBool::new(false));
+        let finalized_receipt_calls = Arc::new(AtomicUsize::new(0));
+        let finalized_probe_calls = Arc::new(AtomicUsize::new(0));
+        let orphan = orphan_second.clone();
+        let receipt_calls = finalized_receipt_calls.clone();
+        let probe_calls = finalized_probe_calls.clone();
+        let app = Router::new().route("/", post(move |Json(request): Json<Value>| {
+            let orphan = orphan.clone();
+            let receipt_calls = receipt_calls.clone();
+            let probe_calls = probe_calls.clone();
+            async move {
+                let result = match request["method"].as_str().unwrap() {
+                    "eth_getBlockByNumber" => {
+                        let number = match request["params"][0].as_str().unwrap() {
+                            "finalized" => 1000, "0x1" => 1, "0x2" => 2,
+                            other => panic!("unexpected block {other}"),
+                        };
+                        let mut block: alloy::rpc::types::Block = Default::default();
+                        block.header.number = number;
+                        block.header.hash = B256::repeat_byte(if number == 1 { 8 } else { 4 });
+                        serde_json::to_value(block).unwrap()
+                    }
+                    "eth_getTransactionReceipt" => {
+                        let hash: B256 = serde_json::from_value(request["params"][0].clone()).unwrap();
+                        let canonical = hash[0] == 4;
+                        if canonical { receipt_calls.fetch_add(1, Ordering::SeqCst); }
+                        json!({"transactionHash": hash, "transactionIndex": "0x0",
+                            "blockHash": B256::repeat_byte(if canonical {4} else {7}),
+                            "blockNumber": if canonical {"0x2"} else {"0x1"},
+                            "from": sender, "to": Address::ZERO, "cumulativeGasUsed": "0x5208",
+                            "gasUsed": "0x5208", "contractAddress": null, "logs": [],
+                            "logsBloom": format!("0x{}", "00".repeat(256)), "status": "0x1",
+                            "effectiveGasPrice": "0x1", "type": "0x0"})
+                    }
+                    "eth_call" => {
+                        let data = request["params"][0]["input"].as_str()
+                            .or_else(|| request["params"][0]["data"].as_str()).unwrap();
+                        let data = alloy::hex::decode(data).unwrap();
+                        if data[..4] == CiphertextCommits::getAddCiphertextMaterialConsensusTxSendersCall::SELECTOR {
+                            json!(alloy::hex::encode_prefixed(Vec::<Address>::new().abi_encode()))
+                        } else if data[..4] == CiphertextCommits::isCiphertextMaterialAddedCall::SELECTOR {
+                            json!(alloy::hex::encode_prefixed(false.abi_encode()))
+                        } else {
+                            assert_eq!(data[..4], CiphertextCommits::addCiphertextMaterialCall::SELECTOR);
+                            assert_eq!(request["params"][0]["from"], json!(sender));
+                            let handle = B256::from_slice(&data[4..36]);
+                            if handle[0] == 6 {
+                                return Json(json!({"jsonrpc":"2.0", "id":request["id"],
+                                    "error":{"code":-32000, "message":"historical state unavailable"}}));
+                            }
+                            if handle[0] == 5 { probe_calls.fetch_add(1, Ordering::SeqCst); }
+                            let present = handle[0] == 5 || (handle[0] == 2
+                                && !orphan.load(Ordering::SeqCst) && request["params"][1] == "latest");
+                            if present {
+                                let error = CiphertextCommits::CoprocessorAlreadyAdded {ctHandle: handle, txSender: sender};
+                                return Json(json!({"jsonrpc":"2.0", "id":request["id"],
+                                    "error":{"code":3, "message":"execution reverted",
+                                        "data":alloy::hex::encode_prefixed(error.abi_encode())}}));
+                            }
+                            json!("0x")
+                        }
+                    }
+                    method => panic!("unexpected RPC {method}; reconciliation must not send transactions"),
+                };
+                Json(json!({"jsonrpc":"2.0", "id":request["id"], "result":result}))
+            }
+        }));
+        let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}", socket.local_addr()?);
+        let rpc = tokio::spawn(async move { axum::serve(socket, app).await.unwrap() });
+        let provider = ProviderBuilder::new().connect_http(url.parse()?);
+        let operation = || {
+            AddCiphertextOperation::new(
+                Address::ZERO,
+                NonceManagedProvider::new(provider.clone(), Some(sender)),
+                ConfigSettings {
+                    add_ciphertexts_batch_limit: 2,
+                    ..Default::default()
+                },
+                None,
+                pool.clone(),
+                Arc::new(Semaphore::new(1)),
+            )
+        };
+        let audit = operation();
+        let mut errors = 0;
+        loop {
+            match audit.reconcile_publications().await {
+                Ok(false) => break,
+                Ok(true) => {}
+                Err(_) => {
+                    errors += 1;
+                    assert_eq!(errors, 1);
+                }
+            }
+        }
+        assert_eq!(
+            errors, 1,
+            "one unavailable handle must not block the rest of the page"
+        );
+        for (id, sent, finality) in [
+            (1, false, false),
+            (2, true, false),
+            (3, false, false),
+            (4, true, true),
+            (5, true, true),
+            (6, true, false),
+            (7, false, false),
+        ] {
+            let state: (bool, bool) = sqlx::query_as("SELECT txn_is_sent, txn_finalized_at IS NOT NULL FROM ciphertext_digest WHERE handle=$1")
+                .bind(vec![id as u8;32]).fetch_one(&pool).await?;
+            assert_eq!(state, (sent, finality), "publication {id}");
+        }
+        assert_eq!(finalized_receipt_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(finalized_probe_calls.load(Ordering::SeqCst), 2);
+        // A restart must still audit the previously preserved hashless row,
+        // even if its contribution disappears later, and skip finalized rows.
+        orphan_second.store(true, Ordering::SeqCst);
+        let restarted = operation();
+        loop {
+            match restarted.reconcile_publications().await {
+                Ok(false) => break,
+                Ok(true) => {}
+                Err(_) => {
+                    errors += 1;
+                    assert_eq!(errors, 2);
+                }
+            }
+        }
+        assert_eq!(
+            errors, 2,
+            "unavailable evidence must remain eligible after restart"
+        );
+        let sent: bool =
+            sqlx::query_scalar("SELECT txn_is_sent FROM ciphertext_digest WHERE handle=$1")
+                .bind(vec![2_u8; 32])
+                .fetch_one(&pool)
+                .await?;
+        assert!(!sent);
+        assert_eq!(finalized_receipt_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(finalized_probe_calls.load(Ordering::SeqCst), 2);
+        rpc.abort();
+        Ok(())
+    }
 
     #[tokio::test]
     async fn stalled_reconciliation_does_not_block_submissions_or_shutdown() -> anyhow::Result<()> {
