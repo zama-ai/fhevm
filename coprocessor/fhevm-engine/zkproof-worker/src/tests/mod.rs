@@ -18,6 +18,98 @@ mod utils;
 
 #[tokio::test]
 #[serial(db)]
+async fn completed_verification_starts_a_fresh_sender_retry_budget() {
+    let (manager, _instance, material) = utils::setup().await.expect("valid setup");
+    let pool = manager.pool();
+    let (aux, metadata) = utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
+    let proof = utils::generate_sample_zk_pok(&material, &metadata).await;
+    let mut invalid_aux = aux.clone();
+    invalid_aux.user_address = "0x".to_owned() + &"3".repeat(40);
+    let mut tx = pool.begin().await.unwrap();
+    for (id, input, data) in [
+        (401_i64, Some(proof.as_slice()), &aux),
+        (402, Some(proof.as_slice()), &invalid_aux),
+        (403, None, &aux),
+    ] {
+        sqlx::query(
+            "INSERT INTO verify_proofs
+             (zk_proof_id, input, chain_id, contract_address, user_address,
+              retry_count, last_retry_at, last_error)
+             VALUES ($1, $2, $3, $4, $5, 8, NOW() - INTERVAL '2 days', 'transient failure')",
+        )
+        .bind(id)
+        .bind(input)
+        .bind(data.chain_id.as_i64())
+        .bind(&data.contract_address)
+        .bind(&data.user_address)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    }
+    sqlx::query("SELECT pg_notify('fhevm', '')")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    tokio::time::timeout(Duration::from_secs(180), async {
+        loop {
+            let pending: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id BETWEEN 401 AND 403 AND verified IS NULL",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if pending == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("all verification outcomes should complete");
+
+    for (id, expected) in [(401_i64, true), (402, false), (403, false)] {
+        let (verified, retries, delayed, error, handles): (
+            bool,
+            i32,
+            bool,
+            Option<String>,
+            Vec<u8>,
+        ) = sqlx::query_as(
+            "SELECT verified, retry_count, last_retry_at IS NOT NULL, last_error, handles
+             FROM verify_proofs WHERE zk_proof_id = $1",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(verified, expected);
+        assert_eq!(
+            retries, 0,
+            "verification must not exhaust the sender budget"
+        );
+        assert!(!delayed);
+        assert_eq!(error.is_some(), !expected);
+        assert_ne!(error.as_deref(), Some("transient failure"));
+        assert_eq!(!handles.is_empty(), expected);
+    }
+    // Both response types pass the sender's selection predicate, even after
+    // more transient verification retries than its default limit of six.
+    let eligible: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM verify_proofs
+         WHERE zk_proof_id BETWEEN 401 AND 403
+           AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))
+           AND retry_count < 6",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(eligible, 3);
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_verify_proof() {
     let (pool_mngr, _instance, material) = utils::setup().await.expect("valid setup");
     let pool = pool_mngr.pool();
