@@ -242,3 +242,12 @@ jobs:
         if: failure() && github.event_name == 'workflow_dispatch'
         run: |
           echo ":warning: Teardown of namespace \`${NAMESPACE}\` FAILED - Crossplane-managed AWS resources may still be leaking; check the run and clean up manually." >> "$GITHUB_STEP_SUMMARY"
+
+      # Runs after the teardown so the namespace is always deleted, but turns the
+      # job red when the sweep was skipped: the leftover funds in the namespace's
+      # wallets are lost, so make it visible.
+      - name: Report skipped wallet sweep
+        if: steps.safe-chain.outcome == 'failure' && steps.destroy.outputs.deleted == 'true'
+        run: |
+          echo "::error::safe-chain failed to install: the wallet sweep was skipped and leftover testnet funds in ${NAMESPACE} were not returned to the treasury."
+          exit 1
