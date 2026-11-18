@@ -463,13 +463,9 @@ async fn send_chunked_signed_for(
     chunk_sizes: &[usize],
     signed_body: &[u8],
 ) -> StatusCode {
-    let addr = t.addr;
-    let auth = auth_header(&sender(), PUBLIC_DECRYPTION_ROUTE, signed_body).await;
-    let mut request = format!(
-        "POST {PUBLIC_DECRYPTION_ROUTE} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
-         Content-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
-    )
-    .into_bytes();
+    let mut request = signed_head(t, signed_body, "Transfer-Encoding: chunked")
+        .await
+        .into_bytes();
     for size in chunk_sizes {
         request.extend_from_slice(format!("{size:x}\r\n").as_bytes());
         request.extend(std::iter::repeat_n(b' ', *size));
@@ -484,14 +480,8 @@ async fn send_chunked_signed_for(
 async fn send_dripped(t: &TestProxy, body: &'static [u8], interval: Duration) -> StatusCode {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let addr = t.addr;
-    let auth = auth_header(&sender(), PUBLIC_DECRYPTION_ROUTE, body).await;
-    let head = format!(
-        "POST {PUBLIC_DECRYPTION_ROUTE} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
-         Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
-    let (mut reader, mut writer) = tokio::io::split(t.tls.connect(addr).await);
+    let head = signed_head(t, body, &format!("Content-Length: {}", body.len())).await;
+    let (mut reader, mut writer) = tokio::io::split(t.tls.connect(t.addr).await);
     writer.write_all(head.as_bytes()).await.unwrap();
     // Reads the answer while the body is written, as the proxy may answer before its end: the
     // writes then fail.
@@ -508,6 +498,17 @@ async fn send_dripped(t: &TestProxy, body: &'static [u8], interval: Duration) ->
     let _ = reader.read_to_end(&mut response).await;
     drip.abort();
     response_status(&response)
+}
+
+/// The head of a request to the public decryption route, signed for `signed_body`. `framing` is
+/// the header that tells how the body is sent (`Content-Length` or `Transfer-Encoding`).
+async fn signed_head(t: &TestProxy, signed_body: &[u8], framing: &str) -> String {
+    let addr = t.addr;
+    let auth = auth_header(&sender(), PUBLIC_DECRYPTION_ROUTE, signed_body).await;
+    format!(
+        "POST {PUBLIC_DECRYPTION_ROUTE} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
+         Content-Type: application/json\r\n{framing}\r\nConnection: close\r\n\r\n"
+    )
 }
 
 /// Sends raw request bytes over TLS and returns the response status.
