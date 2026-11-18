@@ -21,17 +21,7 @@ By default the secret must exist before the proxy starts. Set `kmsConnectorProxy
 
 The proxy must not be reachable directly from the internet. It authenticates each request and caps its body's size and the time to send it (1 MiB and 30 s by default), but it does not protect its connections before that: Pingora 0.9 caps neither their number nor the total time a client takes to send a request head, so slow or idle connections can use up the replica's memory.
 
-Put the proxy behind one of:
-
-- a network allowlist that admits only the relayers' addresses, for example a firewall rule in front of a TLS-passthrough exposure;
-- an HTTP-aware layer, such as Cloudflare or an HTTP(S) load balancer, that terminates the client's TLS connection, receives each request in full before forwarding it and limits connections per client IP. It connects to the proxy over TLS, or over plain HTTP with `kmsConnectorProxy.tls.enabled: false`, and must be the only way to reach it.
-
-A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle connections unchanged.
-
-Size the front layer's limits for the connector:
-
-- connections per client: at least the relayer's requests in flight. Each takes one HTTP/1.1 connection, and an endpoint replica holds up to `KMS_CONNECTOR_MAX_IN_FLIGHT_DECRYPTIONS` of them (1000 by default);
-- response timeout: longer than the proxy's (`KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT`, 60 s by default).
+The chart only creates a `ClusterIP` Service for the proxy. Expose it only through an HTTP load balancer that takes the clients' connections itself and forwards a request once its head is complete. The standard exposure for operators is an AWS Application Load Balancer with AWS WAF. A TCP (layer 4) load balancer is not enough: it forwards slow and idle connections unchanged.
 
 ## Installing the Chart
 
