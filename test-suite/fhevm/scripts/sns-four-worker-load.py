@@ -27,6 +27,8 @@ MANIFEST = "/tmp/sns-load-manifest.json"
 EXECUTED = "coprocessor_sns_worker_task_execute_success_counter"
 FAILED = "coprocessor_sns_worker_task_execute_failure_counter"
 SECRET_VALUES = []
+DRAIN_TIMEOUT_SECONDS = 10800
+VARIANTS = {"c0e6428": "ordered-stripes", "4c5425f": "deadlock-retry-only"}
 
 
 def run(*args, stdin=None, timeout=120):
@@ -191,9 +193,15 @@ def collect_logs():
 
 def main():
     assert os.environ.get("GITHUB_ACTIONS") == "true", "GitHub's disposable E2E runner only"
+    image_tag = os.environ.get("COPROCESSOR_SNS_WORKER_VERSION", "")
+    assert image_tag in VARIANTS, "This comparison only accepts the two reviewed SNS images"
+    variant = VARIANTS[image_tag]
+    retry_only = variant == "deadlock-retry-only"
     OUT.mkdir(parents=True, exist_ok=True)
     report = {"passed": False, "worker_count": 4, "batch_size": 20, "rayon_threads_per_worker": 4,
-              "migration": "no", "target_handles": 10000, "sampled_decryptions": 0}
+              "migration": "no", "target_handles": 10000, "sampled_decryptions": 0,
+              "variant": variant, "sns_image_tag": image_tag,
+              "drain_timeout_seconds": DRAIN_TIMEOUT_SECONDS}
     source = docker("GET", f"/containers/{ORIGINAL}/json")
     # Only a local, disposable Docker E2E deployment may be stopped or written to.
     database_arg = next(arg for arg in source["Config"]["Cmd"] if arg.startswith("--database-url="))
@@ -210,6 +218,10 @@ def main():
             SECRET_VALUES.append(argument.partition("=")[2])
     report["image_id"] = source["Image"]
     report["image_reference"] = source["Config"]["Image"]
+    assert report["image_reference"].endswith(":"+image_tag), "Resolved SNS image differs from comparison input"
+    host = docker("GET", "/info")
+    report["host"] = {key: host.get(key) for key in ("NCPU", "MemTotal", "Architecture", "KernelVersion")}
+    print(f"SNS comparison: {variant}, image {image_tag}, host {report['host']}", flush=True)
     try:
         # Warm-up correctness runs through the ordinary existing E2E profile before this script.
         run("docker", "stop", "--time", "60", ORIGINAL)
@@ -269,13 +281,15 @@ def main():
                     overlaps += active == 4
                 previous = metrics
                 print(f"Drain {elapsed:.1f}s: {current}; per-worker committed: " +
-                      str({name: value["completed"] for name, value in metrics.items()}), flush=True)
+                      str({name: value["completed"] for name, value in metrics.items()}) +
+                      "; CPU seconds: " + str({name: round(value["cpu_seconds"], 1) for name, value in metrics.items()}) +
+                      "; task failures: " + str({name: value["failed"] for name, value in metrics.items()}), flush=True)
                 if current["completed"] == 10000 and compute_elapsed is None:
                     compute_elapsed = elapsed
                 if current["uploaded"] == 10000:
                     break
-                if elapsed > 3600:
-                    raise TimeoutError("Four-worker SNS drain exceeded one hour")
+                if elapsed > DRAIN_TIMEOUT_SECONDS:
+                    raise TimeoutError("Four-worker SNS drain exceeded three hours")
                 time.sleep(2)
         report.update({"drain_seconds": round(elapsed, 3), "compute_drain_seconds": round(compute_elapsed, 3),
                        "compute_handles_per_second": round(10000 / compute_elapsed, 3),
@@ -283,8 +297,9 @@ def main():
                        "four_worker_cpu_overlap_samples": overlaps, "workers": metrics, "final": current})
         report["db_deadlocks"] = int(sql("SELECT deadlocks FROM pg_stat_database WHERE datname = current_database();")) - deadlocks_before
         report["deadlock_log_matches"] = collect_logs()
-        assert report["db_deadlocks"] == 0 and not any(report["deadlock_log_matches"].values()), "Deadlock under load"
-        assert all(sample["failed"] == 0 for sample in metrics.values()), "SNS task failures under load"
+        if not retry_only:
+            assert report["db_deadlocks"] == 0 and not any(report["deadlock_log_matches"].values()), "Deadlock under ordered locking"
+            assert all(sample["failed"] == 0 for sample in metrics.values()), "SNS task failures under ordered locking"
         assert all(sample["completed"] > 0 for sample in metrics.values()), "Not all four workers processed tasks"
         assert overlaps > 0, "No observed CPU overlap across all four workers"
         for prefix in ("ct64/", "ct128/"):
@@ -301,16 +316,21 @@ def main():
         raise
     finally:
         report["deadlock_log_matches"] = collect_logs()
+        database_logs = subprocess.run(["docker", "logs", "--timestamps", DB], text=True,
+                                       capture_output=True, timeout=30)
+        (OUT / "postgres.log").write_text(redact(database_logs.stdout + database_logs.stderr))
         # Stop and remove only the four clones; leave the ordinary CLI to clean its own stack.
         for name in WORKERS:
             subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=60)
         (OUT / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
-        lines = ["# Four-worker SNS load test", "", f"Result: **{'PASS' if report['passed'] else 'FAIL'}**", "",
+        lines = ["# Four-worker SNS load test", "", f"Variant: **{variant}**", "",
+                 f"Result: **{'PASS' if report['passed'] else 'FAIL'}**", "",
                  "10,000 fresh non-trivial handles; 16 producers; SNS stopped until all CT64 were ready.",
                  "Four SNS processes, one database, batches of 20, four Rayon threads each; migration disabled.", "",
                  "All handles: DB completion, v1 upload status, canonical CT64/CT128 object presence.",
                  "64 spread-out handles: public decryption against expected plaintext, outside drain timing.",
                  "CPU overlap establishes concurrent worker activity; this is not a one-vs-four speedup comparison.", "",
+                 "Retry-only records recovered deadlocks/task failures; ordered locking requires zero of both.", "",
                  "```json", json.dumps(report, indent=2), "```", ""]
         (OUT / "summary.md").write_text("\n".join(lines))
         if os.environ.get("GITHUB_STEP_SUMMARY"):
