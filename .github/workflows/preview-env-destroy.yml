@@ -146,10 +146,16 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Install safe-chain
+        id: safe-chain
         continue-on-error: true
         uses: ./.github/actions/install-safe-chain
 
+      # Never install npm packages unguarded: if safe-chain failed, skip this step.
+      # The sweep then fails under its own continue-on-error and the teardown still
+      # runs. `outcome`, not `conclusion`: with continue-on-error, `conclusion` is
+      # always `success`.
       - name: Install ethers for the wallet sweep
+        if: steps.safe-chain.outcome == 'success'
         continue-on-error: true
         run: |
           mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
