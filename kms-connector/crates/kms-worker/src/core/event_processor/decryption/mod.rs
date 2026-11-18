@@ -1,6 +1,6 @@
 //! Decryption processing, with one submodule per decryption flow.
 
-pub(super) mod pad;
+mod pad;
 mod public;
 mod user;
 

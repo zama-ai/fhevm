@@ -12,6 +12,7 @@ use alloy::{
         },
     },
     rpc::client::{ClientBuilder, RpcClient},
+    signers::Signer,
     transports::{
         IntoBoxTransport, RpcError, TransportErrorKind, TransportFut,
         http::{Client, Http, reqwest},

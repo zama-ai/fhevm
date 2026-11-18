@@ -2,8 +2,8 @@ use crate::config::{Error, REDACTED, Result};
 use alloy::{
     hex::decode,
     network::{EthereumWallet, IntoWallet},
-    primitives::{Address, ChainId},
-    signers::{Signer, aws::AwsSigner, k256::ecdsa::SigningKey, local::PrivateKeySigner},
+    primitives::{Address, B256, ChainId, Signature},
+    signers::{self, Signer, aws::AwsSigner, k256::ecdsa::SigningKey, local::PrivateKeySigner},
 };
 use aws_config::BehaviorVersion;
 use aws_sdk_kms::Client as KmsClient;
@@ -163,13 +163,35 @@ impl KmsWallet {
         );
         Ok(Self::AwsKms(aws_signer))
     }
+}
 
-    /// Get the wallet's address
-    pub fn address(&self) -> Address {
-        debug!("Getting wallet address");
-        match &self {
+#[async_trait::async_trait]
+impl Signer for KmsWallet {
+    async fn sign_hash(&self, hash: &B256) -> signers::Result<Signature> {
+        match self {
+            Self::Local(signer) => signer.sign_hash(hash).await,
+            Self::AwsKms(signer) => signer.sign_hash(hash).await,
+        }
+    }
+
+    fn address(&self) -> Address {
+        match self {
             Self::Local(signer) => signer.address(),
             Self::AwsKms(signer) => signer.address(),
+        }
+    }
+
+    fn chain_id(&self) -> Option<ChainId> {
+        match self {
+            Self::Local(signer) => signer.chain_id(),
+            Self::AwsKms(signer) => signer.chain_id(),
+        }
+    }
+
+    fn set_chain_id(&mut self, chain_id: Option<ChainId>) {
+        match self {
+            Self::Local(signer) => signer.set_chain_id(chain_id),
+            Self::AwsKms(signer) => signer.set_chain_id(chain_id),
         }
     }
 }

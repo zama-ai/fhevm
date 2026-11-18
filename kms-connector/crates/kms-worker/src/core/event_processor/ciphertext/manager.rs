@@ -1,6 +1,7 @@
 use super::{
     VerifiedCiphertexts,
     pool::{CiphertextPool, Slot},
+    prf::{PrfClient, prf_endpoint},
     s3,
 };
 use crate::core::{
@@ -12,14 +13,16 @@ use alloy::{
     providers::Provider,
 };
 use anyhow::anyhow;
+use bytes::Bytes;
 use ciphertext_attestation::{
     BoundedClient, CoprocessorRegistry, CoprocessorRegistrySnapshot, CriticalFailurePolicy,
-    fetch_attestations_and_check_consensus,
+    PrfOutputRef, fetch_attestations_and_check_consensus,
 };
 use futures::future::try_join_all;
-use kms_connector_api::ErrorCode;
+use kms_connector_api::{ErrorCode, PadEntry};
 use kms_grpc::kms::v1::TypedCiphertext;
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
@@ -40,6 +43,9 @@ pub struct CiphertextManager<P: Provider> {
 
     /// Number of attempts of a ciphertext retrieval, per winning-group bucket.
     retrieval_attempts: NonZeroUsize,
+
+    /// Client of the Coprocessors' PRF endpoints.
+    prf_client: PrfClient,
 }
 
 impl<P> CiphertextManager<P>
@@ -66,7 +72,47 @@ where
             pool,
             s3_client: s3::s3_client_from_config(config)?,
             retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
+            prf_client: PrfClient::from_config(config).await?,
         })
+    }
+
+    /// Retrieves the PRF outputs of the `pads` of the PRF instance `prf_id`
+    ///
+    /// Each `pad` is attested by a majority of Coprocessors. All labels are retrieved in parallel,
+    /// and any failure fails the request.
+    pub async fn retrieve_prf_outputs(
+        &self,
+        prf_id: u16,
+        pads: &[PadEntry],
+    ) -> Result<Vec<Bytes>, ProcessingError> {
+        let registry = self.registry.snapshot();
+        let slots = self
+            .pool
+            .reserve(pads.len())
+            .await
+            .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
+
+        try_join_all(pads.iter().zip(slots).map(|(pad, slot)| {
+            // Pick a random copro to fetch the actual PRF via `GET`
+            let body_source = rand::random_range(0..registry.coprocessors.len());
+            let output_ref = PrfOutputRef::new(prf_id, pad.label, pad.padLength);
+
+            let retrieval =
+                self.prf_client
+                    .retrieve(output_ref, &registry, body_source, slot, prf_endpoint);
+            async move {
+                timeout(self.prf_client.deadline, retrieval)
+                    .await
+                    .unwrap_or_else(|_| Err(anyhow!("deadline reached")))
+                    .map_err(|e| {
+                        ProcessingError::irrecoverable(
+                            ErrorCode::CoproConsensusFailed,
+                            anyhow!("PRF output of {output_ref} not retrieved: {e:#}"),
+                        )
+                    })
+            }
+        }))
+        .await
     }
 
     /// Resolves and retrieves the verified ciphertexts of a decryption request from `handles`.
@@ -249,6 +295,13 @@ where
             pool: CiphertextPool::new(NonZeroUsize::MIN, NonZeroUsize::MIN),
             s3_client: s3::s3_client_from_config(&config).expect("S3 client"),
             retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
+            prf_client: PrfClient::new(
+                connector_utils::config::KmsWallet::Local(
+                    alloy::signers::local::PrivateKeySigner::random(),
+                ),
+                Default::default(),
+                config.prf_retrieval_deadline,
+            ),
         }
     }
 }

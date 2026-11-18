@@ -2,6 +2,7 @@
 
 pub mod manager;
 pub mod pool;
+pub mod prf;
 pub mod s3;
 
 pub use manager::CiphertextManager;
