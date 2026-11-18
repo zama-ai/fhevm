@@ -300,6 +300,13 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     "${sns_load_overlay[@]}"
 done
 
+# Pinned 0.14 zkproof workers snapshot host_chains at startup. This QA
+# topology has only a blue release, so restart after its chain seed commits.
+kubectl wait --for=condition=complete job/coprocessor-1-db-migration-1 \
+  -n "${NAMESPACE}" --timeout=180s
+kubectl rollout restart deploy/coprocessor-1-zkproof-worker -n "${NAMESPACE}"
+kubectl rollout status deploy/coprocessor-1-zkproof-worker -n "${NAMESPACE}" --timeout=180s
+
 if [[ "${with_proxy}" == "true" ]]; then
   kubectl create configmap prf-output-seed -n "${NAMESPACE}" \
     --from-file=seed-prf-output.ts=test-suite/e2e/scripts/seed-prf-output.ts \
