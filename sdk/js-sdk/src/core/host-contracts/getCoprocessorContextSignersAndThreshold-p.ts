@@ -7,9 +7,8 @@ import { executeWithBatching } from '../base/promise.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
 import { getCoprocessorSignersAbi, getThresholdAbi } from './abi-fragments/fragments.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
-import { createLatestValueCache } from '../caching/latestValueCache.js';
+import { LatestValueCache } from '../caching/latestValueCache.js';
 import { bytesToHex } from '../base/bytes.js';
-import { getCacheTtl } from '../caching/cacheOptions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -33,16 +32,25 @@ type ReturnType = {
 
 // The current set only: the on-chain check expects it (until coprocessor
 // contexts exist).
-const coprocessorSignersCache = createLatestValueCache<Context, Parameters, ReturnType>({
+class CoprocessorSignersCache extends LatestValueCache<Context, Parameters, ReturnType> {
+  public readonly cacheName = 'coprocessorSigners';
+
   // One slot per chain and contract: two chains can deploy at the same address.
   // A client with no chain reads by address only.
-  slotKeyFn: (context, params) =>
-    `${context.runtime.uid.toLowerCase()}:${context.chain?.id ?? ''}:${params.address.toLowerCase()}`,
-  fetchFn: async (context, params) => {
+  protected override getSlotKey(context: Context, params: Parameters): string {
+    return `${context.runtime.uid.toLowerCase()}:${context.chain?.id ?? ''}:${params.address.toLowerCase()}`;
+  }
+
+  protected override async fetch(
+    context: Context,
+    params: Parameters,
+  ): Promise<{ readonly version: string; readonly value: ReturnType }> {
     const value = await _getCoprocessorContextSignersAndThreshold(context, params);
     return { version: coprocessorSignersVersion(value), value };
-  },
-});
+  }
+}
+
+const coprocessorSignersCache = new CoprocessorSignersCache();
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -68,7 +76,7 @@ export async function getCoprocessorContextSignersAndThreshold(
   context: Context,
   parameters: Parameters,
 ): Promise<ReturnType> {
-  const entry = await coprocessorSignersCache.get(context, parameters, getCacheTtl(context, 'coprocessorSigners'));
+  const entry = await coprocessorSignersCache.get(context, parameters);
   return entry.value;
 }
 

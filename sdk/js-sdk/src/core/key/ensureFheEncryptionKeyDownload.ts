@@ -8,8 +8,7 @@ import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext
 import type { FheEncryptionKeySource } from '../types/fheEncryptionKey.js';
 import { isBytes32Hex, unsafeBytesEquals } from '../base/bytes.js';
 import { uint256ToBytes32Hex } from '../base/uint.js';
-import { createLatestValueCache, type CachedValue } from '../caching/latestValueCache.js';
-import { getCacheTtl } from '../caching/cacheOptions-p.js';
+import { LatestValueCache, type CachedValue } from '../caching/latestValueCache.js';
 import { FheEncryptionKeyVerificationError } from '../errors/FheEncryptionKeyVerificationError.js';
 import {
   getProvidedFheEncryptionKey,
@@ -52,9 +51,18 @@ type ActiveIds = { readonly keyId: bigint; readonly crsId: bigint };
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-const keyMaterialCache = createLatestValueCache<Context, Parameters, FheEncryptionKeyBytes>({
-  slotKeyFn: (context) => getFheEncryptionKeySlot(context),
-  fetchFn: async (context, parameters, cached) => {
+class KeyMaterialCache extends LatestValueCache<Context, Parameters, FheEncryptionKeyBytes> {
+  public readonly cacheName = 'keyMaterial';
+
+  protected override getSlotKey(context: Context): string {
+    return getFheEncryptionKeySlot(context);
+  }
+
+  protected override async fetch(
+    context: Context,
+    parameters: Parameters,
+    cached: CachedValue<FheEncryptionKeyBytes> | undefined,
+  ): Promise<{ readonly version: string; readonly value: FheEncryptionKeyBytes }> {
     if (!requiresKeyVerification(context.runtime)) {
       const bytes = await _downloadFheEncryptionKeyBytes(context, parameters, undefined);
       return { version: _bytesVersion(bytes), value: bytes };
@@ -69,8 +77,10 @@ const keyMaterialCache = createLatestValueCache<Context, Parameters, FheEncrypti
       return { version, value: bytes };
     }
     return { version: await _admitLabelIdKey(context, bytes), value: bytes };
-  },
-});
+  }
+}
+
+const keyMaterialCache = new KeyMaterialCache();
 
 /**
  * Checks a key served under label ids before it is cached (the check is
@@ -224,11 +234,7 @@ export async function ensureFheEncryptionKeyDownload(
     return _useProvidedFheEncryptionKey(context, slot, provided);
   }
 
-  return _checkCachedFheEncryptionKey(
-    context,
-    slot,
-    await keyMaterialCache.get(context, parameters, getCacheTtl(context, 'keyMaterial')),
-  );
+  return _checkCachedFheEncryptionKey(context, slot, await keyMaterialCache.get(context, parameters));
 }
 
 /** Checks a cached key for the client; a key that fails leaves the cache. */

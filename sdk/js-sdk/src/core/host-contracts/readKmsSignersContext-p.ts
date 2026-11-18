@@ -10,9 +10,8 @@ import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 import { getCurrentKmsContextAndEpoch } from './getCurrentKmsContextAndEpoch-p.js';
 import { assertIsKmsExtraData, createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
 import { getKmsContextSignersAndThresholdFromExtraData } from './getKmsContextSignersAndThresholdFromExtraData-p.js';
-import { createLatestValueCache } from '../caching/latestValueCache.js';
+import { LatestValueCache, type CachedValue } from '../caching/latestValueCache.js';
 import { uint256ToBytes32Hex } from '../base/uint.js';
-import { getCacheTtl } from '../caching/cacheOptions-p.js';
 import { recordCacheUsage } from '../caching/cacheUsage-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -50,15 +49,25 @@ type KmsContextValue = {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-function _kmsContextSlot(context: Context, params: Parameters): string {
-  return [context.runtime.uid, context.chain?.id ?? '', params.kmsVerifierAddress, params.protocolConfigAddress ?? '']
-    .join(':')
-    .toLowerCase();
-}
+class KmsContextCache extends LatestValueCache<Context, Parameters, KmsContextValue> {
+  public readonly cacheName = 'kmsContext';
 
-const kmsContextCache = createLatestValueCache<Context, Parameters, KmsContextValue>({
-  slotKeyFn: _kmsContextSlot,
-  fetchFn: async (context, params, cached) => {
+  protected override getSlotKey(context: Context, params: Parameters): string {
+    return [context.runtime.uid, context.chain?.id ?? '', params.kmsVerifierAddress, params.protocolConfigAddress ?? '']
+      .join(':')
+      .toLowerCase();
+  }
+
+  /** The context this client uses now, whatever its age. Never reads. */
+  public peekCurrent(context: Context & { readonly chain: FhevmChain }): CachedValue<KmsContextValue> | undefined {
+    return this.peek(this.getSlotKey(context, _currentKmsContextParameters(context)));
+  }
+
+  protected override async fetch(
+    context: Context,
+    params: Parameters,
+    cached: CachedValue<KmsContextValue> | undefined,
+  ): Promise<{ readonly version: string; readonly value: KmsContextValue }> {
     const extraData = await _readCurrentKmsExtraData(context, params);
     const version = kmsContextVersion(extraData.kmsContextId, extraData.kmsEpochId);
     if (cached?.version === version) {
@@ -69,8 +78,10 @@ const kmsContextCache = createLatestValueCache<Context, Parameters, KmsContextVa
       extraData,
     });
     return { version, value: Object.freeze({ extraData, signers, threshold }) };
-  },
-});
+  }
+}
+
+const kmsContextCache = new KmsContextCache();
 
 /** The cache version of a KMS context: `contextId:epochId`, as 32-byte hex. */
 export function kmsContextVersion(kmsContextId: bigint, kmsEpochId: bigint): string {
@@ -116,7 +127,7 @@ export async function readCurrentKmsContextVersion(context: Context & { readonly
  * permit embeds and the user signs.
  */
 export async function readCurrentKmsSignersContext(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { value } = await kmsContextCache.get(context, parameters, getCacheTtl(context, 'kmsContext'));
+  const { value } = await kmsContextCache.get(context, parameters);
   return createKmsSignersContext(new WeakRef(context.runtime), {
     ...parameters,
     kmsContextId: value.extraData.kmsContextId,
@@ -147,7 +158,7 @@ export async function readKmsSignersContextFromPermitExtraData(
   // Only the current context: the KMS may refuse any other at any time. The
   // cache may be behind (or ahead of) the chain, e.g. after a reorg or on a
   // lagging RPC node, so a mismatch reads the chain again once.
-  let current = await kmsContextCache.get(context, parameters, getCacheTtl(context, 'kmsContext'));
+  let current = await kmsContextCache.get(context, parameters);
   if (!_namesKmsContext(parameters.extraData, current.value.extraData)) {
     current = await kmsContextCache.refresh(context, parameters, current.version);
     if (!_namesKmsContext(parameters.extraData, current.value.extraData)) {
@@ -182,7 +193,7 @@ export function permitRequestStaleContextError(
   permitExtraData: KmsExtraData,
   error: unknown,
 ): unknown {
-  const current = kmsContextCache.peek(_kmsContextSlot(context, _currentKmsContextParameters(context)));
+  const current = kmsContextCache.peekCurrent(context);
   if (current === undefined || _namesKmsContext(permitExtraData, current.value.extraData)) {
     return error;
   }
