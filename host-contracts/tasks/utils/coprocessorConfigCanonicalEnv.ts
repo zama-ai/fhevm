@@ -1,6 +1,7 @@
 import { isAddress } from 'ethers';
 
-import { type CanonicalCoprocessorConfigSnapshot, type Coprocessor } from '../coprocessorConfigMirror';
+import type { CanonicalCoprocessorConfigSnapshot } from '../coprocessorConfigMirror';
+import type { Coprocessor } from './coprocessorConfigTasks';
 import { makeEnvHelpers } from './envSnapshot';
 import { formatError } from './formatError';
 import { getRequiredEnvVar } from './loadVariables';

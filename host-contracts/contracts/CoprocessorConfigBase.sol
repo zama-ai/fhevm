@@ -20,23 +20,33 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
     // ERC-7201 namespaced storage
     // -----------------------------------------------------------------------------------------
 
+    /// @notice A coprocessor context.
+    struct CoprocessorContext {
+        /// @notice Number of coprocessors. Zero means the context was never defined.
+        uint256 coprocessorCount;
+        /// @notice Coprocessors by position in definition order.
+        /// @dev A mapping rather than an array, so that `Coprocessor` can gain fields in place.
+        mapping(uint256 index => Coprocessor) coprocessors;
+        /// @notice Coprocessor signer lookup.
+        mapping(address signer => bool isRegistered) isSigner;
+        /// @notice Coprocessor tx sender lookup.
+        mapping(address txSender => bool isRegistered) isTxSender;
+        /// @notice Majority threshold.
+        uint256 majorityThreshold;
+        /// @notice Whether the context has been destroyed.
+        bool destroyed;
+    }
+
     /// @custom:storage-location erc7201:fhevm.storage.CoprocessorConfig
     struct CoprocessorConfigStorage {
         /// @notice The current coprocessor context ID, the latest defined or mirrored one.
         uint256 currentCoprocessorContextId;
-        /// @notice Number of coprocessors per context. Zero means the context was never defined.
-        mapping(uint256 contextId => uint256) coprocessorCountForContext;
-        /// @notice Coprocessors per context, by position in definition order.
-        /// @dev A mapping rather than an array, so that `Coprocessor` can gain fields in place.
-        mapping(uint256 contextId => mapping(uint256 index => Coprocessor)) coprocessorsForContext;
-        /// @notice Majority threshold per coprocessor context.
-        mapping(uint256 contextId => uint256) coprocessorMajorityThresholdForContext;
-        /// @notice Coprocessor signer lookup per context.
-        mapping(uint256 contextId => mapping(address signer => bool isRegistered)) isCoprocessorSignerForContext;
-        /// @notice Coprocessor tx sender lookup per context.
-        mapping(uint256 contextId => mapping(address txSender => bool isRegistered)) isCoprocessorTxSenderForContext;
-        /// @notice Whether a coprocessor context has been destroyed.
-        mapping(uint256 contextId => bool) destroyedCoprocessorContexts;
+        /// @notice The coprocessor context that was current before the current one, 0 if none.
+        uint256 previousCoprocessorContextId;
+        /// @notice Coprocessor contexts by ID.
+        mapping(uint256 contextId => CoprocessorContext) coprocessorContexts;
+        /// @notice The latest coprocessor upgrade proposal ID. Only the canonical contract writes it.
+        uint256 coprocessorUpgradeProposalCounter;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.CoprocessorConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -59,6 +69,11 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
     }
 
     /// @inheritdoc ICoprocessorConfigBase
+    function getPreviousCoprocessorContextId() external view virtual returns (uint256) {
+        return _getCoprocessorConfigStorage().previousCoprocessorContextId;
+    }
+
+    /// @inheritdoc ICoprocessorConfigBase
     function isValidCoprocessorContext(uint256 coprocessorContextId) external view virtual returns (bool) {
         return _isValidCoprocessorContext(coprocessorContextId);
     }
@@ -67,14 +82,14 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
     function getCoprocessorsForContext(
         uint256 coprocessorContextId
     ) external view virtual returns (Coprocessor[] memory coprocessors) {
-        CoprocessorConfigStorage storage $ = _getCoprocessorConfigStorage();
-        uint256 coprocessorCount = $.coprocessorCountForContext[coprocessorContextId];
+        CoprocessorContext storage context = _getCoprocessorContext(coprocessorContextId);
+        uint256 coprocessorCount = context.coprocessorCount;
         if (coprocessorCount == 0) {
             revert InvalidCoprocessorContext(coprocessorContextId);
         }
         coprocessors = new Coprocessor[](coprocessorCount);
         for (uint256 i = 0; i < coprocessorCount; i++) {
-            coprocessors[i] = $.coprocessorsForContext[coprocessorContextId][i];
+            coprocessors[i] = context.coprocessors[i];
         }
     }
 
@@ -82,11 +97,11 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
     function getCoprocessorMajorityThresholdForContext(
         uint256 coprocessorContextId
     ) external view virtual returns (uint256) {
-        CoprocessorConfigStorage storage $ = _getCoprocessorConfigStorage();
-        if ($.coprocessorCountForContext[coprocessorContextId] == 0) {
+        CoprocessorContext storage context = _getCoprocessorContext(coprocessorContextId);
+        if (context.coprocessorCount == 0) {
             revert InvalidCoprocessorContext(coprocessorContextId);
         }
-        return $.coprocessorMajorityThresholdForContext[coprocessorContextId];
+        return context.majorityThreshold;
     }
 
     /// @inheritdoc ICoprocessorConfigBase
@@ -94,7 +109,7 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
         uint256 coprocessorContextId,
         address signer
     ) external view virtual returns (bool) {
-        return _getCoprocessorConfigStorage().isCoprocessorSignerForContext[coprocessorContextId][signer];
+        return _getCoprocessorContext(coprocessorContextId).isSigner[signer];
     }
 
     /// @inheritdoc ICoprocessorConfigBase
@@ -102,18 +117,20 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
         uint256 coprocessorContextId,
         address txSender
     ) external view virtual returns (bool) {
-        return _getCoprocessorConfigStorage().isCoprocessorTxSenderForContext[coprocessorContextId][txSender];
+        return _getCoprocessorContext(coprocessorContextId).isTxSender[txSender];
     }
 
     // -----------------------------------------------------------------------------------------
     // Internal functions
     // -----------------------------------------------------------------------------------------
 
+    function _getCoprocessorContext(uint256 coprocessorContextId) internal view returns (CoprocessorContext storage) {
+        return _getCoprocessorConfigStorage().coprocessorContexts[coprocessorContextId];
+    }
+
     function _isValidCoprocessorContext(uint256 coprocessorContextId) internal view virtual returns (bool) {
-        CoprocessorConfigStorage storage $ = _getCoprocessorConfigStorage();
-        return
-            $.coprocessorCountForContext[coprocessorContextId] != 0 &&
-            !$.destroyedCoprocessorContexts[coprocessorContextId];
+        CoprocessorContext storage context = _getCoprocessorContext(coprocessorContextId);
+        return context.coprocessorCount != 0 && !context.destroyed;
     }
 
     /**
@@ -137,7 +154,7 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
             revert InvalidCoprocessorMajorityThreshold(majorityThreshold, coprocessorCount);
         }
 
-        CoprocessorConfigStorage storage $ = _getCoprocessorConfigStorage();
+        CoprocessorContext storage context = _getCoprocessorContext(contextId);
         for (uint256 i = 0; i < coprocessorCount; i++) {
             Coprocessor calldata coprocessor = coprocessors[i];
             if (coprocessor.txSenderAddress == address(0)) {
@@ -149,18 +166,21 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
             if (bytes(coprocessor.storageUrl).length == 0) {
                 revert CoprocessorEmptyStorageUrl();
             }
-            if ($.isCoprocessorTxSenderForContext[contextId][coprocessor.txSenderAddress]) {
+            if (context.isTxSender[coprocessor.txSenderAddress]) {
                 revert CoprocessorTxSenderAlreadyRegistered(coprocessor.txSenderAddress);
             }
-            if ($.isCoprocessorSignerForContext[contextId][coprocessor.signerAddress]) {
+            if (context.isSigner[coprocessor.signerAddress]) {
                 revert CoprocessorSignerAlreadyRegistered(coprocessor.signerAddress);
             }
-            $.isCoprocessorTxSenderForContext[contextId][coprocessor.txSenderAddress] = true;
-            $.isCoprocessorSignerForContext[contextId][coprocessor.signerAddress] = true;
-            $.coprocessorsForContext[contextId][i] = coprocessor;
+            context.isTxSender[coprocessor.txSenderAddress] = true;
+            context.isSigner[coprocessor.signerAddress] = true;
+            context.coprocessors[i] = coprocessor;
         }
-        $.coprocessorCountForContext[contextId] = coprocessorCount;
-        $.coprocessorMajorityThresholdForContext[contextId] = majorityThreshold;
+        context.coprocessorCount = coprocessorCount;
+        context.majorityThreshold = majorityThreshold;
+
+        CoprocessorConfigStorage storage $ = _getCoprocessorConfigStorage();
+        $.previousCoprocessorContextId = $.currentCoprocessorContextId;
         $.currentCoprocessorContextId = contextId;
     }
 
@@ -175,7 +195,7 @@ abstract contract CoprocessorConfigBase is ICoprocessorConfigBase {
         if (!_isValidCoprocessorContext(coprocessorContextId)) {
             revert InvalidCoprocessorContext(coprocessorContextId);
         }
-        $.destroyedCoprocessorContexts[coprocessorContextId] = true;
+        _getCoprocessorContext(coprocessorContextId).destroyed = true;
         emit CoprocessorContextDestroyed(coprocessorContextId);
     }
 }

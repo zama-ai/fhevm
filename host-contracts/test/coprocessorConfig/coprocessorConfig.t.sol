@@ -9,7 +9,7 @@ import {ChainUpgradeWindow, Coprocessor} from "@fhevm-host-contracts/contracts/s
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
-import {COPROCESSOR_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {COPROCESSOR_CONTEXT_COUNTER_BASE, COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 
 /// @dev Shared helpers for the CoprocessorConfig and CoprocessorConfigReplica tests.
 abstract contract CoprocessorConfigTestUtils is HostContractsDeployerTestUtils {
@@ -116,6 +116,7 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         coprocessorConfig = CoprocessorConfig(proxy);
 
         assertEq(coprocessorConfig.getCurrentCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID);
+        assertEq(coprocessorConfig.getPreviousCoprocessorContextId(), 0);
         assertTrue(coprocessorConfig.isValidCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID));
         _assertCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID, coprocessors, 2);
     }
@@ -181,8 +182,17 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         return 8421337;
     }
 
-    function _defaultProposalId() internal pure returns (uint256) {
-        return 1;
+    function _firstProposalId() internal pure returns (uint256) {
+        return COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE + 1;
+    }
+
+    function _proposeDefaultCoprocessorUpgrade() internal {
+        vm.prank(owner);
+        coprocessorConfig.proposeCoprocessorUpgrade(
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
     }
 
     function test_proposeCoprocessorUpgrade_singleChain() public {
@@ -190,12 +200,11 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
         uint64 gwStart = _defaultGwStartBlock();
         string memory version = _defaultSoftwareVersion();
-        uint256 proposalId = _defaultProposalId();
 
         vm.expectEmit(true, false, false, true, address(coprocessorConfig));
-        emit ICoprocessorConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
+        emit ICoprocessorConfig.CoprocessorUpgradeProposed(_firstProposalId(), version, windows, gwStart);
         vm.prank(owner);
-        coprocessorConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
+        coprocessorConfig.proposeCoprocessorUpgrade(version, windows, gwStart);
     }
 
     function test_proposeCoprocessorUpgrade_multiChain() public {
@@ -203,36 +212,18 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(3);
         uint64 gwStart = _defaultGwStartBlock();
         string memory version = _defaultSoftwareVersion();
-        uint256 proposalId = _defaultProposalId();
 
         vm.expectEmit(true, false, false, true, address(coprocessorConfig));
-        emit ICoprocessorConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
+        emit ICoprocessorConfig.CoprocessorUpgradeProposed(_firstProposalId(), version, windows, gwStart);
         vm.prank(owner);
-        coprocessorConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
-    }
-
-    function test_revertCoprocessor_InvalidProposalId() public {
-        _setupDefaultCoprocessors();
-        vm.prank(owner);
-        vm.expectRevert(ICoprocessorConfig.InvalidProposalId.selector);
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            0,
-            _defaultSoftwareVersion(),
-            _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock()
-        );
+        coprocessorConfig.proposeCoprocessorUpgrade(version, windows, gwStart);
     }
 
     function test_revertCoprocessor_EmptySoftwareVersion() public {
         _setupDefaultCoprocessors();
         vm.prank(owner);
         vm.expectRevert(ICoprocessorConfig.EmptySoftwareVersion.selector);
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            _defaultProposalId(),
-            "",
-            _makeChainUpgradeWindows(1),
-            _defaultGwStartBlock()
-        );
+        coprocessorConfig.proposeCoprocessorUpgrade("", _makeChainUpgradeWindows(1), _defaultGwStartBlock());
     }
 
     function test_revertCoprocessor_EmptyChainUpgradeWindows() public {
@@ -240,12 +231,7 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         ChainUpgradeWindow[] memory windows = new ChainUpgradeWindow[](0);
         vm.prank(owner);
         vm.expectRevert(ICoprocessorConfig.EmptyChainUpgradeWindows.selector);
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            _defaultProposalId(),
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock()
-        );
+        coprocessorConfig.proposeCoprocessorUpgrade(_defaultSoftwareVersion(), windows, _defaultGwStartBlock());
     }
 
     function test_revertCoprocessor_ZeroChainId() public {
@@ -254,12 +240,7 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         windows[0].chainId = 0;
         vm.prank(owner);
         vm.expectRevert(ICoprocessorConfig.ZeroChainId.selector);
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            _defaultProposalId(),
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock()
-        );
+        coprocessorConfig.proposeCoprocessorUpgrade(_defaultSoftwareVersion(), windows, _defaultGwStartBlock());
     }
 
     function test_revertCoprocessor_DuplicateChainId() public {
@@ -268,12 +249,7 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         windows[1].chainId = windows[0].chainId;
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(ICoprocessorConfig.DuplicateChainId.selector, windows[0].chainId));
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            _defaultProposalId(),
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock()
-        );
+        coprocessorConfig.proposeCoprocessorUpgrade(_defaultSoftwareVersion(), windows, _defaultGwStartBlock());
     }
 
     function test_revertCoprocessor_InvalidBlockWindow() public {
@@ -290,92 +266,45 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
                 uint64(100)
             )
         );
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            _defaultProposalId(),
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock()
-        );
+        coprocessorConfig.proposeCoprocessorUpgrade(_defaultSoftwareVersion(), windows, _defaultGwStartBlock());
     }
 
     function test_revertCoprocessor_ZeroGwStartBlock() public {
         _setupDefaultCoprocessors();
         vm.prank(owner);
         vm.expectRevert(ICoprocessorConfig.ZeroGwStartBlock.selector);
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            _defaultProposalId(),
-            _defaultSoftwareVersion(),
-            _makeChainUpgradeWindows(1),
-            0
-        );
+        coprocessorConfig.proposeCoprocessorUpgrade(_defaultSoftwareVersion(), _makeChainUpgradeWindows(1), 0);
     }
 
-    function test_proposeCoprocessorUpgrade_sameIdTwice_bothEmit() public {
+    /// @dev A retry of the same proposal, for example after a failed upgrade, gets the next ID.
+    function test_proposeCoprocessorUpgrade_assignsIncreasingIds() public {
         _setupDefaultCoprocessors();
-        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
-        uint256 proposalId = _defaultProposalId();
-
-        vm.prank(owner);
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            proposalId,
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock()
-        );
-
-        // Uniqueness is the caller's responsibility — contract does not enforce.
-        vm.expectEmit(true, false, false, true, address(coprocessorConfig));
-        emit ICoprocessorConfig.CoprocessorUpgradeProposed(
-            proposalId,
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock()
-        );
-        vm.prank(owner);
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            proposalId,
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock()
-        );
-    }
-
-    function test_proposeCoprocessorUpgrade_maxUint256() public {
-        _setupDefaultCoprocessors();
-        uint256 proposalId = type(uint256).max;
+        _proposeDefaultCoprocessorUpgrade();
 
         vm.expectEmit(true, false, false, true, address(coprocessorConfig));
         emit ICoprocessorConfig.CoprocessorUpgradeProposed(
-            proposalId,
+            _firstProposalId() + 1,
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
             _defaultGwStartBlock()
         );
+        _proposeDefaultCoprocessorUpgrade();
+    }
+
+    function test_proposeCoprocessorUpgrade_revertedProposalUsesNoId() public {
+        _setupDefaultCoprocessors();
         vm.prank(owner);
-        coprocessorConfig.proposeCoprocessorUpgrade(
-            proposalId,
+        vm.expectRevert(ICoprocessorConfig.ZeroGwStartBlock.selector);
+        coprocessorConfig.proposeCoprocessorUpgrade(_defaultSoftwareVersion(), _makeChainUpgradeWindows(1), 0);
+
+        vm.expectEmit(true, false, false, true, address(coprocessorConfig));
+        emit ICoprocessorConfig.CoprocessorUpgradeProposed(
+            _firstProposalId(),
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
             _defaultGwStartBlock()
         );
-    }
-
-    function test_proposeCoprocessorUpgrade_twoDistinctPending_bothEmit() public {
-        _setupDefaultCoprocessors();
-        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
-
-        vm.prank(owner);
-        coprocessorConfig.proposeCoprocessorUpgrade(1, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
-
-        vm.expectEmit(true, false, false, true, address(coprocessorConfig));
-        emit ICoprocessorConfig.CoprocessorUpgradeProposed(
-            2,
-            _defaultSoftwareVersion(),
-            windows,
-            _defaultGwStartBlock()
-        );
-        vm.prank(owner);
-        coprocessorConfig.proposeCoprocessorUpgrade(2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+        _proposeDefaultCoprocessorUpgrade();
     }
 
     function test_revertProposeCoprocessorUpgradeNotOwner() public {
@@ -383,7 +312,6 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         vm.prank(address(0x999));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
         coprocessorConfig.proposeCoprocessorUpgrade(
-            _defaultProposalId(),
             _defaultSoftwareVersion(),
             _makeChainUpgradeWindows(1),
             _defaultGwStartBlock()
@@ -408,6 +336,7 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         _defineCoprocessorContext(coprocessors, 3);
 
         assertEq(coprocessorConfig.getCurrentCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID + 1);
+        assertEq(coprocessorConfig.getPreviousCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID);
         _assertCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID + 1, coprocessors, 3);
         // The previous context stays valid and unchanged.
         assertTrue(coprocessorConfig.isValidCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID));
@@ -616,6 +545,8 @@ contract CoprocessorConfigTest is CoprocessorConfigTestUtils {
         assertFalse(coprocessorConfig.isValidCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID));
         assertTrue(coprocessorConfig.isValidCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID + 1));
         assertEq(coprocessorConfig.getCurrentCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID + 1);
+        // The previous context ID stays, but the context is no longer valid.
+        assertEq(coprocessorConfig.getPreviousCoprocessorContextId(), FIRST_COPROCESSOR_CONTEXT_ID);
         _assertCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID, _makeCoprocessors(3), 2);
     }
 

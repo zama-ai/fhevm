@@ -16,6 +16,7 @@ import {
   buildCanonicalCoprocessorConfigSnapshotEnv,
   readCanonicalCoprocessorConfigSnapshotFromEnv,
 } from './utils/coprocessorConfigCanonicalEnv';
+import type { Coprocessor } from './utils/coprocessorConfigTasks';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredCountEnvVar, getRequiredEnvVar } from './utils/loadVariables';
@@ -605,18 +606,11 @@ export function buildProtocolConfigContextArgs(): [ReturnType, ReturnType, strin
 // CoprocessorConfig helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-export type CoprocessorArgs = {
-  txSenderAddress: string;
-  signerAddress: string;
-  storageUrl: string;
-  prfEndpointUrl: string;
-};
-
 // A coprocessor set from the COPROCESSOR_* env vars. The tx sender is the coprocessor's Ethereum
 // wallet, not its Gateway one. An unset or empty PRF endpoint URL means the coprocessor does not serve it.
-export function buildCoprocessors(): CoprocessorArgs[] {
+export function buildCoprocessors(): Coprocessor[] {
   const numCoprocessors = getRequiredCountEnvVar('NUM_COPROCESSORS');
-  const coprocessors: CoprocessorArgs[] = [];
+  const coprocessors: Coprocessor[] = [];
   for (let idx = 0; idx < numCoprocessors; idx++) {
     coprocessors.push({
       txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
@@ -628,7 +622,7 @@ export function buildCoprocessors(): CoprocessorArgs[] {
   return coprocessors;
 }
 
-export function buildCoprocessorContextArgs(): [CoprocessorArgs[], number] {
+export function buildCoprocessorContextArgs(): [Coprocessor[], number] {
   return [buildCoprocessors(), getRequiredCountEnvVar('COPROCESSOR_THRESHOLD')];
 }
 

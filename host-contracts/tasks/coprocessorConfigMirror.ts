@@ -4,14 +4,8 @@ import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 import type { CoprocessorConfig } from '../types';
 import { assertCanonicalBlockHash, resolveCanonicalBlock } from './utils/canonicalBlock';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
+import type { Coprocessor } from './utils/coprocessorConfigTasks';
 import { type UpgradeProposal, buildUpgradeProposal } from './utils/upgradeProposal';
-
-export type Coprocessor = {
-  txSenderAddress: string;
-  signerAddress: string;
-  storageUrl: string;
-  prfEndpointUrl: string;
-};
 
 export type CanonicalCoprocessorConfigSnapshot = {
   coprocessorConfigAddress: string;

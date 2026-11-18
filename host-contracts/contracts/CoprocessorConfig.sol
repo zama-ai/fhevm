@@ -5,7 +5,7 @@ import {CoprocessorConfigBase} from "./CoprocessorConfigBase.sol";
 import {ICoprocessorConfig} from "./interfaces/ICoprocessorConfig.sol";
 import {ICoprocessorConfigBase} from "./interfaces/ICoprocessorConfigBase.sol";
 import {Coprocessor, ChainUpgradeWindow} from "./shared/Structs.sol";
-import {COPROCESSOR_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
+import {COPROCESSOR_CONTEXT_COUNTER_BASE, COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -46,6 +46,7 @@ contract CoprocessorConfig is ICoprocessorConfig, CoprocessorConfigBase, UUPSUpg
     /**
      * @notice Fresh deploy initializer: defines the first coprocessor context.
      * @dev The first context takes the ID `COPROCESSOR_CONTEXT_COUNTER_BASE + 1` and replaces none.
+     *      The first upgrade proposal will take the ID `COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE + 1`.
      * @param initialCoprocessors The coprocessors of the first context.
      * @param initialMajorityThreshold The majority threshold of the first context.
      */
@@ -54,6 +55,7 @@ contract CoprocessorConfig is ICoprocessorConfig, CoprocessorConfigBase, UUPSUpg
         Coprocessor[] calldata initialCoprocessors,
         uint256 initialMajorityThreshold
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        _getCoprocessorConfigStorage().coprocessorUpgradeProposalCounter = COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE;
         _defineCoprocessorContext(
             COPROCESSOR_CONTEXT_COUNTER_BASE + 1,
             0,
@@ -82,14 +84,10 @@ contract CoprocessorConfig is ICoprocessorConfig, CoprocessorConfigBase, UUPSUpg
 
     /// @inheritdoc ICoprocessorConfig
     function proposeCoprocessorUpgrade(
-        uint256 proposalId,
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
         uint64 gwStartBlock
     ) external virtual onlyACLOwner {
-        if (proposalId == 0) {
-            revert InvalidProposalId();
-        }
         if (bytes(softwareVersion).length == 0) {
             revert EmptySoftwareVersion();
         }
@@ -115,6 +113,7 @@ contract CoprocessorConfig is ICoprocessorConfig, CoprocessorConfigBase, UUPSUpg
             }
         }
 
+        uint256 proposalId = ++_getCoprocessorConfigStorage().coprocessorUpgradeProposalCounter;
         emit CoprocessorUpgradeProposed(proposalId, softwareVersion, chainUpgradeWindows, gwStartBlock);
     }
 

@@ -34,7 +34,7 @@ interface ICoprocessorConfig is ICoprocessorConfigBase {
     /**
      * @notice Emitted when a coprocessor upgrade is proposed. This event drives the
      *         coprocessor software upgrade.
-     * @param proposalId Caller-supplied identifier for this upgrade attempt.
+     * @param proposalId The new coprocessor upgrade proposal ID.
      * @param softwareVersion The coprocessor software version for the proposal.
      * @param chainUpgradeWindows The per-host-chain replay windows for the upgrade.
      * @param gwStartBlock The Gateway block at which GCS's gateway-listener resumes from.
@@ -72,9 +72,6 @@ interface ICoprocessorConfig is ICoprocessorConfigBase {
     /// @notice The `gwStartBlock` argument is zero.
     error ZeroGwStartBlock();
 
-    /// @notice The supplied `proposalId` is zero.
-    error InvalidProposalId();
-
     // -----------------------------------------------------------------------------------------
     // State-changing functions
     // -----------------------------------------------------------------------------------------
@@ -96,18 +93,15 @@ interface ICoprocessorConfig is ICoprocessorConfigBase {
     function destroyCoprocessorContext(uint256 coprocessorContextId) external;
 
     /**
-     * @notice Propose a coprocessor upgrade. Emits `CoprocessorUpgradeProposed` and does not
-     *         change any on-chain state — the lifecycle of the proposal (dry-run, consensus,
+     * @notice Propose a coprocessor upgrade. Assigns the next proposal ID and emits
+     *         `CoprocessorUpgradeProposed`. The lifecycle of the proposal (dry-run, consensus,
      *         cutover, failure) is driven entirely off-chain.
-     * @dev Owner only.
-     * @param proposalId Caller-supplied identifier for this upgrade attempt. Must be non-zero.
-     *        Uniqueness across calls is the caller's responsibility; the contract does not enforce it.
+     * @dev Owner only. A retry after a failed upgrade is a new proposal, with a new ID.
      * @param softwareVersion The coprocessor software version.
      * @param chainUpgradeWindows The per-host-chain replay windows.
      * @param gwStartBlock The Gateway block to resume from.
      */
     function proposeCoprocessorUpgrade(
-        uint256 proposalId,
         string calldata softwareVersion,
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
         uint64 gwStartBlock

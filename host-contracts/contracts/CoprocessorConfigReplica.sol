@@ -5,7 +5,7 @@ import {CoprocessorConfigBase} from "./CoprocessorConfigBase.sol";
 import {ICoprocessorConfigReplica} from "./interfaces/ICoprocessorConfigReplica.sol";
 import {ICoprocessorConfigBase} from "./interfaces/ICoprocessorConfigBase.sol";
 import {Coprocessor} from "./shared/Structs.sol";
-import {COPROCESSOR_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
+import {COPROCESSOR_CONTEXT_COUNTER_BASE, REQUEST_TYPE_SHIFT, RequestType} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -114,7 +114,11 @@ contract CoprocessorConfigReplica is
         Coprocessor[] calldata coprocessors,
         uint256 majorityThreshold
     ) internal virtual {
-        if (contextId <= COPROCESSOR_CONTEXT_COUNTER_BASE) {
+        // The ID must carry the coprocessor context type, with a non-zero counter.
+        if (
+            contextId <= COPROCESSOR_CONTEXT_COUNTER_BASE ||
+            contextId >> REQUEST_TYPE_SHIFT != uint256(RequestType.CoprocessorContext)
+        ) {
             revert InvalidCoprocessorContext(contextId);
         }
         uint256 currentContextId = _getCoprocessorConfigStorage().currentCoprocessorContextId;

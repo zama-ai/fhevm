@@ -10,7 +10,7 @@ import {Coprocessor} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
-import {COPROCESSOR_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {COPROCESSOR_CONTEXT_COUNTER_BASE, COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 
 contract CoprocessorConfigReplicaTest is CoprocessorConfigTestUtils {
     CoprocessorConfigReplica internal replica;
@@ -92,22 +92,39 @@ contract CoprocessorConfigReplicaTest is CoprocessorConfigTestUtils {
         assertEq(replica.getCurrentCoprocessorContextId(), CANONICAL_COPROCESSOR_CONTEXT_ID);
         assertTrue(replica.isValidCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID));
         _assertCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID, coprocessors, 2);
-        // Earlier canonical contexts were never mirrored.
+        // Earlier canonical contexts were never mirrored, so the seeded context replaced none here.
         assertFalse(replica.isValidCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID - 1));
+        assertEq(replica.getPreviousCoprocessorContextId(), 0);
+    }
+
+    /// @dev IDs without the coprocessor context type: the base itself (zero counter), an ID of the type
+    ///      below and one of the type above.
+    function _invalidCoprocessorContextIds() internal pure returns (uint256[3] memory) {
+        return [
+            COPROCESSOR_CONTEXT_COUNTER_BASE,
+            EPOCH_COUNTER_BASE + 1,
+            COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE + 1
+        ];
     }
 
     function test_revertInitializeFromCanonicalInvalidCoprocessorContextId() public {
         _deployACL(owner);
-        address proxy = _deployEmptyCoprocessorConfigProxy();
         address impl = address(new CoprocessorConfigReplica());
-        uint256 invalidId = COPROCESSOR_CONTEXT_COUNTER_BASE;
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(ICoprocessorConfigBase.InvalidCoprocessorContext.selector, invalidId));
-        EmptyUUPSProxy(proxy).upgradeToAndCall(
-            impl,
-            abi.encodeCall(CoprocessorConfigReplica.initializeFromCanonical, (invalidId, _makeCoprocessors(1), 1))
-        );
+        uint256[3] memory invalidIds = _invalidCoprocessorContextIds();
+        for (uint256 i = 0; i < invalidIds.length; i++) {
+            address proxy = _deployEmptyCoprocessorConfigProxy();
+            vm.prank(owner);
+            vm.expectRevert(
+                abi.encodeWithSelector(ICoprocessorConfigBase.InvalidCoprocessorContext.selector, invalidIds[i])
+            );
+            EmptyUUPSProxy(proxy).upgradeToAndCall(
+                impl,
+                abi.encodeCall(
+                    CoprocessorConfigReplica.initializeFromCanonical,
+                    (invalidIds[i], _makeCoprocessors(1), 1)
+                )
+            );
+        }
     }
 
     function test_revertInitializeFromCanonicalInvalidCoprocessors() public {
@@ -157,6 +174,24 @@ contract CoprocessorConfigReplicaTest is CoprocessorConfigTestUtils {
         _assertCoprocessorContext(contextId, coprocessors, 3);
         assertTrue(replica.isValidCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID));
         assertFalse(replica.isValidCoprocessorContext(contextId - 1));
+        // The previous context is the one mirrored before, not the skipped ID.
+        assertEq(replica.getPreviousCoprocessorContextId(), CANONICAL_COPROCESSOR_CONTEXT_ID);
+    }
+
+    /// @dev An ID of the next type is above the current one, so only the type check rejects it.
+    function test_revertMirrorCoprocessorContextOfAnotherType() public {
+        _setupReplica();
+        uint256 invalidId = COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE + 1;
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ICoprocessorConfigBase.InvalidCoprocessorContext.selector, invalidId));
+        replica.mirrorCoprocessorContext(invalidId, _makeCoprocessors(1), 1);
+    }
+
+    function test_mirrorCoprocessorContextHighestId() public {
+        _setupReplica();
+        uint256 highestId = COPROCESSOR_UPGRADE_PROPOSAL_COUNTER_BASE - 1;
+        _mirrorCoprocessorContext(highestId, _makeCoprocessors(1), 1);
+        assertEq(replica.getCurrentCoprocessorContextId(), highestId);
     }
 
     function test_revertMirrorCoprocessorContextNonIncreasing() public {
@@ -211,6 +246,7 @@ contract CoprocessorConfigReplicaTest is CoprocessorConfigTestUtils {
         replica.mirrorCoprocessorContextDestruction(CANONICAL_COPROCESSOR_CONTEXT_ID);
 
         assertFalse(replica.isValidCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID));
+        assertEq(replica.getPreviousCoprocessorContextId(), CANONICAL_COPROCESSOR_CONTEXT_ID);
         _assertCoprocessorContext(CANONICAL_COPROCESSOR_CONTEXT_ID, _makeCoprocessors(3), 2);
     }
 
