@@ -123,7 +123,8 @@ permissions: {}
 concurrency:
   group:
     ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number)
-    || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}-${{ inputs.scenario }}-${{ inputs.test-profile }}
+    || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}-${{ inputs.scenario
+    }}-${{ inputs.test-profile }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -260,7 +261,12 @@ jobs:
         if: ${{ inputs.lock-artifact-name == '' && !inputs.orchestrated }}
         working-directory: test-suite/fhevm
         run: |
-          lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
+          if [ "$TEST_PROFILE" = "sns-four-worker-load" ]; then
+            # Keep the surrounding stack on the candidate's release base, not today's main.
+            lock_file="$(./fhevm-cli resolve --target sha --sha 31e76b13612880bfeb214fed2ff545687459860a | tail -n1)"
+          else
+            lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
+          fi
           if [ ! -f "$lock_file" ]; then
             echo "Could not locate resolved lock file: $lock_file" >&2
             exit 1
@@ -336,8 +342,21 @@ jobs:
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
         run: |
-          args=("$TEST_PROFILE")
-          ./fhevm-cli test "${args[@]}"
+          if [ "$TEST_PROFILE" = "sns-four-worker-load" ]; then
+            ./fhevm-cli test input-proof-compute-decrypt
+            python3 scripts/sns-four-worker-load.py
+          else
+            args=("$TEST_PROFILE")
+            ./fhevm-cli test "${args[@]}"
+          fi
+
+      - name: Upload four-worker SNS load measurements
+        if: ${{ always() && env.TEST_PROFILE == 'sns-four-worker-load' }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: sns-four-worker-load-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/sns-four-worker-load/
+          if-no-files-found: warn
 
       - name: Host listener consumer only test without drift-revert tests
         if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}

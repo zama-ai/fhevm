@@ -1,0 +1,7 @@
+version: 1
+kind: coprocessor-consensus
+name: SNS four-worker load QA
+description: One operator database; the opt-in QA runner replaces its SNS worker with four identical processes.
+topology:
+  count: 1
+  threshold: 1
