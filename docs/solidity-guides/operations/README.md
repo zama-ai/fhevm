@@ -48,7 +48,7 @@ The FHE library also supports bitwise operations, including shifts and rotations
 The shift amount is an 8-bit value. Up to protocol v0.14 an amount greater than or equal to the operand width is reduced modulo the width; **from v0.15 the result is `0`**, as in Solidity. Rotations always reduce the amount modulo the width. See [Operator semantics](semantics.md#shift-and-rotate-amounts) and [Migrating to v0.15](../migrating-to-0.15.md).
 {% endhint %}
 
-The shift operators `FHE.shr` and `FHE.shl` can take any encrypted type `euintX` as a first operand and either a `uint8`or a `euint8` as a second operand, however the second operand will always be computed modulo the number of bits of the first operand. For example, `FHE.shr(euint64 x, 70)` is equivalent to `FHE.shr(euint64 x, 6)` because `70 % 64 = 6`. This differs from the classical shift operators in Solidity, where there is no intermediate modulo operation, so for instance any `uint64` shifted right via `>>` would give a null result.
+The shift operators `FHE.shr` and `FHE.shl` can take any encrypted type `euintX` as a first operand and either a `uint8`or a `euint8` as a second operand. When the second operand is greater than or equal to the number of bits of the first operand, the result is `0`, as with the classical shift operators in Solidity. For example, `FHE.shr(euint64 x, 70)` gives `0`, like any `uint64` shifted right by 70 via `>>`. The rotation operators `FHE.rotr` and `FHE.rotl` compute the second operand modulo the number of bits of the first operand, so `FHE.rotr(euint64 x, 70)` is equivalent to `FHE.rotr(euint64 x, 6)` because `70 % 64 = 6`.
 
 ## Comparison operations
 

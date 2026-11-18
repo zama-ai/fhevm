@@ -267,6 +267,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         if (!isProofCached) {
             uint256 inputProofLen = inputProof.length;
             if (inputProofLen == 0) revert EmptyInputProof();
+            /// @dev The first two bytes are numHandles and numSigners.
+            if (inputProofLen < 2) revert DeserializingInputProofFail();
             uint256 numHandles = uint256(uint8(inputProof[0]));
             uint256 numSigners = uint256(uint8(inputProof[1]));
 

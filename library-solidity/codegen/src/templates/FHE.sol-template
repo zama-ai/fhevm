@@ -479,10 +479,9 @@ library FHE {
     ///         decryption context.
     /// @param delegate The account that was authorized to request user decryptions on behalf of the caller contract `address(this)`
     /// @param contractAddress The address of the contract that is part of the user decryption context
-    /// @dev Requirements:
-    ///      - the ACL contract must not be paused.
-    ///        Reverts with an {PausableUpgradeable-EnforcedPause} error otherwise.
+    /// @dev Can be called while the ACL contract is paused.
     ///
+    ///      Requirements:
     ///      - at most one delegate OR revoke per block for this
     ///        (address(this), delegate, contractAddress) tuple to avoid racey
     ///        state updates.

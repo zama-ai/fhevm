@@ -286,9 +286,10 @@ contract ACL is
 
     /**
      * @notice Allows the use of `handle` by address `account` for this transaction.
-     * @dev The caller must not be in the deny list and must be allowed to use `handle` for allowTransient() to succeed.
-     *      If not, allowTransient() reverts. The FHEVMExecutor and ConfidentialBridge contracts can always `allowTransient`,
-     *      contrarily to `allow`.
+     * @dev The caller must not be in the deny list and must be allowed to use `handle`, else allowTransient() reverts.
+     *      These two requirements do not apply to the FHEVMExecutor and ConfidentialBridge contracts,
+     *      contrarily to `allow`: they give the first access to new handles, which no account is allowed on yet.
+     *      Reverts for every caller, including these two contracts, while the ACL is paused.
      * @param handle Handle.
      * @param account Address of the account.
      */
