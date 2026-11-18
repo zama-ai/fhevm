@@ -1,23 +1,19 @@
-use std::sync::Mutex;
 use std::time::Duration;
 
 use alloy::eips::BlockId;
 use alloy::primitives::{Address, B256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::client::RpcClient;
-use alloy::rpc::types::{
-    Filter, Header, Log, TransactionInput, TransactionRequest,
-};
-use alloy::sol_types::SolCall;
+use alloy::rpc::types::{Filter, Header, Log};
 use alloy::transports::http::reqwest::{Client, Url};
 use alloy::transports::layers::RetryBackoffLayer;
 use anyhow::{anyhow, Context, Result};
 
-use crate::cmd::ExecutorVersionRequest;
-use crate::database::event_operands::{
-    ExecutorVersion, ExecutorVersionSchedule,
-};
+use crate::database::event_operands::ExecutorVersionSchedule;
 use crate::database::ingest::{validate_block_logs, BlockLogs};
+use crate::executor_version::{
+    ExecutorVersionRequest, ExecutorVersionResolver, RPC_TIMEOUT,
+};
 
 /// HTTP client with built-in retry via Alloy's RetryBackoffLayer.
 ///
@@ -37,7 +33,7 @@ pub struct HttpChainClient {
     /// - We only need the `Provider` trait methods, not the concrete type
     provider: Box<dyn Provider<alloy::network::Ethereum> + Send + Sync>,
     addresses: Vec<Address>,
-    executor_version_cursor: Mutex<Option<(u64, B256, ExecutorVersion)>>,
+    executor_versions: ExecutorVersionResolver,
 }
 
 impl HttpChainClient {
@@ -93,90 +89,17 @@ impl HttpChainClient {
         Ok(Self {
             provider: Box::new(provider),
             addresses,
-            executor_version_cursor: Mutex::new(None),
+            executor_versions: ExecutorVersionResolver::default(),
         })
-    }
-
-    async fn query_executor_version(
-        &self,
-        address: Address,
-        at_block_hash: B256,
-    ) -> Result<Option<ExecutorVersion>> {
-        let request = TransactionRequest::default().to(address).input(
-            TransactionInput::both(
-                crate::contracts::TfheContract::getVersionCall {}
-                    .abi_encode()
-                    .into(),
-            ),
-        );
-        let value = tokio::time::timeout(
-            Duration::from_secs(30),
-            self.provider
-                .call(request)
-                .block(BlockId::hash_canonical(at_block_hash)),
-        )
-        .await
-        .context(
-            "Timed out resolving FHEVMExecutor version at canonical block",
-        )?
-        .context("Cannot resolve FHEVMExecutor version at canonical block")?;
-        // A successful response from an unknown implementation retains legacy
-        // compatibility. Transport/RPC failures must instead retry the block.
-        if value.is_empty() {
-            return Ok(None);
-        }
-        let version =
-            crate::contracts::TfheContract::getVersionCall::abi_decode_returns(
-                &value,
-            )?;
-        Ok(ExecutorVersion::parse(&version))
     }
 
     pub(crate) async fn executor_version_schedule(
         &self,
         request: ExecutorVersionRequest,
     ) -> Result<ExecutorVersionSchedule> {
-        let Some(tfhe_proxy) = request.tfhe_proxy else {
-            if let Ok(mut cursor) = self.executor_version_cursor.lock() {
-                *cursor = None;
-            }
-            return Ok(ExecutorVersionSchedule::default());
-        };
-
-        let cached_parent = self
-            .executor_version_cursor
-            .lock()
-            .ok()
-            .and_then(|cursor| *cursor)
-            .filter(|(number, hash, _)| {
-                *hash == request.parent_hash
-                    && number.checked_add(1) == Some(request.block_number)
-            });
-        let mut current = cached_parent
-            .map(|(_, _, version)| version)
-            .or_else(|| request.persisted_parent_version.flatten());
-        if current.is_none() {
-            current = self
-                .query_executor_version(tfhe_proxy, request.parent_hash)
-                .await?;
-        }
-        let mut schedule = ExecutorVersionSchedule::new(current);
-        for (log_index, implementation) in request.upgrades {
-            current = self
-                .query_executor_version(implementation, request.block_hash)
-                .await?;
-            schedule.add_transition(log_index, current);
-        }
-
-        if let Some(version) = current {
-            if let Ok(mut cursor) = self.executor_version_cursor.lock() {
-                *cursor =
-                    Some((request.block_number, request.block_hash, version));
-            }
-        } else if let Ok(mut cursor) = self.executor_version_cursor.lock() {
-            *cursor = None;
-        }
-        Ok(schedule)
+        self.executor_versions
+            .resolve(request, Some(self.provider.as_ref()), RPC_TIMEOUT)
+            .await
     }
 
     pub async fn chain_id(&self) -> Result<u64> {
@@ -291,7 +214,6 @@ impl HttpChainClient {
 mod tests {
     use super::*;
     use crate::cmd::block_history::BlockSummary;
-    use crate::cmd::ExecutorVersionRequest;
     use crate::database::event_operands::ExecutorVersion;
     use crate::database::ingest::BlockLogs;
     use alloy::primitives::{Bytes, Log as PrimitiveLog};
@@ -320,7 +242,6 @@ mod tests {
             ))
             .await
             .is_err());
-        assert!(client.executor_version_cursor.lock().unwrap().is_none());
         responses.push_success(&encoded_version("FHEVMExecutor v0.7.0"));
         let schedule = client
             .executor_version_schedule(ExecutorVersionRequest::from_block(
@@ -387,7 +308,13 @@ mod tests {
 
         assert_eq!(
             client
-                .query_executor_version(undeployed_proxy, block_hash)
+                .executor_versions
+                .lookup(
+                    Some(client.provider.as_ref()),
+                    undeployed_proxy,
+                    block_hash,
+                    RPC_TIMEOUT
+                )
                 .await?,
             None,
             "an undeployed proxy must remain replayable"
@@ -395,7 +322,13 @@ mod tests {
         // Low addresses are not empty placeholders: calling getVersion() at
         // 0x02 returns a SHA-256 digest, which must remain a decoding error.
         let error = client
-            .query_executor_version(Address::with_last_byte(2), block_hash)
+            .executor_versions
+            .lookup(
+                Some(client.provider.as_ref()),
+                Address::with_last_byte(2),
+                block_hash,
+                RPC_TIMEOUT,
+            )
             .await
             .expect_err(
                 "precompile output must not become unknown-version metadata",
@@ -578,7 +511,7 @@ mod tests {
                 ProviderBuilder::new().connect_mocked_client(asserter),
             ),
             addresses: vec![],
-            executor_version_cursor: Mutex::new(None),
+            executor_versions: ExecutorVersionResolver::default(),
         }
     }
 
@@ -634,14 +567,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn version_schedule_bootstraps_and_applies_upgrades_after_log_index()
-    {
-        let asserter = Asserter::new();
-        asserter.push_success(&encoded_version("FHEVMExecutor v0.5.0"));
-        asserter.push_success(&encoded_version("FHEVMExecutor v0.6.0"));
-        asserter.push_success(&encoded_version("FHEVMExecutor v0.7.0"));
-        let client = mocked_client(asserter);
+    async fn http_and_websocket_agree_on_executor_upgrade_boundaries() {
+        use crate::cmd::{Args, InfiniteLogIter};
+        use clap::Parser;
+
+        let responses = || {
+            let asserter = Asserter::new();
+            asserter.push_success(&encoded_version("FHEVMExecutor v0.5.0"));
+            asserter.push_success(&encoded_version("FHEVMExecutor v0.6.0"));
+            asserter.push_success(&encoded_version("FHEVMExecutor v0.7.0"));
+            asserter
+        };
         let proxy = Address::from([1; 20]);
+        let client = mocked_client(responses());
+        let ws = InfiniteLogIter::new(&Args::parse_from([
+            "host-listener",
+            "--tfhe-contract-address",
+            &proxy.to_string(),
+            "--acl-contract-address",
+            &Address::ZERO.to_string(),
+        ]));
+        *ws.provider.write().await =
+            Some(ProviderBuilder::new().connect_mocked_client(responses()));
         let v06 = Address::from([6; 20]);
         let v07 = Address::from([7; 20]);
         let hash = B256::with_last_byte(0x64);
@@ -661,6 +608,14 @@ mod tests {
             .executor_version_schedule(request)
             .await
             .expect("executor version lookup");
+        let ws_schedule = ws
+            .executor_version_schedule(ExecutorVersionRequest::from_block(
+                &block,
+                Some(proxy),
+            ))
+            .await
+            .expect("WebSocket executor version lookup");
+        assert_eq!(schedule, ws_schedule);
         assert_eq!(
             schedule.version_for_log_index(3),
             Some(ExecutorVersion::new(0, 5, 0))
@@ -745,8 +700,7 @@ mod tests {
             ),
             Some(proxy),
         );
-        request.persisted_parent_version =
-            Some(Some(ExecutorVersion::new(0, 5, 0)));
+        request.persisted_parent_version = Some(ExecutorVersion::new(0, 5, 0));
         let replayed = restarted
             .executor_version_schedule(request)
             .await

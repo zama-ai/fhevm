@@ -4,27 +4,24 @@ use std::sync::{
 };
 use std::time::Duration;
 
+use crate::executor_version::ExecutorVersionResolver;
 use alloy::{
     primitives::{Address, B256, U256},
     sol_types::SolEvent,
 };
+use alloy::{
+    providers::{Provider, ProviderBuilder},
+    transports::mock::Asserter,
+};
 use consumer::{AckDecision, BlockPayload};
 use fhevm_engine_common::chain_id::ChainId;
-use primitives::event::{
-    BlockFlow, ExecutorVersionMetadata, ExecutorVersionTransitionMetadata,
-    IndexedLog, TransactionPayload,
-};
+use primitives::event::{BlockFlow, IndexedLog, TransactionPayload};
 use sqlx::PgPool;
 
-use super::{
-    executor_version_schedule_for_payload, ingest_payload, ConsumerConfig,
-};
+use super::{ingest_payload, ConsumerConfig};
 use crate::{
     contracts::KMSGeneration,
-    database::{
-        event_operands::ExecutorVersion, ingest::IngestOptions,
-        tfhe_event_propagate::Database,
-    },
+    database::{ingest::IngestOptions, tfhe_event_propagate::Database},
     kms_generation::{
         aws_s3::AwsS3Interface,
         digest::{digest_crs, digest_key},
@@ -33,119 +30,6 @@ use crate::{
 
 const CHAIN_ID: u64 = 12345;
 const KMS_ADDRESS: Address = Address::repeat_byte(2);
-
-#[test]
-fn broker_executor_schedule_is_bound_to_block_proxy_and_log_order() {
-    let proxy = Address::repeat_byte(7);
-    let block_hash = B256::repeat_byte(8);
-    let parent_hash = B256::repeat_byte(9);
-    let payload = BlockPayload {
-        flow: BlockFlow::Live,
-        chain_id: CHAIN_ID,
-        block_number: 11,
-        block_hash,
-        parent_hash,
-        timestamp: 1,
-        transactions: vec![],
-        catchup_id: None,
-        last_in_catchup: false,
-        executor_version: Some(ExecutorVersionMetadata {
-            proxy_address: proxy,
-            block_hash,
-            parent_hash,
-            initial_version: Some("FHEVMExecutor v0.5.0".into()),
-            transitions: vec![ExecutorVersionTransitionMetadata {
-                after_log_index: 5,
-                version: Some("FHEVMExecutor v0.6.0".into()),
-            }],
-        }),
-    };
-
-    let schedule = executor_version_schedule_for_payload(&payload, proxy);
-    assert!(schedule.is_resolved());
-    assert_eq!(
-        schedule.version_for_log_index(5),
-        Some(ExecutorVersion::new(0, 5, 0))
-    );
-    assert_eq!(
-        schedule.version_for_log_index(6),
-        Some(ExecutorVersion::new(0, 6, 0))
-    );
-}
-
-#[test]
-fn broker_executor_schedule_ignores_unbound_or_unordered_metadata() {
-    let proxy = Address::repeat_byte(7);
-    let mut payload = BlockPayload {
-        flow: BlockFlow::Live,
-        chain_id: CHAIN_ID,
-        block_number: 11,
-        block_hash: B256::repeat_byte(8),
-        parent_hash: B256::repeat_byte(9),
-        timestamp: 1,
-        transactions: vec![],
-        catchup_id: None,
-        last_in_catchup: false,
-        executor_version: Some(ExecutorVersionMetadata {
-            proxy_address: proxy,
-            block_hash: B256::repeat_byte(8),
-            parent_hash: B256::repeat_byte(9),
-            initial_version: Some("FHEVMExecutor v0.5.0".into()),
-            transitions: vec![
-                ExecutorVersionTransitionMetadata {
-                    after_log_index: 5,
-                    version: Some("FHEVMExecutor v0.6.0".into()),
-                },
-                ExecutorVersionTransitionMetadata {
-                    after_log_index: 5,
-                    version: Some("FHEVMExecutor v0.7.0".into()),
-                },
-            ],
-        }),
-    };
-    assert!(
-        !executor_version_schedule_for_payload(&payload, proxy).is_resolved()
-    );
-
-    payload.executor_version.as_mut().unwrap().block_hash =
-        B256::repeat_byte(4);
-    assert!(
-        !executor_version_schedule_for_payload(&payload, proxy).is_resolved()
-    );
-
-    payload.executor_version.as_mut().unwrap().block_hash = payload.block_hash;
-    assert!(!executor_version_schedule_for_payload(
-        &payload,
-        Address::repeat_byte(3)
-    )
-    .is_resolved());
-}
-
-#[test]
-fn broker_executor_schedule_keeps_unrecognized_versions_permissive() {
-    let proxy = Address::repeat_byte(7);
-    let payload = BlockPayload {
-        flow: BlockFlow::Live,
-        chain_id: CHAIN_ID,
-        block_number: 11,
-        block_hash: B256::repeat_byte(8),
-        parent_hash: B256::repeat_byte(9),
-        timestamp: 1,
-        transactions: vec![],
-        catchup_id: None,
-        last_in_catchup: false,
-        executor_version: Some(ExecutorVersionMetadata {
-            proxy_address: proxy,
-            block_hash: B256::repeat_byte(8),
-            parent_hash: B256::repeat_byte(9),
-            initial_version: Some("FHEVMExecutor vunknown".into()),
-            transitions: vec![],
-        }),
-    };
-    let schedule = executor_version_schedule_for_payload(&payload, proxy);
-    assert!(schedule.is_resolved());
-    assert_eq!(schedule.version_for_log_index(0), None);
-}
 
 /// Serves the expected material once `available` is set.
 #[derive(Clone)]
@@ -167,7 +51,13 @@ impl AwsS3Interface for MaterialStore {
 }
 
 fn config() -> ConsumerConfig {
+    // This fixture contains KMS logs only and models a predeployment executor.
+    let rpc = Asserter::new();
+    rpc.push_success(&alloy::primitives::Bytes::new());
     ConsumerConfig {
+        executor_version_rpc: ProviderBuilder::new()
+            .connect_mocked_client(rpc)
+            .erased(),
         catchup_from_block: None,
         catchup_up_to_block: None,
         catchup_unfinalized: false,
@@ -251,7 +141,6 @@ fn activation(number: u64, flow: BlockFlow, crs: bool) -> BlockPayload {
                 data: data.data,
             }],
         }],
-        executor_version: None,
     }
 }
 
@@ -279,6 +168,7 @@ impl Harness {
             let result = ingest_payload(
                 &mut self.db,
                 &config(),
+                &ExecutorVersionResolver::default(),
                 &options(),
                 &CHAIN_ID.to_string(),
                 repair.as_ref().unwrap_or(payload),
@@ -470,4 +360,154 @@ async fn consumer_activates_kms_material_only_on_finalized_blocks() {
     harness
         .deliver_until(&held, "kms_key_activation_events", 300, "activated")
         .await;
+}
+
+#[tokio::test]
+async fn broker_applies_executor_upgrades_and_resumes_from_committed_parent() {
+    use crate::contracts::TfheContract;
+    use alloy::primitives::Bytes;
+    use alloy::sol_types::SolCall;
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let mut db = Database::new(
+        &instance.db_url,
+        ChainId::try_from(CHAIN_ID).unwrap(),
+        16,
+    )
+    .await
+    .unwrap();
+    let pool = db.pool().await;
+    let rpc = Asserter::new();
+    let mut config = config();
+    config.kms_generation_address = None;
+    config.executor_version_rpc = ProviderBuilder::new()
+        .connect_mocked_client(rpc.clone())
+        .erased();
+    let proxy = config.tfhe_address;
+    let encode = |version: &str| {
+        Bytes::from(TfheContract::getVersionCall::abi_encode_returns(
+            &version.to_owned(),
+        ))
+    };
+    let indexed = |index, data: alloy::primitives::LogData| IndexedLog {
+        address: proxy,
+        log_index: index,
+        topics: data.topics().to_vec(),
+        data: data.data,
+    };
+    let operation = |index: u8, plaintext: u64| {
+        let mut handle = [0_u8; 32];
+        handle[0] = index;
+        handle[21] = fhevm_engine_common::types::COMPUTED_HANDLE_INDEX_MARKER;
+        handle[22..30].copy_from_slice(&CHAIN_ID.to_be_bytes());
+        handle[30] = 2; // euint8
+        handle[31] = fhevm_engine_common::types::HANDLE_VERSION;
+        indexed(
+            u64::from(index),
+            TfheContract::TrivialEncrypt {
+                caller: proxy,
+                pt: U256::from(plaintext),
+                toType: 2,
+                result: B256::from(handle),
+            }
+            .encode_log_data(),
+        )
+    };
+    let upgrade = |index, implementation| {
+        indexed(
+            index,
+            TfheContract::Upgraded { implementation }.encode_log_data(),
+        )
+    };
+    let v7 = Address::repeat_byte(7);
+    let mut block = activation(100, BlockFlow::Live, false);
+    block.transactions[0].logs = vec![
+        operation(0, 256),
+        upgrade(1, v7),
+        operation(2, 255),
+        upgrade(3, Address::repeat_byte(6)),
+        operation(4, 256),
+    ];
+    let store = MaterialStore(Default::default());
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let opts = options();
+    let resolver = ExecutorVersionResolver::default();
+    let deliver = async |db: &mut Database,
+                         resolver: &ExecutorVersionResolver,
+                         block: &BlockPayload| {
+        ingest_payload(
+            db,
+            &config,
+            resolver,
+            &opts,
+            "12345",
+            block,
+            store.clone(),
+            &cancel,
+        )
+        .await
+    };
+
+    rpc.push_success(&encode("FHEVMExecutor v0.6.0"));
+    rpc.push_failure_msg("archive temporarily unavailable");
+    assert!(matches!(
+        deliver(&mut db, &resolver, &block).await.unwrap(),
+        AckDecision::Delay(_)
+    ));
+    let headers = || {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM host_chain_blocks_valid",
+        )
+        .fetch_one(&pool)
+    };
+    assert_eq!(headers().await.unwrap(), 0);
+
+    rpc.push_success(&encode("FHEVMExecutor v0.7.0"));
+    rpc.push_success(&encode("FHEVMExecutor v0.6.0"));
+    block.transactions[0].logs[2] = operation(2, 256);
+    assert!(deliver(&mut db, &resolver, &block).await.is_err());
+    assert_eq!(
+        headers().await.unwrap(),
+        0,
+        "invalid operation rolled back the entire delivery"
+    );
+    block.transactions[0].logs[2] = operation(2, 255);
+    assert!(matches!(
+        deliver(&mut db, &resolver, &block).await.unwrap(),
+        AckDecision::Ack
+    ));
+
+    // The next two deliveries use fresh resolver instances. Only the new
+    // implementation needs an RPC result on the upgrade-only block.
+    let mut activation_only = activation(101, BlockFlow::Final, false);
+    activation_only.transactions[0].logs = vec![upgrade(8, v7)];
+    rpc.push_success(&encode("FHEVMExecutor v0.7.0"));
+    assert!(matches!(
+        deliver(
+            &mut db,
+            &ExecutorVersionResolver::default(),
+            &activation_only
+        )
+        .await
+        .unwrap(),
+        AckDecision::Ack
+    ));
+    let mut child = activation(102, BlockFlow::Final, false);
+    child.transactions[0].logs = vec![operation(5, 255)];
+    assert!(matches!(
+        deliver(&mut db, &ExecutorVersionResolver::default(), &child)
+            .await
+            .unwrap(),
+        AckDecision::Ack
+    ));
+    let versions: Vec<String> = sqlx::query_scalar("SELECT tfhe_executor_version FROM host_chain_blocks_valid ORDER BY block_number").fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        versions,
+        [
+            "FHEVMExecutor v0.6.0",
+            "FHEVMExecutor v0.7.0",
+            "FHEVMExecutor v0.7.0"
+        ]
+    );
 }

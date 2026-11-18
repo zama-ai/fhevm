@@ -15,7 +15,7 @@ use tracing::{error, info, warn, Level};
 
 use std::collections::{BTreeMap, VecDeque};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use fhevm_engine_common::database::connect_pool_with_options;
@@ -26,16 +26,16 @@ use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 use fhevm_engine_common::versioning::{reconcile_stack_mode, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
-use crate::database::event_operands::{
-    executor_upgrade_transitions_for_proxy, ExecutorVersion,
-    ExecutorVersionSchedule,
-};
+use crate::database::event_operands::ExecutorVersionSchedule;
 use crate::database::history_verification::verify_finalized_history;
 use crate::database::ingest::{
     update_finalized_blocks, validate_block_logs, BlockLogs, IngestOptions,
 };
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
+};
+use crate::executor_version::{
+    ExecutorVersionRequest, ExecutorVersionResolver,
 };
 use crate::health_check::HealthCheck;
 use crate::kms_generation::aws_s3::AwsS3Client;
@@ -233,7 +233,7 @@ pub struct InfiniteLogIter {
     pub tick_block: HeartBeat,
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
-    executor_version_cursor: Mutex<Option<ExecutorVersionCursor>>,
+    executor_versions: ExecutorVersionResolver,
     catchup_finalization_in_blocks: u64,
     tracks_kms_generation: bool,
     rpc_finalized_block: Option<i64>,
@@ -244,46 +244,6 @@ struct CatchupPage {
     from_block: u64,
     next_page: u64,
     remaining_blocks: usize,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct ExecutorVersionCursor {
-    block_number: u64,
-    block_hash: BlockHash,
-    version: ExecutorVersion,
-}
-
-/// Owned version-resolution input so history recovery can resolve each
-/// recovered block without borrowing its temporary log batch.
-pub(crate) struct ExecutorVersionRequest {
-    pub(crate) block_number: u64,
-    pub(crate) block_hash: BlockHash,
-    pub(crate) parent_hash: BlockHash,
-    pub(crate) tfhe_proxy: Option<Address>,
-    pub(crate) persisted_parent_version: Option<Option<ExecutorVersion>>,
-    pub(crate) upgrades: Vec<(u64, Address)>,
-}
-
-impl ExecutorVersionRequest {
-    pub(crate) fn from_block(
-        block: &BlockLogs<Log>,
-        tfhe_proxy: Option<Address>,
-    ) -> Self {
-        let upgrades = tfhe_proxy.map_or_else(Vec::new, |proxy| {
-            executor_upgrade_transitions_for_proxy(
-                block.logs.iter().map(|log| (log.log_index, &log.inner)),
-                proxy,
-            )
-        });
-        Self {
-            block_number: block.summary.number,
-            block_hash: block.summary.hash,
-            parent_hash: block.summary.parent_hash,
-            tfhe_proxy,
-            persisted_parent_version: None,
-            upgrades,
-        }
-    }
 }
 
 enum BlockOrTimeoutOrNone {
@@ -365,7 +325,7 @@ impl InfiniteLogIter {
             block_history: BlockHistory::new(
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
-            executor_version_cursor: Mutex::new(None),
+            executor_versions: ExecutorVersionResolver::default(),
             catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
             tracks_kms_generation: !args.kms_generation_address.is_empty(),
             rpc_finalized_block: None,
@@ -373,95 +333,18 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn query_executor_version(
-        &self,
-        address: Address,
-        at_block_hash: BlockHash,
-    ) -> anyhow::Result<Option<ExecutorVersion>> {
-        use alloy::sol_types::SolCall;
-        let provider = self.provider.read().await.clone().ok_or_else(|| {
-            anyhow::anyhow!(
-                "WebSocket provider is unavailable for executor version lookup"
-            )
-        })?;
-        let request = alloy::rpc::types::TransactionRequest::default()
-            .to(address)
-            .input(alloy::rpc::types::TransactionInput::both(
-                crate::contracts::TfheContract::getVersionCall {}
-                    .abi_encode()
-                    .into(),
-            ));
-        let value = tokio::time::timeout(
-            Duration::from_secs(self.timeout_request_websocket),
-            provider
-                .call(request)
-                .block(BlockId::hash_canonical(at_block_hash)),
-        )
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "Timed out resolving FHEVMExecutor version at canonical block"
-            )
-        })??;
-        if value.is_empty() {
-            return Ok(None);
-        }
-        let version =
-            crate::contracts::TfheContract::getVersionCall::abi_decode_returns(
-                &value,
-            )?;
-        Ok(ExecutorVersion::parse(&version))
-    }
-
     pub(crate) async fn executor_version_schedule(
         &self,
         request: ExecutorVersionRequest,
-    ) -> anyhow::Result<ExecutorVersionSchedule> {
-        let Some(tfhe_proxy) = request.tfhe_proxy else {
-            if let Ok(mut cursor) = self.executor_version_cursor.lock() {
-                *cursor = None;
-            }
-            return Ok(ExecutorVersionSchedule::default());
-        };
-
-        let cached_parent = self
-            .executor_version_cursor
-            .lock()
-            .ok()
-            .and_then(|cursor| *cursor)
-            .filter(|cursor| {
-                cursor.block_hash == request.parent_hash
-                    && cursor.block_number.checked_add(1)
-                        == Some(request.block_number)
-            });
-        let mut current = cached_parent
-            .map(|cursor| cursor.version)
-            .or_else(|| request.persisted_parent_version.flatten());
-        if current.is_none() {
-            current = self
-                .query_executor_version(tfhe_proxy, request.parent_hash)
-                .await?;
-        }
-        let mut schedule = ExecutorVersionSchedule::new(current);
-        for (log_index, implementation) in request.upgrades {
-            current = self
-                .query_executor_version(implementation, request.block_hash)
-                .await?;
-            schedule.add_transition(log_index, current);
-        }
-
-        if let Some(version) = current {
-            if let Ok(mut cursor) = self.executor_version_cursor.lock() {
-                *cursor = Some(ExecutorVersionCursor {
-                    block_number: request.block_number,
-                    block_hash: request.block_hash,
-                    version,
-                });
-            }
-        } else if let Ok(mut cursor) = self.executor_version_cursor.lock() {
-            *cursor = None;
-        }
-        Ok(schedule)
+    ) -> Result<ExecutorVersionSchedule> {
+        let provider = self.provider.read().await.clone();
+        self.executor_versions
+            .resolve(
+                request,
+                provider.as_ref().map(|p| p as &dyn Provider),
+                Duration::from_secs(self.timeout_request_websocket),
+            )
+            .await
     }
 
     async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
@@ -1262,9 +1145,6 @@ impl InfiniteLogIter {
     /// This cursor is in memory: gaps older than the startup lookback still
     /// require the HTTP poller or an explicit replay after a process restart.
     fn retry_from_block(&mut self, block_number: u64) {
-        if let Ok(mut cursor) = self.executor_version_cursor.lock() {
-            *cursor = None;
-        }
         let mut from = self
             .pending_catchup_page
             .as_ref()
@@ -1757,6 +1637,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::database::event_operands::ExecutorVersion;
     use std::collections::VecDeque;
     use std::sync::Arc;
 
@@ -1790,7 +1671,7 @@ mod tests {
             tick_block: HeartBeat::new(),
             reorg_maximum_duration_in_blocks: reorg_max,
             block_history: BlockHistory::new(reorg_max as usize),
-            executor_version_cursor: Mutex::new(None),
+            executor_versions: ExecutorVersionResolver::default(),
             catchup_finalization_in_blocks: 20,
             tracks_kms_generation: false,
             rpc_finalized_block: None,
@@ -1806,7 +1687,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn websocket_version_schedule_uses_persisted_parent_and_cursor() {
+    async fn websocket_version_schedule_uses_committed_parents_without_a_provider(
+    ) {
         let iter = new_test_iter(50);
         let proxy = Address::with_last_byte(0x42);
         let parent = BlockLogs {
@@ -1823,7 +1705,7 @@ mod tests {
         let version = ExecutorVersion::new(0, 5, 0);
         let mut parent_request =
             ExecutorVersionRequest::from_block(&parent, Some(proxy));
-        parent_request.persisted_parent_version = Some(Some(version));
+        parent_request.persisted_parent_version = Some(version);
         let parent_schedule = iter
             .executor_version_schedule(parent_request)
             .await
@@ -1841,11 +1723,13 @@ mod tests {
             catchup: false,
             finalized: true,
         };
+        let mut child_request =
+            ExecutorVersionRequest::from_block(&child, Some(proxy));
+        // The parent was committed by ingestion before its checkpoint can be reused.
+        child_request.persisted_parent_version =
+            parent_schedule.ending_version();
         let child_schedule = iter
-            .executor_version_schedule(ExecutorVersionRequest::from_block(
-                &child,
-                Some(proxy),
-            ))
+            .executor_version_schedule(child_request)
             .await
             .expect("executor version lookup");
         assert_eq!(child_schedule.ending_version(), Some(version));
@@ -1875,7 +1759,7 @@ mod tests {
             .is_err());
         let mut recovered = ExecutorVersionRequest::from_block(&block, proxy);
         recovered.persisted_parent_version =
-            Some(Some(ExecutorVersion::new(0, 7, 0)));
+            Some(ExecutorVersion::new(0, 7, 0));
         assert_eq!(
             iter.executor_version_schedule(recovered)
                 .await

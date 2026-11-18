@@ -173,6 +173,15 @@ spec:
               {{- end }}
             {{- end }}
             {{- end }}
+            {{- if or $chain.httpUrl $chain.httpUrlValueFrom }}
+            - name: RPC_HTTP_URL
+              {{- if $chain.httpUrl }}
+              value: {{ $chain.httpUrl | quote }}
+              {{- else }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $chain.httpUrlValueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
             {{- if or $chain.aclContractAddress $chain.aclContractAddressValueFrom }}
             - name: ACL_CONTRACT_ADDRESS
               {{- if $chain.aclContractAddress }}

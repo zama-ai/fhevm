@@ -681,7 +681,7 @@ hostListenerCatchupOnlyShared:
 # -----------------------------------------------------------------------------
 # Host Listener Consumer Shared
 # -----------------------------------------------------------------------------
-# Consumes listener events from the database / broker queue (no chain RPC).
+# Consumes broker deliveries. The host RPC resolves executor versions on replay and upgrade.
 # Shared/default configuration for every chain entry that enables
 # hostListenerConsumer. This block is the primary source for image, replicas,
 # resources, ports, probes, tracing, scheduling, and structured args.
@@ -823,7 +823,7 @@ hostListenerConsumerShared:
 #     #   secretKeyRef:
 #     #     name: rpc
 #     #     key: ethereum-rpc-ws-url
-#     httpUrl: "http://eth-node:8545"   # required by hostListenerPoller unless httpUrlValueFrom is set
+#     httpUrl: "http://eth-node:8545"   # used by hostListenerPoller and hostListenerConsumer unless httpUrlValueFrom is set
 #     # httpUrlValueFrom:
 #     #   secretKeyRef:
 #     #     name: rpc

@@ -83,12 +83,6 @@ impl EvmListenerError {
     /// Such failures are resolved by re-arming the cursor with fresher chain data.
     pub fn is_inconsistent_snapshot(&self) -> bool {
         matches!(self, Self::CouldNotFetchBlock { source } if source.is_inconsistent_snapshot())
-            || matches!(
-                self,
-                Self::PayloadBuildError {
-                    source: PublisherError::NonCanonicalSnapshot { .. }
-                }
-            )
     }
 }
 
@@ -732,12 +726,6 @@ impl EvmListener {
             }
 
             // === ERROR PATHS ===
-            (Err(cursor_err), _) if cursor_err.is_inconsistent_snapshot() => {
-                warn!(error = %cursor_err, "Cursor snapshot was replaced while resolving executor metadata; re-arming");
-                self.record_rearm("live");
-                tokio::time::sleep(Duration::from_millis(self.loop_delay_ms)).await;
-                Ok(CursorResult::Rearm)
-            }
 
             // Cursor was cancelled because fetcher failed — return the ROOT CAUSE (fetcher's error).
             // The cursor saw cancellation via tokio::select!, but the real problem is in the fetcher.
@@ -835,42 +823,6 @@ impl EvmListener {
         }
     }
 
-    /// A second reorg can invalidate the version snapshot after a successful
-    /// block/receipt fetch (including an empty block). Abandon just as we do
-    /// for inconsistent receipts, before committing any of the walked blocks.
-    async fn publish_walk_block(
-        &self,
-        block: &FetchedBlock,
-        flow: BlockFlow,
-        blocks_collected: usize,
-    ) -> Result<bool, EvmListenerError> {
-        match publisher::publish_block_events(
-            &self.repositories,
-            block,
-            &self.provider,
-            flow,
-            &self.broker,
-            &self.event_publisher,
-            &self.publish_config,
-        )
-        .await
-        .map_err(|source| EvmListenerError::PayloadBuildError { source })
-        {
-            Ok(()) => Ok(true),
-            Err(error) if error.is_inconsistent_snapshot() => {
-                self.abandon_reorg_walk(
-                    block.block.header.number,
-                    block.block.header.hash,
-                    blocks_collected,
-                    &error,
-                )
-                .await;
-                Ok(false)
-            }
-            Err(error) => Err(error),
-        }
-    }
-
     /// Walks backwards from the reorg point to reconstruct the canonical chain.
     ///
     /// # Algorithm
@@ -920,6 +872,7 @@ impl EvmListener {
         event: ReorgBacktrackEvent,
     ) -> Result<(), EvmListenerError> {
         let block_number = event.block_number;
+        let chain_id_u64 = self.repositories.chain_id() as u64;
 
         // We don't need to dedup the message, the flow lock + ack will handle the deduplication by itself.
 
@@ -944,12 +897,18 @@ impl EvmListener {
             return Ok(());
         };
 
-        if !self
-            .publish_walk_block(&block_n, BlockFlow::Live, 0)
-            .await?
-        {
-            return Ok(());
-        }
+        publisher::publish_block_events(
+            &self.repositories,
+            &block_n,
+            chain_id_u64,
+            // This block is coming from the live flow, and detect the reorg processing, but was issued from the live flow.
+            BlockFlow::Live,
+            &self.broker,
+            &self.event_publisher,
+            &self.publish_config,
+        )
+        .await
+        .map_err(|source| EvmListenerError::PayloadBuildError { source })?;
 
         collected_blocks.push(NewDatabaseBlock::from_rpc_block(
             &block_n.block,
@@ -1053,12 +1012,17 @@ impl EvmListener {
 
             // Publish events on-the-go. The FetchedBlock is dropped after this
             // loop iteration — only the NewDatabaseBlock (72 bytes) is retained.
-            if !self
-                .publish_walk_block(&current_block, BlockFlow::Reorged, collected_blocks.len())
-                .await?
-            {
-                return Ok(());
-            }
+            publisher::publish_block_events(
+                &self.repositories,
+                &current_block,
+                chain_id_u64,
+                BlockFlow::Reorged,
+                &self.broker,
+                &self.event_publisher,
+                &self.publish_config,
+            )
+            .await
+            .map_err(|source| EvmListenerError::PayloadBuildError { source })?;
 
             collected_blocks.push(NewDatabaseBlock::from_rpc_block(
                 &current_block.block,
@@ -2079,10 +2043,11 @@ async fn cursor_processing(
         // Events MUST be delivered before the block is registered in DB.
         // If publish fails: block is NOT inserted, DB tip unchanged,
         // cursor retries this exact block on next iteration. Zero missed events.
+        let chain_id_u64 = listener.repositories.chain_id() as u64;
         publisher::publish_block_events(
             &listener.repositories,
             &fetched_block,
-            &listener.provider,
+            chain_id_u64,
             BlockFlow::Live,
             &listener.broker,
             &listener.event_publisher,
@@ -2187,10 +2152,11 @@ async fn final_processing(
         // can advance the tip meanwhile), exactly like the live cursor flow.
         // The publish inherits the publish_stale/queue-existence behavior of
         // publish_payload_to_consumer.
+        let chain_id_u64 = listener.repositories.chain_id() as u64;
         publisher::publish_final_block_events(
             &listener.repositories,
             &fetched_block,
-            &listener.provider,
+            chain_id_u64,
             &listener.broker,
             &listener.event_publisher,
             &listener.publish_config,
@@ -2251,6 +2217,7 @@ async fn catchup_processing(
     request: CatchupPayload,
     last_block: Option<u64>,
 ) -> Result<(), EvmListenerError> {
+    let chain_id_u64 = listener.repositories.chain_id() as u64;
     let CatchupPayload {
         consumer_id,
         catchup_id,
@@ -2280,7 +2247,7 @@ async fn catchup_processing(
         publisher::publish_catchup_block_events(
             &listener.repositories,
             &fetched_block,
-            &listener.provider,
+            chain_id_u64,
             publisher::CatchupTarget {
                 consumer_id: &consumer_id,
                 catchup_id,
@@ -2335,6 +2302,7 @@ async fn final_catchup_processing(
     request: CatchupPayload,
     last_block: Option<u64>,
 ) -> Result<(), EvmListenerError> {
+    let chain_id_u64 = listener.repositories.chain_id() as u64;
     let CatchupPayload {
         consumer_id,
         catchup_id,
@@ -2364,7 +2332,7 @@ async fn final_catchup_processing(
         publisher::publish_final_catchup_block_events(
             &listener.repositories,
             &fetched_block,
-            &listener.provider,
+            chain_id_u64,
             publisher::CatchupTarget {
                 consumer_id: &consumer_id,
                 catchup_id,

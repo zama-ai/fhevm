@@ -1,11 +1,13 @@
+use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use alloy::primitives::Address;
+use alloy::providers::{DynProvider, Provider};
 use alloy::rpc::types::Log;
 use alloy_primitives::LogData;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::{stream::FuturesUnordered, StreamExt, TryFutureExt};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -31,16 +33,16 @@ use crate::consumer::metrics::{
     observe_legacy_insert_delay_seconds, set_received_block,
 };
 use crate::consumer::migration::spawn_id_migration;
-use crate::database::event_operands::{
-    ExecutorVersion, ExecutorVersionSchedule,
-};
+use crate::database::event_operands::ExecutorVersionSchedule;
 use crate::database::ingest::{
+    admit_block_history, executor_version_request,
     ingest_block_logs_in_transaction_with_executor_schedule, BlockLogs,
     HistoryGap, IngestOptions, IngestResult,
 };
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
 };
+use crate::executor_version::{ExecutorVersionResolver, RPC_TIMEOUT};
 use crate::health_check::HealthCheck;
 use crate::kms_generation::aws_s3::{AwsS3Client, AwsS3Interface};
 use crate::kms_generation::process_kms_generation_activations;
@@ -84,6 +86,7 @@ pub struct ConsumerConfig {
     pub catchup_unfinalized: bool,
     pub no_override_catchup: bool,
     pub url: String,
+    pub executor_version_rpc: DynProvider,
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub kms_generation_address: Option<Address>,
@@ -440,6 +443,14 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         // starts the listener publishing, and a group created afterwards starts
         // at the end of the stream and never sees what was published in
         // between.
+        let rpc_chain = tokio::time::timeout(
+            RPC_TIMEOUT,
+            config.executor_version_rpc.get_chain_id(),
+        )
+        .await
+        .context("Executor version RPC chain ID lookup timed out")??;
+        anyhow::ensure!(rpc_chain == chain_id.as_u64(),
+            "Executor version RPC chain ID {rpc_chain} differs from configured chain {chain_id}");
         info!("Consumer ensure queues");
         client.ensure_consumer().await?;
         client.ensure_final_consumer().await?;
@@ -577,6 +588,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             result
         }))
     };
+    let executor_versions = Arc::new(ExecutorVersionResolver::default());
     let handle_block = move |payload: BlockPayload, _cancel| {
         let is_catchup = matches!(
             payload.flow,
@@ -594,6 +606,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         let ingest_options = ingest_options.clone();
         let stack_mode = stack_mode.clone();
         let config = handler_config.clone();
+        let executor_versions = executor_versions.clone();
         let kms_cancel = kms_cancel.clone();
         let live_reference = live_reference.clone();
         let consumer_id = consumer_id.clone();
@@ -691,6 +704,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             let result = ingest_payload(
                 &mut db,
                 &config,
+                &executor_versions,
                 &ingest_options,
                 &chain_id_str,
                 &payload,
@@ -724,7 +738,9 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             crate::catchup_test_control::after_ingest(&test_payload)
                 .map_err(|error| HandlerError::Transient(error.into()))?;
 
-            if let Some(id) = catchup_id.filter(|_| payload.last_in_catchup) {
+            if let Some(id) = catchup_id.filter(|_| {
+                payload.last_in_catchup && matches!(decision, AckDecision::Ack)
+            }) {
                 if catchup::store::completed(
                     &db.pool().await,
                     chain_id.as_i64(),
@@ -871,9 +887,11 @@ fn record_catchup_rejection(
 
 /// Ingest one live or finalized payload. A finalized payload re-ingests the
 /// block idempotently and marks it finalized. Then spawn a KMS activation pass.
+#[allow(clippy::too_many_arguments)]
 async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
     db: &mut Database,
     config: &ConsumerConfig,
+    executor_versions: &ExecutorVersionResolver,
     ingest_options: &IngestOptions,
     chain_id_str: &str,
     payload: &BlockPayload,
@@ -919,8 +937,20 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
         catchup,
         finalized,
     };
-    let executor_version_schedule =
-        executor_version_schedule_for_payload(payload, config.tfhe_address);
+    let request = executor_version_request(
+        db,
+        chain_id,
+        &block_logs,
+        Some(config.tfhe_address),
+    )
+    .await
+    .map_err(|e| HandlerError::Transient(e.into()))?;
+    // RPC runs outside the database transaction. Admission below still checks
+    // catchup ownership and committed history if the snapshot has disappeared.
+    let schedule = executor_versions
+        .resolve(request, Some(&config.executor_version_rpc), RPC_TIMEOUT)
+        .await;
+
     match ingest_with_retry(
         chain_id,
         db,
@@ -933,11 +963,18 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
         config.confidential_bridge_address,
         config.database_retry_interval,
         ingest_options.clone(),
-        executor_version_schedule,
+        schedule.as_ref().ok(),
     )
     .await
     {
-        Ok((IngestResult::Complete, _)) => {
+        Ok((None, _)) => {
+            if let Err(error) = schedule {
+                warn!(?error, chain_id = %chain_id, block_number = payload.block_number,
+                    block_hash = %payload.block_hash, "Waiting for executor version");
+            }
+            Ok(AckDecision::Delay(HISTORY_GAP_RETRY_DELAY))
+        }
+        Ok((Some(IngestResult::Complete), _)) => {
             db.tick.update();
             if finalized {
                 if let Err(error) = db
@@ -962,7 +999,7 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
             inc_blocks_processed(chain_id_str, 1);
             Ok(AckDecision::Ack)
         }
-        Ok((IngestResult::NeedsHistory(gap), _)) => {
+        Ok((Some(IngestResult::NeedsHistory(gap)), _)) => {
             Err(HandlerError::Transient(Box::new(gap)))
         }
         Err((err, retries)) => {
@@ -1239,8 +1276,8 @@ async fn ingest_with_retry(
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
-    executor_version_schedule: ExecutorVersionSchedule,
-) -> Result<(IngestResult, u64), (sqlx::Error, u64)> {
+    executor_version_schedule: Option<&ExecutorVersionSchedule>,
+) -> Result<(Option<IngestResult>, u64), (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
@@ -1248,7 +1285,7 @@ async fn ingest_with_retry(
     loop {
         let result = async {
             let Some(mut tx) = db.new_transaction().await? else {
-                return Ok(IngestResult::Complete);
+                return Ok(Some(IngestResult::Complete));
             };
             if let Some(id) = catchup_id {
                 if let Some(reason) = catchup::store::lock_for_ingest(
@@ -1270,9 +1307,20 @@ async fn ingest_with_retry(
                         block_logs.summary.number,
                         reason,
                     );
-                    return Ok(IngestResult::Complete);
+                    return Ok(Some(IngestResult::Complete));
                 }
             }
+            let Some(schedule) = executor_version_schedule else {
+                return match admit_block_history(db, chain_id, tx, block_logs)
+                    .await?
+                {
+                    ControlFlow::Break(outcome) => Ok(Some(outcome)),
+                    ControlFlow::Continue((tx, _)) => {
+                        tx.rollback().await?;
+                        Ok(None)
+                    }
+                };
+            };
             ingest_block_logs_in_transaction_with_executor_schedule(
                 chain_id,
                 db,
@@ -1284,9 +1332,10 @@ async fn ingest_with_retry(
                 &protocol_config,
                 &confidential_bridge_address,
                 options.clone(),
-                executor_version_schedule.clone(),
+                schedule.clone(),
             )
             .await
+            .map(Some)
         }
         .await;
         match result {
@@ -1307,53 +1356,6 @@ async fn ingest_with_retry(
             }
         }
     }
-}
-
-/// Convert optional broker metadata into the ingress version schedule only
-/// when it is bound to this exact block and configured executor proxy. Older
-/// producer payloads and malformed or mismatched metadata retain the
-/// history-compatible scalar admission policy.
-fn executor_version_schedule_for_payload(
-    payload: &BlockPayload,
-    expected_proxy: Address,
-) -> ExecutorVersionSchedule {
-    let Some(metadata) = payload.executor_version.as_ref() else {
-        return ExecutorVersionSchedule::default();
-    };
-    if metadata.proxy_address != expected_proxy
-        || metadata.block_hash != payload.block_hash
-        || metadata.parent_hash != payload.parent_hash
-        || metadata
-            .transitions
-            .windows(2)
-            .any(|pair| pair[0].after_log_index >= pair[1].after_log_index)
-    {
-        warn!(
-            block_number = payload.block_number,
-            block_hash = ?payload.block_hash,
-            metadata_proxy = %metadata.proxy_address,
-            expected_proxy = %expected_proxy,
-            "Ignoring unbound or unordered executor-version metadata"
-        );
-        return ExecutorVersionSchedule::default();
-    }
-
-    let mut schedule = ExecutorVersionSchedule::new(
-        metadata
-            .initial_version
-            .as_deref()
-            .and_then(ExecutorVersion::parse),
-    );
-    for transition in &metadata.transitions {
-        schedule.add_transition(
-            transition.after_log_index,
-            transition
-                .version
-                .as_deref()
-                .and_then(ExecutorVersion::parse),
-        );
-    }
-    schedule
 }
 
 #[cfg(test)]

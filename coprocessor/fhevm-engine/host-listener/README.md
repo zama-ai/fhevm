@@ -42,14 +42,21 @@ matching coprocessor work to the database. Configure the broker with `--url`,
 `--broker-url`, or the `BROKER_URL` environment variable.
 
 ```bash
-BROKER_URL=redis://listener-redis:6379 host_listener_consumer \
+BROKER_URL=redis://listener-redis:6379 RPC_HTTP_URL=http://host-node:8545 host_listener_consumer \
   --database-url=postgresql://postgres:testmdp@0.0.0.0:5432/coprocessor \
   --acl-contract-address=<ACL_CONTRACT_ADDRESS> \
   --tfhe-contract-address=<TFHE_CONTRACT_ADDRESS> \
   --chain-id=<CHAIN_ID>
 ```
 
-Use `--url` or `--broker-url` to override `BROKER_URL` for a single process.
+Set the host RPC using `--executor-version-rpc-url` or `RPC_HTTP_URL` before upgrading
+the consumer. Helm takes it from the chain's `httpUrl` or `httpUrlValueFrom`.
+It must serve the configured chain and support canonical block-hash `eth_call`
+(EIP-1898). Replaying old blocks can require an archive endpoint when a matching
+parent checkpoint is unavailable or the block contains an executor upgrade.
+Contiguous blocks use the parent's committed version. A failed lookup delays
+the delivery and leaves its work pending until the snapshot becomes available
+or finalized history establishes that the delivery was superseded.
 
 ### Poller starting block (`--seed-start-block`)
 

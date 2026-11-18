@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use alloy::primitives::Address;
+use alloy::providers::{Provider, ProviderBuilder};
 use anyhow::Context;
 use clap::Parser;
 use tokio_util::sync::CancellationToken;
@@ -24,6 +25,13 @@ struct Args {
         help = "Broker (Redis or Rabbit); falls back to BROKER_URL env var if unset"
     )]
     url: String,
+
+    #[arg(
+        long,
+        env = "RPC_HTTP_URL",
+        help = "Host-chain HTTP RPC for hash-pinned executor version lookups"
+    )]
+    executor_version_rpc_url: url::Url,
 
     #[arg(long, help = "ACL contract address to monitor")]
     acl_contract_address: Address,
@@ -257,7 +265,14 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    anyhow::ensure!(
+        matches!(args.executor_version_rpc_url.scheme(), "http" | "https"),
+        "Executor version RPC must use http or https"
+    );
     let config = ConsumerConfig {
+        executor_version_rpc: ProviderBuilder::new()
+            .connect_http(args.executor_version_rpc_url)
+            .erased(),
         catchup_from_block: args.catchup_from_block,
         catchup_up_to_block: args.catchup_up_to_block,
         catchup_unfinalized: args.catchup_unfinalized,
@@ -299,6 +314,7 @@ mod tests {
     fn parse(extra: &[&str]) -> Result<Args, clap::Error> {
         let mut argv = vec![
             "consumer", "--url=redis://localhost:6379",
+            "--executor-version-rpc-url=http://localhost:8545",
             "--acl-contract-address=0x0000000000000000000000000000000000000000",
             "--tfhe-contract-address=0x0000000000000000000000000000000000000001",
             "--database-url=postgresql://postgres:postgres@localhost/coprocessor",

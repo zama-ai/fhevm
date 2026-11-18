@@ -170,7 +170,8 @@ Options:
 ```
 
 `host_listener_consumer` can take its broker address from `--url`,
-`--broker-url`, or the `BROKER_URL` environment variable.
+`--broker-url`, or the `BROKER_URL` environment variable. Set its host-chain
+RPC with `--executor-version-rpc-url` or `RPC_HTTP_URL`.
 
 ##### gw-listener
 

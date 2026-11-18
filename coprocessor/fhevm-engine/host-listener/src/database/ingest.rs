@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::future::Future;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -20,7 +21,7 @@ use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{debug, error, info, warn};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
-use crate::cmd::{ExecutorVersionRequest, InfiniteLogIter};
+use crate::cmd::InfiniteLogIter;
 use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
@@ -43,6 +44,7 @@ use crate::database::tfhe_event_propagate::{
     uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
     LogTfhe, TransactionHash, REPLAY_METADATA_CONFLICT,
 };
+use crate::executor_version::ExecutorVersionRequest;
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
 use crate::protocol_config::metrics::PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER;
@@ -120,30 +122,34 @@ where
     .await
 }
 
-async fn persisted_executor_version_for_parent(
+/// Build a schedule request from this delivery and the exact parent's
+/// checkpoint in the current stack schema. Gaps, old rows and other forks
+/// need an RPC lookup.
+pub(crate) async fn executor_version_request(
     db: &Database,
     chain_id: ChainId,
-    request: &ExecutorVersionRequest,
-) -> anyhow::Result<Option<Option<ExecutorVersion>>> {
-    let (Some(proxy), Some(parent_number)) =
-        (request.tfhe_proxy, request.block_number.checked_sub(1))
-    else {
-        return Ok(None);
-    };
-    let pool = db.pool().await;
-    let version: Option<(Option<String>,)> = sqlx::query_as(
-        "SELECT tfhe_executor_version FROM host_chain_blocks_valid \
-         WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3 \
-           AND tfhe_executor_address = $4",
-    )
-    .bind(chain_id.as_i64())
-    .bind(parent_number as i64)
-    .bind(request.parent_hash.as_slice())
-    .bind(proxy.as_slice())
-    .fetch_optional(&pool)
-    .await?;
-    Ok(version
-        .map(|(value,)| value.and_then(|value| ExecutorVersion::parse(&value))))
+    block: &BlockLogs<Log>,
+    proxy: Option<Address>,
+) -> Result<ExecutorVersionRequest, sqlx::Error> {
+    let mut request = ExecutorVersionRequest::from_block(block, proxy);
+    if let (Some(proxy), Some(parent_number)) =
+        (proxy, block.summary.number.checked_sub(1))
+    {
+        let version: Option<String> = sqlx::query_scalar(
+            "SELECT tfhe_executor_version FROM host_chain_blocks_valid
+             WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3
+               AND tfhe_executor_address = $4 AND tfhe_executor_version IS NOT NULL",
+        )
+        .bind(chain_id.as_i64())
+        .bind(parent_number as i64)
+        .bind(block.summary.parent_hash.as_slice())
+        .bind(proxy.as_slice())
+        .fetch_optional(&db.pool().await)
+        .await?;
+        request.persisted_parent_version =
+            version.as_deref().and_then(ExecutorVersion::parse);
+    }
+    Ok(request)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -175,10 +181,8 @@ where
     let mut fetched = 0;
     loop {
         let block_to_ingest = repair.as_ref().unwrap_or(block);
-        let mut request =
-            ExecutorVersionRequest::from_block(block_to_ingest, *tfhe);
-        request.persisted_parent_version =
-            persisted_executor_version_for_parent(db, chain_id, &request)
+        let request =
+            executor_version_request(db, chain_id, block_to_ingest, *tfhe)
                 .await?;
         let schedule = get_executor_schedule(request).await?;
         let result = ingest_block_logs_with_executor_schedule(
@@ -631,7 +635,7 @@ pub async fn ingest_block_logs_in_transaction(
 pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
     chain_id: ChainId,
     db: &Database,
-    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    tx: sqlx::Transaction<'_, sqlx::Postgres>,
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
@@ -693,73 +697,14 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
     }
     let touched_handles = touched_handles.into_iter().collect::<Vec<_>>();
 
-    // The identity/parent check and all block writes share one per-chain
-    // admission lock. A second replica must observe this transaction's rows
-    // before it can admit a conflicting finalized block. It also serializes
-    // computation/ACL reconciliation for overlapping deliveries, so the
-    // per-handle lock stripes used in v0.14 are unnecessary here.
     use fhevm_engine_common::chain_recovery::{
-        host_role_tx, lock_history_tx, record_halt, HistoryMismatch,
-        ListenerSource,
+        record_halt, HistoryMismatch, ListenerSource,
     };
-    let history_role = host_role_tx(&mut tx).await?;
-    lock_history_tx(
-        &mut tx,
-        ListenerSource::Host,
-        history_role,
-        chain_id.as_i64(),
-    )
-    .await?;
-    if let Some(conflict) = host_history_conflict(
-        &mut tx,
-        chain_id,
-        i64::try_from(block_logs.summary.number)
-            .map_err(|err| sqlx::Error::Protocol(err.to_string()))?,
-        block_logs.summary.hash.as_slice(),
-        Some(block_logs.summary.parent_hash.as_slice()),
-    )
-    .await?
-    {
-        tx.rollback().await?;
-        if !block_logs.finalized {
-            // Live subscriptions and the broker's independent live/final
-            // queues can deliver an old fork after its replacement finalized.
-            // This observation makes no new canonical claim: discard it
-            // without touching work or containing the already-consistent DB.
-            warn!(
-                block_number = block_logs.summary.number,
-                block_hash = ?block_logs.summary.hash,
-                conflict_height = conflict.block_number,
-                "Ignoring delayed non-finalized block outside committed history"
-            );
-            return Ok(IngestResult::Complete);
-        }
-        record_halt(
-            &db.pool().await,
-            conflict.observation(
-                ListenerSource::Host,
-                history_role,
-                chain_id.as_i64(),
-            ),
-        )
-        .await?;
-        return Err(sqlx::Error::Protocol(conflict.reason.into()));
-    }
-    if block_logs.finalized {
-        if let Some(block_number) =
-            super::history_verification::missing_finalized_link(
-                &mut tx,
-                chain_id.as_i64(),
-                block_logs.summary.number as i64,
-                block_logs.summary.hash.as_slice(),
-                Some(block_logs.summary.parent_hash.as_slice()),
-            )
-            .await?
-        {
-            tx.rollback().await?;
-            return Ok(IngestResult::NeedsHistory(HistoryGap { block_number }));
-        }
-    }
+    let (mut tx, history_role) =
+        match admit_block_history(db, chain_id, tx, block_logs).await? {
+            ControlFlow::Continue(admitted) => admitted,
+            ControlFlow::Break(outcome) => return Ok(outcome),
+        };
 
     let committed_inventory = CommittedInventory::capture(
         &mut tx,
@@ -1574,6 +1519,90 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
 /// existing finalizer. Admission and deferred finalization both call this while
 /// holding the same history lock. An absent legacy parent is unknown, so only
 /// the same-height and successor checks apply in that case.
+/// An obsolete delivery or a missing finalized link can be handled even when
+/// the version RPC no longer serves that fork. A caller continuing ingestion
+/// holds the same admission lock through commit.
+pub(crate) async fn admit_block_history<'a>(
+    db: &Database,
+    chain_id: ChainId,
+    mut tx: sqlx::Transaction<'a, sqlx::Postgres>,
+    block_logs: &BlockLogs<Log>,
+) -> Result<
+    ControlFlow<IngestResult, (sqlx::Transaction<'a, sqlx::Postgres>, bool)>,
+    sqlx::Error,
+> {
+    // The identity/parent check and all block writes share one per-chain
+    // admission lock. A second replica must observe this transaction's rows
+    // before it can admit a conflicting finalized block. It also serializes
+    // computation/ACL reconciliation for overlapping deliveries, so the
+    // per-handle lock stripes used in v0.14 are unnecessary here.
+    use fhevm_engine_common::chain_recovery::{
+        host_role_tx, lock_history_tx, record_halt, ListenerSource,
+    };
+    let history_role = host_role_tx(&mut tx).await?;
+    lock_history_tx(
+        &mut tx,
+        ListenerSource::Host,
+        history_role,
+        chain_id.as_i64(),
+    )
+    .await?;
+    if let Some(conflict) = host_history_conflict(
+        &mut tx,
+        chain_id,
+        i64::try_from(block_logs.summary.number)
+            .map_err(|err| sqlx::Error::Protocol(err.to_string()))?,
+        block_logs.summary.hash.as_slice(),
+        Some(block_logs.summary.parent_hash.as_slice()),
+    )
+    .await?
+    {
+        tx.rollback().await?;
+        if !block_logs.finalized {
+            // Live subscriptions and the broker's independent live/final
+            // queues can deliver an old fork after its replacement finalized.
+            // This observation makes no new canonical claim: discard it
+            // without touching work or containing the already-consistent DB.
+            warn!(
+                block_number = block_logs.summary.number,
+                block_hash = ?block_logs.summary.hash,
+                conflict_height = conflict.block_number,
+                "Ignoring delayed non-finalized block outside committed history"
+            );
+            return Ok(ControlFlow::Break(IngestResult::Complete));
+        }
+        record_halt(
+            &db.pool().await,
+            conflict.observation(
+                ListenerSource::Host,
+                history_role,
+                chain_id.as_i64(),
+            ),
+        )
+        .await?;
+        return Err(sqlx::Error::Protocol(conflict.reason.into()));
+    }
+    if block_logs.finalized {
+        if let Some(block_number) =
+            super::history_verification::missing_finalized_link(
+                &mut tx,
+                chain_id.as_i64(),
+                block_logs.summary.number as i64,
+                block_logs.summary.hash.as_slice(),
+                Some(block_logs.summary.parent_hash.as_slice()),
+            )
+            .await?
+        {
+            tx.rollback().await?;
+            return Ok(ControlFlow::Break(IngestResult::NeedsHistory(
+                HistoryGap { block_number },
+            )));
+        }
+    }
+
+    Ok(ControlFlow::Continue((tx, history_role)))
+}
+
 async fn host_history_conflict(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     chain_id: ChainId,

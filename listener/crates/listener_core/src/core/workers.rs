@@ -1701,24 +1701,8 @@ mod reorg_abandon_tests {
     #[sqlx::test(migrations = "./migrations")]
     #[ignore = "needs Docker (Redis testcontainer); run via `make test-e2e-listener`"]
     async fn reorg_abandon_rearms_cursor(pool: sqlx::PgPool) {
-        assert_reorg_abandon_rearms_cursor(pool, false).await;
-    }
-
-    #[sqlx::test(migrations = "./migrations")]
-    async fn reorged_executor_parent_rearms_cursor_without_committing(pool: sqlx::PgPool) {
-        assert_reorg_abandon_rearms_cursor(pool, true).await;
-    }
-
-    async fn assert_reorg_abandon_rearms_cursor(pool: sqlx::PgPool, executor_reorg: bool) {
-        use testcontainers::runners::AsyncRunner;
-        use testcontainers_modules::redis::Redis;
-
         // RPC: eth_getBlockByHash always returns null (block replaced by a newer reorg).
-        let node = if executor_reorg {
-            mock_rpc::start_with_executor_parent_reorg().await
-        } else {
-            mock_rpc::start(None, true).await
-        };
+        let node = mock_rpc::start(None, true).await;
 
         // DB: one canonical block below the reorged height.
         let db_config = serde_json::from_value(serde_json::json!({
@@ -1734,26 +1718,11 @@ mod reorg_abandon_tests {
             status: BlockStatus::Canonical,
         };
         repositories.blocks.insert_block(&below).await.unwrap();
-        if executor_reorg {
-            repositories
-                .filters
-                .add_filter(
-                    "executor-reorg-regression",
-                    None,
-                    None,
-                    None,
-                    crate::store::models::FilterType::Live,
-                )
-                .await
-                .unwrap();
-        }
 
-        // A private broker prevents parallel tests/campaigns sharing a chain ID
-        // or fixed container name from consuming this test's resume trigger.
-        let redis = Redis::default().start().await.unwrap();
+        // Broker: shared Redis container, logical DB 14.
         let redis_url = format!(
-            "redis://127.0.0.1:{}",
-            redis.get_host_port_ipv4(6379).await.unwrap()
+            "{}/14",
+            test_support::shared_redis_url().await.trim_end_matches('/')
         );
         let broker = Broker::redis(&redis_url).await.unwrap();
         let namespace = chain_id_to_namespace(CHAIN_ID);
@@ -1768,17 +1737,13 @@ mod reorg_abandon_tests {
         };
         let fetch_before = fetch_len().await;
 
-        let mut settings: BlockchainConfig = serde_json::from_value(serde_json::json!({
+        let settings: BlockchainConfig = serde_json::from_value(serde_json::json!({
             "chain_id": CHAIN_ID,
             "rpc_url": node.url,
             "network": "mock",
             "strategy": { "loop_delay_ms": 10, "reorg_not_found_max_retries": 2 }
         }))
         .unwrap();
-        if executor_reorg {
-            settings.strategy.publish.tfhe_executor_proxy_address =
-                Some(alloy::primitives::Address::repeat_byte(0x11));
-        }
         let provider = SemEvmRpcProvider::new(node.url.clone(), 5, false, 64).unwrap();
         let listener = EvmListener::new(
             provider,
@@ -1817,17 +1782,10 @@ mod reorg_abandon_tests {
         // 3 attempts (1 + 2 NotFound retries) per by-hash call; both tasks of the
         // block_receipts strategy may hit eth_getBlockByHash, hence up to 6.
         let calls = node.by_hash_calls.load(std::sync::atomic::Ordering::SeqCst);
-        if executor_reorg {
-            assert!(
-                (1..=2).contains(&calls),
-                "the empty block must have been fetched, got {calls}"
-            );
-        } else {
-            assert!(
-                (3..=6).contains(&calls),
-                "walk must give up after the cap, got {calls} by-hash calls"
-            );
-        }
+        assert!(
+            (3..=6).contains(&calls),
+            "walk must give up after the cap, got {calls} by-hash calls"
+        );
         // DB untouched: the pre-existing block is still the tip, nothing added.
         let tip = repositories
             .blocks
