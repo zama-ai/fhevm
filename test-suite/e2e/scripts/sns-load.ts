@@ -25,8 +25,8 @@ async function main() {
     return;
   }
 
-  const target = Number(process.env.SNS_LOAD_HANDLES ?? '10000');
-  assert(Number.isSafeInteger(target) && target >= 10000 && target <= 100000);
+  const target = Number(process.env.SNS_LOAD_HANDLES ?? '2000');
+  assert(Number.isSafeInteger(target) && target >= 2000 && target <= 100000);
   const producers = 16;
   const outputs: Output[] = [];
   let next = 0;

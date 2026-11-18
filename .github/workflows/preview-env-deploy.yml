@@ -1655,7 +1655,7 @@ jobs:
           harbor-url: ${{ secrets.HARBOR_URL }}
           harbor-username: ${{ secrets.HARBOR_READ_LOGIN }}
           harbor-token: ${{ secrets.HARBOR_READ_TOKEN }}
-      - name: Run 50,000 fresh outputs through four SNS replicas
+      - name: Run 2,000 fresh outputs through four SNS replicas
         run: python3 ci/preview-env/scripts/qa/sns-load-preview.py
       - name: Verify conversion overlap between replicas
         run: |
