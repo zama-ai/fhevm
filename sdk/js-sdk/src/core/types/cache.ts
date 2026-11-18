@@ -24,7 +24,7 @@ export type FhevmCacheOptions = {
    * old value (e.g. a user decryption's permit) is not retried: the new value
    * is cached for the next permit. With `false`, the SDK throws
    * `CachedValueStaleError` and leaves the cache as is: call
-   * `forceRefresh(cacheName, { staleVersion })` and retry.
+   * `forceRefreshCachedValue(cacheName, staleVersion)` and retry.
    */
   readonly autoRefreshOnStale?: boolean | undefined;
 };

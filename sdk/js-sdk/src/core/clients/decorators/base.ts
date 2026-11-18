@@ -80,7 +80,7 @@ import {
   type SignLegacyDecryptionPermitParameters,
   type SignLegacyDecryptionPermitReturnType,
 } from '../../actions/base/signLegacyDecryptionPermit.js';
-import { forceRefresh, type ForceRefreshParameters } from '../../actions/base/forceRefresh.js';
+import { forceRefreshCachedValue } from '../../actions/base/forceRefreshCachedValue.js';
 import {
   signUnifiedDecryptionPermit,
   type SignUnifiedDecryptionPermitParameters,
@@ -259,13 +259,13 @@ export type BaseActions = {
    * } catch (err) {
    *   if (err instanceof Error && err.name === 'CachedValueStaleError') {
    *     const { cacheName, staleVersion } = err as Error & { cacheName: FhevmCacheName; staleVersion: string };
-   *     await client.forceRefresh(cacheName, { staleVersion });
+   *     await client.forceRefreshCachedValue(cacheName, staleVersion);
    *     await client.encryptValues({ contractAddress, userAddress, values });
    *   }
    * }
    * ```
    */
-  readonly forceRefresh: (cacheName: FhevmCacheName, parameters?: ForceRefreshParameters) => Promise<void>;
+  readonly forceRefreshCachedValue: (cacheName: FhevmCacheName, staleVersion?: string) => Promise<void>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -291,7 +291,7 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
     serializeSignedDecryptionPermit: (parameters) => serializeSignedDecryptionPermit(fhevm, parameters),
     parseSignedDecryptionPermit: (parameters) => parseSignedDecryptionPermit(fhevm, parameters),
     fetchFheEncryptionKeyBytes: (parameters) => fetchFheEncryptionKeyBytes(fhevm, parameters),
-    forceRefresh: (cacheName, parameters) => forceRefresh(fhevm, cacheName, parameters),
+    forceRefreshCachedValue: (cacheName, staleVersion) => forceRefreshCachedValue(fhevm, cacheName, staleVersion),
   };
 }
 

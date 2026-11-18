@@ -25,7 +25,7 @@ import { bytes32ToHandle, FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION } from '../han
 import { asBytes32 } from '../base/bytes.js';
 import { publicDecryptWithGateway as publicDecrypt } from '../kms/publicDecryptWithGateway.js';
 import { createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
-import { forceRefreshCachedValue, retryOnStaleCache } from './retryOnStaleCache-p.js';
+import { refreshCachedValue, retryOnStaleCache } from './retryOnStaleCache-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/caching/retryOnStaleCache-p.test.ts
@@ -236,7 +236,7 @@ describe('refresh and retry', () => {
     expect(request.run).toHaveBeenCalledTimes(2);
   });
 
-  it('autoRefreshOnStale: false → CachedValueStaleError → forceRefresh → retry succeeds', async () => {
+  it('autoRefreshOnStale: false → CachedValueStaleError → forceRefreshCachedValue → retry succeeds', async () => {
     const world = makeWorld({ autoRefreshOnStale: false });
     const request = inputProofRequest(world);
     const usedVersion = coprocessorSignersVersion({ threshold: 1, signers: [SIGNER_A] });
@@ -250,9 +250,9 @@ describe('refresh and retry', () => {
     expect(request.run).toHaveBeenCalledTimes(2);
     // Nothing was cached: the next request still uses the old set.
     await expect(request.send()).rejects.toBeInstanceOf(CachedValueStaleError);
-    // forceRefresh reads the new set; then the request succeeds.
+    // forceRefreshCachedValue reads the new set; then the request succeeds.
     const reads = world.reads('getCoprocessorSigners');
-    await forceRefreshCachedValue(world.client, {
+    await refreshCachedValue(world.client, {
       cacheName: 'coprocessorSigners',
       staleVersion: usedVersion,
       fhevmContext,
@@ -261,12 +261,12 @@ describe('refresh and retry', () => {
     await expect(request.send()).resolves.toBe(SIGNER_B);
   });
 
-  it('forceRefresh: one fetch for concurrent calls, none once replaced, CachedValueStaleError if unchanged', async () => {
+  it('forceRefreshCachedValue: one fetch for concurrent calls, none once replaced, CachedValueStaleError if unchanged', async () => {
     const world = makeWorld();
     await inputProofRequest(world).send();
     const v1 = coprocessorSignersVersion({ threshold: 1, signers: [SIGNER_A] });
     const refresh = () =>
-      forceRefreshCachedValue(world.client, { cacheName: 'coprocessorSigners', staleVersion: v1, fhevmContext });
+      refreshCachedValue(world.client, { cacheName: 'coprocessorSigners', staleVersion: v1, fhevmContext });
 
     await expect(refresh()).rejects.toMatchObject({ name: 'CachedValueStaleError', staleVersion: v1 });
 
@@ -338,7 +338,7 @@ describe('KMS context', () => {
     expect(request.run).toHaveBeenCalledTimes(2);
     // Only the ids were read: the new context's signers were not loaded.
     expect(world.reads('getContextSignersAndThresholdFromExtraData')).toBe(signerReads);
-    await forceRefreshCachedValue(world.client, {
+    await refreshCachedValue(world.client, {
       cacheName: 'kmsContext',
       staleVersion: kmsContextVersion(5n, 1n),
       fhevmContext,

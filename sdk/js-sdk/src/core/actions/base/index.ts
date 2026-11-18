@@ -1,4 +1,4 @@
-export { type ForceRefreshParameters, forceRefresh } from './forceRefresh.js';
+export { forceRefreshCachedValue } from './forceRefreshCachedValue.js';
 
 export {
   type DecryptPublicValueParameters,

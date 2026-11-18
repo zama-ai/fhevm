@@ -1,21 +1,10 @@
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { FhevmCacheName } from '../../types/cache.js';
-import { forceRefreshCachedValue } from '../../caching/retryOnStaleCache-p.js';
+import { refreshCachedValue } from '../../caching/retryOnStaleCache-p.js';
 import { FHEVM_CACHE_NAMES } from '../../caching/cacheOptions-p.js';
 import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 import { FhevmConfigError } from '../../errors/FhevmConfigError.js';
-
-////////////////////////////////////////////////////////////////////////////////
-
-export type ForceRefreshParameters = {
-  /**
-   * The version that failed the request (`CachedValueStaleError.staleVersion`).
-   * With it, nothing is fetched when the cache already holds another version;
-   * without it, the value is always fetched.
-   */
-  readonly staleVersion?: string | undefined;
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -26,17 +15,20 @@ export type ForceRefreshParameters = {
  * every client. Concurrent calls share one fetch.
  *
  * Resolves once the cache holds a value other than `staleVersion`; then
- * retry the failed request.
+ * retry the failed request. `staleVersion` is the version that failed it
+ * (`CachedValueStaleError.staleVersion`): with it, nothing is fetched when the
+ * cache already holds another version; without it, the value is always
+ * fetched.
  *
  * @throws {FhevmConfigError} on an unknown `cacheName`.
  * @throws {CachedValueStaleError} when the value fetched still has
  * `staleVersion`: refreshing cannot fix the failure.
  * @throws the fetch error, as is.
  */
-export async function forceRefresh(
+export async function forceRefreshCachedValue(
   fhevm: Fhevm<FhevmChain>,
   cacheName: FhevmCacheName,
-  parameters?: ForceRefreshParameters,
+  staleVersion?: string,
 ): Promise<void> {
   if (!FHEVM_CACHE_NAMES.includes(cacheName)) {
     throw new FhevmConfigError({
@@ -46,5 +38,5 @@ export async function forceRefresh(
 
   const fhevmContext = await initPublicAction(fhevm);
 
-  await forceRefreshCachedValue(fhevm, { cacheName, staleVersion: parameters?.staleVersion, fhevmContext });
+  await refreshCachedValue(fhevm, { cacheName, staleVersion, fhevmContext });
 }

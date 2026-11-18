@@ -232,7 +232,7 @@ const client = createFhevmClient({
 | The value cannot be read again (e.g. RPC error)                               | Logs a warning                             | The request's own error                                                                 |
 | Bad signature, signer set unchanged                                           | No refresh, no retry                       | `UnknownSignerError`, `ThresholdSignerError` or `DuplicateSignerError`                  |
 | User or delegated decryption, or `encryptValuesWithPad`; KMS context switched | Loads the new context, no retry            | `InvalidSignedPermitError` (`cause`: the request's error): sign a new permit            |
-| `autoRefreshOnStale: false`                                              | Reads only the version, cache untouched    | `CachedValueStaleError`; for a user decryption, `forceRefresh` then sign a new permit |
+| `autoRefreshOnStale: false`                                              | Reads only the version, cache untouched    | `CachedValueStaleError`; for a user decryption, `forceRefreshCachedValue` then sign a new permit |
 
 - Concurrent requests failing on the same stale value share one refresh.
 - An aborted request is never run again: it throws its abort error.
@@ -245,12 +245,12 @@ try {
 } catch (err) {
   if (!(err instanceof Error) || err.name !== 'CachedValueStaleError') throw err;
   const { cacheName, staleVersion } = err as Error & { cacheName: FhevmCacheName; staleVersion: string };
-  await client.forceRefresh(cacheName, { staleVersion });
+  await client.forceRefreshCachedValue(cacheName, staleVersion);
   await client.encryptValues({ contractAddress, userAddress, values });
 }
 ```
 
-`forceRefresh(cacheName, { staleVersion })`:
+`forceRefreshCachedValue(cacheName, staleVersion)`:
 
 - Fetches only if the cache still holds `staleVersion` (without it: always). Concurrent calls share one fetch.
 - Resolves once the cache holds another version; rejects with the fetch error.

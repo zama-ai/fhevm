@@ -276,7 +276,7 @@ If the KMS context the proof was signed for is destroyed before your transaction
 it reverts with `InvalidKmsContext(uint256 contextId)`. Call
 `decryptPublicValuesWithSignatures` again: the SDK picks up the new context
 (see [Caching](clients.md#caching)). To skip waiting for the first request to
-fail, call `client.forceRefresh('kmsContext')` first.
+fail, call `client.forceRefreshCachedValue('kmsContext')` first.
 
 ## Persisting a session
 

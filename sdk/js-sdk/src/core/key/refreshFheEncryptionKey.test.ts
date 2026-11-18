@@ -22,7 +22,7 @@ import {
 } from './ensureFheEncryptionKeyDownload.js';
 import { RelayerResponseInputProofRejectedError } from '../errors/RelayerResponseInputProofRejectedError.js';
 import { recordCacheUsage } from '../caching/cacheUsage-p.js';
-import { forceRefreshCachedValue, retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
+import { refreshCachedValue, retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/key/refreshFheEncryptionKey.test.ts
@@ -257,7 +257,7 @@ describe('key material cache', () => {
       const { newClient, downloads } = makeWorld();
       const client = newClient();
       await fetchBytes(client);
-      const error = await forceRefreshCachedValue(client, {
+      const error = await refreshCachedValue(client, {
         cacheName: 'keyMaterial',
         staleVersion: version(GEN1),
         fhevmContext,
@@ -392,7 +392,7 @@ describe('encryption after a key rotation', () => {
     expect(world.downloads).toHaveBeenCalledTimes(2);
   });
 
-  it('autoRefreshOnStale: false: CachedValueStaleError with no download; forceRefresh downloads once', async () => {
+  it('autoRefreshOnStale: false: CachedValueStaleError with no download; forceRefreshCachedValue downloads once', async () => {
     const world = makeWorld();
     const client = world.newClient({ autoRefreshOnStale: false });
     const request = encryptRequest(world, client);
@@ -407,7 +407,7 @@ describe('encryption after a key rotation', () => {
     });
     // Only the active ids were read: the new key was not downloaded.
     expect(world.downloads).toHaveBeenCalledTimes(1);
-    await forceRefreshCachedValue(client, { cacheName: 'keyMaterial', staleVersion: version(GEN1), fhevmContext });
+    await refreshCachedValue(client, { cacheName: 'keyMaterial', staleVersion: version(GEN1), fhevmContext });
     expect(world.downloads).toHaveBeenCalledTimes(2);
     await expect(request.send()).resolves.toBe(version(GEN2));
   });

@@ -156,7 +156,7 @@ readonly chain: FhevmChain;
 | `signDecryptionPermit` (`@deprecated`, alias for `signLegacyDecryptionPermit`) |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
 | `serialize`/`parse` permit + key                                               |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
 | `fetchFheEncryptionKeyBytes`                                                   |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
-| `forceRefresh`                                                                 |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `forceRefreshCachedValue`                                                                 |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
 
 The `canDecrypt*` permission checks are not client methods. `canDecryptValue`,
 `canDecryptValues`, and `canDecryptValuesFromPairs` come from
@@ -372,9 +372,9 @@ fetchFheEncryptionKeyBytes(parameters?: {
   readonly options?: RelayerKeyUrlOptions | undefined;
 }): Promise<FheEncryptionKeyBytes>;
 
-forceRefresh(
+forceRefreshCachedValue(
   cacheName: 'keyMaterial' | 'kmsContext' | 'coprocessorSigners',
-  parameters?: { readonly staleVersion?: string | undefined },
+  staleVersion?: string,
 ): Promise<void>;
 ```
 
@@ -413,7 +413,7 @@ createUnsignedLegacyDecryptionPermitEip712(fhevm, parameters);
 signLegacyDecryptionPermit(fhevm, parameters);
 createUnsignedUnifiedDecryptionPermitEip712(fhevm, parameters);
 signUnifiedDecryptionPermit(fhevm, parameters);
-forceRefresh(fhevm, cacheName, parameters?);
+forceRefreshCachedValue(fhevm, cacheName, staleVersion?);
 
 // @fhevm/sdk/actions/chain
 signDecryptionPermit(fhevm, parameters); // @deprecated, alias for signLegacyDecryptionPermit

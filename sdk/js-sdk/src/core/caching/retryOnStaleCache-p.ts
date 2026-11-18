@@ -79,7 +79,7 @@ const CACHES: Readonly<
  * `staleVersion`: refreshing cannot fix the failure.
  * @throws the fetch error.
  */
-export async function forceRefreshCachedValue(
+export async function refreshCachedValue(
   context: Context,
   parameters: {
     readonly cacheName: FhevmCacheName;
