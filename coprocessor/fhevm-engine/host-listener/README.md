@@ -50,13 +50,22 @@ BROKER_URL=redis://listener-redis:6379 RPC_HTTP_URL=http://host-node:8545 host_l
 ```
 
 Set the host RPC using `--executor-version-rpc-url` or `RPC_HTTP_URL` before upgrading
-the consumer. Helm takes it from the chain's `httpUrl` or `httpUrlValueFrom`.
+the consumer. For each enabled consumer, Helm requires the chain's `httpUrl`,
+`httpUrlValueFrom`, or an explicit environment or CLI override.
 It must serve the configured chain and support canonical block-hash `eth_call`
-(EIP-1898). Replaying old blocks can require an archive endpoint when a matching
-parent checkpoint is unavailable or the block contains an executor upgrade.
-Contiguous blocks use the parent's committed version. A failed lookup delays
-the delivery and leaves its work pending until the snapshot becomes available
-or finalized history establishes that the delivery was superseded.
+(EIP-1898). The listener recognizes executor versions 0.1.0 through 0.7.0.
+Update the version rules before deploying an executor that reports a new version.
+
+Contiguous blocks reuse the exact parent's committed version. Blocks without
+executor operations can advance before the proxy is deployed or while it uses
+the deployment placeholder. An upgrade without subsequent executor operations
+can commit with its ending version unresolved if the implementation lookup fails.
+The first operation that needs an unresolved version reads historical state and
+can require an archive endpoint. Empty, reverting, and unsupported version
+responses for those operations block ingestion. A revert for an operation in
+historical replay is retried like an unavailable archive snapshot. It requires
+an RPC endpoint that can serve the canonical state or an operator correction
+before ingestion can pass that block.
 
 ### Poller starting block (`--seed-start-block`)
 

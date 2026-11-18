@@ -6,6 +6,24 @@
 {{- $args := default (dict) $.Values.hostListenerConsumerShared.args -}}
 {{- $disabled := default (list) $.Values.hostListenerConsumerShared.disabledArgs -}}
 {{- $serviceName := coalesce $chain.hostListenerConsumer.serviceName (get $args "serviceName") -}}
+{{- if not (or $chain.httpUrl $chain.httpUrlValueFrom) -}}
+{{- $hasRpc := false -}}
+{{- range concat (default (list) $.Values.commonConfig.env) (default (list) $.Values.hostListenerConsumerShared.env) (default (list) $chain.hostListenerConsumer.env) -}}
+  {{- if eq .name "RPC_HTTP_URL" -}}
+    {{- $hasRpc = not (empty (or .value .valueFrom)) -}}
+  {{- end -}}
+{{- end -}}
+{{- $extraArgs := concat (default (list) $.Values.hostListenerConsumerShared.extraArgs) (default (list) $chain.hostListenerConsumer.extraArgs) -}}
+{{- range $index, $arg := $extraArgs -}}
+  {{- $next := add1 $index | int -}}
+  {{- if or (and (hasPrefix "--executor-version-rpc-url=" $arg) (ne $arg "--executor-version-rpc-url=")) (and (eq $arg "--executor-version-rpc-url") (lt $next (len $extraArgs)) (not (hasPrefix "-" (index $extraArgs $next))) (index $extraArgs $next)) -}}
+    {{- $hasRpc = true -}}
+  {{- end -}}
+{{- end -}}
+{{- if not $hasRpc -}}
+  {{- fail (printf "hostListenerConsumer for chain %q requires httpUrl, httpUrlValueFrom, RPC_HTTP_URL or --executor-version-rpc-url" $chain.name) -}}
+{{- end -}}
+{{- end -}}
 ---
 apiVersion: apps/v1
 kind: Deployment

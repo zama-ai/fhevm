@@ -31,9 +31,9 @@ use crate::database::derived_history::{
 };
 use crate::database::event_envelope::{classify, DecodedEvent};
 use crate::database::event_operands::{
-    validate_collection_shape, validate_scalar_mode, validate_scalar_values,
-    validate_scalar_values_for_executor_version, validate_type_metadata,
-    ExecutorVersion, ExecutorVersionSchedule,
+    requires_executor_version, validate_collection_shape, validate_scalar_mode,
+    validate_scalar_values, validate_scalar_values_for_executor_version,
+    validate_type_metadata, ExecutorVersion, ExecutorVersionSchedule,
 };
 use crate::database::synthetic_ops::{
     synthetic_logs, synthetic_transaction_hash, SyntheticContext,
@@ -89,6 +89,7 @@ impl IngestResult {
 /// The original delivery is not complete until every required link commits.
 pub const HISTORY_RECOVERY_BATCH: usize = 32;
 
+#[cfg(any(test, feature = "test-utils"))]
 #[allow(clippy::too_many_arguments)]
 pub async fn ingest_with_history_recovery<GetBlock, BlockFuture>(
     chain_id: ChainId,
@@ -540,6 +541,7 @@ fn is_valid_fallback_dst_handle(
     true
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 #[allow(clippy::too_many_arguments)]
 pub async fn ingest_block_logs(
     chain_id: ChainId,
@@ -602,6 +604,7 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
 
 /// Ingest using the caller's transaction, preserving locks acquired before
 /// ingestion. Consumes and commits the transaction on success.
+#[cfg(any(test, feature = "test-utils"))]
 #[allow(clippy::too_many_arguments)]
 pub async fn ingest_block_logs_in_transaction(
     chain_id: ChainId,
@@ -863,6 +866,15 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
                                 .version_for_log_index(log_index)
                         },
                     );
+                    if executor_version_schedule.tracks_versions()
+                        && !is_synthetic
+                        && executor_version.is_none()
+                        && requires_executor_version(&log.inner)
+                    {
+                        return Err(sqlx::Error::Protocol(
+                            "Missing executor version for FHE event".into(),
+                        ));
+                    }
                     validate_tfhe_event_for_version(
                         &event.data,
                         chain_id.as_u64(),
@@ -1393,7 +1405,7 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
         allow_event_count,
     )
     .await?;
-    if executor_version_schedule.is_resolved() {
+    if executor_version_schedule.tracks_versions() {
         if let Some(tfhe_address) = tfhe_contract_address {
             let version =
                 executor_version_schedule.ending_version().map(|version| {
@@ -2912,7 +2924,11 @@ mod tests {
                 result: FixedBytes(result),
             })
         };
-        for version in [None, Some(ExecutorVersion::new(0, 2, 0))] {
+        for version in [
+            None,
+            Some(ExecutorVersion::new(0, 2, 0)),
+            Some(ExecutorVersion::new(0, 3, 0)),
+        ] {
             assert_eq!(
                 validate_tfhe_event_for_version(
                     &division_event(U256::from(256)),
@@ -2931,7 +2947,7 @@ mod tests {
             );
         }
         for version in
-            [ExecutorVersion::new(0, 3, 0), ExecutorVersion::new(0, 7, 0)]
+            [ExecutorVersion::new(0, 4, 0), ExecutorVersion::new(0, 7, 0)]
         {
             assert_eq!(
                 validate_tfhe_event_for_version(
@@ -2964,7 +2980,7 @@ mod tests {
         assert!(validate_tfhe_event_for_version(
             &rem,
             1,
-            Some(ExecutorVersion::new(0, 3, 0))
+            Some(ExecutorVersion::new(0, 4, 0))
         )
         .is_err());
         assert_eq!(

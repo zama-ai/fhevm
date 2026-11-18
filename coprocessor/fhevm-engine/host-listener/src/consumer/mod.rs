@@ -443,14 +443,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         // starts the listener publishing, and a group created afterwards starts
         // at the end of the stream and never sees what was published in
         // between.
-        let rpc_chain = tokio::time::timeout(
-            RPC_TIMEOUT,
-            config.executor_version_rpc.get_chain_id(),
+        validate_executor_version_rpc_chain_id(
+            &config.executor_version_rpc,
+            chain_id.as_u64(),
         )
-        .await
-        .context("Executor version RPC chain ID lookup timed out")??;
-        anyhow::ensure!(rpc_chain == chain_id.as_u64(),
-            "Executor version RPC chain ID {rpc_chain} differs from configured chain {chain_id}");
+        .await?;
         info!("Consumer ensure queues");
         client.ensure_consumer().await?;
         client.ensure_final_consumer().await?;
@@ -883,6 +880,21 @@ fn record_catchup_rejection(
             "Rejected catchup delivery"
         );
     }
+}
+
+async fn validate_executor_version_rpc_chain_id(
+    provider: &dyn Provider,
+    expected_chain_id: u64,
+) -> Result<()> {
+    let rpc_chain_id =
+        tokio::time::timeout(RPC_TIMEOUT, provider.get_chain_id())
+            .await
+            .context("Executor version RPC chain ID lookup timed out")??;
+    anyhow::ensure!(
+        rpc_chain_id == expected_chain_id,
+        "Executor version RPC chain ID {rpc_chain_id} differs from configured chain {expected_chain_id}"
+    );
+    Ok(())
 }
 
 /// Ingest one live or finalized payload. A finalized payload re-ingests the
@@ -1363,6 +1375,31 @@ mod tests {
     use super::*;
 
     const TICK: Duration = Duration::from_millis(5);
+
+    #[tokio::test]
+    async fn executor_version_rpc_must_match_the_configured_chain() {
+        use alloy::providers::ProviderBuilder;
+        use alloy::transports::mock::Asserter;
+
+        let wrong_chain = Asserter::new();
+        wrong_chain.push_success(&serde_json::json!("0x2b"));
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(wrong_chain)
+            .erased();
+        let error = validate_executor_version_rpc_chain_id(&provider, 42)
+            .await
+            .expect_err("the RPC chain mismatch must fail before queue setup");
+        assert!(error.to_string().contains("differs from configured chain"));
+
+        let expected_chain = Asserter::new();
+        expected_chain.push_success(&serde_json::json!("0x2a"));
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(expected_chain)
+            .erased();
+        validate_executor_version_rpc_chain_id(&provider, 42)
+            .await
+            .expect("matching RPC chain");
+    }
 
     /// A stack that is already retired is seen as such without waiting out a
     /// poll.

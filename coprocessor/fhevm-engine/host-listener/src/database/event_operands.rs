@@ -30,15 +30,16 @@ impl ExecutorVersion {
         }
     }
 
-    /// Parse only the canonical value returned by the executor contract.
-    /// Unknown formats intentionally remain permissive during historical replay.
+    /// Accept the released executor versions whose validation rules are known.
     pub fn parse(value: &str) -> Option<Self> {
         let version = value.strip_prefix("FHEVMExecutor v")?;
         let mut components = version.split('.');
         let major = parse_canonical_component(components.next()?)?;
         let minor = parse_canonical_component(components.next()?)?;
         let patch = parse_canonical_component(components.next()?)?;
-        if components.next().is_some() {
+        if components.next().is_some()
+            || !matches!((major, minor, patch), (0, 1..=7, 0))
+        {
             return None;
         }
         let parsed = Self {
@@ -64,14 +65,14 @@ fn parse_canonical_component(value: &str) -> Option<u64> {
 pub struct ExecutorVersionTransition {
     /// The new implementation is active after the `Upgraded` log at this index.
     pub after_log_index: u64,
-    /// `None` means the implementation version could not be established.
+    /// `None` means the version was not needed for any operation in this segment.
     pub version: Option<ExecutorVersion>,
 }
 
 /// Executor version at a block's start and any upgrades observed in that block.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExecutorVersionSchedule {
-    resolved: bool,
+    tracks_versions: bool,
     initial_version: Option<ExecutorVersion>,
     transitions: Vec<ExecutorVersionTransition>,
 }
@@ -79,14 +80,14 @@ pub struct ExecutorVersionSchedule {
 impl ExecutorVersionSchedule {
     pub fn new(initial_version: Option<ExecutorVersion>) -> Self {
         Self {
-            resolved: true,
+            tracks_versions: true,
             initial_version,
             transitions: Vec::new(),
         }
     }
 
-    pub fn is_resolved(&self) -> bool {
-        self.resolved
+    pub(crate) fn tracks_versions(&self) -> bool {
+        self.tracks_versions
     }
 
     pub fn add_transition(
@@ -121,6 +122,14 @@ impl ExecutorVersionSchedule {
             .last()
             .map_or(self.initial_version, |transition| transition.version)
     }
+}
+
+pub(crate) fn requires_executor_version(log: &PrimitiveLog) -> bool {
+    log.data.topics().first().is_some_and(|selector| {
+        *selector != TfheContract::Initialized::SIGNATURE_HASH
+            && *selector != TfheContract::Upgraded::SIGNATURE_HASH
+            && TfheContractEvents::SELECTORS.contains(&selector.0)
+    })
 }
 
 /// Extract the configured executor proxy's implementation changes from a
@@ -227,8 +236,10 @@ fn scalar_is_zero_for_type(
 /// scalar range checks were added after older executors could emit those
 /// events. Since logs do not carry an executor activation version, enforcing
 /// the newer checks here could reject valid history. Div/Rem rejected only a
-/// full-word zero before executor v0.3. MulDiv typed-zero checks have been
-/// present since v0.14 introduced it, and bounded-random constraints have been stable since
+/// full-word zero in the oldest supported versions. Version 0.3.0 was reused
+/// before and after typed-zero checks were introduced, so only v0.4.0 and later
+/// establish those checks. MulDiv typed-zero checks have been present since
+/// v0.14 introduced it, and bounded-random constraints have been stable since
 /// that operation was introduced. Old shift events can have full-width amounts.
 pub fn validate_scalar_values(
     op: &TfheContractEvents,
@@ -321,7 +332,10 @@ pub fn validate_scalar_values_for_current_executor(
 }
 
 /// Apply only constraints shared by every implementation reporting this version.
-/// Div/Rem typed-zero checks started in v0.3 (2da166bece). Scalar range checks
+/// Div/Rem typed-zero checks were added to a v0.3 implementation in March 2026
+/// (2da166bece), but a September 2025 implementation also reported v0.3 without
+/// those checks (7e12c8bfc1), then the version reset to v0.1. Only v0.4 onward
+/// guarantees the typed-zero checks. Scalar range checks
 /// for trivial encryption, binary operations and MulDiv started in v0.7
 /// (1515d36df5). The later uint8 shift cap (fb301b1d35) did NOT bump v0.7, so a
 /// version string cannot establish that cap. Historical ingestion accepts the
@@ -333,7 +347,7 @@ pub fn validate_scalar_values_for_executor_version(
     use TfheContract as C;
     use TfheContractEvents as E;
 
-    const V0_3_0: ExecutorVersion = ExecutorVersion::new(0, 3, 0);
+    const V0_4_0: ExecutorVersion = ExecutorVersion::new(0, 4, 0);
     const V0_7_0: ExecutorVersion = ExecutorVersion::new(0, 7, 0);
 
     fn fits(value: U256, ty: i16) -> bool {
@@ -353,10 +367,7 @@ pub fn validate_scalar_values_for_executor_version(
 
     validate_scalar_values(op)?;
 
-    // 2da166bece introduced typed-zero rejection with executor v0.3.
-    // Earlier contracts emitted nonzero full-word divisors that truncate to
-    // zero, and historical replay must continue to admit those events.
-    if version >= V0_3_0 {
+    if version >= V0_4_0 {
         if let E::FheDiv(C::FheDiv {
             lhs,
             rhs,
@@ -882,6 +893,27 @@ pub fn validate_type_metadata(
 mod scalar_boundary_tests {
     use super::*;
     use alloy_primitives::Address;
+
+    #[test]
+    fn executor_version_parser_rejects_unreviewed_versions() {
+        for minor in 1..=7 {
+            let value = format!("FHEVMExecutor v0.{minor}.0");
+            assert_eq!(
+                ExecutorVersion::parse(&value),
+                Some(ExecutorVersion::new(0, minor, 0))
+            );
+        }
+        for value in [
+            "FHEVMExecutor v0.0.0",
+            "FHEVMExecutor v0.3.1",
+            "FHEVMExecutor v0.7.1",
+            "FHEVMExecutor v0.8.0",
+            "FHEVMExecutor v99.0.0",
+            "unknown executor",
+        ] {
+            assert_eq!(ExecutorVersion::parse(value), None, "{value}");
+        }
+    }
 
     fn shifts(rhs: Handle, flag: u8, ty: u8) -> [TfheContractEvents; 4] {
         use TfheContract as C;

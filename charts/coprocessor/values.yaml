@@ -823,7 +823,7 @@ hostListenerConsumerShared:
 #     #   secretKeyRef:
 #     #     name: rpc
 #     #     key: ethereum-rpc-ws-url
-#     httpUrl: "http://eth-node:8545"   # used by hostListenerPoller and hostListenerConsumer unless httpUrlValueFrom is set
+#     httpUrl: "http://eth-node:8545"   # HTTP RPC for hostListenerPoller and hostListenerConsumer
 #     # httpUrlValueFrom:
 #     #   secretKeyRef:
 #     #     name: rpc
@@ -862,6 +862,7 @@ hostListenerConsumerShared:
 #       extraArgs: []         # appended after top-level hostListenerCatchupOnlyShared.extraArgs
 #       env: []               # appended after top-level hostListenerCatchupOnlyShared.env
 #     hostListenerConsumer:
+#       # Provide httpUrl, httpUrlValueFrom, or an executor-version RPC override below.
 #       enabled: true
 #       useLegacyName: true   # often required: <release>-host-listener-consumer-<chain> can exceed K8s's 63-char name limit
 #       serviceName:

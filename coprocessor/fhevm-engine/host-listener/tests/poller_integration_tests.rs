@@ -95,7 +95,7 @@ async fn poller_restart_repairs_omitted_acl_events_at_unchanged_safe_tip(
     let tfhe_contract = RawLog::deploy(provider.clone()).await?;
     assert_eq!(
         tfhe_contract.getVersion().call().await?,
-        "RawLog test fixture",
+        "FHEVMExecutor v0.7.0",
         "the event emitter must support the poller's version lookup"
     );
     let acl_contract = RawLog::deploy(provider.clone()).await?;

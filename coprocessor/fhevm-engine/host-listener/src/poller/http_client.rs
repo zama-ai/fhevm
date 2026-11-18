@@ -226,15 +226,16 @@ mod tests {
     async fn executor_version_rpc_failure_retries_instead_of_admitting_legacy_rules(
     ) {
         let responses = Asserter::new();
-        responses.push_failure_msg("historical state temporarily unavailable");
         let client = mocked_client(responses.clone());
         let proxy = Address::with_last_byte(0x42);
+        let hash = B256::with_last_byte(100);
         let block = version_block(
             100,
-            B256::with_last_byte(100),
+            hash,
             B256::with_last_byte(99),
-            vec![],
+            vec![operation_log(proxy, 100, hash, 0, 1)],
         );
+        responses.push_failure_msg("historical state temporarily unavailable");
         assert!(client
             .executor_version_schedule(ExecutorVersionRequest::from_block(
                 &block,
@@ -242,6 +243,31 @@ mod tests {
             ))
             .await
             .is_err());
+        for (response, expected_error) in [
+            (Bytes::new(), "Invalid getVersion response"),
+            (
+                encoded_version("unrecognized executor"),
+                "Unsupported executor version",
+            ),
+            (
+                encoded_version("FHEVMExecutor v0.7.1"),
+                "Unsupported executor version",
+            ),
+            (
+                encoded_version("FHEVMExecutor v99.0.0"),
+                "Unsupported executor version",
+            ),
+        ] {
+            responses.push_success(&response);
+            let error = client
+                .executor_version_schedule(ExecutorVersionRequest::from_block(
+                    &block,
+                    Some(proxy),
+                ))
+                .await
+                .expect_err("an operation needs a supported executor version");
+            assert!(format!("{error:#}").contains(expected_error), "{error:#}");
+        }
         responses.push_success(&encoded_version("FHEVMExecutor v0.7.0"));
         let schedule = client
             .executor_version_schedule(ExecutorVersionRequest::from_block(
@@ -258,9 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn executor_version_before_proxy_deployment_remains_replayable() {
-        let responses = Asserter::new();
-        responses.push_success(&Bytes::new());
-        let client = mocked_client(responses);
+        let client = mocked_client(Asserter::new());
         let block = version_block(
             100,
             B256::with_last_byte(100),
@@ -274,70 +298,62 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert!(
-            schedule.is_resolved(),
-            "the RPC succeeded and observed an undeployed proxy"
-        );
+        assert!(schedule.tracks_versions());
         assert_eq!(schedule.ending_version(), None);
     }
 
     #[tokio::test]
-    async fn executor_version_lookup_distinguishes_empty_addresses_from_precompiles(
-    ) -> Result<()> {
-        let anvil = alloy::node_bindings::Anvil::new().try_spawn()?;
-        let provider =
-            ProviderBuilder::new().connect_http(anvil.endpoint_url());
-        let block_hash = provider
-            .get_block_by_number(0.into())
-            .await?
-            .expect("Anvil genesis block")
-            .header
-            .hash;
-        let undeployed_proxy = Address::repeat_byte(2);
-        let client = HttpChainClient::new(
-            &anvil.endpoint(),
-            Address::repeat_byte(1),
-            undeployed_proxy,
-            None,
-            None,
-            None,
-            Duration::from_millis(10),
-            0,
-            1_000_000,
-        )?;
-
-        assert_eq!(
-            client
-                .executor_versions
-                .lookup(
-                    Some(client.provider.as_ref()),
-                    undeployed_proxy,
-                    block_hash,
-                    RPC_TIMEOUT
-                )
-                .await?,
-            None,
-            "an undeployed proxy must remain replayable"
+    async fn executor_bootstrap_does_not_require_a_version_for_the_placeholder()
+    {
+        let rpc = Asserter::new();
+        let client = mocked_client(rpc.clone());
+        let proxy = Address::repeat_byte(1);
+        let placeholder = Address::repeat_byte(2);
+        let implementation = Address::repeat_byte(7);
+        let deploy_hash = B256::with_last_byte(100);
+        let deploy = version_block(
+            100,
+            deploy_hash,
+            B256::with_last_byte(99),
+            vec![upgraded_log(proxy, placeholder, 100, deploy_hash, 0)],
         );
-        // Low addresses are not empty placeholders: calling getVersion() at
-        // 0x02 returns a SHA-256 digest, which must remain a decoding error.
-        let error = client
-            .executor_versions
-            .lookup(
-                Some(client.provider.as_ref()),
-                Address::with_last_byte(2),
-                block_hash,
-                RPC_TIMEOUT,
-            )
+        rpc.push_failure_msg("execution reverted");
+        let schedule = client
+            .executor_version_schedule(ExecutorVersionRequest::from_block(
+                &deploy,
+                Some(proxy),
+            ))
             .await
-            .expect_err(
-                "precompile output must not become unknown-version metadata",
+            .unwrap();
+        assert_eq!(schedule.ending_version(), None);
+
+        // The actual upgrade may follow in another block or immediately
+        // after the placeholder in the same block. It is the only required RPC.
+        for deploy_in_same_block in [false, true] {
+            let hash =
+                B256::repeat_byte(if deploy_in_same_block { 2 } else { 3 });
+            let mut logs = vec![
+                upgraded_log(proxy, implementation, 101, hash, 1),
+                operation_log(proxy, 101, hash, 2, 1),
+            ];
+            if deploy_in_same_block {
+                logs.push(upgraded_log(proxy, placeholder, 101, hash, 0));
+            }
+            let block = version_block(101, hash, deploy_hash, logs);
+            rpc.push_success(&encoded_version("FHEVMExecutor v0.7.0"));
+            let schedule = client
+                .executor_version_schedule(ExecutorVersionRequest::from_block(
+                    &block,
+                    Some(proxy),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(schedule.version_for_log_index(0), None);
+            assert_eq!(
+                schedule.version_for_log_index(2),
+                Some(ExecutorVersion::new(0, 7, 0))
             );
-        assert!(
-            error.downcast_ref::<alloy::sol_types::Error>().is_some(),
-            "expected an ABI decoding error, got {error:#}"
-        );
-        Ok(())
+        }
     }
 
     #[tokio::test]
@@ -566,6 +582,37 @@ mod tests {
         }
     }
 
+    fn operation_log(
+        proxy: Address,
+        number: u64,
+        hash: B256,
+        log_index: u64,
+        plaintext: u64,
+    ) -> Log {
+        use crate::contracts::TfheContract::TrivialEncrypt;
+        use fhevm_engine_common::types::{
+            COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
+        };
+
+        let mut handle = [0_u8; 32];
+        handle[..8].copy_from_slice(&number.to_be_bytes());
+        handle[8..16].copy_from_slice(&log_index.to_be_bytes());
+        handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
+        handle[22..30].copy_from_slice(&42_u64.to_be_bytes());
+        handle[30] = 2;
+        handle[31] = HANDLE_VERSION;
+        let mut log =
+            upgraded_log(proxy, Address::ZERO, number, hash, log_index);
+        log.inner.data = TrivialEncrypt {
+            caller: proxy,
+            pt: alloy::primitives::U256::from(plaintext),
+            toType: 2,
+            result: B256::from(handle),
+        }
+        .encode_log_data();
+        log
+    }
+
     #[tokio::test]
     async fn http_and_websocket_agree_on_executor_upgrade_boundaries() {
         use crate::cmd::{Args, InfiniteLogIter};
@@ -599,10 +646,12 @@ mod tests {
             vec![
                 upgraded_log(proxy, v07, 100, hash, 9),
                 upgraded_log(proxy, v06, 100, hash, 4),
+                operation_log(proxy, 100, hash, 3, 1),
+                operation_log(proxy, 100, hash, 5, 1),
+                operation_log(proxy, 100, hash, 10, 1),
             ],
         );
         let request = ExecutorVersionRequest::from_block(&block, Some(proxy));
-        assert_eq!(request.upgrades, vec![(4, v06), (9, v07)]);
 
         let schedule = client
             .executor_version_schedule(request)
@@ -639,7 +688,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn version_resolution_handles_unknown_restart_and_orphaned_upgrade() {
+    async fn version_resolution_handles_restart_and_orphaned_upgrade() {
         let seed = 0x70_u64;
         let address_byte = (seed % 251 + 1) as u8;
         let block_number = 100 + seed % 1_000_000;
@@ -659,7 +708,16 @@ mod tests {
             block_number,
             original_hash,
             parent_hash,
-            vec![upgraded_log(proxy, implementation, 100, original_hash, 2)],
+            vec![
+                operation_log(proxy, block_number, original_hash, 1, 1),
+                upgraded_log(
+                    proxy,
+                    implementation,
+                    block_number,
+                    original_hash,
+                    2,
+                ),
+            ],
         );
         let original = client
             .executor_version_schedule(ExecutorVersionRequest::from_block(
@@ -675,8 +733,12 @@ mod tests {
 
         // A canonical replacement for the same height omits the orphaned
         // upgrade; the cached version from the old block must not carry over.
-        let replacement =
-            version_block(block_number, replacement_hash, parent_hash, vec![]);
+        let replacement = version_block(
+            block_number,
+            replacement_hash,
+            parent_hash,
+            vec![operation_log(proxy, block_number, replacement_hash, 1, 1)],
+        );
         let replacement = client
             .executor_version_schedule(ExecutorVersionRequest::from_block(
                 &replacement,
@@ -709,38 +771,6 @@ mod tests {
             replayed.version_for_log_index(0),
             Some(ExecutorVersion::new(0, 5, 0))
         );
-
-        // Unknown contract strings remain permissive at bootstrap and after an
-        // upgrade instead of applying a guessed newer policy.
-        let unknown_responses = Asserter::new();
-        unknown_responses
-            .push_success(&encoded_version("unrecognized executor"));
-        unknown_responses
-            .push_success(&encoded_version("unrecognized implementation"));
-        let unknown_client = mocked_client(unknown_responses);
-        let unknown_hash = B256::with_last_byte(address_byte.wrapping_add(4));
-        let unknown_block = version_block(
-            block_number + 2,
-            unknown_hash,
-            replacement_hash,
-            vec![upgraded_log(
-                proxy,
-                Address::from([address_byte.wrapping_add(8); 20]),
-                block_number + 2,
-                unknown_hash,
-                7,
-            )],
-        );
-        let unknown = unknown_client
-            .executor_version_schedule(ExecutorVersionRequest::from_block(
-                &unknown_block,
-                Some(proxy),
-            ))
-            .await
-            .expect("executor version lookup");
-        assert!(unknown.is_resolved());
-        assert_eq!(unknown.version_for_log_index(6), None);
-        assert_eq!(unknown.version_for_log_index(8), None);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -756,7 +786,7 @@ mod tests {
         let instance = setup_test_db(ImportMode::None).await.expect("test db");
         let chain_id = ChainId::try_from(42_u64).expect("chain id");
         let proxy = Address::with_last_byte(0x42);
-        let version = ExecutorVersion::new(0, 5, 0);
+        let version = ExecutorVersion::new(0, 6, 0);
         let options = IngestOptions {
             dependence_by_connexity: false,
             dependence_cross_block: true,
@@ -833,7 +863,13 @@ mod tests {
             101,
             B256::with_last_byte(0x65),
             parent.summary.hash,
-            vec![],
+            vec![operation_log(
+                proxy,
+                101,
+                B256::with_last_byte(0x65),
+                0,
+                256,
+            )],
         );
         ingest_with_history_recovery_and_executor_versions(
             chain_id,
@@ -874,7 +910,15 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("persisted child version");
-        assert_eq!(child_version.as_deref(), Some("FHEVMExecutor v0.5.0"));
+        assert_eq!(child_version.as_deref(), Some("FHEVMExecutor v0.6.0"));
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM computations")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            1,
+            "the restarted poller must admit the historical euint8 plaintext"
+        );
     }
 
     #[tokio::test]
