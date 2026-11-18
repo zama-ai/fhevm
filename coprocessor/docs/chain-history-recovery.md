@@ -237,3 +237,78 @@ SET resolved_at = NOW(), recovery_note = '<verified baseline and audit reference
 WHERE id IN (<audited halt IDs>) AND resolved_at IS NULL;
 COMMIT;
 ```
+
+## CFI-0023 persisted self-edge recovery
+
+The split-batch fix prevents new self-dependency edges. It does not rewrite
+`dependence_chain` rows created by older binaries. A self-edge is an invalid
+scheduler dependency: the chain is waiting on itself even though the executor
+already established the transaction's internal log order.
+
+Check for retained self-edges after deploying the fix and before relying on the
+affected database:
+
+```sql
+SELECT encode(c.dependence_chain_id, 'hex') AS chain_id,
+       c.status, c.worker_id, c.dependency_count,
+       cardinality(array_positions(c.dependents, c.dependence_chain_id))
+           AS self_edge_occurrences
+FROM public.dependence_chain c
+WHERE c.dependence_chain_id = ANY(c.dependents)
+ORDER BY c.dependence_chain_id;
+```
+
+If any rows are returned, stop the host listener and all TFHE workers sharing
+that database, preserve a database snapshot, and record the query output. Do
+not repair a row while it is processing or owned by a worker. A row may be
+repaired directly only when it is `updated`, unowned, and contains exactly one
+self-edge. First verify that all its remaining producer dependencies are
+represented by incoming edges from pending external chains. The stored count
+must equal that external-parent count, or exceed it by exactly one; otherwise
+use an audited recovery with the coprocessor team.
+
+A self-edge does **not** prove that its gate was counted: the chain upsert can
+merge the edge without incrementing the count. Remove the edge and reconcile
+the count to the verified external parents under a row lock. Never blindly
+decrement it, which could release a real pending dependency:
+
+```sql
+BEGIN;
+SELECT dependence_chain_id, status, worker_id, dependency_count,
+       cardinality(array_positions(dependents, dependence_chain_id))
+           AS self_edge_occurrences
+FROM public.dependence_chain
+WHERE dependence_chain_id = decode('<chain-id-hex>', 'hex')
+FOR UPDATE;
+
+WITH external_parents AS (
+    SELECT COUNT(*)::integer AS pending_count
+    FROM public.dependence_chain p
+    WHERE p.dependence_chain_id <> decode('<chain-id-hex>', 'hex')
+      AND p.status <> 'processed'
+      AND decode('<chain-id-hex>', 'hex') = ANY(p.dependents)
+)
+UPDATE public.dependence_chain c
+SET dependents = array_remove(c.dependents, c.dependence_chain_id),
+    dependency_count = external_parents.pending_count,
+    last_updated_at = NOW()
+FROM external_parents
+WHERE c.dependence_chain_id = decode('<chain-id-hex>', 'hex')
+  AND c.status = 'updated'
+  AND c.worker_id IS NULL
+  AND c.dependency_count IN (external_parents.pending_count, external_parents.pending_count + 1)
+  AND cardinality(array_positions(c.dependents, c.dependence_chain_id)) = 1
+RETURNING c.dependence_chain_id, c.status, c.worker_id, c.dependency_count, c.dependents;
+
+SELECT pg_notify('work_available', '');
+COMMIT;
+```
+
+Require exactly one row from the `UPDATE`; otherwise roll back and investigate.
+For a processing/owned/processed row, multiple self-edge occurrences, or any
+count/edge inconsistency, do not edit the row with this template. Keep the
+services stopped and use an audited database recovery with the coprocessor
+team. After repair, verify the self-edge query is empty, replay the affected
+block, and check that the chain is eligible only after its remaining real
+producer gates have discharged. This procedure changes scheduler bookkeeping
+only; it does not authorize changing computation metadata or ciphertexts.
