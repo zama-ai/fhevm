@@ -3,6 +3,7 @@
 
 import concurrent.futures
 import csv
+from datetime import datetime
 import http.client
 import json
 import os
@@ -29,6 +30,7 @@ FAILED = "coprocessor_sns_worker_task_execute_failure_counter"
 SECRET_VALUES = []
 DRAIN_TIMEOUT_SECONDS = 10800
 TARGET = 2000
+STRIPE_COUNT = 256
 VARIANTS = {"c0e6428": "ordered-stripes", "4c5425f": "deadlock-retry-only"}
 
 
@@ -130,7 +132,10 @@ def create_workers(source):
     config = source["Config"]
     env = [v for v in config["Env"] if not v.startswith(("RAYON_NUM_THREADS=", "S3_MIGRATION_MODE="))]
     env += ["RAYON_NUM_THREADS=4", "S3_MIGRATION_MODE=no"]
-    command = config["Cmd"]
+    overrides = {"--pg-pool-connections": "24", "--s3-max-concurrent-uploads": "4",
+                 "--pg-polling-interval": "2", "--s3-regular-recheck-duration": "5s"}
+    command = [arg for arg in config["Cmd"] if arg.partition("=")[0] not in overrides]
+    command += [f"{flag}={value}" for flag, value in overrides.items()]
     assert "--work-items-batch-size=20" in command
     assert not any(arg.startswith("--s3-migration=") and arg != "--s3-migration=no" for arg in command)
     for name in WORKERS:
@@ -147,6 +152,70 @@ def create_workers(source):
     # All four containers exist before any is started.
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(lambda name: docker("POST", f"/containers/{name}/start"), WORKERS))
+
+
+def worker_evidence(logs):
+    events = []
+    for line in logs.splitlines():
+        payload = line if line.startswith("{") else line.partition(" ")[2]
+        try:
+            event = json.loads(payload)
+            event["time"] = datetime.fromisoformat(event["timestamp"].replace("Z", "+00:00")).timestamp()
+            events.append(event)
+        except (ValueError, KeyError, TypeError):
+            continue
+    result = {"idle": False, "migration_disabled": False, "intervals": [],
+              "immediate_retries": 0, "delayed_retries": 0, "upload_timeouts": 0,
+              "missing_savepoints": 0}
+    started = None
+    for event in sorted(events, key=lambda event: event["time"]):
+        fields = event.get("fields", {})
+        message = fields.get("message", "")
+        error = str(fields.get("error", ""))
+        if message == "Fetched SnS tasks":
+            result["idle"] |= fields.get("count") == 0
+            started = event["time"] if fields.get("count") == 20 else None
+        result["migration_disabled"] |= message == "S3 migration is disabled"
+        victim = (event.get("span") or {}).get("target") == "sns" and "deadlock detected" in error.lower()
+        result["immediate_retries"] += victim and message == "Database deadlock; retrying immediately"
+        result["delayed_retries"] += victim and message == "Service error; retrying..."
+        result["upload_timeouts"] += message == "Failed to upload ciphertexts" and "statement timeout" in error
+        result["missing_savepoints"] += "savepoint_upload_ciphertexts_task\" does not exist" in error
+        if started is not None and (victim or message == "more tasks to process, continuing"):
+            result["intervals"].append([started, event["time"]])
+            started = None
+    return result
+
+
+def warm_and_pause_workers():
+    deadline = time.monotonic() + 180
+    pending = set(WORKERS)
+    while pending:
+        for name in list(pending):
+            logs = read_worker_logs(name)
+            evidence = worker_evidence(logs)
+            if evidence["idle"] and evidence["migration_disabled"]:
+                pending.remove(name)
+                print(f"Warmed SNS worker {name}: keys loaded and empty queue observed", flush=True)
+        if not pending:
+            break
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"SNS workers did not warm on an empty queue: {sorted(pending)}")
+        time.sleep(0.5)
+    baseline = {name: sample_worker(name) for name in WORKERS}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(lambda name: docker("POST", f"/containers/{name}/pause"), WORKERS))
+    # Docker can read cgroup accounting while the container itself is paused.
+    for name in WORKERS:
+        stats = docker("GET", f"/containers/{name}/stats?stream=false&one-shot=true")
+        baseline[name]["cpu_seconds"] = stats["cpu_stats"]["cpu_usage"]["total_usage"] / 1e9
+    return baseline
+
+
+def competing_batches(evidence):
+    return any(a[0] < b[1] and b[0] < a[1]
+               for index, first in enumerate(WORKERS) for second in WORKERS[index + 1:]
+               for a in evidence[first]["intervals"] for b in evidence[second]["intervals"])
 
 
 def sample_worker(name):
@@ -181,12 +250,16 @@ def list_objects(prefix):
             raise RuntimeError("Truncated S3 listing without continuation token")
 
 
+def read_worker_logs(name):
+    result = subprocess.run(["docker", "logs", "--timestamps", name], text=True,
+                            capture_output=True, timeout=30)
+    return redact(result.stdout + result.stderr)
+
+
 def collect_logs():
     deadlocks = {}
     for name in WORKERS:
-        result = subprocess.run(["docker", "logs", "--timestamps", name], text=True,
-                                capture_output=True, timeout=30)
-        logs = redact(result.stdout + result.stderr)
+        logs = read_worker_logs(name)
         (OUT / f"{name}.log").write_text(logs)
         deadlocks[name] = len(re.findall(r"deadlock detected|40P01", logs, re.IGNORECASE))
     return deadlocks
@@ -202,7 +275,9 @@ def main():
     report = {"passed": False, "worker_count": 4, "batch_size": 20, "rayon_threads_per_worker": 4,
               "migration": "no", "target_handles": TARGET, "sampled_decryptions": 0,
               "variant": variant, "sns_image_tag": image_tag,
-              "drain_timeout_seconds": DRAIN_TIMEOUT_SECONDS}
+              "drain_timeout_seconds": DRAIN_TIMEOUT_SECONDS, "stripe_count": STRIPE_COUNT,
+              "workload": "uint8-trivial-encryption", "db_connections_per_worker": 24,
+              "max_concurrent_uploads_per_worker": 4}
     source = docker("GET", f"/containers/{ORIGINAL}/json")
     # Only a local, disposable Docker E2E deployment may be stopped or written to.
     database_arg = next(arg for arg in source["Config"]["Cmd"] if arg.startswith("--database-url="))
@@ -222,20 +297,36 @@ def main():
     assert report["image_reference"].endswith(":"+image_tag), "Resolved SNS image differs from comparison input"
     host = docker("GET", "/info")
     report["host"] = {key: host.get(key) for key in ("NCPU", "MemTotal", "Architecture", "KernelVersion")}
+    report["host_cpu"] = json.loads(run("lscpu", "--json"))
+    # Inspect the installed definition; never change stripe count for these runs.
+    definitions = json.loads(sql("""SELECT json_object_agg(p.proname, pg_get_functiondef(p.oid))
+        FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname IN
+        ('mirror_ciphertext_digest_branchless','mirror_ciphertext_digest_for_pbs_context');"""))
+    assert len(definitions) == 2 and all("% 256" in body and "% 4\n" not in body for body in definitions.values())
+    (OUT / "stripe-functions.json").write_text(json.dumps(definitions, indent=2))
     print(f"SNS comparison: {variant}, image {image_tag}, host {report['host']}", flush=True)
     try:
         # Warm-up correctness runs through the ordinary existing E2E profile before this script.
         run("docker", "stop", "--time", "60", ORIGINAL)
         for relative in ("contracts/smoke/SnsLoad.sol", "scripts/sns-load.ts"):
             run("docker", "cp", str(ROOT / "test-suite/e2e" / relative), f"{E2E}:/app/test-suite/e2e/{relative}")
-        print(f"SNS stopped. Generating {TARGET:,} fresh encrypted/computed/public handles with 16 producers.", flush=True)
+        assert int(sql("SELECT count(*) FROM pbs_computations WHERE NOT is_completed;")) == 0, "Warm-up needs an empty SNS queue"
+        warm_started = time.monotonic()
+        create_workers(source)
+        baseline = warm_and_pause_workers()
+        report["worker_warmup_seconds"] = round(time.monotonic() - warm_started, 3)
+        report["worker_baseline"] = baseline
+        print(f"Four warmed SNS workers paused. Generating {TARGET:,} uint8 handles as in PR #5024.", flush=True)
+        preparation_started = time.monotonic()
         hardhat("generate", timeout=3600)
+        report["generation_seconds"] = round(time.monotonic() - preparation_started, 3)
         manifest = json.loads(run("docker", "exec", E2E, "cat", MANIFEST))
         (OUT / "manifest.json").write_text(json.dumps(manifest))
         handles = [item["handle"] for item in manifest]
         assert len(handles) == TARGET and len(set(handles)) == TARGET
         assert all(re.fullmatch(r"0x[0-9a-f]{64}", handle) for handle in handles)
-        # A tiny QA ledger avoids reparsing 10,000 VALUES on each monitoring sample.
+        # A tiny QA ledger avoids reparsing the cohort on each monitoring sample.
         sql("CREATE UNLOGGED TABLE qa_sns_load_handles (handle bytea PRIMARY KEY);")
         sql("COPY qa_sns_load_handles FROM STDIN;\n" +
             "\n".join("\\\\x" + handle[2:] for handle in handles) + "\n\\.\nANALYZE qa_sns_load_handles;")
@@ -250,9 +341,12 @@ def main():
             time.sleep(10)
         assert current["completed"] == 0, "SNS was not fully stopped during backlog preparation"
         report["initial_backlog"] = current
+        report["preparation_seconds"] = round(time.monotonic() - preparation_started, 3)
         deadlocks_before = int(sql("SELECT deadlocks FROM pg_stat_database WHERE datname = current_database();"))
         started = time.monotonic()
-        create_workers(source)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda name: docker("POST", f"/containers/{name}/unpause"), WORKERS))
+        report["unpause_seconds"] = round(time.monotonic() - started, 3)
         previous = None
         overlaps = 0
         compute_elapsed = None
@@ -267,6 +361,8 @@ def main():
                 try:
                     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                         metrics = dict(zip(WORKERS, pool.map(sample_worker, WORKERS)))
+                    for name in WORKERS:
+                        metrics[name] = {key: value - baseline[name][key] for key, value in metrics[name].items()}
                 except (urllib.error.URLError, TimeoutError, ConnectionError):
                     if elapsed > 90:
                         raise
@@ -291,18 +387,21 @@ def main():
                     break
                 if elapsed > DRAIN_TIMEOUT_SECONDS:
                     raise TimeoutError("Four-worker SNS drain exceeded three hours")
-                time.sleep(2)
+                time.sleep(1)
         report.update({"drain_seconds": round(elapsed, 3), "compute_drain_seconds": round(compute_elapsed, 3),
                        "compute_handles_per_second": round(TARGET / compute_elapsed, 3),
                        "published_handles_per_second": round(TARGET / elapsed, 3),
                        "four_worker_cpu_overlap_samples": overlaps, "workers": metrics, "final": current})
         report["db_deadlocks"] = int(sql("SELECT deadlocks FROM pg_stat_database WHERE datname = current_database();")) - deadlocks_before
         report["deadlock_log_matches"] = collect_logs()
+        evidence = {name: worker_evidence((OUT / f"{name}.log").read_text()) for name in WORKERS}
+        report["worker_evidence"] = evidence
+        report["competing_full_batches"] = competing_batches(evidence)
         if not retry_only:
             assert report["db_deadlocks"] == 0 and not any(report["deadlock_log_matches"].values()), "Deadlock under ordered locking"
             assert all(sample["failed"] == 0 for sample in metrics.values()), "SNS task failures under ordered locking"
         assert all(sample["completed"] > 0 for sample in metrics.values()), "Not all four workers processed tasks"
-        assert overlaps > 0, "No observed CPU overlap across all four workers"
+        assert report["competing_full_batches"], "Inconclusive: no overlapping full batches on different workers"
         for prefix in ("ct64/", "ct128/"):
             keys = list_objects(prefix)
             missing = [handle for handle in handles if f"{prefix}{handle[2:]}/1" not in keys]
@@ -311,6 +410,14 @@ def main():
             assert not missing, f"Missing canonical {prefix} objects"
         hardhat("verify", timeout=1200)
         report["sampled_decryptions"] = 64
+        report["gateway_material_verified"] = TARGET
+        report["functional_checks_passed"] = True
+        if retry_only:
+            report["contention_reproduced"] = report["db_deadlocks"] > 0 and sum(
+                item["immediate_retries"] for item in evidence.values()) > 0
+            if not report["contention_reproduced"]:
+                report["outcome"] = "inconclusive"
+                raise RuntimeError("Control did not reproduce an SNS deadlock; performance is measured but deadlock comparison is inconclusive")
         report["passed"] = True
     except Exception as error:
         report["error"] = redact(str(error))
@@ -326,10 +433,12 @@ def main():
         (OUT / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
         lines = ["# Four-worker SNS load test", "", f"Variant: **{variant}**", "",
                  f"Result: **{'PASS' if report['passed'] else 'FAIL'}**", "",
-                 f"{TARGET:,} fresh non-trivial handles; 16 producers; SNS stopped until all CT64 were ready.",
-                 "Four SNS processes, one database, batches of 20, four Rayon threads each; migration disabled.", "",
+                 f"{TARGET:,} fresh uint8 trivial-encryption handles, as in PR #5024; original 256 stripes.",
+                 "Four SNS processes warmed on an empty queue, paused until all CT64 are ready, then resumed together.",
+                 "One database, batches of 20, four Rayon threads each, 24 connections and four uploads per worker; migration disabled.", "",
                  "All handles: DB completion, v1 upload status, canonical CT64/CT128 object presence.",
-                 "64 spread-out handles: public decryption against expected plaintext, outside drain timing.",
+                 "All handles: Gateway material consensus; 64 spread-out handles: public decryption, outside drain timing.",
+                 "Warm-up CPU is subtracted from worker CPU totals. Generation, preparation and drain timings are separate.",
                  "CPU overlap establishes concurrent worker activity; this is not a one-vs-four speedup comparison.", "",
                  "Retry-only records recovered deadlocks/task failures; ordered locking requires zero of both.", "",
                  "```json", json.dumps(report, indent=2), "```", ""]

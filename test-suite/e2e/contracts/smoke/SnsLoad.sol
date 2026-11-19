@@ -4,26 +4,19 @@ pragma solidity ^0.8.24;
 import "@fhevm/solidity/lib/FHE.sol";
 import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 
-/// One-shot QA workload: fresh independent outputs from a real encrypted input.
+/// Same light publication workload as PR #5024, scaled to 2,000 handles.
 contract SnsLoad is E2ECoprocessorConfig {
-    euint64 private input;
+    bytes32[] private issued;
 
-    event Output(bytes32 handle, uint64 offset);
-
-    function setInput(externalEuint64 handle, bytes calldata proof) external {
-        input = FHE.fromExternal(handle, proof);
-        FHE.allowThis(input);
+    function issue() external {
+        for (uint256 i = 0; i < 16; i++) {
+            euint8 value = FHE.asEuint8(uint8(issued.length));
+            FHE.makePubliclyDecryptable(value);
+            issued.push(euint8.unwrap(value));
+        }
     }
 
-    function produce(uint64 firstOffset, uint64 count) external {
-        require(count > 0 && count <= 20);
-        for (uint64 i = 0; i < count; i++) {
-            uint64 offset = firstOffset + i;
-            euint64 output = FHE.add(input, offset);
-            FHE.allowThis(output);
-            FHE.allow(output, msg.sender);
-            FHE.makePubliclyDecryptable(output);
-            emit Output(euint64.unwrap(output), offset);
-        }
+    function handles() external view returns (bytes32[] memory) {
+        return issued;
     }
 }
