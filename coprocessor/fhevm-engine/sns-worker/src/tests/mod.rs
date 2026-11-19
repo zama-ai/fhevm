@@ -47,6 +47,7 @@ static TRACING_INIT: OnceLock<()> = OnceLock::new();
 mod s3_migration;
 mod s3_migration_dry_run;
 mod s3_status_deadlock;
+mod s3_status_digest_mirror;
 
 pub fn init_tracing() {
     TRACING_INIT.get_or_init(|| {
