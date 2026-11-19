@@ -442,6 +442,8 @@ const PRF_SERVICE_PORT = 8090;
 
 /** The default metrics port of prf-service. */
 const PRF_SERVICE_METRICS_PORT = 9100;
+/** The default metrics port of the pad-worker. */
+const PAD_WORKER_METRICS_PORT = 9100;
 
 /** The coprocessor-proxy's default listen port. */
 const COPROCESSOR_PROXY_PORT = 8443;
@@ -485,6 +487,28 @@ const buildPrfServiceEnvs = (envs: Record<string, Record<string, string>>, plan:
     };
   }
   return prfServiceEnvs;
+};
+
+/** Each pad-worker's env file: its coprocessor's env, with DATABASE_URL as the pad_worker role. */
+const buildPadWorkerEnvs = (
+  envs: Record<string, Record<string, string>>,
+  instanceEnvs: Record<string, Record<string, string>>,
+  plan: StackSpec,
+) => {
+  const padWorkerEnvs: Record<string, Record<string, string>> = {};
+  if (!plan.coprocessor || !runsCoprocessorProxy(plan)) {
+    return padWorkerEnvs;
+  }
+  // A fixed name: grant_pad_roles.sql grants only to `pad_worker`.
+  const credentials = `pad_worker:${envs.database.PAD_WORKER_DATABASE_PASSWORD}`;
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    const coprocessor = index === 0 ? envs.coprocessor : instanceEnvs[`coprocessor.${index}`];
+    padWorkerEnvs[coprocessorServiceEnvName("coprocessor-pad-worker", index)] = {
+      ...coprocessor,
+      DATABASE_URL: `postgresql://${credentials}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`,
+    };
+  }
+  return padWorkerEnvs;
 };
 
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
@@ -553,10 +577,14 @@ const validateEnvMaps = (
 };
 
 /**
- * What the "Coprocessor proxy" suite reads, one entry per coprocessor. Remove with that suite when the
- * RFC-038 pad connector and its e2e land, including the mapping of party 1's connector key below.
+ * What the "Coprocessor proxy" and "PRF endpoint" suites read, one entry per coprocessor. Remove with
+ * them when the RFC-038 pad connector and its e2e land, including the connector key mapping below.
  */
-const applyCoprocessorProxyTestSuiteEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+const applyCoprocessorProxyTestSuiteEnv = (
+  envs: Record<string, Record<string, string>>,
+  plan: StackSpec,
+  kmsParties: KmsParty[],
+) => {
   const supported = plan.coprocessor && runsCoprocessorProxy(plan);
   const indices = supported ? [...Array(plan.topology.count).keys()] : [];
   envs["test-suite"].COPROCESSOR_PROXY_URLS = indices
@@ -568,11 +596,18 @@ const applyCoprocessorProxyTestSuiteEnv = (envs: Record<string, Record<string, s
   envs["test-suite"].PRF_SERVICE_METRICS_URLS = indices
     .map((index) => `http://${toServiceName("prf-service", index)}:${PRF_SERVICE_METRICS_PORT}/metrics`)
     .join(",");
+  envs["test-suite"].PAD_WORKER_METRICS_URLS = indices
+    .map((index) => `http://${toServiceName("pad-worker", index)}:${PAD_WORKER_METRICS_PORT}/metrics`)
+    .join(",");
   envs["test-suite"].COPROCESSOR_PROXY_METRICS_URLS = indices
     .map((index) => `http://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_METRICS_PORT}/metrics`)
     .join(",");
   // The suite signs as party 1's connector, a KMS tx-sender of the active context.
   envs["test-suite"].KMS_CONNECTOR_PRIVATE_KEY = supported ? envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY : "";
+  // The "PRF endpoint" suite signs as each committee connector. Spares are not tx-senders yet.
+  envs["test-suite"].KMS_CONNECTOR_PRIVATE_KEYS = supported
+    ? kmsParties.slice(0, plan.kms.committeeSize).map((party) => party.privateKey).join(",")
+    : "";
 };
 
 const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
@@ -660,7 +695,7 @@ export const renderEnvMaps = async (
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
   envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
   envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
-  applyCoprocessorProxyTestSuiteEnv(envs, plan);
+  applyCoprocessorProxyTestSuiteEnv(envs, plan, kmsParties);
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
 
   // Propagate SNS-worker S3 migration configuration.
@@ -756,7 +791,12 @@ export const renderEnvMaps = async (
   }
 
   // After the loops that copy coprocessor settings into every `coprocessor*` instance env.
-  Object.assign(instanceEnvs, buildCoprocessorProxyEnvs(envs, plan), buildPrfServiceEnvs(envs, plan));
+  Object.assign(
+    instanceEnvs,
+    buildCoprocessorProxyEnvs(envs, plan),
+    buildPrfServiceEnvs(envs, plan),
+    buildPadWorkerEnvs(envs, instanceEnvs, plan),
+  );
   validateEnvMaps(envs, instanceEnvs);
   const compat = compatPolicyForState(plan);
 

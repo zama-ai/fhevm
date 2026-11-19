@@ -94,6 +94,7 @@ spec:
             - --max-in-flight-per-connector={{ $component.limits.maxInFlightPerConnector }}
             - --max-body-bytes={{ int64 $component.limits.maxBodyBytes }}
             - --max-body-bytes-per-connector={{ int64 $component.limits.maxBodyBytesPerConnector }}
+            - --pad-pending-max-age={{ int $component.limits.padPendingMaxAgeSeconds }}s
             {{- with $component.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
