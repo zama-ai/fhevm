@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Resolve chain endpoints/ids for CHAIN_MODE (anvil | blockchain-dev | testnets) into $GITHUB_ENV.
 # testnets = public Sepolia 11155111 + Amoy 80002 (RPC URLs from AWS Secrets Manager via ExternalSecret), Nitro 412346 gateway; forces DEPLOY_POLYGON.
+# DEPLOY_BNB adds BSC testnet 97 (anvil: a local chain-97 Anvil) as a third host chain; opt-in in every mode.
 set -euo pipefail
 
 CHAIN_MODE="${CHAIN_MODE:-anvil}"
@@ -15,6 +16,23 @@ esac
 if [[ "${CHAIN_MODE}" == "blockchain-dev" && "${DEPLOY_POLYGON:-false}" == "true" ]]; then
   echo "::error::chain_mode=blockchain-dev cannot be combined with deploy_polygon: blockchain-dev has no Polygon node. Use chain_mode=testnets (Sepolia + Amoy) or stay on Anvil."
   exit 1
+fi
+
+if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
+  if [[ "${CHAIN_MODE}" == "blockchain-dev" ]]; then
+    echo "::error::chain_mode=blockchain-dev cannot be combined with deploy_bnb: blockchain-dev has no BNB node. Use chain_mode=testnets (Sepolia + Amoy + BSC testnet) or stay on Anvil."
+    exit 1
+  fi
+  # bg-*.sh and the cutover assertions only know the ETH + Polygon chains.
+  if [[ "${BLUE_GREEN:-false}" == "true" ]]; then
+    echo "::error::deploy_bnb is not supported with enable_blue_green."
+    exit 1
+  fi
+  # kms-connector chart 1.x has flat ethereum/polygon keys only, so BNB would never reach the connector.
+  if [[ "${KMS_CONNECTOR_CHART_VERSION:-}" == 1.* ]]; then
+    echo "::error::deploy_bnb needs kms-connector chart 2.x (hostChains map); kms_connector_chart_version=${KMS_CONNECTOR_CHART_VERSION} only supports ethereum + polygon."
+    exit 1
+  fi
 fi
 
 # Both external modes use the blockchain-dev Nitro as gateway.
@@ -36,12 +54,14 @@ case "${CHAIN_MODE}" in
       echo "GATEWAY_CHAIN_ID=54321"
       echo "POLYGON_HTTP=http://anvil-host-polygon-anvil-node:8545"
       echo "POLYGON_CHAIN_ID=80002"
+      echo "BNB_HTTP=http://anvil-host-bnb-anvil-node:8545"
+      echo "BNB_CHAIN_ID=97"
       echo "HOST_FAUCET="
       echo "GATEWAY_FAUCET="
       echo "HEAD_BLOCK=0"
       echo "HARDHAT_NETWORK_TESTS=staging"
     } >> "${GITHUB_ENV}"
-    echo "Chain mode: anvil (host 12345, gateway 54321$([[ "${DEPLOY_POLYGON:-false}" == "true" ]] && echo ', polygon 80002'))"
+    echo "Chain mode: anvil (host 12345, gateway 54321$([[ "${DEPLOY_POLYGON:-false}" == "true" ]] && echo ', polygon 80002')$([[ "${DEPLOY_BNB:-false}" == "true" ]] && echo ', bnb 97'))"
     ;;
 
   blockchain-dev)
@@ -66,19 +86,22 @@ case "${CHAIN_MODE}" in
 
   testnets)
     # RPC URLs + faucet keys come from AWS via sync-secrets (deploy-rpc-secret.sh ->
-    # Secrets `rpc`, `eth-faucet`, `polygon-faucet`); in-cluster consumers secretKeyRef `rpc`.
+    # Secrets `rpc`, `eth-faucet`, `polygon-faucet`, `bnb-faucet` when DEPLOY_BNB);
+    # in-cluster consumers secretKeyRef `rpc`.
     {
       echo "CHAIN_MODE=testnets"
       echo "EXTERNAL_CHAINS=true"
       echo "RPC_SECRET_NAME=rpc"
       echo "ETH_FAUCET_SECRET_NAME=eth-faucet"
       echo "POLYGON_FAUCET_SECRET_NAME=polygon-faucet"
+      echo "BNB_FAUCET_SECRET_NAME=bnb-faucet"
       # Amoy is the second host chain: deploy_polygon-gated steps run, minus the Anvil node (EXTERNAL_CHAINS gate).
       echo "DEPLOY_POLYGON=true"
       echo "GATEWAY_HTTP=${NITRO_HTTP}"
       echo "GATEWAY_WS=${NITRO_WS}"
       echo "HOST_CHAIN_ID=11155111"
       echo "POLYGON_CHAIN_ID=80002"
+      echo "BNB_CHAIN_ID=97"
       echo "GATEWAY_CHAIN_ID=${NITRO_CHAIN_ID}"
       echo "HOST_FAUCET="
       echo "GATEWAY_FAUCET=${NITRO_FAUCET}"
@@ -89,6 +112,9 @@ case "${CHAIN_MODE}" in
       echo "POLYGON_FINALITY_DEPTH=${POLYGON_FINALITY_DEPTH:-3}"
       echo "HOST_FINALITY_LAG=${HOST_FINALITY_LAG:-2}"
       echo "POLYGON_FINALITY_LAG=${POLYGON_FINALITY_LAG:-3}"
+      # Same values as the zws-dev bnb-blockchain listener (finality_depth 20) and poller (--finality-lag=15).
+      echo "BNB_FINALITY_DEPTH=${BNB_FINALITY_DEPTH:-20}"
+      echo "BNB_FINALITY_LAG=${BNB_FINALITY_LAG:-15}"
       # ETH e2e hardhat network (11155111, live path); the Polygon run already uses `-n polygonAmoy`.
       echo "HARDHAT_NETWORK_TESTS=sepolia"
       # 12s blocks stretch hardhat deploys and the keygen ceremony.
@@ -97,7 +123,7 @@ case "${CHAIN_MODE}" in
       # Default DKG overwrites KEYGEN_TIMEOUT to 310m after this case.
       echo "KEYGEN_TIMEOUT=110m"
     } >> "${GITHUB_ENV}"
-      echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
+      echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy$([[ "${DEPLOY_BNB:-false}" == "true" ]] && echo ', bnb 97 BSC testnet') from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
     ;;
 esac
 

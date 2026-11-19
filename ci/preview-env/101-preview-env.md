@@ -98,19 +98,26 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
   See the multichain section in `README.md`. Incompatible with
   `chain_mode=blockchain-dev`; implied by `chain_mode=testnets` (real Amoy).
+- `deploy_bnb` — also add a BNB (`97`) host chain the same way (default `false`):
+  local anvil, or public BSC testnet with `chain_mode=testnets`. Opt-in in every
+  mode, combines with `deploy_polygon`; with `automated_tests` it runs a BNB e2e
+  suite. CLI `--bnb`. Not with `chain_mode=blockchain-dev`, `enable_blue_green` or
+  a 1.x kms-connector chart pin. Dispatch-only.
 - `chain_mode` — `anvil` (default), `blockchain-dev`, or `testnets`; see the
   chain-modes section in `README.md`.
   - `blockchain-dev`: skip per-namespace Anvil and connect to the shared
     `blockchain-dev` Geth (host chain id `1337`) + Nitro (gateway `412346`).
     Unique mnemonic per run, wallets funded from the in-cluster faucets. The
     `preview-env-blue-green` PR label forces this on (plain `preview-env-e2e`
-    labels stay on Anvil). Not with `deploy_polygon`.
+    labels stay on Anvil). Not with `deploy_polygon` or `deploy_bnb`.
   - `testnets`: public **Sepolia** (`11155111`) + **Polygon Amoy** (`80002`) as the
     two host chains, the `blockchain-dev` Nitro as gateway. RPC URLs (Secret `rpc`) and
     faucet keys (Secrets `eth-faucet`, `polygon-faucet`) come from AWS Secrets Manager via
     the gitops `sync-secrets` chart — no GitHub secrets. Keys are `zws-dev/ethereum-faucet`
     and `zws-dev/polygon-faucet` (`private-key`), the same AWS secrets gitops uses for the
-    zws-dev faucets. Slow (12 s blocks) and it spends real testnet gas.
+    zws-dev faucets. Slow (12 s blocks) and it spends real testnet gas. With
+    `deploy_bnb`, public BSC testnet (`97`) is a third host chain (RPC from
+    `zws-dev/external-bnb-rpcs`, faucet key `zws-dev/bnb-faucet` → Secret `bnb-faucet`).
   Both external modes still deploy **this preview's own contracts**, which remain
   on the shared chains after teardown.
 
@@ -199,6 +206,7 @@ ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b
 ci/preview-env/preview-env launch --ref <your-branch> --fhe-keys default-secure --lifetime 12 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
+ci/preview-env/preview-env launch --ref <your-branch> --testnets --bnb --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
 ci/preview-env/preview-env launch --ref <your-branch> --listener-v2-only --tests
 ci/preview-env/preview-env launch --ref <your-branch> --set coprocessor_version=abc1234

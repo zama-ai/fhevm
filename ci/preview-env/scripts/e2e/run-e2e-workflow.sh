@@ -2,7 +2,8 @@
 # Deploy (or re-deploy) the automated e2e Argo Workflows and wait for them.
 # Used twice on the RFC-021 path: once during DryRunStarted, once after cutover.
 # Env: NAMESPACE, E2E_IMAGE, COMMON_CHART, COMMON_CHART_VERSION,
-#      RELAYER_SDK_VERSION (optional), DEPLOY_POLYGON, E2E_PHASE (annotation).
+#      RELAYER_SDK_VERSION (optional), DEPLOY_POLYGON, DEPLOY_BNB,
+#      E2E_PHASE (annotation).
 set -euo pipefail
 
 : "${NAMESPACE:?}"
@@ -29,6 +30,7 @@ patch_phase() {
 }
 
 kubectl delete workflow e2e-test-suite-fhevm-sdk e2e-test-suite-relayer-sdk e2e-test-suite-polygon \
+  e2e-test-suite-bnb \
   -n "${NAMESPACE}" --ignore-not-found
 
 f1=$(mktemp --suffix=.yaml)
@@ -59,13 +61,17 @@ else
   echo "RELAYER_SDK_VERSION empty - skipping the @zama-fhe/relayer-sdk suite."
 fi
 
-if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
+# Extra host chains: one @fhevm/sdk suite per chain, named after its slot.
+extra_slots=()
+[[ "${DEPLOY_POLYGON:-false}" == "true" ]] && extra_slots+=(polygon)
+[[ "${DEPLOY_BNB:-false}" == "true" ]] && extra_slots+=(bnb)
+for slot in ${extra_slots[@]+"${extra_slots[@]}"}; do
   f3=$(mktemp --suffix=.yaml)
-  cp "${root}/test-suite/values-test-suite-workflow-polygon-e2e.yaml" "${f3}"
+  cp "${root}/test-suite/values-test-suite-workflow-${slot}-e2e.yaml" "${f3}"
   patch_image "${f3}"
   patch_phase "${f3}"
-  echo "Deploying Polygon @fhevm/sdk workflow (image ${E2E_IMAGE}, phase=${E2E_PHASE})..."
-  helm upgrade --install test-suite-workflow-polygon "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+  echo "Deploying ${slot} @fhevm/sdk workflow (image ${E2E_IMAGE}, phase=${E2E_PHASE})..."
+  helm upgrade --install "test-suite-workflow-${slot}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
     -n "${NAMESPACE}" -f "${f3}"
-  bash "${script_dir}/wait-workflow.sh" e2e-test-suite-polygon
-fi
+  bash "${script_dir}/wait-workflow.sh" "e2e-test-suite-${slot}"
+done

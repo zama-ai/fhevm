@@ -46,14 +46,17 @@ ci/preview-env/
 │   ├── values-coprocessor-infra-e2e.yaml    # crossplane/coprocessor-infra overlay: S3 only
 │   └── values-postgres-coprocessor-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to coprocessor
 ├── testnets/
-│   ├── values-rpc.yaml                 # sync-secrets: Sepolia/Amoy RPC URLs → Secret rpc
+│   ├── values-rpc.yaml                 # sync-secrets: Sepolia/Amoy/BSC testnet RPC URLs → Secret rpc
 │   ├── values-eth-faucet.yaml        # sync-secrets: zws-dev/ethereum-faucet → Secret eth-faucet
-│   └── values-polygon-faucet.yaml    # sync-secrets: zws-dev/polygon-faucet → Secret polygon-faucet
+│   ├── values-polygon-faucet.yaml    # sync-secrets: zws-dev/polygon-faucet → Secret polygon-faucet
+│   └── values-bnb-faucet.yaml        # sync-secrets: zws-dev/bnb-faucet → Secret bnb-faucet (deploy_bnb)
 ├── host-chain/
 │   ├── values-anvil-host-e2e.yaml       # anvil-node overlay, host chain
 │   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
+│   ├── values-anvil-host-bnb-e2e.yaml       # anvil-node overlay, BNB host chain (deploy_bnb)
 │   ├── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
 │   ├── values-host-contracts-polygon-e2e.yaml # contracts overlay, Polygon host-contracts (mirrors ETH ProtocolConfig)
+│   ├── values-host-contracts-bnb-e2e.yaml # contracts overlay, BNB host-contracts (mirrors ETH ProtocolConfig)
 │   ├── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
 │   ├── values-host-define-new-kms-context-e2e.yaml # contracts overlay, same-committee context switch (manual)
 │   └── values-host-define-new-epoch-e2e.yaml # contracts overlay, same-context epoch rotation (manual)
@@ -62,22 +65,28 @@ ci/preview-env/
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
 │   ├── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+│   ├── values-gateway-add-host-chains-bnb-e2e.yaml # contracts overlay, register BNB (97) (deploy_bnb)
 │   └── values-gateway-update-kms-context-e2e.yaml # contracts overlay, gateway context id bump (manual)
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
 │   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)
 │   ├── values-coprocessor-gcs-e2e.yaml    # RFC-021 GCS overlay (compiled release + upgrade-controller / consensus-detector)
 │   ├── values-coprocessor-polygon-e2e.yaml # additive multichain overlay: adds the Polygon chains[] consumer (deploy_polygon)
+│   ├── values-coprocessor-bnb-e2e.yaml    # additive multichain overlay: seeds the BNB chains[] entry (deploy_bnb)
+│   ├── values-coprocessor-bnb-consumer-e2e.yaml # BNB host-listener-consumer release (coprocessor-bnb-<i>) (deploy_bnb)
 │   ├── values-coprocessor-poller-e2e.yaml # coprocessor overlay, poller-only release: S3 key/CRS download -> keys/crs tables (coprocessor-poller-<i>)
 │   ├── values-coprocessor-poller-polygon-e2e.yaml # additive multichain overlay: adds the Polygon poller (deploy_polygon)
+│   ├── values-coprocessor-poller-bnb-e2e.yaml # BNB poller release (coprocessor-poller-bnb-<i>) (deploy_bnb)
 │   └── values-coprocessor-redis-e2e.yaml  # iamguarded Redis overlay: per-party host-listener-consumer broker (coprocessor-redis-<i>)
 ├── listener/
 │   ├── values-listener-e2e.yaml          # listener chart overlay: per-party host-chain event producer (listener-<i>)
 │   ├── values-listener-polygon-e2e.yaml  # listener overlay, Polygon producer (listener-polygon-<i>) (deploy_polygon)
+│   ├── values-listener-bnb-e2e.yaml      # listener overlay, BNB producer (listener-bnb-<i>) (deploy_bnb)
 │   └── values-postgres-listener-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to the listener's cursor DB
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
 │   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain (deploy_polygon)
+│   ├── values-kms-connector-bnb-e2e.yaml   # additive overlay: adds the BNB host chain, chart 2.x only (deploy_bnb)
 │   ├── values-kms-insecure-keygen-redirect-e2e.yaml # `common` chart overlay: kms-worker -> kms-core redirect, insecure keygen (fhe_keys=default-insecure)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── observability/
@@ -91,7 +100,8 @@ ci/preview-env/
 │   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
 ├── test-suite/
 │   ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
-│   └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
+│   ├── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
+│   └── values-test-suite-workflow-bnb-e2e.yaml # Argo Workflow overlay, BNB e2e run (deploy_bnb + automated_tests)
 ├── preview-env                          # gh CLI: launch / watch / destroy (does not helm-install)
 └── scripts/                             # deploy-time helpers called from preview-env-deploy.yml
     ├── lib.sh                           # shared bash helpers (thresholds, require_nonempty)
@@ -339,6 +349,14 @@ The two host chains are the real public testnets, so this is the only preview sh
 - **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
   RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
   ProtocolConfig (canonical source) exactly as the Anvil Polygon does.
+- **BSC testnet (`97`) joins as a third host chain with `deploy_bnb`** (opt-in; `testnets`
+  does not imply it). Secret `rpc` always carries `bnb-rpc-url` / `bnb-rpc-ws-url` from
+  `zws-dev/external-bnb-rpcs`; Secret **`bnb-faucet`** (`private-key` from **`zws-dev/bnb-faucet`**)
+  is installed only on `deploy_bnb` runs, and its presence is what makes the teardown sweep
+  cover BSC testnet. Floors are 0.05 tBNB for signers and 0.5 tBNB for the deployer: BSC
+  testnet gas sits around 0.1-3 gwei, so the ~36M-gas host-contracts deploy costs ~0.1 tBNB.
+  Listeners run `finality_depth` 20 and pollers `--finality-lag` 15 (`BNB_FINALITY_*`), the
+  same as the zws-dev `bnb-blockchain` deployments.
 - **Finality**: listeners run `finality_depth` 2 (Sepolia) / 3 (Amoy) and pollers
   `--finality-lag` 2 / 3 (`HOST_FINALITY_*` / `POLYGON_FINALITY_*`), instead of the 0 / 1
   that single-node Anvil and Geth `--dev` allow.
@@ -346,8 +364,8 @@ The two host chains are the real public testnets, so this is the only preview sh
   startup) rather than a head captured early in the run — 12 s blocks make any captured
   head drift far during the KMS deploy.
 - **Timeouts**: contracts `helm --wait` 30 m (was 10 m) and keygen 60 m (was 45 m).
-- **Tests** run on Hardhat networks `sepolia` (ETH) and `polygonAmoy` (both in
-  `LIVE_NETWORKS`, so the reduced live path).
+- **Tests** run on Hardhat networks `sepolia` (ETH), `polygonAmoy` and, with `deploy_bnb`,
+  `bnbTestnet` (all in `LIVE_NETWORKS`, so the reduced live path).
 - **Cost and hygiene**: every run spends real testnet gas (~10 upgradeable contracts + the
   keygen ceremony per chain, then e2e FHE txs) and leaves its contracts on Sepolia and Amoy
   for good. Dispatch-only, no PR label.
@@ -608,6 +626,28 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
 > `true` and it takes the **reduced / read-only** path (the `hcu-block-cap` owner-only
 > and `evm_*` deterministic subtests `this.skip()`). The Polygon run is a multichain
 > routing smoke test; the ETH `staging` run remains the full-coverage one.
+
+### Third host chain: BNB (`deploy_bnb`)
+
+`deploy_bnb` (default `false`) adds a **BNB host chain (chainId `97`)** with the same slot
+layout as Polygon: a local anvil on chain `97` (public BSC testnet under
+`chain_mode=testnets`), `host-contracts-bnb` mirroring the ETH ProtocolConfig, per-party
+`listener-bnb-<i>` / `coprocessor-bnb-<i>` / `coprocessor-poller-bnb-<i>`, a `bnb`
+kms-connector `hostChains` entry, a relayer `host_chains` entry, the
+`gateway-add-host-chains-bnb` registration and an `e2e-test-suite-bnb` Workflow on Hardhat
+network `bnbTestnet`. It combines with `deploy_polygon` for three host chains, like devnet.
+Differences from Polygon:
+
+- Opt-in in every chain mode: `chain_mode=testnets` does not imply it, so ordinary testnets
+  runs don't spend tBNB.
+- Both seed overlays (`values-coprocessor-polygon-e2e.yaml`, `values-coprocessor-bnb-e2e.yaml`)
+  repeat the whole `chains[]` list because Helm replaces lists, so with both enabled
+  `deploy-coprocessor.sh` appends the `bnb` entry to the Polygon seed and passes one merged file.
+- kms-connector chart 2.x only: `hostChains` is a map there, so the `bnb` entry merges in;
+  chart 1.5.3 has no slot for a third chain.
+- `resolve-chain.sh` rejects it with `chain_mode=blockchain-dev` (no BNB node there),
+  `enable_blue_green` (the blue-green scripts and the upgrade proposal only know the ETH and
+  Polygon host chains) and a 1.x kms-connector chart pin.
 
 ## KMS context switch (manual)
 

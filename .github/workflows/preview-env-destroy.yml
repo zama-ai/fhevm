@@ -128,7 +128,7 @@ jobs:
 
       # Must run BEFORE the namespace goes: the only copy of the preview mnemonic is
       # the preview-wallets-mnemonic Secret inside it, so once it is deleted whatever
-      # is left on Sepolia/Amoy is unrecoverable. continue-on-error because reclaiming
+      # is left on Sepolia/Amoy/BSC testnet is unrecoverable. continue-on-error because reclaiming
       # test funds must never leave a namespace (and its AWS resources) standing.
       - name: Checkout the sweep scripts
         continue-on-error: true
@@ -152,7 +152,7 @@ jobs:
 
       - name: Return leftover testnet funds to the treasury
         continue-on-error: true
-        # Each refund waits for one confirmation on Sepolia/Amoy; bounded so a stalled
+        # Each refund waits for one confirmation on Sepolia/Amoy/BSC testnet; bounded so a stalled
         # RPC cannot eat the job's 30m and strand the namespace.
         timeout-minutes: 10
         env:

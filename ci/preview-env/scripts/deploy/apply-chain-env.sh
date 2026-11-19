@@ -300,95 +300,107 @@ patch_workflow_env() {
 patch_workflow_env "${root}/test-suite/values-test-suite-workflow-e2e.yaml"
 patch_workflow_env "${root}/test-suite/values-test-suite-workflow-relayer-sdk-e2e.yaml"
 
-# --- second host chain (Polygon Amoy on public RPC; only testnets combines this) ---
-if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
-  : "${POLYGON_HTTP:?}"
-  : "${POLYGON_WS:?}"
-  : "${POLYGON_CHAIN_ID:?}"
-  : "${POLYGON_FINALITY_DEPTH:?}"
-  : "${POLYGON_FINALITY_LAG:?}"
-  echo "Patching Polygon overlays (chain ${POLYGON_CHAIN_ID} at ${POLYGON_HTTP})"
+# --- extra host chains (Polygon Amoy / BSC testnet on public RPC; only testnets combines these) ---
+# Every extra host chain uses the same overlay set, named after its slot (polygon, bnb):
+# values-*-<slot>-e2e.yaml, chains[] entry <slot>, Secret keys <slot>-rpc-url / <slot>-rpc-ws-url,
+# kms-connector hostChains.<slot> + RPC_<SLOT>_URL. $1 slot, $2 display name, then http, ws,
+# chain id, listener finality depth, poller finality lag.
+patch_extra_host_chain() {
+  local slot="$1" label="$2" http="$3" ws="$4" chain_id="$5" finality_depth="$6" finality_lag="$7"
+  local rpc_key="${slot}-rpc-url" rpc_ws_key="${slot}-rpc-ws-url"
+  local kms_env
+  kms_env="RPC_$(tr '[:lower:]' '[:upper:]' <<<"${slot}")_URL"
+  echo "Patching ${label} overlays (chain ${chain_id} at ${http})"
 
-  phost="${root}/host-chain/values-host-contracts-polygon-e2e.yaml"
-  set_named_env "${phost}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
-  set_named_env "${phost}" ".scDeploy.env" CHAIN_ID "${POLYGON_CHAIN_ID}"
-  set_named_env "${phost}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
-  set_named_env "${phost}" ".scDeploy.env" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
+  local xhost="${root}/host-chain/values-host-contracts-${slot}-e2e.yaml"
+  set_named_env "${xhost}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
+  set_named_env "${xhost}" ".scDeploy.env" CHAIN_ID "${chain_id}"
+  set_named_env "${xhost}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
+  set_named_env "${xhost}" ".scDeploy.env" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
   # deployCommands' canonical-ProtocolConfig export must hit the ETH host RPC: literal, or CANONICAL_RPC_URL from the Secret.
   if rpc_from_secret; then
-    set_named_env_secret "${phost}" ".scDeploy.env" RPC_URL polygon-rpc-url
-    set_named_env_secret "${phost}" ".scDeploy.env" CANONICAL_RPC_URL ethereum-rpc-url
+    set_named_env_secret "${xhost}" ".scDeploy.env" RPC_URL "${rpc_key}"
+    set_named_env_secret "${xhost}" ".scDeploy.env" CANONICAL_RPC_URL ethereum-rpc-url
     # $$ = literal $ for Go regexp replacement; the pod's shell expands ${CANONICAL_RPC_URL} later.
     # shellcheck disable=SC2016
-    yq -i '.scDeploy.deployCommands[] |= sub("http://anvil-host-anvil-node:8545"; "$${CANONICAL_RPC_URL}")' "${phost}"
+    yq -i '.scDeploy.deployCommands[] |= sub("http://anvil-host-anvil-node:8545"; "$${CANONICAL_RPC_URL}")' "${xhost}"
   else
-    set_named_env "${phost}" ".scDeploy.env" RPC_URL "${POLYGON_HTTP}"
+    set_named_env "${xhost}" ".scDeploy.env" RPC_URL "${http}"
     HOST_HTTP="${HOST_HTTP}" yq -i \
       '.scDeploy.deployCommands[] |= sub("http://anvil-host-anvil-node:8545"; strenv(HOST_HTTP))' \
-      "${phost}"
+      "${xhost}"
   fi
 
-  padd="${root}/gateway-chain/values-gateway-add-host-chains-polygon-e2e.yaml"
-  set_named_env "${padd}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
-  set_named_env "${padd}" ".scDeploy.env" RPC_URL "${GATEWAY_HTTP}"
-  set_named_env "${padd}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_0}"
-  set_named_env "${padd}" ".scDeploy.env" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
-  set_named_env "${padd}" ".scDeploy.env" HOST_CHAIN_CHAIN_ID_0 "${POLYGON_CHAIN_ID}"
+  local xadd="${root}/gateway-chain/values-gateway-add-host-chains-${slot}-e2e.yaml"
+  set_named_env "${xadd}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
+  set_named_env "${xadd}" ".scDeploy.env" RPC_URL "${GATEWAY_HTTP}"
+  set_named_env "${xadd}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_0}"
+  set_named_env "${xadd}" ".scDeploy.env" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
+  set_named_env "${xadd}" ".scDeploy.env" HOST_CHAIN_CHAIN_ID_0 "${chain_id}"
 
-  plis="${root}/listener/values-listener-polygon-e2e.yaml"
-  POLYGON_CHAIN_ID="${POLYGON_CHAIN_ID}" POLYGON_HTTP="${POLYGON_HTTP}" POLYGON_FINALITY_DEPTH="${POLYGON_FINALITY_DEPTH}" yq -i '
-    .listeners[0].config.blockchain.chain_id = env(POLYGON_CHAIN_ID) |
-    .listeners[0].config.blockchain.rpc_url = strenv(POLYGON_HTTP) |
-    .listeners[0].config.blockchain.finality_depth = env(POLYGON_FINALITY_DEPTH)
-  ' "${plis}"
+  local xlis="${root}/listener/values-listener-${slot}-e2e.yaml"
+  X_CHAIN_ID="${chain_id}" X_HTTP="${http}" X_FINALITY_DEPTH="${finality_depth}" yq -i '
+    .listeners[0].config.blockchain.chain_id = env(X_CHAIN_ID) |
+    .listeners[0].config.blockchain.rpc_url = strenv(X_HTTP) |
+    .listeners[0].config.blockchain.finality_depth = env(X_FINALITY_DEPTH)
+  ' "${xlis}"
   if rpc_from_secret; then
-    yq -i '.listeners[0].config.blockchain.rpc_url = "set-by-APP_BLOCKCHAIN__RPC_URL"' "${plis}"
-    set_named_env_secret "${plis}" ".env" APP_BLOCKCHAIN__RPC_URL polygon-rpc-url
+    yq -i '.listeners[0].config.blockchain.rpc_url = "set-by-APP_BLOCKCHAIN__RPC_URL"' "${xlis}"
+    set_named_env_secret "${xlis}" ".env" APP_BLOCKCHAIN__RPC_URL "${rpc_key}"
   fi
 
-  # Patch whichever of the "host"/"polygon" chains[] entries each coprocessor overlay carries.
-  for f in "${root}/coprocessor/values-coprocessor-polygon-e2e.yaml" \
-           "${root}/coprocessor/values-coprocessor-polygon-consumer-e2e.yaml" \
-           "${root}/coprocessor/values-coprocessor-poller-polygon-e2e.yaml"; do
+  # Patch whichever of the "host"/<slot> chains[] entries each coprocessor overlay carries.
+  local xpoller="${root}/coprocessor/values-coprocessor-poller-${slot}-e2e.yaml"
+  local xcopro=("${root}/coprocessor/values-coprocessor-${slot}-e2e.yaml"
+                "${root}/coprocessor/values-coprocessor-${slot}-consumer-e2e.yaml"
+                "${xpoller}")
+  local f
+  for f in "${xcopro[@]}"; do
     HOST_HTTP="${HOST_HTTP}" HOST_WS="${HOST_WS}" HOST_CHAIN_ID="${HOST_CHAIN_ID}" \
-    POLYGON_HTTP="${POLYGON_HTTP}" POLYGON_WS="${POLYGON_WS}" POLYGON_CHAIN_ID="${POLYGON_CHAIN_ID}" yq -i '
+    SLOT="${slot}" X_HTTP="${http}" X_WS="${ws}" X_CHAIN_ID="${chain_id}" yq -i '
       .commonConfig.canonicalProtocolConfigChainId = strenv(HOST_CHAIN_ID) |
       (.chains[] | select(.name == "host") | .chainId) = strenv(HOST_CHAIN_ID) |
       (.chains[] | select(.name == "host") | .httpUrl) = strenv(HOST_HTTP) |
       (.chains[] | select(.name == "host") | .wsUrl) = strenv(HOST_WS) |
-      (.chains[] | select(.name == "polygon") | .chainId) = strenv(POLYGON_CHAIN_ID) |
-      (.chains[] | select(.name == "polygon") | .httpUrl) = strenv(POLYGON_HTTP) |
-      (.chains[] | select(.name == "polygon") | .wsUrl) = strenv(POLYGON_WS)
+      (.chains[] | select(.name == strenv(SLOT)) | .chainId) = strenv(X_CHAIN_ID) |
+      (.chains[] | select(.name == strenv(SLOT)) | .httpUrl) = strenv(X_HTTP) |
+      (.chains[] | select(.name == strenv(SLOT)) | .wsUrl) = strenv(X_WS)
     ' "${f}"
   done
-  ppoller="${root}/coprocessor/values-coprocessor-poller-polygon-e2e.yaml"
-  POLYGON_HTTP="${POLYGON_HTTP}" POLYGON_WS="${POLYGON_WS}" yq -i '
-    .commonConfig.hostChainHttpUrl = strenv(POLYGON_HTTP) |
-    .commonConfig.hostChainWsUrl = strenv(POLYGON_WS)
-  ' "${ppoller}"
+  X_HTTP="${http}" X_WS="${ws}" yq -i '
+    .commonConfig.hostChainHttpUrl = strenv(X_HTTP) |
+    .commonConfig.hostChainWsUrl = strenv(X_WS)
+  ' "${xpoller}"
   if rpc_from_secret; then
-    for f in "${root}/coprocessor/values-coprocessor-polygon-e2e.yaml" \
-             "${root}/coprocessor/values-coprocessor-polygon-consumer-e2e.yaml" "${ppoller}"; do
+    for f in "${xcopro[@]}"; do
       yq -e '.chains[] | select(.name == "host")' "${f}" >/dev/null 2>&1 && set_chain_urls_secret "${f}" host ethereum-rpc-url ethereum-rpc-ws-url
-      set_chain_urls_secret "${f}" polygon polygon-rpc-url polygon-rpc-ws-url
+      set_chain_urls_secret "${f}" "${slot}" "${rpc_key}" "${rpc_ws_key}"
     done
-    yq -i '.commonConfig.hostChainHttpUrl = "unused-on-testnets" | .commonConfig.hostChainWsUrl = "unused-on-testnets"' "${ppoller}"
+    yq -i '.commonConfig.hostChainHttpUrl = "unused-on-testnets" | .commonConfig.hostChainWsUrl = "unused-on-testnets"' "${xpoller}"
   fi
-  set_poller_flag "${ppoller}" "--seed-start-block" "${POLLER_SEED_START_BLOCK}"
-  set_poller_flag "${ppoller}" "--finality-lag" "${POLYGON_FINALITY_LAG}"
+  set_poller_flag "${xpoller}" "--seed-start-block" "${POLLER_SEED_START_BLOCK}"
+  set_poller_flag "${xpoller}" "--finality-lag" "${finality_lag}"
 
-  pkms="${root}/kms-connector/values-kms-connector-polygon-e2e.yaml"
-  set_kms_host_chain "${pkms}" polygon "${POLYGON_HTTP}" "${POLYGON_CHAIN_ID}"
+  local xkms="${root}/kms-connector/values-kms-connector-${slot}-e2e.yaml"
+  set_kms_host_chain "${xkms}" "${slot}" "${http}" "${chain_id}"
   if rpc_from_secret; then
-    set_named_env_secret "${kms}" ".commonConfig.env" RPC_POLYGON_URL polygon-rpc-url
-    # shellcheck disable=SC2016  # literal for k8s env / shell expansion inside the pod
-    set_kms_host_chain "${pkms}" polygon '$(RPC_POLYGON_URL)' "${POLYGON_CHAIN_ID}"
+    set_named_env_secret "${kms}" ".commonConfig.env" "${kms_env}" "${rpc_key}"
+    set_kms_host_chain "${xkms}" "${slot}" "\$(${kms_env})" "${chain_id}"
   fi
 
-  # The Polygon DAG picks its network via `-n polygonAmoy`, so no NETWORK override here.
-  pwf="${root}/test-suite/values-test-suite-workflow-polygon-e2e.yaml"
-  patch_workflow_common "${pwf}" "${POLYGON_HTTP}" polygon-rpc-url
-  set_wf_named "${pwf}" CHAIN_ID_HOST "${POLYGON_CHAIN_ID}"
+  # The DAG picks its hardhat network via `-n <network>`, so no NETWORK override here.
+  local xwf="${root}/test-suite/values-test-suite-workflow-${slot}-e2e.yaml"
+  patch_workflow_common "${xwf}" "${http}" "${rpc_key}"
+  set_wf_named "${xwf}" CHAIN_ID_HOST "${chain_id}"
+}
+
+if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
+  patch_extra_host_chain polygon Polygon "${POLYGON_HTTP:?}" "${POLYGON_WS:?}" "${POLYGON_CHAIN_ID:?}" \
+    "${POLYGON_FINALITY_DEPTH:?}" "${POLYGON_FINALITY_LAG:?}"
+fi
+if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
+  patch_extra_host_chain bnb BNB "${BNB_HTTP:?}" "${BNB_WS:?}" "${BNB_CHAIN_ID:?}" \
+    "${BNB_FINALITY_DEPTH:?}" "${BNB_FINALITY_LAG:?}"
 fi
 
 echo "Patched ${CHAIN_MODE} values overlays."

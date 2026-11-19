@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Per-namespace Anvil chains (skipped when EXTERNAL_CHAINS=true: blockchain-dev / testnets).
-# Usage: deploy-anvil.sh <host|gateway|host-polygon>
+# Usage: deploy-anvil.sh <host|gateway|host-polygon|host-bnb>
 # Env: NAMESPACE, ANVIL_NODE_CHART.
 set -euo pipefail
 
@@ -14,9 +14,9 @@ case "${kind}" in
     helm upgrade --install anvil-gateway "${ANVIL_NODE_CHART}" \
       -n "${NAMESPACE}" -f ci/preview-env/gateway-chain/values-anvil-gateway-e2e.yaml --wait
     ;;
-  host-polygon)
-    helm upgrade --install anvil-host-polygon "${ANVIL_NODE_CHART}" \
-      -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-anvil-host-polygon-e2e.yaml --wait
+  host-polygon|host-bnb)
+    helm upgrade --install "anvil-${kind}" "${ANVIL_NODE_CHART}" \
+      -n "${NAMESPACE}" -f "ci/preview-env/host-chain/values-anvil-${kind}-e2e.yaml" --wait
     ;;
   *)
     echo "::error::unknown anvil kind '${kind}'" >&2

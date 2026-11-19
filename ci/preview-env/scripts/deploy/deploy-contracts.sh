@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install contracts chart releases (gateway/host/register/keygen).
-# Usage: deploy-contracts.sh <gateway|host|host-polygon|add-host-chains|add-host-chains-polygon|trigger-keygen>
-# Env: NAMESPACE, CONTRACTS_CHART, TAGS_JSON. VALUES_FILE required for gateway/host/host-polygon.
+# Usage: deploy-contracts.sh <gateway|host|host-polygon|host-bnb|add-host-chains|add-host-chains-polygon|add-host-chains-bnb|trigger-keygen>
+# Env: NAMESPACE, CONTRACTS_CHART, TAGS_JSON. VALUES_FILE required for gateway/host/host-polygon/host-bnb.
 # CONTRACTS_DEPLOY_TIMEOUT / KEYGEN_TIMEOUT (helm --timeout) stretch on 12s public testnets.
 set -euo pipefail
 
@@ -28,8 +28,8 @@ case "${kind}" in
       --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
       --wait --wait-for-jobs --timeout="${deploy_timeout}"
     ;;
-  host-polygon)
-    helm upgrade --install host-contracts-polygon "${CONTRACTS_CHART}" \
+  host-polygon|host-bnb)
+    helm upgrade --install "host-contracts-${kind#host-}" "${CONTRACTS_CHART}" \
       -n "${NAMESPACE}" -f "${VALUES_FILE}" \
       --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
       --wait --wait-for-jobs --timeout="${deploy_timeout}"
@@ -40,9 +40,9 @@ case "${kind}" in
       --set-string "scDeploy.image.tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")" \
       --wait --wait-for-jobs --timeout="${deploy_timeout}"
     ;;
-  add-host-chains-polygon)
-    helm upgrade --install gateway-add-host-chains-polygon "${CONTRACTS_CHART}" \
-      -n "${NAMESPACE}" -f ci/preview-env/gateway-chain/values-gateway-add-host-chains-polygon-e2e.yaml \
+  add-host-chains-polygon|add-host-chains-bnb)
+    helm upgrade --install "gateway-${kind}" "${CONTRACTS_CHART}" \
+      -n "${NAMESPACE}" -f "ci/preview-env/gateway-chain/values-gateway-${kind}-e2e.yaml" \
       --set-string "scDeploy.image.tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")" \
       --wait --wait-for-jobs --timeout="${deploy_timeout}"
     ;;

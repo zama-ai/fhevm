@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Per-party coprocessor sidecars: Polygon consumer (BCS + GCS twins under blue-green), ETH poller, Polygon poller.
-# Usage: deploy-coprocessor-sidecars.sh <polygon-consumer|polygon-consumer-gcs|poller|poller-polygon>
+# Per-party coprocessor sidecars: Polygon consumer (BCS + GCS twins under blue-green), BNB consumer,
+# ETH poller, Polygon / BNB poller.
+# Usage: deploy-coprocessor-sidecars.sh <polygon-consumer|polygon-consumer-gcs|bnb-consumer|poller|poller-polygon|poller-bnb>
 # Env: NAMESPACE, NB_COPROCESSOR, COPROCESSOR_CHART, TAGS_JSON, OBSERVABILITY, OTLP_ENDPOINT;
 #      blue-green also BLUE_GREEN, BCS_IMAGE_TAG, GCS_STACK_VERSION.
 set -euo pipefail
@@ -13,14 +14,14 @@ head_tag="$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
 poller_tag="${head_tag}"
 if [[ "${BLUE_GREEN:-false}" == "true" && "${AUTOMATED_TESTS:-false}" != "true" ]]; then poller_tag="${BCS_IMAGE_TAG:?}"; fi
 
-# polygon_consumer <release-suffix> <image-tag> <fleet|""> [extra helm args...]
-polygon_consumer() {
-  local suffix="$1" tag="$2" fleet="$3"; shift 3
+# extra_consumer <slot> <release-suffix> <image-tag> <fleet|""> [extra helm args...]
+extra_consumer() {
+  local slot="$1" suffix="$2" tag="$3" fleet="$4"; shift 4
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
     fleet_args=()
     [[ -z "${fleet}" ]] || fleet_args=(--set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"${i}-${fleet}\"}")
-    helm upgrade --install "coprocessor-polygon-${i}${suffix}" "${COPROCESSOR_CHART}" \
-      -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-polygon-consumer-e2e.yaml \
+    helm upgrade --install "coprocessor-${slot}-${i}${suffix}" "${COPROCESSOR_CHART}" \
+      -n "${NAMESPACE}" -f "ci/preview-env/coprocessor/values-coprocessor-${slot}-consumer-e2e.yaml" \
       --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
       --set-string "hostListenerConsumerShared.serviceAccountName=coprocessor-${i}" \
       --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379" \
@@ -31,17 +32,18 @@ polygon_consumer() {
 }
 
 case "${kind}" in
-  polygon-consumer)
+  polygon-consumer|bnb-consumer)
+    # BNB never runs under blue-green (resolve-chain.sh rejects it).
     if [[ "${BLUE_GREEN:-false}" == "true" ]]; then
-      polygon_consumer "" "${BCS_IMAGE_TAG:?}" "bcs"
+      extra_consumer "${kind%-consumer}" "" "${BCS_IMAGE_TAG:?}" "bcs"
     else
-      polygon_consumer "" "${head_tag}" ""
+      extra_consumer "${kind%-consumer}" "" "${head_tag}" ""
     fi
     ;;
   polygon-consumer-gcs)
     # Own consumer name: the Redis consumer id is <service-name>.<chain-id>, so the default would split the stream with BCS.
     gcs_version="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' ci/preview-env/coprocessor/values-coprocessor-gcs-e2e.yaml)}"
-    polygon_consumer "-gcs" "${head_tag}" "gcs" \
+    extra_consumer polygon "-gcs" "${head_tag}" "gcs" \
       --set-string "commonConfig.stackVersion=${gcs_version}" \
       --set-string "hostListenerConsumerShared.args.serviceName=host-listener-consumer-gcs"
     ;;
@@ -64,10 +66,10 @@ case "${kind}" in
     done
     wait
     ;;
-  poller-polygon)
+  poller-polygon|poller-bnb)
     for i in $(seq 1 "${NB_COPROCESSOR}"); do
-      helm upgrade --install "coprocessor-poller-polygon-${i}" "${COPROCESSOR_CHART}" \
-        -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-polygon-e2e.yaml \
+      helm upgrade --install "coprocessor-${kind}-${i}" "${COPROCESSOR_CHART}" \
+        -n "${NAMESPACE}" -f "ci/preview-env/coprocessor/values-coprocessor-${kind}-e2e.yaml" \
         --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
         --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
         --set-string "hostListenerPollerShared.image.tag=${poller_tag}" &

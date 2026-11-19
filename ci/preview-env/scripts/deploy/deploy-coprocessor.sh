@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install BCS (and optional GCS) coprocessor releases.
-# Env: NAMESPACE, NB_COPROCESSOR, BLUE_GREEN, GPU, DEPLOY_POLYGON, OBSERVABILITY,
+# Env: NAMESPACE, NB_COPROCESSOR, BLUE_GREEN, GPU, DEPLOY_POLYGON, DEPLOY_BNB, OBSERVABILITY,
 # AUTOMATED_TESTS, COPROCESSOR_CHART, TAGS_JSON, BCS_IMAGE_TAG, GPU_IMAGE_TAG,
 # OTLP_ENDPOINT, COPROC_WALLETS_JSON, GCS_STACK_VERSION (pod label for the GCS
 # fleet; optional), COMMON_CHART, COMMON_CHART_VERSION, COPROCESSOR_VERSION_PIN (optional).
@@ -136,9 +136,21 @@ if [[ "${with_proxy}" == "true" ]] && ! kubectl get secret "${proxy_tls_secret}"
   echo "Created ${proxy_tls_secret} (SANs: ${sans})"
 fi
 
-polygon_args=()
-if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-  polygon_args=(-f ci/preview-env/coprocessor/values-coprocessor-polygon-e2e.yaml)
+# Each extra host chain's seed overlay repeats the whole chains[] list (Helm
+# replaces lists), so with both chains pass one file: the Polygon overlay plus
+# the BNB overlay's `bnb` entry.
+extra_host_args=()
+polygon_seed=ci/preview-env/coprocessor/values-coprocessor-polygon-e2e.yaml
+bnb_seed=ci/preview-env/coprocessor/values-coprocessor-bnb-e2e.yaml
+if [[ "${DEPLOY_POLYGON}" == "true" && "${DEPLOY_BNB:-false}" == "true" ]]; then
+  merged_seed="${RUNNER_TEMP:-/tmp}/values-coprocessor-polygon-bnb-e2e.yaml"
+  BNB_ENTRY=$(yq -o=json -I=0 '.chains[] | select(.name == "bnb")' "${bnb_seed}") \
+    yq '.chains += [env(BNB_ENTRY)]' "${polygon_seed}" > "${merged_seed}"
+  extra_host_args=(-f "${merged_seed}")
+elif [[ "${DEPLOY_POLYGON}" == "true" ]]; then
+  extra_host_args=(-f "${polygon_seed}")
+elif [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
+  extra_host_args=(-f "${bnb_seed}")
 fi
 bcs_overlay=()
 if [[ "${BLUE_GREEN}" == "true" ]]; then
@@ -285,7 +297,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
   fi
   helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \
     -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
-    "${polygon_args[@]}" \
+    "${extra_host_args[@]}" \
     "${bcs_overlay[@]}" \
     ${coproc_gpu_overlay[@]+"${coproc_gpu_overlay[@]}"} \
     ${proxy_args[@]+"${proxy_args[@]}"} \

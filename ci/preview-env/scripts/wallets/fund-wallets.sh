@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Fund every address this preview signs with; no-op on Anvil (prefunded).
-# blockchain-dev: PoW faucets for host + gateway (Job). testnets: treasury key for Sepolia/Amoy (runner), Nitro faucet for the gateway (Job).
+# blockchain-dev: PoW faucets for host + gateway (Job). testnets: treasury key for Sepolia/Amoy (+ BSC testnet
+# with DEPLOY_BNB) (runner), Nitro faucet for the gateway (Job).
 # Env: CHAIN_MODE, NAMESPACE, HOST_HTTP, GATEWAY_HTTP, HOST_FAUCET, GATEWAY_FAUCET, WALLETS_JSON, COPROC_WALLETS_JSON, ROLES_JSON_PATH;
-#      testnets also POLYGON_HTTP, HOST_CHAIN_ID, POLYGON_CHAIN_ID, ETH_FUNDER_PRIVATE_KEY, POLYGON_FUNDER_PRIVATE_KEY, NODE_PATH.
+#      testnets also POLYGON_HTTP, HOST_CHAIN_ID, POLYGON_CHAIN_ID, ETH_FUNDER_PRIVATE_KEY, POLYGON_FUNDER_PRIVATE_KEY, NODE_PATH;
+#      DEPLOY_BNB=true also BNB_HTTP, BNB_CHAIN_ID, BNB_FUNDER_PRIVATE_KEY.
 set -euo pipefail
 
 if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
@@ -102,6 +104,22 @@ if [[ "${CHAIN_MODE}" == "testnets" ]]; then
     DEPLOYER_FLOOR_WEI="20000000000000000000" \
     FUNDER_PRIVATE_KEY="${POLYGON_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${amoy_json}" \
     node "${script_dir}/fund-wallets-treasury.cjs"
+  if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
+    : "${BNB_HTTP:?}"
+    : "${BNB_CHAIN_ID:?}"
+    : "${BNB_FUNDER_PRIVATE_KEY:?}"
+    # BSC testnet gas sits around 0.1-3 gwei, so the same ~36M-gas deploy as Amoy
+    # costs ~0.1 tBNB even at 3 gwei. 0.5 tBNB for the deployer covers ~13 gwei and
+    # 0.05 for each test signer ~5M gas at 10 gwei; sweep-wallets.sh returns the rest.
+    echo "Funding role wallets on BSC testnet (bnb-faucet)..."
+    bnb_json=$(jq -cn --arg b "${BNB_HTTP}" --arg bc "${BNB_CHAIN_ID}" \
+      '[{label:"bsc-testnet",rpcUrl:$b,chainId:$bc}]')
+    ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \
+      FLOOR_WEI="50000000000000000" \
+      DEPLOYER_FLOOR_WEI="500000000000000000" \
+      FUNDER_PRIVATE_KEY="${BNB_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${bnb_json}" \
+      node "${script_dir}/fund-wallets-treasury.cjs"
+  fi
   # Only the Nitro gateway has a faucet on this path.
   fund_targets="gateway"
 else
