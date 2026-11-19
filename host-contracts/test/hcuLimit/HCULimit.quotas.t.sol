@@ -78,6 +78,8 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         assertEq(upgraded.getMaxHCUDepthPerTx(), 5_000_000);
         assertEq(upgraded.getContractQuota(DAPP), DEFAULT_QUOTA);
         assertEq(upgraded.getVersion(), "HCULimit v0.6.0");
+        (uint16 reservedBps, ) = upgraded.getTier(0);
+        assertEq(reservedBps, 10_000);
         (uint48 maxCrossTxDepth, uint48 crossTxDecayPerBlock) = upgraded.getCrossTxDepthLimit();
         assertEq(maxCrossTxDepth, 0);
         assertEq(crossTxDecayPerBlock, 0);
@@ -129,6 +131,23 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         assertEq(usedHCU, expected == BLOCK_WHITELIST_QUOTA ? 0 : 32);
     }
 
+    /// The upgrade leaves the capacity unmetered and every quota in Reserved at 10,000 basis points, so once the owner
+    /// meters the capacity, contracts the allowlist routes still compute and charge it.
+    function test_upgradeLeavesTheCapacityUnmeteredAndReservedFull() public {
+        _upgradeFromV050(true, _list(ALLOWED, ALLOWED_BLOCK_WHITELISTED), _list(ALLOWED_BLOCK_WHITELISTED));
+        (uint48 capacityMax, , ) = hcuLimit.getCapacity();
+        assertEq(capacityMax, type(uint48).max);
+        (uint16 reservedBps, ) = hcuLimit.getTier(0);
+        assertEq(reservedBps, 10_000);
+
+        vm.prank(OWNER);
+        hcuConfigurator.setCapacity(1_000_000, 100_000);
+        _compute(ALLOWED);
+        _compute(ALLOWED_BLOCK_WHITELISTED);
+        (, , uint48 load) = hcuLimit.getCapacity();
+        assertEq(load, 2 * 32);
+    }
+
     /// HCUConfigurator is the only writer of the settings, so the upgrade waits until its empty proxy is upgraded.
     function test_reinitializeV6RefusesTheUpgradeUntilHCUConfiguratorRuns() public {
         // Puts the empty implementation back behind HCUConfigurator's proxy, as before its first upgrade.
@@ -164,6 +183,9 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         hcuConfigurator.setCrossTxDepthLimit(10_000_000, 1_000_000);
         hcuConfigurator.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 6_000_000);
         hcuConfigurator.assignQuota(DEFAULT_QUOTA, DAPP);
+        hcuConfigurator.setCapacity(1_000_000, 100_000);
+        hcuConfigurator.setTier(1, 5_000);
+        hcuConfigurator.setQuotaTier(DAPP_QUOTA, 1);
 
         UnsafeUpgrades.upgradeProxy(proxy, address(new HCULimitV050TestDouble()), "");
         HCULimitV050TestDouble rolledBack = HCULimitV050TestDouble(proxy);
@@ -182,6 +204,12 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         assertEq(hcuLimit.getQuotaMaxStoredDepth(DEFAULT_QUOTA), 6_000_000);
         (uint48 maxHCU, , ) = hcuLimit.getQuota(ALLOWLIST_QUOTA);
         assertEq(maxHCU, LEGACY_CAP);
+        (uint48 capacityMax, uint48 capacityDecay, ) = hcuLimit.getCapacity();
+        assertEq(capacityMax, 1_000_000);
+        assertEq(capacityDecay, 100_000);
+        (uint16 tierBps, ) = hcuLimit.getTier(1);
+        assertEq(tierBps, 5_000);
+        assertEq(hcuLimit.getQuotaTier(DAPP_QUOTA), 1);
     }
 
     /// A contract allowlisted while the allowlist was inactive is not routed: stopping the default quota stops it.
