@@ -523,6 +523,9 @@ struct WindowState {
     seen: decision::Seen,
     /// How many of `seen` this operator has republished.
     relayed: usize,
+    /// The relay this operator wrote before a restart was read back into
+    /// `seen`. Until then the relay is not overwritten.
+    relay_loaded: bool,
 }
 
 /// The attempt is over: a chain passed its deadline with no anchor, or every
@@ -648,6 +651,7 @@ where
         window_state.members.clear();
         window_state.seen = decision::Seen::default();
         window_state.relayed = 0;
+        window_state.relay_loaded = false;
         window_state.tracked_window = active.clone();
     }
     let Some((proposal_id, proposal_block, stack_version, windows)) = active else {
@@ -882,6 +886,20 @@ where
     // is signed, so one that a peer passes on counts like one read from its
     // signer: a member cannot show its record to some peers only.
     let mut read = Vec::new();
+    // After a restart, start from the relay this operator already wrote, so
+    // the next write cannot drop a record that no bucket serves any more.
+    let relay_store = match (fleet.writes, fleet.s3, fleet.bucket) {
+        (true, Some(client), Some(bucket)) => Some((client, bucket)),
+        _ => None,
+    };
+    if let (false, Some((client, bucket))) = (window_state.relay_loaded, relay_store) {
+        if let Some(records) =
+            decision::get_own_relay(client, bucket, &proposal_id, proposal_block).await
+        {
+            read.extend(records);
+            window_state.relay_loaded = true;
+        }
+    }
     for member in &members {
         read.extend(match &own {
             // Our own record is already in hand. Do not fetch it twice.
@@ -934,14 +952,32 @@ where
     }
     let seen = &window_state.seen;
 
-    // Pass the records on. A failed write retries on the next pass.
-    if let (true, Some(client), Some(bucket)) = (fleet.writes, fleet.s3, fleet.bucket) {
-        if seen.records().len() > window_state.relayed
+    // Pass the records on, then act. An operator that cuts over stops running
+    // this pass, so it acts only once its relay holds every record it counted.
+    // A failed read or write retries on the next pass. An operator that does
+    // not write records has no relay and acts on what it read.
+    if let Some((client, bucket)) = relay_store {
+        if window_state.relay_loaded
+            && seen.records().len() > window_state.relayed
             && decision::put_relay(client, bucket, &proposal_id, proposal_block, seen.records())
                 .await
                 .is_ok()
         {
             window_state.relayed = seen.records().len();
+        }
+        if !decision::relay_is_complete(
+            window_state.relay_loaded,
+            window_state.relayed,
+            seen.records().len(),
+        ) {
+            warn!(
+                proposal_block,
+                relay_loaded = window_state.relay_loaded,
+                relayed = window_state.relayed,
+                seen = seen.records().len(),
+                "decision record relay is not up to date; not acting this pass"
+            );
+            return Ok(());
         }
     }
     let quorums = seen.count(decision::Decision::Quorum);
@@ -1229,6 +1265,7 @@ where
         members: Vec::new(),
         seen: decision::Seen::default(),
         relayed: 0,
+        relay_loaded: false,
     };
 
     // The consensus poll cadence: re-attempt S3 every commitment_poll_interval,

@@ -21,6 +21,8 @@ use fhevm_engine_common::types::CoproSigner;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use crate::manifest_consensus::{peer_http, ExecutionError};
+
 /// Separates this signature from every other hash this signer produces.
 const DOMAIN: &[u8] = b"fhevm/upgrade-decision/v1";
 
@@ -322,6 +324,25 @@ pub(crate) async fn get_own(
     Some(record)
 }
 
+/// A decision object of five members is a few KB. A peer serves these bodies,
+/// so a larger one is refused before it is buffered.
+const MAX_OBJECT_BYTES: usize = 256 * 1024;
+
+/// The body of a peer's object, or `None` when it is absent, unreadable or
+/// larger than [`MAX_OBJECT_BYTES`].
+async fn read_body(http: &reqwest::Client, url: &str) -> Option<Vec<u8>> {
+    let response = http.get(url).send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    peer_http::read_capped(response, MAX_OBJECT_BYTES, url, || {
+        ExecutionError::InternalError(format!("{url} exceeds {MAX_OBJECT_BYTES} bytes"))
+    })
+    .await
+    .map_err(|err| warn!(url, error = %err, "decision object not read; ignoring"))
+    .ok()
+}
+
 /// Read one member's record. An absent record, an unreadable one and one that
 /// fails verification are the same answer: none of them lets this operator act.
 pub(crate) async fn get(
@@ -336,11 +357,7 @@ pub(crate) async fn get(
         member.url.trim_end_matches('/'),
         key(proposal_id, proposal_block)
     );
-    let response = http.get(&url).send().await.ok()?;
-    if !response.status().is_success() {
-        return None;
-    }
-    let record: Record = serde_json::from_slice(&response.bytes().await.ok()?).ok()?;
+    let record: Record = serde_json::from_slice(&read_body(http, &url).await?).ok()?;
     if !record.is_valid_from(address, proposal_id, proposal_block) {
         warn!(url, "decision record failed verification; ignoring");
         return None;
@@ -381,6 +398,46 @@ pub(crate) async fn put_relay(
     Ok(())
 }
 
+/// Read the records this operator republished before a restart, from its own
+/// bucket. `Some` with no records when the object does not exist yet. `None`
+/// when the read failed (timeout, S3 error): the caller must not overwrite the object then, or it
+/// could drop records that no bucket serves any more.
+pub(crate) async fn get_own_relay(
+    client: &Client,
+    bucket: &str,
+    proposal_id: &[u8],
+    proposal_block: i64,
+) -> Option<Vec<Record>> {
+    let key = relay_key(proposal_id, proposal_block);
+    let object = match client.get_object().bucket(bucket).key(&key).send().await {
+        Ok(object) => object,
+        // S3 answers `AccessDenied` for an absent key when the role cannot
+        // list the bucket, so both codes mean "not written yet".
+        Err(err)
+            if matches!(
+                err.as_service_error().and_then(ProvideErrorMetadata::code),
+                Some("NoSuchKey" | "AccessDenied")
+            ) =>
+        {
+            return Some(Vec::new());
+        }
+        Err(err) => {
+            warn!(bucket, key, error = %err, "own decision record relay not read; retrying next pass");
+            return None;
+        }
+    };
+    let body = object.body.collect().await.ok()?.into_bytes();
+    Some(serde_json::from_slice(&body).unwrap_or_default())
+}
+
+/// True when this operator's relay holds every record it has counted: its
+/// earlier relay was loaded and all `seen` records are written. An operator
+/// acts only then. Once it cuts over it stops running the pass, so a record
+/// it has not passed on by that point would never reach the slower peers.
+pub(crate) fn relay_is_complete(own_relay_loaded: bool, relayed: usize, seen: usize) -> bool {
+    own_relay_loaded && relayed == seen
+}
+
 /// Read the records one member republished. They are NOT verified here: the
 /// caller checks each one against the member set. An absent or unreadable
 /// object, or one with more than two records per member, yields nothing.
@@ -396,13 +453,7 @@ pub(crate) async fn get_relay(
         member.url.trim_end_matches('/'),
         relay_key(proposal_id, proposal_block)
     );
-    let Ok(response) = http.get(&url).send().await else {
-        return Vec::new();
-    };
-    if !response.status().is_success() {
-        return Vec::new();
-    }
-    let Ok(body) = response.bytes().await else {
+    let Some(body) = read_body(http, &url).await else {
         return Vec::new();
     };
     let records: Vec<Record> = serde_json::from_slice(&body).unwrap_or_default();
@@ -650,6 +701,53 @@ mod tests {
             relay_key(&[0xab, 0xcd], 7),
             "decision/proposal=abcd/attempt=7/seen.json"
         );
+    }
+
+    #[test]
+    fn an_operator_acts_only_once_its_relay_is_complete() {
+        // Nothing read yet, or everything written: complete.
+        assert!(relay_is_complete(true, 0, 0));
+        assert!(relay_is_complete(true, 4, 4));
+        // A failed write leaves a counted record unwritten.
+        assert!(!relay_is_complete(true, 3, 4));
+        // The earlier relay was not read after a restart.
+        assert!(!relay_is_complete(false, 0, 0));
+        assert!(!relay_is_complete(false, 4, 4));
+    }
+
+    /// A peer origin that serves `body` for every path.
+    async fn origin(body: Vec<u8>) -> String {
+        let app = axum::Router::new().fallback(move || {
+            let body = body.clone();
+            async move { body }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        url
+    }
+
+    #[tokio::test]
+    async fn an_oversized_relay_is_refused() {
+        let key = PrivateKeySigner::random();
+        let mut members = member_list(&[key.address(), addr(9)]);
+        let (_, record) = signed(&key, Decision::Quorum, &members).await;
+        let http = reqwest::Client::new();
+
+        let body = serde_json::to_vec(&[&record]).unwrap();
+        members[0].url = origin(body.clone()).await;
+        assert_eq!(
+            get_relay(&http, &members[0], &[0x01], 5, 2).await,
+            vec![record]
+        );
+
+        // Valid JSON, padded past the cap.
+        let mut padded = body;
+        padded.resize(MAX_OBJECT_BYTES + 1, b' ');
+        members[0].url = origin(padded).await;
+        assert!(get_relay(&http, &members[0], &[0x01], 5, 2)
+            .await
+            .is_empty());
     }
 
     /// A record passed on by a peer verifies against the member set, not
