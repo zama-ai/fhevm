@@ -1029,6 +1029,27 @@ const localDbMigrationImageRef = (state: Pick<State, "overrides" | "builtImages"
 const psqlQuery = async (database: string, query: string): Promise<string> =>
   scalarQuery(database, query, postgresRuntime());
 
+const gatewayReadinessSnapshotSql = (gcsStackVersion: string) => `
+  WITH gate AS (
+    SELECT min(gw_start_block) AS start, bool_and(gw_window_rewound) AS rewound
+    FROM public.upgrade_state WHERE stack_role='GCS' AND status='in_progress'
+  ), cursors AS (
+    SELECT (SELECT last_block_num FROM public.gw_listener_last_block WHERE dummy_id) AS blue_tip,
+           (SELECT last_block_num FROM "gcs-${gcsStackVersion.replaceAll('"', '""')}".gw_listener_last_block WHERE dummy_id) AS green_tip
+  )
+  SELECT row_to_json(d) FROM (
+    SELECT gate.*, cursors.*,
+      (SELECT stack_version FROM public.versioning WHERE singleton) AS live_version,
+      (SELECT consensus_version FROM public.versioning WHERE singleton) AS consensus_version,
+      EXISTS (SELECT FROM public.listener_block_checkpoints WHERE source='gateway' AND stack_role='BCS') AS has_blue_history,
+      EXISTS (SELECT FROM public.listener_block_checkpoints WHERE source='gateway' AND stack_role='BCS' AND block_number=blue_tip) AS blue_checkpoint,
+      EXISTS (SELECT FROM public.listener_block_checkpoints WHERE source='gateway' AND stack_role='GCS' AND block_number=green_tip) AS green_checkpoint,
+      EXISTS (SELECT FROM public.chain_recovery_halts WHERE resolved_at IS NULL) AS halted,
+      EXISTS (SELECT FROM public.listener_replay_state WHERE pending) AS replay_pending,
+      EXISTS (SELECT FROM public.verify_proofs WHERE block_number < gate.start AND verified IS NULL) AS pre_window_proof_pending
+    FROM gate CROSS JOIN cursors
+  ) d;`;
+
 const waitUntil = async (opts: {
   label: string;
   timeoutSecs: number;
@@ -1373,6 +1394,18 @@ const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
             db,
             "SELECT CASE WHEN BOOL_AND(gw_dry_run_started) THEN 'started' ELSE 'waiting' END FROM upgrade_state WHERE stack_role='GCS';",
           )) === "started",
+      }).catch(async (error: unknown) => {
+        // The latch alone cannot distinguish a missing checkpoint from a stalled
+        // cursor or recovery. Capture each operator before CI tears the stack down.
+        for (const operator of databases) {
+          try {
+            const snapshot = await psqlQuery(operator, gatewayReadinessSnapshotSql(gcsStackVersion));
+            console.error(`Gateway readiness (${operator}): ${snapshot}`);
+          } catch (diagnosticError) {
+            console.error(`Could not read Gateway readiness (${operator}):`, diagnosticError);
+          }
+        }
+        throw error;
       });
     }
   };
