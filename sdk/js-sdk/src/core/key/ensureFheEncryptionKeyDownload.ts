@@ -329,9 +329,8 @@ async function _downloadFheEncryptionKeyBytes(
     beforeDownload:
       activeIds === undefined
         ? undefined
-        : async (source: FheEncryptionKeySource) => {
+        : (source: FheEncryptionKeySource) => {
             _assertRelayerServesActiveKey(source, activeIds);
-            return Promise.resolve();
           },
   };
   logger?.debug?.(`Fetching FHE encryption key/CRS bytes from relayer "${relayerUrl}" (chainId=${context.chain.id}).`);

@@ -22,7 +22,7 @@ export async function fetchFheEncryptionKeyBytes(
   });
 
   // 2. Let the caller stop a download that cannot be used
-  await beforeDownload?.(source);
+  beforeDownload?.(source);
 
   const init: RequestInit | undefined = options?.signal !== undefined ? { signal: options.signal } : undefined;
 

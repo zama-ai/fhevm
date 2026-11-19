@@ -73,9 +73,9 @@ export type FetchFheEncryptionKeyBytesParameters = {
   readonly options?: RelayerKeyUrlOptions | undefined;
   /**
    * Called with the source (ids and URLs) before the bytes are downloaded; a
-   * rejection stops the download (e.g. one that cannot pass the key check).
+   * throw stops the download (e.g. one that cannot pass the key check).
    */
-  readonly beforeDownload?: ((source: FheEncryptionKeySource) => Promise<void>) | undefined;
+  readonly beforeDownload?: ((source: FheEncryptionKeySource) => void) | undefined;
 };
 
 export type FetchFheEncryptionKeyBytesReturnType = FheEncryptionKeyBytes;

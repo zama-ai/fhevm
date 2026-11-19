@@ -115,7 +115,7 @@ function makeWorld(options: { readonly labelIds?: boolean; readonly unverified?:
         crsSource: { id: options.labelIds === true ? 'crs-data-id' : id32(gen.crsId), url: 'c', capacity: 2048 },
         metadata: { relayerUrl: RELAYER_URL, chainId: chain.id },
       } as unknown as FheEncryptionKeySource;
-      await parameters.beforeDownload?.(source);
+      parameters.beforeDownload?.(source);
       await state.gate;
       downloads();
       const served = state.relayerAfterGate ?? gen;
