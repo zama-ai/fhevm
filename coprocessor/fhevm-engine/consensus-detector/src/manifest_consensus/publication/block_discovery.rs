@@ -760,7 +760,9 @@ pub(crate) async fn discover_children(pool: &PgPool) -> Result<u64, ExecutionErr
 // 20-40 s per poll on zws-dev). A sealed parent with a sealed child also closes
 // once it is MANIFEST_DISCOVERY_CLOSE_DEPTH below its chain's sealed tip. The
 // tip is read from the open sealed rows: if it has already closed, the bound is
-// lower and fewer parents close.
+// lower and fewer parents close. The tip CTE is MATERIALIZED: inlined, Postgres
+// re-aggregates every open sealed row for each candidate parent, which is
+// quadratic in the open set (86 s for 20k parents, hours for 450k).
 //
 // Only sealed parents are expanded: sealing discovers the children of the block
 // it seals, so this poll only catches children and forks that arrive later.
@@ -802,7 +804,7 @@ pub(crate) async fn discover_children_for_consensus_epoch(
                AND OCTET_LENGTH(child.parent_hash) = 32
             ON CONFLICT (consensus_epoch, host_chain_id, block_hash) DO NOTHING
             RETURNING 1
-        ), sealed_tip AS (
+        ), sealed_tip AS MATERIALIZED (
             SELECT host_chain_id, MAX(block_number) AS tip
               FROM block_manifest_state
              WHERE NOT child_block_discovery_closed
