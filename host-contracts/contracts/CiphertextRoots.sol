@@ -164,6 +164,9 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
     /// @inheritdoc ICiphertextRoots
     function removeEpochLength(uint64 chainId, uint256 fromEpoch) external virtual onlyACLOwner {
         HostChain storage chain = _hostChain(chainId);
+        if (chain.anyRootRecorded && fromEpoch <= chain.highestRecordedEpoch) {
+            revert FromEpochTooLow(chainId, fromEpoch, chain.highestRecordedEpoch + 1);
+        }
         EpochScheduleEntry[] storage entries = chain.schedule.entries;
         uint256 count = entries.length;
         // The first entry (from epoch 0) is never removed: the search starts after it.
@@ -173,9 +176,6 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         }
         if (i == count) {
             revert EpochLengthNotFound(chainId, fromEpoch);
-        }
-        if (chain.anyRootRecorded && fromEpoch <= chain.highestRecordedEpoch) {
-            revert FromEpochTooLow(chainId, fromEpoch, chain.highestRecordedEpoch + 1);
         }
         // Shift the later entries one place down, then drop the duplicated last one.
         for (uint256 j = i; j < count - 1; j++) {
