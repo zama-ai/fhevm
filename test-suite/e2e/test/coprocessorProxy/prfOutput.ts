@@ -33,13 +33,6 @@ export interface PrfOutputAttestation {
   signature: string;
 }
 
-/** The output scripts/seed-prf-output.ts writes in place of the pad-worker, and the suite requests. */
-export const SEEDED_REF: PrfOutputRef = { prfId: 0, label: `0x${'01'.repeat(32)}`, padLength: 1 };
-/** All byte values: a client that decodes the body as text changes it. */
-export const SEEDED_BODY = Uint8Array.from({ length: 256 }, (_, i) => i);
-/** Stands for the digest of the pre-SnS output, which prf-service does not serve. */
-export const SEEDED_CIPHERTEXT_DIGEST = keccak256(toUtf8Bytes('seeded pre-SnS PRF output'));
-
 /** prf-service accepts only canonical parameters: decimal numbers and a 64-lowercase-hex label. */
 export const prfPath = ({ prfId, label, padLength }: PrfOutputRef) =>
   `/v1/prf/${prfId}/labels/${label.slice(2)}/${padLength}`;

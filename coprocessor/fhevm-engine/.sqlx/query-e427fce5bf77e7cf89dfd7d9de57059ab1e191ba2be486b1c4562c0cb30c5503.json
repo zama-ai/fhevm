@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM pad_ct64 WHERE ctid IN (\n                 SELECT ctid FROM pad_ct64\n                  WHERE created_at <= NOW() - make_interval(secs => $1)\n                  LIMIT $2\n                    FOR UPDATE SKIP LOCKED)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e427fce5bf77e7cf89dfd7d9de57059ab1e191ba2be486b1c4562c0cb30c5503"
+}

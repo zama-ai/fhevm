@@ -198,18 +198,18 @@ land and replace it. It signs `FhevmSig` requests with KMS party 1's
 `KMS_CONNECTOR_PRIVATE_KEY`, a tx-sender of the active KMS context in the host
 ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
 Behind each proxy runs prf-service, logged in as the `prf_service` database
-role. No pad-worker runs yet, so `scripts/seed-prf-output.ts` first writes the
-output the suite requests into each coprocessor's database: a fixed binary body
-and its attestation, signed with the coprocessor's `TX_SENDER_PRIVATE_KEY` as
-its sns-worker signs. The suite reads how many PRF requests prf-service answered
-from its metric `coprocessor_prf_service_requests_total`, at
-`PRF_SERVICE_METRICS_URLS`. It checks that a signed request reaches prf-service
-once and comes back as a KMS connector accepts it: the attestation's signature
-recovers the coprocessor's signer over the requested PRF, label and pad length,
-and the body's Keccak-256 is its `sns_ciphertext_digest`. A HEAD request returns
-the same attestation and `Content-Length` without a body. `test/coprocessorProxy/prfOutput.ts`
-mirrors the signed digest of `shared/ciphertext-attestation/src/prf/sign.rs`,
-and the suite pins it to that crate's test vector. It also checks that a high-s signature
+role, and a pad-worker for PRF instance 0, logged in as `pad_worker`, which
+computes the output the suite requests with the mock evaluator. The pad-worker signs
+it with the coprocessor's `TX_SENDER_PRIVATE_KEY`, as its sns-worker signs. The
+suite reads how many PRF requests prf-service answered from its metric
+`coprocessor_prf_service_requests_total`, at `PRF_SERVICE_METRICS_URLS`. It
+checks that a signed request reaches prf-service once and comes back as a KMS
+connector accepts it: the attestation's signature recovers the coprocessor's
+signer over the requested PRF, label and pad length, and the body's Keccak-256
+is its `sns_ciphertext_digest`. A HEAD request returns the same attestation and
+`Content-Length` without a body. `test/coprocessorProxy/prfOutput.ts` mirrors the
+signed digest of `shared/ciphertext-attestation/src/prf/sign.rs`, and the suite
+pins it to that crate's test vector. It also checks that a high-s signature
 (`401 auth_invalid_signature`), an expired one (`401 auth_expired`), an unknown
 signer (`401 auth_unknown_signer`, without `Retry-After`) and an unknown route
 (`404 not_found`) never reach prf-service. The proxies serve the self-signed test
@@ -228,6 +228,28 @@ the promoted spare and, while the outgoing context is still Active, the dropped
 node. Once every pre-swap context is destroyed and each proxy has read the KMS
 tx-senders again (`COPROCESSOR_PROXY_METRICS_URLS`), every proxy refuses the
 dropped node with `401 auth_unknown_signer`. Without the key they skip.
+
+## PRF endpoint suite
+
+`test/prfEndpoint/prfEndpoint.ts` checks the PRF endpoint on the same stack as the
+"Coprocessor proxy" suite. It signs as each connector of the KMS committee, from
+`KMS_CONNECTOR_PRIVATE_KEYS`. It checks:
+
+- Outputs: every pad length is served, and all coprocessors attest the same digests.
+- One evaluation for many requests: `coprocessor_pad_worker_evaluations_total`, at
+  `PAD_WORKER_METRICS_URLS`, goes up by 1 for each path.
+- Budgets of prf-service: pending bits, requests in progress, joins, fairness between
+  connectors, and the place of a request whose client disconnects.
+- Refusals at the proxy: query strings, other methods, unknown routes, and
+  the request rate of each signer.
+
+The suite reads the e2e limits of the compose file: 2,048 pending bits and 8 requests
+in progress for each connector, 20 requests per second for each signer, a pad-worker that
+computes 4 rows at once, and a mock evaluation of at least 2 s. It skips when
+`COPROCESSOR_PROXY_URLS` is empty.
+
+Run via the fhevm-cli profile `prf-endpoint` (part of `standard`), or directly with
+`npx hardhat test --grep "PRF endpoint" --network staging`.
 
 ## Operator edge-case suite
 
