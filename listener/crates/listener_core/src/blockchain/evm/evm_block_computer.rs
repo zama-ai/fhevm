@@ -527,6 +527,8 @@ impl EvmBlockComputer {
             excess_blob_gas: rpc_header.excess_blob_gas,
             parent_beacon_block_root: rpc_header.parent_beacon_block_root,
             requests_hash: rpc_header.requests_hash,
+            block_access_list_hash: rpc_header.block_access_list_hash,
+            slot_number: rpc_header.slot_number,
         };
 
         let calculated = consensus_header.hash_slow();

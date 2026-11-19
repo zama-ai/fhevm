@@ -282,4 +282,19 @@ mod evm_block_computer_tests {
 
         info!("{}\n", "-".repeat(40));
     }
+
+    /// Glamsterdam (live on Sepolia since 2026-10-06) adds `blockAccessListHash`
+    /// and `slotNumber` to the header; leaving them out of the rebuilt header
+    /// changes its hash. Transactions are stripped from the fixture: the block
+    /// hash only covers the header.
+    #[test]
+    fn verify_block_hash_accepts_glamsterdam_header() {
+        let block: AnyRpcBlock =
+            serde_json::from_str(include_str!("fixtures/sepolia_block_12167517_header.json"))
+                .expect("fixture JSON");
+        assert!(block.header.block_access_list_hash.is_some());
+        assert!(block.header.slot_number.is_some());
+
+        EvmBlockComputer::verify_block_hash(&block).expect("Glamsterdam header hash verifies");
+    }
 }
