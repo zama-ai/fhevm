@@ -279,10 +279,8 @@ async fn run_uploader_loop(
                     // dead witness means reorg cleanup cancelled the
                     // publication while this job was queued: drop it.
                     let prep: anyhow::Result<bool> = async {
-                        if needs_enqueue {
-                            if !item.enqueue_upload_task(&mut trx).await? {
-                                return Ok(false);
-                            }
+                        if needs_enqueue && !item.enqueue_upload_task(&mut trx).await? {
+                            return Ok(false);
                         }
                         Ok(true)
                     }
