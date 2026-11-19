@@ -243,6 +243,36 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
  - **Alarm**: The pad-worker is slow. A stopped pad-worker gives no `200` answers, so this alarm does not see it: the proxy alarm on `504` does (see [`coprocessor_proxy_requests_counter`](#metric-name-coprocessor_proxy_requests_counter)).
     - **Recommendation**: the p95 of `200` answers is above half the proxy response timeout for 10 minutes, i.e. `histogram_quantile(0.95, sum by (le) (rate(coprocessor_prf_service_request_duration_seconds_bucket{status="200"}[5m]))) > 60`. Tune it with the pad-worker benchmarks.
 
+### pad-worker
+
+The GC sets the gauges every `PAD_GC_INTERVAL` (1 min). Every pad-worker reads all PRF instances, so use `max`, not `sum`, across pad-workers.
+
+#### Metric Name: `coprocessor_pad_worker_evaluations_total`
+ - **Type**: Counter
+ - **Labels**:
+   - `prf_instance`: the PRF instance of the evaluated row.
+ - **Description**: One count for each PRF evaluation of a claimed row.
+
+#### Metric Name: `coprocessor_pad_worker_oldest_pending_row_age_seconds`
+ - **Type**: Gauge
+ - **Labels**: `prf_instance`.
+ - **Description**: Age in seconds of the oldest pending `pads` row. No pad-worker claims a row older than `PAD_PENDING_MAX_AGE`.
+ - **Alarm**: No pad-worker computes the rows of an instance.
+    - **Recommendation**: `max by (prf_instance) (coprocessor_pad_worker_oldest_pending_row_age_seconds) > 300` for 5 minutes, half the default `PAD_PENDING_MAX_AGE`.
+
+#### Metric Name: `coprocessor_pad_worker_oldest_not_uploaded_row_age_seconds`
+ - **Type**: Gauge
+ - **Labels**: `prf_instance`.
+ - **Description**: Age in seconds of the oldest complete `pads` row without an S3 copy. The ct128 GC does not delete such a row.
+ - **Alarm**: The S3 uploads fail, so the ct128 GC cannot delete rows.
+    - **Recommendation**: `max by (prf_instance) (coprocessor_pad_worker_oldest_not_uploaded_row_age_seconds) > 600` for 10 minutes.
+
+#### Metric Name: `coprocessor_pad_worker_stored_ct64_bytes`
+ - **Type**: Gauge
+ - **Description**: Disk size in bytes of `pad_ct64`, with its index, for all PRF instances. The ct64 GC is off by default (`PAD_CT64_MAX_AGE`), so this value only grows.
+ - **Alarm**: The ct64 storage grows faster than planned, for example from spam labels.
+    - **Recommendation**: set a limit on `max(coprocessor_pad_worker_stored_ct64_bytes)` from the database size. At the limit, set `PAD_CT64_MAX_AGE` (chart `padWorkerShared.config.ct64MaxAgeSeconds`).
+
 ## kms-connector
 
 ### HTTP decryption: proxy and endpoint

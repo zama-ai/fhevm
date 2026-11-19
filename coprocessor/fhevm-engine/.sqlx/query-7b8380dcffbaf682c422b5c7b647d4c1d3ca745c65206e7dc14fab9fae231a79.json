@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pads SET claimed_at = NULL WHERE ctid IN (\n             SELECT ctid FROM pads\n              WHERE prf_instance = $1\n                AND (label, pad_length, claim_token)\n                    IN (SELECT * FROM UNNEST($2::BYTEA[], $3::INTEGER[], $4::UUID[]))\n                FOR UPDATE SKIP LOCKED)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "ByteaArray",
+        "Int4Array",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7b8380dcffbaf682c422b5c7b647d4c1d3ca745c65206e7dc14fab9fae231a79"
+}
