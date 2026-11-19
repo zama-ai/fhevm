@@ -460,6 +460,17 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
+    // The detectors of both stacks share the check of the pad outputs.
+    CoprocessorTable {
+        name: "pad_consensus",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "pad_consensus_answer",
+        duplicated: false,
+        conflict_cols: &[],
+    },
     // Deprecated: only test/migration code writes input_blobs, no live service
     // does, so it needs no gcs.* duplicate. Remove together with the table.
     CoprocessorTable {

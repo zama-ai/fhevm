@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pad_consensus SET next_check_at = NOW() + make_interval(secs => $1)\n            WHERE (prf_instance, label, pad_length) IN (\n                  SELECT prf_instance, label, pad_length FROM pad_consensus\n                   WHERE done_at IS NULL AND next_check_at <= NOW()\n                   ORDER BY next_check_at\n                   LIMIT $2\n                     FOR UPDATE SKIP LOCKED)\n        RETURNING prf_instance, label, pad_length, ciphertext_digest, ciphertext128_digest,\n                  signer, created_at <= NOW() - make_interval(secs => $3) AS \"expired!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "prf_instance",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "label",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "pad_length",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ciphertext128_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "signer",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "expired!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "a4cce3710333ceb40d79912a59049bd63492039fcca75b71e43ad871ae675069"
+}

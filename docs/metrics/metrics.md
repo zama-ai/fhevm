@@ -273,6 +273,24 @@ The GC sets the gauges every `PAD_GC_INTERVAL` (1 min). Every pad-worker reads a
  - **Alarm**: The ct64 storage grows faster than planned, for example from spam labels.
     - **Recommendation**: set a limit on `max(coprocessor_pad_worker_stored_ct64_bytes)` from the database size. At the limit, set `PAD_CT64_MAX_AGE` (chart `padWorkerShared.config.ct64MaxAgeSeconds`).
 
+### consensus-detector
+
+The consensus-detector compares each pad output that this coprocessor computed with the S3 outputs of the other coprocessors, with the rules of the manifest comparison. It reads the attestation of their `ct128` objects, and groups the valid attestations by digests with the `GatewayConfig` threshold. `pad_consensus` keeps the result of each check, and `pad_consensus_answer` the answer of each coprocessor. Drift rows stay. Other rows are deleted `--pad-consensus-retention` (24 h by default) after the check ends, unlike the manifests, which keep all rows. The detector finds the outputs in `pad_ct64`, which the ct128 GC does not delete, and checks only the outputs computed in this retention.
+
+#### Metric Name: `coprocessor_pad_consensus_results_total`
+ - **Type**: Counter
+ - **Labels**: `outcome` (`consensus`, `drift`, `unknown_but_equal` or `unknown`) and `local_result` (`matches_quorum`, `differs_from_quorum` or `inconclusive`)
+ - **Description**: Ended checks of the pad outputs of this coprocessor. A check ends on consensus, when every other coprocessor answered, or at the deadline (`--pad-consensus-deadline`, 10 min by default).
+ - **Alarm**: Any `drift`. With `differs_from_quorum`, the output of this coprocessor is the wrong one.
+    - **Recommendation**: `increase(coprocessor_pad_consensus_results_total{outcome="drift"}[5m]) > 0`.
+
+#### Metric Name: `coprocessor_pad_consensus_missing_total`
+ - **Type**: Counter
+ - **Labels**: `peer` (the signer of the other coprocessor)
+ - **Description**: Pad outputs that another coprocessor did not upload before the deadline.
+ - **Alarm**: The peer does not compute the pads, or its uploads fail.
+    - **Recommendation**: `increase(coprocessor_pad_consensus_missing_total[1h]) > 0` for one `peer` during several hours.
+
 ## kms-connector
 
 ### HTTP decryption: proxy and endpoint

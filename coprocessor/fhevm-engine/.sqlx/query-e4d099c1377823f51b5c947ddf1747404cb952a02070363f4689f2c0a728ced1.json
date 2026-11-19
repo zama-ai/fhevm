@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pad_consensus (prf_instance, label, pad_length, ciphertext_digest,\n                                    ciphertext128_digest, signer)\n         SELECT prf_instance, label, pad_length, ciphertext_digest, ciphertext128_digest, signer\n           FROM pad_ct64\n          WHERE created_at > NOW() - make_interval(secs => $1)\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e4d099c1377823f51b5c947ddf1747404cb952a02070363f4689f2c0a728ced1"
+}
