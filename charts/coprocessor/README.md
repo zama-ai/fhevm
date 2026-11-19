@@ -183,3 +183,49 @@ Before you enable it:
   `prfService.ports.http`.
 - With `prfService.serviceMonitor.enabled`, add an ingress rule for the metrics port to
   `coprocessorProxy.prfServiceNetworkPolicy.extraIngress`. The NetworkPolicy admits only the proxy.
+
+## Pad workers
+
+`padWorkers` deploys one pad-worker for each PRF instance, `<release>-pad-worker-<prfId>`. A
+pad-worker runs outside the blue and green fleets, for the life of its instance. Deploy the
+pad-workers in a separate pad release of the operator, for example `coprocessor-<party>-pads`, with
+`dbMigration.enabled` and `tfheWorker.enabled` set to `false` and no other component. Leave
+`padWorkers` empty in the fleet releases. `ci/pad-workers-values.yaml` is an example.
+
+Before you add a pad-worker:
+
+- Create the database role `pad_worker` with `LOGIN`, and `GRANT rds_iam TO pad_worker` for IAM
+  authentication. Set `padWorkerShared.databaseUser` (required), and
+  `padWorkerShared.databasePassword` for password authentication. `commonConfig.databaseUrl` must
+  use `$(DATABASE_USER)`. The migration job of the fleet release gives the table rights.
+- Set `padWorkerShared.config.s3BucketName` to the bucket of the operator, and
+  `padWorkerShared.wallet` to the coprocessor signer.
+- Set the ages of the GC from measured data (see below).
+
+A pad-worker keeps its image (`padWorkers[].image`) for the life of its instance. An image that
+changes the bytes of the outputs needs a new `prfId`.
+
+The pad-worker has no Service except the metrics one, and `padWorkerShared.serviceMonitor.enabled`
+adds a ServiceMonitor: nothing calls a pad-worker.
+
+### Pad garbage collection
+
+Every pad-worker runs the GC every `PAD_GC_INTERVAL` (1 min) on the rows of all PRF instances. It
+deletes two forms of each output, with separate ages:
+
+| Form | Table | Setting | Default | Deletes |
+|---|---|---|---|---|
+| ct128 (served to the connectors) | `pads` | `padWorkerShared.config.ct128MaxAgeSeconds` | 3600 (on) | Uploaded or failed rows older than the age |
+| ct64 (used by Unmask) | `pad_ct64` | `padWorkerShared.config.ct64MaxAgeSeconds` | Empty (off) | ct64 older than the age |
+
+- `0` turns a GC off: the pad-worker keeps all rows of that form. For the ct64, empty does the same.
+- The GC also deletes pending rows older than `pendingMaxAgeSeconds` that no pad-worker claims.
+- If you set `ct64MaxAgeSeconds`, set it to at least `ct128MaxAgeSeconds`, and do not set
+  `ct128MaxAgeSeconds` to `0`. Otherwise the pad-worker does not start.
+- The ct128 GC does not delete a complete row without an S3 copy. The pad-worker uploads it again.
+- A request after the ct128 GC adds the row again, and the pad-worker computes it again. The stored
+  ct64 stays, and its age starts again.
+- Set an S3 lifecycle rule on `pads/` that expires objects after the number of days at or above
+  `ct128MaxAgeSeconds`: S3 counts whole days (1 day for the default). The chart does not set it.
+- With the ct64 GC off, `pad_ct64` only grows. Monitor `coprocessor_pad_worker_stored_ct64_bytes`
+  (see `docs/metrics/metrics.md`).
