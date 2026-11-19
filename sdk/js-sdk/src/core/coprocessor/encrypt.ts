@@ -5,6 +5,7 @@ import type { BytesHex, ChecksummedAddress, TypedValue } from '../types/primitiv
 import type { RelayerInputProofOptions } from '../types/relayer.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { CacheUsage } from '../caching/cacheUsage-p.js';
 import { fetchVerifiedInputProof } from './fetchVerifiedInputProof.js';
 import { createZkProof } from './ZkProofBuilder-p.js';
 import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
@@ -35,43 +36,50 @@ type ReturnType = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function encrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
+  // A rotated key (input proof rejected) or a changed coprocessor signer set
+  // is refreshed and the whole request runs once more: a new key needs a new
+  // proof.
+  return retryOnStaleCache(context, parameters.fhevmContext, (cacheUsage) => _encrypt(context, parameters, cacheUsage));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The request: reads each cached value it uses, records its version and
+ * passes the value down.
+ */
+async function _encrypt(context: Context, parameters: Parameters, cacheUsage: CacheUsage): Promise<ReturnType> {
   const { fhevmContext } = parameters;
   const hardCodedExtraData = '0x00' as BytesHex;
 
-  // A rotated key (input proof rejected) or a changed coprocessor signer set
-  // is refreshed and the whole request runs once more: a new key needs a new
-  // proof. The request reads each cached value it uses, records its version
-  // and passes the value down.
-  return retryOnStaleCache(context, fhevmContext, async (cacheUsage) => {
-    // 1. The key, then the ZK proof built with it
-    const fheEncryptionKey = await fetchVersionedFheEncryptionKeyWasm(context, { fhevmContext });
-    recordCacheUsage(cacheUsage, 'keyMaterial', fheEncryptionKey.version);
+  // 1. The key, then the ZK proof built with it
+  const fheEncryptionKey = await fetchVersionedFheEncryptionKeyWasm(context, { fhevmContext });
+  recordCacheUsage(cacheUsage, 'keyMaterial', fheEncryptionKey.version);
 
-    const zkProof = await createZkProof(context, {
-      contractAddress: parameters.contractAddress,
-      userAddress: parameters.userAddress,
-      values: parameters.values,
-      extraData: hardCodedExtraData,
-      fheEncryptionKey: fheEncryptionKey.value,
-    });
-
-    // 2. The coprocessor signers, then the input proof checked against them
-    const coprocessorSigners = await readVersionedCoprocessorSignersContext(context, {
-      address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
-      fhevmContext,
-    });
-    recordCacheUsage(cacheUsage, 'coprocessorSigners', coprocessorSigners.version);
-
-    const inputProof = await fetchVerifiedInputProof(context, {
-      zkProof,
-      options: parameters.options,
-      fhevmContext,
-      coprocessorSigners: coprocessorSigners.value,
-    });
-
-    return {
-      inputHandles: inputProof.inputHandles,
-      inputProof: inputProof.bytesHex,
-    };
+  const zkProof = await createZkProof(context, {
+    contractAddress: parameters.contractAddress,
+    userAddress: parameters.userAddress,
+    values: parameters.values,
+    extraData: hardCodedExtraData,
+    fheEncryptionKey: fheEncryptionKey.value,
   });
+
+  // 2. The coprocessor signers, then the input proof checked against them
+  const coprocessorSigners = await readVersionedCoprocessorSignersContext(context, {
+    address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
+    fhevmContext,
+  });
+  recordCacheUsage(cacheUsage, 'coprocessorSigners', coprocessorSigners.version);
+
+  const inputProof = await fetchVerifiedInputProof(context, {
+    zkProof,
+    options: parameters.options,
+    fhevmContext,
+    coprocessorSigners: coprocessorSigners.value,
+  });
+
+  return {
+    inputHandles: inputProof.inputHandles,
+    inputProof: inputProof.bytesHex,
+  };
 }
