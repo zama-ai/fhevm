@@ -3,6 +3,7 @@
  */
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
+import { runSnsBatchPublication } from "./sns-batch-publication";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { runKmsContextQaTestsProfile } from "./kms-context-qa-tests";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
@@ -58,6 +59,7 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [
   ...Object.keys(TEST_GREP),
+  "sns-batch-publication",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
@@ -90,6 +92,7 @@ const PAUSE_PROFILE_SCOPE: Record<string, string> = {
 };
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
   light: "Run the lightweight smoke suite.",
+  "sns-batch-publication": "Publish a host cohort with four SNS workers sharing one local operator database.",
   "rollout-standard": "Run rollout-safe write-path coverage without pause, DB revert, or drift recovery.",
   standard: "Run the default CI suite for the active topology.",
   heavy: "Run the long operators suite.",
@@ -872,6 +875,23 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const state = await loadState();
   if (!state?.discovery?.actualFheKeyId) {
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
+  }
+
+  if (testName === "sns-batch-publication") {
+    if (options.network !== "staging" && options.network !== "local") {
+      throw new PreflightError("SNS batch publication requires the local Anvil test stack");
+    }
+    const postgres = postgresRuntime();
+    return runSnsBatchPublication(async (phase, address) => {
+      const grep = phase === "issue" ? "SNS batch publication issues" : "SNS batch publication verifies";
+      const args = runTestsArgs({ ...options, verbose: false, parallel: false, grep });
+      const env = ["-e", `SNS_BATCH_PHASE=${phase}`];
+      if (address) env.push("-e", `SNS_BATCH_CONTRACT=${address}`);
+      const result = await runWithHeartbeat(buildTestContainerArgs(args, env), `SNS batch ${phase}`, { timeoutMs: 600_000 });
+      const output = result.stdout + "\n" + result.stderr;
+      if (!/\b1 passing\b/.test(output)) throw new PreflightError(`SNS ${phase} test did not pass`);
+      return output;
+    }, (sql) => scalarQuery(postgres.postgresDb, sql, postgres));
   }
 
   const ciphertextDriftRequirement = () => {
