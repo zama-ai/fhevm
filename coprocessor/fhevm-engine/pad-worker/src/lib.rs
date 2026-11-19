@@ -135,6 +135,12 @@ impl PadWorker {
         self
     }
 
+    /// Sets `health` ready once this pad-worker listens for rows.
+    pub fn with_health(mut self, health: &Health) -> Self {
+        self.ready = health.ready.clone();
+        self
+    }
+
     pub fn health(&self) -> Health {
         Health {
             pool: self.pool.clone(),
@@ -406,6 +412,16 @@ fn non_fatal(e: sqlx::Error) -> anyhow::Result<()> {
 pub struct Health {
     pool: PgPool,
     ready: Arc<AtomicBool>,
+}
+
+impl Health {
+    /// Not ready until a pad-worker built `with_health` listens for rows.
+    pub fn new(pool: PgPool) -> Self {
+        Self {
+            pool,
+            ready: Arc::default(),
+        }
+    }
 }
 
 impl HealthCheckService for Health {

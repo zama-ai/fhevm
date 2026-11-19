@@ -11,17 +11,18 @@ use aws_sdk_s3::config::{RequestChecksumCalculation, ResponseChecksumValidation}
 use clap::Parser;
 use fhevm_engine_common::{
     database::{connect_pool_with_options, resolve_database_url_from_option},
+    db_keys::DbKeyCache,
     healthz_server::HttpServer,
     metrics_server, telemetry,
     types::{CoproSigner, SignerType},
     utils::DatabaseURL,
 };
-use pad_worker::{evaluator::TimedMockEvaluator, upload::Uploader, Config, PadWorker};
+use pad_worker::{evaluator::TfheEvaluator, upload::Uploader, Config, Health, PadWorker};
 use sqlx::postgres::PgPoolOptions;
 use std::{num::NonZeroUsize, str::FromStr, sync::Arc, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn, Level};
+use tracing::{info, Level};
 
 /// On a stop, the time for the claimed rows to complete. Below the 30 s grace period.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
@@ -73,13 +74,9 @@ struct Args {
     #[arg(long, env = "PAD_GC_INTERVAL", default_value = "1m", value_parser = humantime::parse_duration)]
     gc_interval: Duration,
 
-    /// Latency of one OPRF PBS in the mock evaluator. `0s`: no delay.
-    #[arg(long, env = "PAD_MOCK_PBS_LATENCY", default_value = "13ms", value_parser = humantime::parse_duration)]
-    mock_pbs_latency: Duration,
-
-    /// A fixed delay added to each evaluation of the mock evaluator, for e2e tests.
-    #[arg(long, env = "PAD_MOCK_EXTRA_LATENCY", default_value = "0s", value_parser = humantime::parse_duration)]
-    mock_extra_latency: Duration,
+    /// Poll interval until the key of `--prf-key-id` is in the database.
+    #[arg(long, env = "PAD_KEY_POLL_INTERVAL", default_value = "30s", value_parser = humantime::parse_duration)]
+    key_poll_interval: Duration,
 
     /// Ciphertext bucket of the operator, for the S3 copy of the outputs.
     #[arg(long, env = "PAD_S3_BUCKET")]
@@ -195,6 +192,31 @@ async fn uploader(args: &Args) -> Uploader {
     uploader
 }
 
+/// Waits until the host-listener has stored the key. Returns false on a stop.
+async fn wait_for_key(
+    pool: &sqlx::PgPool,
+    key_id: &[u8],
+    interval: Duration,
+    cancel: &CancellationToken,
+) -> anyhow::Result<bool> {
+    loop {
+        let stored: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM keys WHERE key_id = $1)")
+                .bind(key_id)
+                .fetch_one(pool)
+                .await
+                .context("look for the key of --prf-key-id")?;
+        if stored {
+            return Ok(true);
+        }
+        info!(key_id = %hex::encode(key_id), "Waiting for the key of --prf-key-id");
+        tokio::select! {
+            () = cancel.cancelled() => return Ok(false),
+            () = tokio::time::sleep(interval) => {}
+        }
+    }
+}
+
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
     let mut sigint = signal(SignalKind::interrupt())?;
     let mut sigterm = signal(SignalKind::terminate())?;
@@ -230,6 +252,7 @@ async fn main() -> anyhow::Result<()> {
         ct128_max_age = ?args.ct128_max_age,
         ct64_max_age = ?args.ct64_max_age,
         gc_interval = ?args.gc_interval,
+        key_poll_interval = ?args.key_poll_interval,
         s3_bucket = args.s3_bucket,
         s3_max_concurrent_uploads = args.s3_max_concurrent_uploads,
         s3_resubmit_interval = ?args.s3_resubmit_interval,
@@ -242,11 +265,6 @@ async fn main() -> anyhow::Result<()> {
     install_signal_handlers(cancel_token.clone())?;
     let signer = signer(&args).await?;
     info!(signer = %signer.address(), "Signer loaded");
-    warn!(
-        pbs_latency = ?args.mock_pbs_latency,
-        extra_latency = ?args.mock_extra_latency,
-        "Mock evaluator: the outputs are not PRF outputs"
-    );
     let uploader = uploader(&args).await;
 
     let database_url = resolve_database_url_from_option(args.database_url)?;
@@ -257,10 +275,32 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
+    // Start before the key load, so the liveness probe answers.
+    let health = Arc::new(Health::new(pool.clone()));
+    // The health server runs until the process exits, so a stop does not look like a crash.
+    let health_server = HttpServer::new(
+        health.clone(),
+        args.health_check_port,
+        CancellationToken::new(),
+    );
+    let health_task = tokio::spawn(async move { health_server.start().await });
+    metrics_server::spawn(args.metrics_addr, cancel_token.child_token());
+
+    let key_id = args.prf_key_id.to_be_bytes::<32>().to_vec();
+    if !wait_for_key(&pool, &key_id, args.key_poll_interval, &cancel_token).await? {
+        return Ok(());
+    }
+    let key = DbKeyCache::new_keeping_noise_squashing(1)?
+        .fetch(&key_id, &pool)
+        .await
+        .context("load the key of --prf-key-id")?;
+    info!(prf_key_id = %args.prf_key_id, "Key loaded");
+    let evaluator = Arc::new(TfheEvaluator::new(key.sks));
+
     let worker = PadWorker::new(
         Config {
             prf_instance: args.prf_instance,
-            key_id: args.prf_key_id.to_be_bytes::<32>().to_vec(),
+            key_id,
             max_concurrent: args.max_concurrent,
             claim_timeout: args.claim_timeout,
             poll_interval: args.poll_interval,
@@ -271,25 +311,12 @@ async fn main() -> anyhow::Result<()> {
             drain_timeout: DRAIN_TIMEOUT,
         },
         pool,
-        Arc::new(TimedMockEvaluator {
-            pbs_latency: args.mock_pbs_latency,
-            // The CPUs of the pod: std reads the cgroup limit.
-            parallel: std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
-            extra: args.mock_extra_latency,
-        }),
+        evaluator,
         signer,
         cancel_token.clone(),
     )
-    .with_uploader(uploader);
-
-    // The health server runs until the process exits, so a stop does not look like a crash.
-    let health_server = HttpServer::new(
-        Arc::new(worker.health()),
-        args.health_check_port,
-        CancellationToken::new(),
-    );
-    let health_task = tokio::spawn(async move { health_server.start().await });
-    metrics_server::spawn(args.metrics_addr, cancel_token.child_token());
+    .with_uploader(uploader)
+    .with_health(&health);
 
     let result = tokio::select! {
         res = worker.run() => res,

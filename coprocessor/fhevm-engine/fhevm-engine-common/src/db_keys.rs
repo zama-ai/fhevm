@@ -51,11 +51,21 @@ struct DbKeyRow {
 pub struct DbKeyCache {
     cache: Arc<RwLock<lru::LruCache<DbKeyId, DbKey>>>,
     force_legacy: bool,
+    /// Keep the noise-squashing keys of a CompressedXofKeySet, and refuse a legacy key.
+    keep_noise_squashing: bool,
 }
 
 impl DbKeyCache {
     pub fn new(capacity: usize) -> anyhow::Result<Self> {
         Self::new_with_force_legacy(capacity, false)
+    }
+
+    /// For the pad-worker, which squashes the noise of its outputs.
+    pub fn new_keeping_noise_squashing(capacity: usize) -> anyhow::Result<Self> {
+        Ok(Self {
+            keep_noise_squashing: true,
+            ..Self::new(capacity)?
+        })
     }
 
     pub fn new_from_env(capacity: usize) -> anyhow::Result<Self> {
@@ -73,6 +83,7 @@ impl DbKeyCache {
         Ok(Self {
             cache: Arc::new(RwLock::new(lru::LruCache::new(capacity))),
             force_legacy,
+            keep_noise_squashing: false,
         })
     }
 
@@ -132,7 +143,7 @@ impl DbKeyCache {
         .fetch_optional(&mut *executor)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Latest key disappeared from database"))?;
-        let result = Self::deserialize_db_key_row(row)?;
+        let result = Self::deserialize_db_key_row(row, self.keep_noise_squashing)?;
 
         // Insert into cache
         {
@@ -241,13 +252,16 @@ impl DbKeyCache {
         let mut res = Vec::with_capacity(rows.len());
 
         for row in rows {
-            res.push(Self::deserialize_db_key_row(row)?);
+            res.push(Self::deserialize_db_key_row(
+                row,
+                self.keep_noise_squashing,
+            )?);
         }
 
         Ok(res)
     }
 
-    fn deserialize_db_key_row(row: DbKeyRow) -> anyhow::Result<DbKey> {
+    fn deserialize_db_key_row(row: DbKeyRow, keep_noise_squashing: bool) -> anyhow::Result<DbKey> {
         let DbKeyRow {
             key_id,
             sequence_number,
@@ -288,7 +302,16 @@ impl DbKeyCache {
                         )
                     })?;
                 let (_xof_pks, server_key) = kxs.decompress().into_raw_parts();
-                strip_ns_from_server_key(server_key)
+                if keep_noise_squashing {
+                    server_key
+                } else {
+                    strip_ns_from_server_key(server_key)
+                }
+            } else if keep_noise_squashing {
+                anyhow::bail!(
+                    "key {} has no compressed_xof_keyset: a legacy key has no noise-squashing key",
+                    hex::encode(&key_id)
+                );
             } else {
                 safe_deserialize_key(&server_key_blob)?
             };
@@ -303,6 +326,8 @@ impl DbKeyCache {
         }
         #[cfg(feature = "gpu")]
         {
+            // GPU keys keep their noise-squashing keys.
+            let _ = keep_noise_squashing;
             if !is_xof {
                 anyhow::bail!(
                     "GPU coprocessor requires keys.compressed_xof_keyset to be populated; \

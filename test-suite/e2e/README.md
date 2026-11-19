@@ -199,9 +199,10 @@ land and replace it. It signs `FhevmSig` requests with KMS party 1's
 ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
 Behind each proxy runs prf-service, logged in as the `prf_service` database
 role, and a pad-worker for PRF instance 0, logged in as `pad_worker`, which
-computes the output the suite requests with the mock evaluator. The pad-worker signs
-it with the coprocessor's `TX_SENDER_PRIVATE_KEY`, as its sns-worker signs. The
-suite reads how many PRF requests prf-service answered from its metric
+computes the output the suite requests with the one-time pad of tfhe-rs and the
+key of the bootstrap keygen. The pad-worker signs it with the coprocessor's
+`TX_SENDER_PRIVATE_KEY`, as its sns-worker signs. The suite reads how many PRF
+requests prf-service answered from its metric
 `coprocessor_prf_service_requests_total`, at `PRF_SERVICE_METRICS_URLS`. It
 checks that a signed request reaches prf-service once and comes back as a KMS
 connector accepts it: the attestation's signature recovers the coprocessor's
@@ -245,8 +246,8 @@ dropped node with `401 auth_unknown_signer`. Without the key they skip.
 
 The suite reads the e2e limits of the compose file: 2,048 pending bits and 8 requests
 in progress for each connector, 20 requests per second for each signer, a pad-worker that
-computes 4 rows at once, and a mock evaluation of at least 2 s. It skips when
-`COPROCESSOR_PROXY_URLS` is empty.
+computes 4 rows at once. An evaluation with tfhe-rs takes seconds, and tens of seconds for a
+2,048-bit pad on CPU. It skips when `COPROCESSOR_PROXY_URLS` is empty.
 
 Run via the fhevm-cli profile `prf-endpoint` (part of `standard`), or directly with
 `npx hardhat test --grep "PRF endpoint" --network staging`.

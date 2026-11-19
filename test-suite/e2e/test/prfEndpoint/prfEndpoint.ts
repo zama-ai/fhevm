@@ -11,9 +11,8 @@ const MAX_PENDING_BITS = 2048;
 const MAX_IN_FLIGHT = 8;
 const MAX_REQUESTS_PER_SIGNER = 20;
 const MAX_PAD_LENGTH = 2048;
-// Mock evaluator: 6 KiB of ct128 for each 4-bit block, and 2 s or more for each row.
-const MOCK_CT128_BLOCK_BYTES = 6 * 1024;
-const MOCK_LATENCY_MS = 2_000;
+// A complete output answers in less time. A tfhe-rs evaluation takes more.
+const AT_ONCE_MS = 2_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const newRef = (padLength: number, prfId = 0): PrfOutputRef => ({ prfId, label: hexlify(randomBytes(32)), padLength });
@@ -21,7 +20,8 @@ const attestationOf = (reply: Reply) => JSON.parse(String(reply.headers['x-prf-a
 const errorOf = (reply: Reply) => JSON.parse(reply.body.toString()) as { code: string; retryable: boolean };
 
 describe('PRF endpoint', function () {
-  this.timeout(120_000);
+  // A 2048-bit pad takes tens of seconds with tfhe-rs on CPU.
+  this.timeout(600_000);
   const urls = envList('COPROCESSOR_PROXY_URLS');
   const signers = envList('COPROCESSOR_SIGNER_ADDRESSES');
   const prfMetricsUrls = envList('PRF_SERVICE_METRICS_URLS');
@@ -62,7 +62,6 @@ describe('PRF endpoint', function () {
   function expectOutput(reply: Reply & { where: string }, i: number, ref: PrfOutputRef) {
     expect(reply.status, reply.where).to.equal(200);
     expect(verifyPrfOutput(attestationOf(reply), ref, reply.body, signers[i]), reply.where).to.deep.equal([]);
-    expect(reply.body, reply.where).to.have.lengthOf(Math.ceil(ref.padLength / 4) * MOCK_CT128_BLOCK_BYTES);
   }
 
   function expectError(reply: Reply & { where: string }, status: number, code: string) {
@@ -93,7 +92,7 @@ describe('PRF endpoint', function () {
         const started = Date.now();
         const again = await get(i, ref);
         const head = await send(i, prfPath(ref), { method: 'HEAD' });
-        expect(Date.now() - started, again.where).to.be.below(MOCK_LATENCY_MS);
+        expect(Date.now() - started, again.where).to.be.below(AT_ONCE_MS);
         expect(again.status, again.where).to.equal(200);
         expect(again.body.equals(first[i].body), again.where).to.equal(true);
         expect(again.headers['x-prf-attestation'], again.where).to.equal(first[i].headers['x-prf-attestation']);
@@ -132,7 +131,7 @@ describe('PRF endpoint', function () {
           const started = Date.now();
           const joined = await get(i, ref);
           // A complete output answers at once: this request waited for the evaluation.
-          expect(Date.now() - started, joined.where).to.be.above(MOCK_LATENCY_MS / 2);
+          expect(Date.now() - started, joined.where).to.be.above(AT_ONCE_MS);
           for (const reply of [joined, ...(await Promise.all(first))]) {
             expectOutput(reply, i, ref);
             expect(reply.body.equals(joined.body), reply.where).to.equal(true);
@@ -189,8 +188,9 @@ describe('PRF endpoint', function () {
 
     it('computes the row of another connector before the remaining rows of a busy connector', async function () {
       let busyAnswered = 0;
+      // The whole budget, in rows still pending when the other connector arrives.
       const busy = Array.from({ length: MAX_IN_FLIGHT }, () =>
-        get(0, newRef(64)).then((reply) => {
+        get(0, newRef(MAX_PENDING_BITS / MAX_IN_FLIGHT)).then((reply) => {
           busyAnswered += 1;
           return reply;
         }),

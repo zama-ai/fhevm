@@ -6235,6 +6235,7 @@ dependencies = [
  "sha2 0.10.9",
  "sqlx",
  "test-harness",
+ "tfhe",
  "tokio",
  "tokio-util",
  "tracing",

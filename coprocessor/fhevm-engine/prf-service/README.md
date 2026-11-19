@@ -5,12 +5,6 @@ the endpoint. Only `coprocessor-proxy` calls `prf-service`. The proxy checks the
 and sends the signer in `X-Fhevm-Signer`. `prf-service` trusts this header: the NetworkPolicy of the
 proxy chart lets only the proxy reach port 8090.
 
-## Status
-
-- The `pad-worker` ([fhevm-internal#2193](https://github.com/zama-ai/fhevm-internal/issues/2193))
-  does not exist yet. So no row completes, and each request waits until the Connector or the proxy
-  stops it.
-
 ## Request
 
 1. Read the signer from `X-Fhevm-Signer`.

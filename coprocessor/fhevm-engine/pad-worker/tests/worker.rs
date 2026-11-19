@@ -7,7 +7,7 @@ use ciphertext_attestation::{
 };
 use fhevm_engine_common::healthz_server::HealthCheckService;
 use pad_worker::{
-    evaluator::{MockEvaluator, PadEvaluator, PadOutputs},
+    evaluator::{PadEvaluator, PadOutputs},
     rows,
     upload::{s3_key, Uploader},
     Config, PadWorker,
@@ -28,9 +28,11 @@ use test_harness::{
 use tokio::{task::JoinHandle, time::sleep};
 use tokio_util::sync::CancellationToken;
 
-/// The PRF instance of the tests.
-const INSTANCE: u16 = 1;
-const DEADLINE: Duration = Duration::from_secs(20);
+mod common;
+use common::INSTANCE;
+
+/// Real tfhe-rs evaluations are slow on a loaded CI runner.
+const DEADLINE: Duration = Duration::from_secs(300);
 
 async fn db() -> (DBInstance, PgPool) {
     let instance = setup_test_db(ImportMode::None).await.expect("test db");
@@ -47,7 +49,8 @@ fn config() -> Config {
         prf_instance: INSTANCE,
         key_id: U256::from(1).to_be_bytes::<32>().to_vec(),
         max_concurrent: NonZeroUsize::new(4).unwrap(),
-        claim_timeout: Duration::from_secs(60),
+        // Above any evaluation on a loaded runner: no claim goes stale unless a test sets it.
+        claim_timeout: Duration::from_secs(3600),
         poll_interval: Duration::from_millis(100),
         pending_max_age: Duration::from_secs(600),
         ct128_max_age: None,
@@ -153,7 +156,7 @@ struct Counting(AtomicUsize);
 impl PadEvaluator for Counting {
     fn evaluate(&self, prf: u16, label: B256, pad_length: u16) -> anyhow::Result<PadOutputs> {
         self.0.fetch_add(1, Ordering::SeqCst);
-        MockEvaluator.evaluate(prf, label, pad_length)
+        common::evaluator().evaluate(prf, label, pad_length)
     }
 }
 
@@ -169,7 +172,7 @@ impl PadEvaluator for Failing {
 async fn computes_signs_and_writes_a_row() {
     let (_instance, pool) = db().await;
     add_row(&pool, INSTANCE, 0xab, 1, 0.0).await;
-    let (signer, cancel, run) = start(&pool, config(), Arc::new(MockEvaluator));
+    let (signer, cancel, run) = start(&pool, config(), Arc::new(common::evaluator()));
 
     until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
 
@@ -181,7 +184,7 @@ async fn computes_signs_and_writes_a_row() {
     .await
     .unwrap();
     let label = B256::repeat_byte(0xab);
-    let expected = MockEvaluator.evaluate(INSTANCE, label, 64).unwrap();
+    let expected = common::evaluator().evaluate(INSTANCE, label, 64).unwrap();
     assert_eq!(row.0, expected.ct128);
     // `pad_ct64` has the ct64 and the same attestation.
     let ct64_row: OutputRow = sqlx::query_as(
@@ -226,7 +229,7 @@ async fn computes_only_the_rows_of_its_instance() {
     let (_instance, pool) = db().await;
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     add_row(&pool, INSTANCE + 1, 2, 1, 0.0).await;
-    let (_signer, cancel, run) = start(&pool, config(), Arc::new(MockEvaluator));
+    let (_signer, cancel, run) = start(&pool, config(), Arc::new(common::evaluator()));
 
     until(
         &pool,
@@ -266,14 +269,14 @@ async fn takes_a_stale_claim_again_but_not_a_live_one() {
     add_row(&pool, INSTANCE, 2, 1, 0.0).await;
     // Row 1: claimed by a pod that stopped. Row 2: claimed by a pod that still works on it.
     sqlx::query(
-        "UPDATE pads SET claimed_at = CASE WHEN label = $1 THEN NOW() - INTERVAL '1 hour'
+        "UPDATE pads SET claimed_at = CASE WHEN label = $1 THEN NOW() - INTERVAL '2 hours'
                                           ELSE NOW() END",
     )
     .bind(B256::repeat_byte(1).as_slice())
     .execute(&pool)
     .await
     .unwrap();
-    let (_signer, cancel, run) = start(&pool, config(), Arc::new(MockEvaluator));
+    let (_signer, cancel, run) = start(&pool, config(), Arc::new(common::evaluator()));
 
     until(
         &pool,
@@ -293,7 +296,7 @@ async fn skips_expired_rows() {
     let (_instance, pool) = db().await;
     add_row(&pool, INSTANCE, 1, 1, 3600.0).await;
     add_row(&pool, INSTANCE, 2, 1, 0.0).await;
-    let (_signer, cancel, run) = start(&pool, config(), Arc::new(MockEvaluator));
+    let (_signer, cancel, run) = start(&pool, config(), Arc::new(common::evaluator()));
 
     until(
         &pool,
@@ -435,8 +438,12 @@ async fn uploads_the_output_with_its_attestation() {
     let (_localstack, client, uploader) = s3().await;
     client.create_bucket().bucket(BUCKET).send().await.unwrap();
     add_row(&pool, INSTANCE, 0xab, 1, 0.0).await;
-    let (signer, cancel, run) =
-        start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
+    let (signer, cancel, run) = start_with(
+        &pool,
+        config(),
+        Arc::new(common::evaluator()),
+        Some(uploader),
+    );
 
     until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
 
@@ -468,7 +475,10 @@ async fn uploads_the_output_with_its_attestation() {
     let body = object.body.collect().await.unwrap().into_bytes();
     assert_eq!(
         body.as_ref(),
-        MockEvaluator.evaluate(INSTANCE, label, 64).unwrap().ct128
+        common::evaluator()
+            .evaluate(INSTANCE, label, 64)
+            .unwrap()
+            .ct128
     );
 
     cancel.cancel();
@@ -484,7 +494,8 @@ async fn a_failed_upload_is_tried_again() {
         claim_timeout: Duration::from_secs(1),
         ..config()
     };
-    let (_signer, cancel, run) = start_with(&pool, config, Arc::new(MockEvaluator), Some(uploader));
+    let (_signer, cancel, run) =
+        start_with(&pool, config, Arc::new(common::evaluator()), Some(uploader));
 
     // No bucket: the row is complete, but the upload fails.
     until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
@@ -820,7 +831,7 @@ async fn the_gc_runs_in_the_worker() {
         gc_interval: Duration::from_millis(100),
         ..config()
     };
-    let (_signer, cancel, run) = start(&pool, config, Arc::new(MockEvaluator));
+    let (_signer, cancel, run) = start(&pool, config, Arc::new(common::evaluator()));
 
     until(&pool, "SELECT COUNT(*) = 0 FROM pads").await;
 
@@ -867,7 +878,7 @@ async fn is_ready_once_it_listens_for_rows() {
     let worker = PadWorker::new(
         config(),
         pool.clone(),
-        Arc::new(MockEvaluator),
+        Arc::new(common::evaluator()),
         Arc::new(PrivateKeySigner::random()),
         cancel.clone(),
     );
@@ -885,20 +896,33 @@ async fn is_ready_once_it_listens_for_rows() {
     run.await.unwrap().unwrap();
 }
 
-/// The mock, after a delay.
-struct Slow(Duration);
+/// Row 1 takes `delay` and gives a precomputed output. Other rows use the evaluator.
+struct Slow {
+    delay: Duration,
+    row_1: PadOutputs,
+}
 
 impl PadEvaluator for Slow {
     fn evaluate(&self, prf: u16, label: B256, pad_length: u16) -> anyhow::Result<PadOutputs> {
-        std::thread::sleep(self.0);
-        MockEvaluator.evaluate(prf, label, pad_length)
+        if (prf, label, pad_length) != (INSTANCE, B256::repeat_byte(1), 64) {
+            return common::evaluator().evaluate(prf, label, pad_length);
+        }
+        std::thread::sleep(self.delay);
+        Ok(self.row_1.clone())
     }
 }
 
 #[tokio::test]
 async fn a_stop_lets_the_claimed_rows_complete() {
     let (_instance, pool) = db().await;
-    let (_signer, cancel, run) = start(&pool, config(), Arc::new(Slow(Duration::from_secs(1))));
+    // A fixed drain time: a real evaluation is slower on a loaded machine.
+    let slow = Slow {
+        delay: Duration::from_secs(1),
+        row_1: common::evaluator()
+            .evaluate(INSTANCE, B256::repeat_byte(1), 64)
+            .unwrap(),
+    };
+    let (_signer, cancel, run) = start(&pool, config(), Arc::new(slow));
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     until(&pool, "SELECT claimed_at IS NOT NULL FROM pads").await;
 
@@ -914,7 +938,13 @@ async fn a_stop_releases_the_claims_still_running_after_the_drain() {
         drain_timeout: Duration::from_millis(100),
         ..config()
     };
-    let (_signer, cancel, run) = start(&pool, config, Arc::new(Slow(Duration::from_secs(5))));
+    let slow = Slow {
+        delay: Duration::from_secs(5),
+        row_1: common::evaluator()
+            .evaluate(INSTANCE, B256::repeat_byte(1), 64)
+            .unwrap(),
+    };
+    let (_signer, cancel, run) = start(&pool, config, Arc::new(slow));
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     until(&pool, "SELECT claimed_at IS NOT NULL FROM pads").await;
 
@@ -948,7 +978,8 @@ async fn a_stop_releases_the_upload_claims_still_running_after_the_drain() {
         drain_timeout: Duration::from_millis(100),
         ..config()
     };
-    let (_signer, cancel, run) = start_with(&pool, config, Arc::new(MockEvaluator), Some(uploader));
+    let (_signer, cancel, run) =
+        start_with(&pool, config, Arc::new(common::evaluator()), Some(uploader));
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
     sqlx::query("UPDATE pads SET claimed_at = NULL")
@@ -1019,8 +1050,12 @@ async fn leaves_the_output_to_resubmit_when_all_upload_slots_are_taken() {
         Duration::from_millis(100),
     );
     let slot = uploader.slot(false).await.unwrap();
-    let (_signer, cancel, run) =
-        start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
+    let (_signer, cancel, run) = start_with(
+        &pool,
+        config(),
+        Arc::new(common::evaluator()),
+        Some(uploader),
+    );
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
     until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
 
@@ -1046,7 +1081,7 @@ async fn uploads_without_a_checksum_for_s3_servers_without_support() {
     let (_signer, cancel, run) = start_with(
         &pool,
         config(),
-        Arc::new(MockEvaluator),
+        Arc::new(common::evaluator()),
         Some(uploader.without_sha256_checksum()),
     );
 
@@ -1061,8 +1096,12 @@ async fn uploads_a_complete_row_without_a_claim() {
     let (_instance, pool) = db().await;
     let (_localstack, client, uploader) = s3().await;
     add_row(&pool, INSTANCE, 1, 1, 0.0).await;
-    let (_signer, cancel, run) =
-        start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
+    let (_signer, cancel, run) = start_with(
+        &pool,
+        config(),
+        Arc::new(common::evaluator()),
+        Some(uploader),
+    );
 
     // No bucket: the upload fails. Without a claim, resubmit does not wait for the claim timeout.
     until(&pool, "SELECT signature IS NOT NULL FROM pads").await;

@@ -183,7 +183,9 @@ describe("env", () => {
     expect(pair.instanceEnvs["coprocessor-pad-worker.1"]).toEqual({
       ...pair.instanceEnvs["coprocessor.1"],
       DATABASE_URL: "postgresql://pad_worker:pad_worker@db:5432/coprocessor_1",
+      PRF_KEY_ID: `0x${pair.instanceEnvs["coprocessor.1"].FHE_KEY_ID}`,
     });
+    expect(pair.instanceEnvs["coprocessor-pad-worker"].PRF_KEY_ID).toMatch(/^0x[0-9a-f]{64}$/);
     expect(pair.instanceEnvs["coprocessor-pad-worker"].TX_SENDER_PRIVATE_KEY).toBe(
       pair.componentEnvs.coprocessor.TX_SENDER_PRIVATE_KEY,
     );

@@ -506,6 +506,8 @@ const buildPadWorkerEnvs = (
     padWorkerEnvs[coprocessorServiceEnvName("coprocessor-pad-worker", index)] = {
       ...coprocessor,
       DATABASE_URL: `postgresql://${credentials}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`,
+      // Without `0x`, the pad-worker reads the ID as decimal.
+      PRF_KEY_ID: `0x${coprocessor.FHE_KEY_ID}`,
     };
   }
   return padWorkerEnvs;

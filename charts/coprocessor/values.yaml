@@ -1894,14 +1894,14 @@ padWorkerShared:
 
   serviceAccountName:
 
-  # TODO: size for the tfhe-rs evaluator, when tfhe-rs gives the PRF API.
+  # For the KMS server key and the evaluations. Sized from the preview env.
   resources:
     requests:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 8
+      memory: 16Gi
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: 8
+      memory: 16Gi
 
   probes:
     liveness:

@@ -137,6 +137,7 @@ jobs:
             needs_localstack: false
             needs_foundry: false
             runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
+          # A PR skips the 2048-bit pad (`PAD_WORKER_TEST_MATRIX=local`).
           - service: pad-worker
             package: pad-worker
             needs_localstack: false
@@ -265,6 +266,7 @@ jobs:
         # PR CI: run only small types (bool through 64-bit) for faster feedback.
         if [ "$IS_MERGE_QUEUE" != "1" ]; then
           export TFHE_WORKER_EVENT_TYPE_MATRIX=local
+          export PAD_WORKER_TEST_MATRIX=local
         fi
         cargo llvm-cov clean --workspace --profile coverage
         cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage

@@ -139,8 +139,9 @@ export const waitForContainer = async (container: string, want: "running" | "hea
 };
 
 /** Waits until container logs contain the requested pattern. */
-export const waitForLog = async (container: string, pattern: RegExp) => {
-  for (let attempt = 0; attempt <= 90; attempt += 1) {
+export const waitForLog = async (container: string, pattern: RegExp, timeoutSeconds = 180) => {
+  const attempts = Math.ceil(timeoutSeconds / 2);
+  for (let attempt = 0; attempt <= attempts; attempt += 1) {
     const [inspect] = await dockerInspect(container);
     const logs = await run(
       ["docker", "logs", ...(inspect?.State.StartedAt ? ["--since", inspect.State.StartedAt] : []), container],
@@ -162,8 +163,8 @@ export const waitForLog = async (container: string, pattern: RegExp) => {
       }
       throw new PreflightError(`${container} exited before emitting expected log pattern ${pattern}`);
     }
-    if (attempt === 90) {
-      throw new ProbeTimeout(container, 180);
+    if (attempt === attempts) {
+      throw new ProbeTimeout(container, timeoutSeconds);
     }
     await Bun.sleep(2_000);
   }
@@ -391,7 +392,8 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
     }
     if (includeProxy) {
       await waitForHealthz(prefix, "prf-service");
-      await waitForLog(`${prefix}pad-worker`, PAD_WORKER_READY);
+      // Ready only after the key of the bootstrap keygen: see `waitForPadWorkers`.
+      await waitForContainer(`${prefix}pad-worker`, "running");
       await waitForHealthz(prefix, "proxy");
     }
     if (state.scenario.kind === "blue-green" && !state.scenario.gcs.deferredStart) {
@@ -411,6 +413,18 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
 
 /** Waits for the full coprocessor stack, including migrations, to become ready. */
 export const waitForCoprocessor = async (state: State) => waitForCoprocessorServices(state, false);
+
+/** Waits until each pad-worker is ready: it loads the key of the bootstrap keygen first. */
+export const waitForPadWorkers = async (state: State) => {
+  if (!runsCoprocessorProxy(state)) {
+    return;
+  }
+  for (let index = 0; index < topologyForState(state).count; index += 1) {
+    const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
+    // Loading the KMS key takes minutes on a loaded CI machine.
+    await waitForLog(`${prefix}pad-worker`, PAD_WORKER_READY, 600);
+  }
+};
 
 /** Waits for db-migration containers (one per operator) to exit successfully. */
 export const waitForCoprocessorDbMigrations = async (state: Pick<State, "scenario" | "versions">) => {
