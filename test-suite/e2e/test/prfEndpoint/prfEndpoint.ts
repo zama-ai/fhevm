@@ -1,6 +1,7 @@
 // Signs as the KMS connectors against the PRF endpoint of each coprocessor, until the pad connector lands.
 import { expect } from 'chai';
-import { Wallet, hexlify, randomBytes } from 'ethers';
+import { Wallet, hexlify, keccak256, randomBytes } from 'ethers';
+import { Pool } from 'pg';
 
 import { type Reply, envList, metric, request } from '../coprocessorProxy/client';
 import { type PrfOutputAttestation, type PrfOutputRef, prfPath, verifyPrfOutput } from '../coprocessorProxy/prfOutput';
@@ -19,6 +20,40 @@ const newRef = (padLength: number, prfId = 0): PrfOutputRef => ({ prfId, label: 
 const attestationOf = (reply: Reply) => JSON.parse(String(reply.headers['x-prf-attestation'])) as PrfOutputAttestation;
 const errorOf = (reply: Reply) => JSON.parse(reply.body.toString()) as { code: string; retryable: boolean };
 
+/** The S3 object at `url` and its attestation, once the pad-worker uploaded it. */
+async function s3Object(url: string): Promise<{ url: string; body: Buffer; attestation: PrfOutputAttestation }> {
+  const deadline = Date.now() + 120_000;
+  while (true) {
+    const response = await fetch(url);
+    if (response.ok) {
+      const attestation = JSON.parse(response.headers.get('x-amz-meta-ct-attestation') ?? 'null');
+      return { url, body: Buffer.from(await response.arrayBuffer()), attestation };
+    }
+    if (Date.now() > deadline) throw new Error(`${url}: ${response.status} after 120 s`);
+    await sleep(1_000);
+  }
+}
+
+/** The `outcome` and `local_result` of the ended pad_consensus check of `ref` in `databaseUrl`. */
+async function padConsensus(databaseUrl: string, ref: PrfOutputRef): Promise<[string, string]> {
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    const deadline = Date.now() + 120_000;
+    while (true) {
+      const { rows } = await pool.query(
+        `SELECT outcome, local_result FROM pad_consensus
+          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3 AND done_at IS NOT NULL`,
+        [ref.prfId, Buffer.from(ref.label.slice(2), 'hex'), ref.padLength],
+      );
+      if (rows.length) return [rows[0].outcome, rows[0].local_result];
+      if (Date.now() > deadline) throw new Error(`no ended pad_consensus check of ${prfPath(ref)} after 120 s`);
+      await sleep(2_000);
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
 describe('PRF endpoint', function () {
   // A 2048-bit pad takes tens of seconds with tfhe-rs on CPU.
   this.timeout(600_000);
@@ -26,6 +61,8 @@ describe('PRF endpoint', function () {
   const signers = envList('COPROCESSOR_SIGNER_ADDRESSES');
   const prfMetricsUrls = envList('PRF_SERVICE_METRICS_URLS');
   const padMetricsUrls = envList('PAD_WORKER_METRICS_URLS');
+  const bucketUrls = envList('COPROCESSOR_BUCKET_URLS');
+  const databaseUrls = envList('COPROCESSOR_DATABASE_URLS');
   const connectors = envList('KMS_CONNECTOR_PRIVATE_KEYS').map((key) => new Wallet(key));
 
   before(function () {
@@ -81,6 +118,30 @@ describe('PRF endpoint', function () {
           expect(attestation.sns_ciphertext_digest, prfPath(ref)).to.equal(attestations[0].sns_ciphertext_digest);
         }
         expect(new Set(attestations.map((a) => a.signer.toLowerCase())).size).to.equal(urls.length);
+      }
+    });
+
+    it('uploads both forms to S3, and the consensus-detectors find consensus', async function () {
+      if (bucketUrls.length !== urls.length || databaseUrls.length !== urls.length) {
+        console.log('[prf-endpoint] COPROCESSOR_BUCKET_URLS or COPROCESSOR_DATABASE_URLS is not set; skipping');
+        this.skip();
+      }
+      const ref = newRef(64);
+      const replies = await Promise.all(urls.map((_, i) => get(i, ref)));
+      const key = `${ref.prfId}/${ref.label.slice(2)}/${ref.padLength}`;
+      for (const i of urls.keys()) {
+        expectOutput(replies[i], i, ref);
+        const attestation = attestationOf(replies[i]);
+        const ct128 = await s3Object(`${bucketUrls[i]}/pads/ct128/${key}`);
+        const ct64 = await s3Object(`${bucketUrls[i]}/pads/ct64/${key}`);
+        for (const object of [ct128, ct64]) expect(object.attestation, object.url).to.deep.equal(attestation);
+        expect(ct128.body.equals(replies[i].body), ct128.url).to.equal(true);
+        expect(keccak256(ct64.body), ct64.url).to.equal(attestation.ciphertext_digest);
+      }
+      // With one coprocessor, no other output can confirm ours.
+      if (urls.length < 2) return;
+      for (const databaseUrl of databaseUrls) {
+        expect(await padConsensus(databaseUrl, ref), prfPath(ref)).to.deep.equal(['consensus', 'matches_quorum']);
       }
     });
 

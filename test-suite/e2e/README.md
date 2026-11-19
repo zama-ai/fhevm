@@ -237,6 +237,11 @@ dropped node with `401 auth_unknown_signer`. Without the key they skip.
 `KMS_CONNECTOR_PRIVATE_KEYS`. It checks:
 
 - Outputs: every pad length is served, and all coprocessors attest the same digests.
+- S3 copies and consensus: each coprocessor uploads the `ct128` (the response body) and the
+  `ct64` (its Keccak-256 is `ciphertext_digest`) to its bucket in `COPROCESSOR_BUCKET_URLS`,
+  with the attestation of the response. With two coprocessors or more, the `pad_consensus` check
+  of each consensus-detector, in `COPROCESSOR_DATABASE_URLS`, ends with `consensus` and
+  `matches_quorum`. The test skips without these variables.
 - One evaluation for many requests: `coprocessor_pad_worker_evaluations_total`, at
   `PAD_WORKER_METRICS_URLS`, goes up by 1 for each path.
 - Budgets of prf-service: pending bits, requests in progress, joins, fairness between

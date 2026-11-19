@@ -604,6 +604,16 @@ const applyCoprocessorProxyTestSuiteEnv = (
   envs["test-suite"].COPROCESSOR_PROXY_METRICS_URLS = indices
     .map((index) => `http://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_METRICS_PORT}/metrics`)
     .join(",");
+  // The "PRF endpoint" suite reads the S3 copies of the pad outputs and the pad_consensus results.
+  envs["test-suite"].COPROCESSOR_BUCKET_URLS = indices
+    .map((index) => envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`])
+    .join(",");
+  envs["test-suite"].COPROCESSOR_DATABASE_URLS = indices
+    .map(
+      (index) =>
+        `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`,
+    )
+    .join(",");
   // The suite signs as party 1's connector, a KMS tx-sender of the active context.
   envs["test-suite"].KMS_CONNECTOR_PRIVATE_KEY = supported ? envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY : "";
   // The "PRF endpoint" suite signs as each committee connector. Spares are not tx-senders yet.
