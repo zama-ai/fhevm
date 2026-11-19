@@ -123,9 +123,7 @@ where
     .await
 }
 
-/// Build a schedule request from this delivery and the exact parent's
-/// checkpoint in the current stack schema. Gaps, old rows and other forks
-/// need an RPC lookup.
+/// Read checkpoints for this exact block and parent in the current stack schema.
 pub(crate) async fn executor_version_request(
     db: &Database,
     chain_id: ChainId,
@@ -133,24 +131,75 @@ pub(crate) async fn executor_version_request(
     proxy: Option<Address>,
 ) -> Result<ExecutorVersionRequest, sqlx::Error> {
     let mut request = ExecutorVersionRequest::from_block(block, proxy);
-    if let (Some(proxy), Some(parent_number)) =
-        (proxy, block.summary.number.checked_sub(1))
-    {
-        let version: Option<String> = sqlx::query_scalar(
-            "SELECT tfhe_executor_version FROM host_chain_blocks_valid
-             WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3
-               AND tfhe_executor_address = $4 AND tfhe_executor_version IS NOT NULL",
+    if let Some(proxy) = proxy {
+        let pool = db.pool().await;
+        let (version, schedule) =
+            load_executor_schedule(&pool, chain_id, &block.summary, proxy)
+                .await?;
+        if schedule.is_none() {
+            request.legacy_ending_version = version;
+        }
+        request.persisted_schedule = schedule;
+        request.persisted_parent_version = load_parent_executor_version(
+            &pool,
+            chain_id,
+            &block.summary,
+            proxy,
         )
-        .bind(chain_id.as_i64())
-        .bind(parent_number as i64)
-        .bind(block.summary.parent_hash.as_slice())
-        .bind(proxy.as_slice())
-        .fetch_optional(&db.pool().await)
         .await?;
-        request.persisted_parent_version =
-            version.as_deref().and_then(ExecutorVersion::parse);
     }
     Ok(request)
+}
+
+async fn load_parent_executor_version<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Postgres>,
+    chain_id: ChainId,
+    block: &BlockSummary,
+    proxy: Address,
+) -> Result<Option<ExecutorVersion>, sqlx::Error> {
+    let Some(parent_number) = block.number.checked_sub(1) else {
+        return Ok(None);
+    };
+    let version: Option<String> = sqlx::query_scalar(
+        "SELECT tfhe_executor_version FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3
+           AND tfhe_executor_address = $4 AND tfhe_executor_version IS NOT NULL",
+    )
+    .bind(chain_id.as_i64())
+    .bind(parent_number as i64)
+    .bind(block.parent_hash.as_slice())
+    .bind(proxy.as_slice())
+    .fetch_optional(executor)
+    .await?;
+    Ok(version.as_deref().and_then(ExecutorVersion::parse))
+}
+
+async fn load_executor_schedule<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Postgres>,
+    chain_id: ChainId,
+    block: &BlockSummary,
+    proxy: Address,
+) -> Result<
+    (Option<ExecutorVersion>, Option<ExecutorVersionSchedule>),
+    sqlx::Error,
+> {
+    let saved: Option<(Option<String>, Option<sqlx::types::Json<ExecutorVersionSchedule>>)> =
+        sqlx::query_as(
+            "SELECT tfhe_executor_version, tfhe_executor_schedule FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3
+           AND tfhe_executor_address = $4",
+        )
+        .bind(chain_id.as_i64())
+        .bind(block.number as i64)
+        .bind(block.hash.as_slice())
+        .bind(proxy.as_slice())
+        .fetch_optional(executor)
+        .await?;
+    let (version, schedule) = saved.unwrap_or_default();
+    Ok((
+        version.as_deref().and_then(ExecutorVersion::parse),
+        schedule.map(|saved| saved.0),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -185,20 +234,39 @@ where
         let request =
             executor_version_request(db, chain_id, block_to_ingest, *tfhe)
                 .await?;
-        let schedule = get_executor_schedule(request).await?;
-        let result = ingest_block_logs_with_executor_schedule(
-            chain_id,
-            db,
-            block_to_ingest,
-            acl,
-            tfhe,
-            kms,
-            protocol,
-            bridge,
-            options.clone(),
-            schedule,
-        )
-        .await?;
+        let result = match get_executor_schedule(request).await {
+            Ok(schedule) => {
+                ingest_block_logs_with_executor_schedule(
+                    chain_id,
+                    db,
+                    block_to_ingest,
+                    acl,
+                    tfhe,
+                    kms,
+                    protocol,
+                    bridge,
+                    options.clone(),
+                    schedule,
+                )
+                .await?
+            }
+            Err(error) => {
+                // Repair an absent predecessor before requiring its historical
+                // state. It may inherit the version already stored on its parent.
+                let Some(tx) = db.new_transaction().await? else {
+                    return Ok(IngestResult::Complete);
+                };
+                match admit_block_history(db, chain_id, tx, block_to_ingest)
+                    .await?
+                {
+                    ControlFlow::Break(outcome) => outcome,
+                    ControlFlow::Continue((tx, _)) => {
+                        tx.rollback().await?;
+                        return Err(error);
+                    }
+                }
+            }
+        };
         match result {
             IngestResult::Complete if repair.take().is_some() => continue,
             IngestResult::Complete => return Ok(result),
@@ -646,7 +714,7 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
     protocol_config_contract_address: &Option<Address>,
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
-    executor_version_schedule: ExecutorVersionSchedule,
+    mut executor_version_schedule: ExecutorVersionSchedule,
 ) -> Result<IngestResult, sqlx::Error> {
     validate_block_logs(block_logs)?;
 
@@ -708,6 +776,42 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
             ControlFlow::Continue(admitted) => admitted,
             ControlFlow::Break(outcome) => return Ok(outcome),
         };
+
+    // Resolution happens outside the transaction. Another replica may have
+    // committed more upgrade evidence while we were waiting for admission.
+    if executor_version_schedule.tracks_versions() {
+        if let Some(proxy) = tfhe_contract_address {
+            if let Some(expected) = executor_version_schedule.parent_checkpoint
+            {
+                let current = load_parent_executor_version(
+                    &mut *tx,
+                    chain_id,
+                    &block_logs.summary,
+                    *proxy,
+                )
+                .await?;
+                if current != expected {
+                    return Err(sqlx::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::WouldBlock,
+                        "Parent executor checkpoint changed; retry version resolution",
+                    )));
+                }
+            }
+
+            if let (_, Some(saved)) = load_executor_schedule(
+                &mut *tx,
+                chain_id,
+                &block_logs.summary,
+                *proxy,
+            )
+            .await?
+            {
+                executor_version_schedule
+                    .merge_checkpoint(&saved)
+                    .map_err(|reason| sqlx::Error::Protocol(reason.into()))?;
+            }
+        }
+    }
 
     let committed_inventory = CommittedInventory::capture(
         &mut tx,
@@ -871,9 +975,10 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
                         && executor_version.is_none()
                         && requires_executor_version(&log.inner)
                     {
-                        return Err(sqlx::Error::Protocol(
-                            "Missing executor version for FHE event".into(),
-                        ));
+                        return Err(sqlx::Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::WouldBlock,
+                            "Executor checkpoint changed; retry version resolution for FHE event",
+                        )));
                     }
                     validate_tfhe_event_for_version(
                         &event.data,
@@ -1416,7 +1521,10 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
                 });
             sqlx::query(
                 "UPDATE host_chain_blocks_valid \
-                 SET tfhe_executor_address = $1, tfhe_executor_version = $2 \
+                 SET tfhe_executor_address = $1, tfhe_executor_version = \
+                     CASE WHEN tfhe_executor_address = $1 AND tfhe_executor_schedule IS NULL \
+                          THEN COALESCE($2, tfhe_executor_version) ELSE $2 END, \
+                     tfhe_executor_schedule = $6 \
                  WHERE chain_id = $3 AND block_number = $4 AND block_hash = $5",
             )
             .bind(tfhe_address.as_slice())
@@ -1424,6 +1532,7 @@ pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
             .bind(chain_id.as_i64())
             .bind(block_number as i64)
             .bind(block_hash.as_slice())
+            .bind(sqlx::types::Json(&executor_version_schedule))
             .execute(&mut *tx)
             .await?;
         }
@@ -2877,6 +2986,35 @@ mod tests {
     use alloy::sol_types::SolEvent;
 
     use super::*;
+
+    #[tokio::test]
+    async fn executor_schedule_migration_updates_existing_green_schema() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::PgPool::connect(instance.db_url.as_str())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(
+            r#"CREATE SCHEMA "gcs-executor-checkpoint-test";
+               CREATE TABLE "gcs-executor-checkpoint-test".host_chain_blocks_valid
+                   (LIKE public.host_chain_blocks_valid INCLUDING ALL);
+               ALTER TABLE "gcs-executor-checkpoint-test".host_chain_blocks_valid
+                   DROP COLUMN tfhe_executor_schedule;
+               INSERT INTO "gcs-executor-checkpoint-test".host_chain_blocks_valid
+                   (chain_id, block_hash, block_number, block_status, tfhe_executor_version)
+                   VALUES (42, decode('64', 'hex'), 100, 'finalized', 'FHEVMExecutor v0.6.0');"#,
+        ).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(include_str!("../../../db-migration/migrations/20261119120000_host_executor_schedule.sql"))
+            .execute(&mut *tx).await.unwrap();
+        let row: (String, Option<serde_json::Value>) = sqlx::query_as(
+            r#"SELECT tfhe_executor_version, tfhe_executor_schedule
+               FROM "gcs-executor-checkpoint-test".host_chain_blocks_valid WHERE chain_id=42"#,
+        ).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(row, ("FHEVMExecutor v0.6.0".to_owned(), None));
+        tx.commit().await.unwrap();
+    }
 
     #[test]
     fn ingestion_preserves_legacy_scalar_values_and_versions_typed_zero() {

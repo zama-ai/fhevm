@@ -1738,9 +1738,26 @@ mod tests {
     #[tokio::test]
     async fn websocket_executor_version_failure_does_not_become_unknown_metadata(
     ) {
+        use crate::contracts::TfheContract::TrivialEncrypt;
+        use alloy::primitives::U256;
+        use alloy::sol_types::SolEvent;
         let iter = new_test_iter(50);
+        let proxy = Address::with_last_byte(0x42);
         let block = BlockLogs {
-            logs: vec![],
+            logs: vec![Log {
+                inner: alloy::primitives::Log {
+                    address: proxy,
+                    data: TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: U256::from(1),
+                        toType: 2,
+                        result: BlockHash::ZERO,
+                    }
+                    .encode_log_data(),
+                },
+                log_index: Some(0),
+                ..Default::default()
+            }],
             summary: BlockSummary {
                 number: 100,
                 hash: BlockHash::with_last_byte(100),
@@ -1750,14 +1767,15 @@ mod tests {
             catchup: false,
             finalized: true,
         };
-        let proxy = Some(Address::with_last_byte(0x42));
         assert!(iter
             .executor_version_schedule(ExecutorVersionRequest::from_block(
-                &block, proxy
+                &block,
+                Some(proxy)
             ))
             .await
             .is_err());
-        let mut recovered = ExecutorVersionRequest::from_block(&block, proxy);
+        let mut recovered =
+            ExecutorVersionRequest::from_block(&block, Some(proxy));
         recovered.persisted_parent_version =
             Some(ExecutorVersion::new(0, 7, 0));
         assert_eq!(

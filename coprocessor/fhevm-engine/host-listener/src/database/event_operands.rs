@@ -14,7 +14,17 @@ type OperandBoundaryMask = [u8; 32];
 const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
 
 /// Semantic version reported by `FHEVMExecutor.getVersion()`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct ExecutorVersion {
     pub major: u64,
     pub minor: u64,
@@ -61,20 +71,29 @@ fn parse_canonical_component(value: &str) -> Option<u64> {
     value.parse().ok()
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
 pub struct ExecutorVersionTransition {
     /// The new implementation is active after the `Upgraded` log at this index.
     pub after_log_index: u64,
+    pub implementation: Option<Address>,
     /// `None` means the version was not needed for any operation in this segment.
     pub version: Option<ExecutorVersion>,
 }
 
 /// Executor version at a block's start and any upgrades observed in that block.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
 pub struct ExecutorVersionSchedule {
     tracks_versions: bool,
-    initial_version: Option<ExecutorVersion>,
-    transitions: Vec<ExecutorVersionTransition>,
+    pub(crate) initial_version: Option<ExecutorVersion>,
+    pub(crate) transitions: Vec<ExecutorVersionTransition>,
+    /// The parent's DB value observed before RPC resolution, checked at commit.
+    /// Outer None is used by test-only schedules that bypass the resolver.
+    #[serde(skip)]
+    pub(crate) parent_checkpoint: Option<Option<ExecutorVersion>>,
 }
 
 impl ExecutorVersionSchedule {
@@ -83,6 +102,7 @@ impl ExecutorVersionSchedule {
             tracks_versions: true,
             initial_version,
             transitions: Vec::new(),
+            parent_checkpoint: None,
         }
     }
 
@@ -97,10 +117,47 @@ impl ExecutorVersionSchedule {
     ) {
         self.transitions.push(ExecutorVersionTransition {
             after_log_index,
+            implementation: None,
             version,
         });
         self.transitions
             .sort_by_key(|transition| transition.after_log_index);
+    }
+
+    /// Combine observations of the same block and proxy. A partial delivery may
+    /// omit an upgrade or fail its lookup, but cannot erase an earlier success.
+    pub(crate) fn merge_checkpoint(
+        &mut self,
+        saved: &Self,
+    ) -> Result<(), &'static str> {
+        for transition in &saved.transitions {
+            if let Some(current) = self.transitions.iter_mut().find(|current| {
+                current.after_log_index == transition.after_log_index
+            }) {
+                if current.implementation.is_some()
+                    && transition.implementation.is_some()
+                    && current.implementation != transition.implementation
+                {
+                    return Err("Conflicting executor implementations at the same upgrade log");
+                }
+                if current.version.is_some()
+                    && transition.version.is_some()
+                    && current.version != transition.version
+                {
+                    return Err(
+                        "Conflicting executor versions at the same upgrade log",
+                    );
+                }
+                current.implementation =
+                    current.implementation.or(transition.implementation);
+                current.version = current.version.or(transition.version);
+            } else {
+                self.transitions.push(*transition);
+            }
+        }
+        self.transitions
+            .sort_by_key(|transition| transition.after_log_index);
+        Ok(())
     }
 
     pub fn version_for_log_index(
@@ -239,8 +296,8 @@ fn scalar_is_zero_for_type(
 /// full-word zero in the oldest supported versions. Version 0.3.0 was reused
 /// before and after typed-zero checks were introduced, so only v0.4.0 and later
 /// establish those checks. MulDiv typed-zero checks have been present since
-/// v0.14 introduced it, and bounded-random constraints have been stable since
-/// that operation was introduced. Old shift events can have full-width amounts.
+/// v0.14 introduced it. The oldest bounded-random events only required a nonzero
+/// power of two. Old shift events can have full-width amounts.
 pub fn validate_scalar_values(
     op: &TfheContractEvents,
 ) -> Result<(), &'static str> {
@@ -280,29 +337,14 @@ pub fn validate_scalar_values(
             randType,
             ..
         }) => {
-            let max_bound = match *randType {
-                2 => U256::from(1) << 8,
-                3 => U256::from(1) << 16,
-                4 => U256::from(1) << 32,
-                5 => U256::from(1) << 64,
-                6 => U256::from(1) << 128,
-                8 => U256::MAX,
-                _ => {
-                    return Err(
-                        "bounded-random target has an unsupported FheType",
-                    )
-                }
-            };
+            if !matches!(*randType, 2..=6 | 8) {
+                return Err("bounded-random target has an unsupported FheType");
+            }
             if *upperBound == U256::ZERO
                 || (*upperBound & (*upperBound - U256::from(1))) != U256::ZERO
             {
                 return Err(
                     "bounded-random upper bound is not a nonzero power of two",
-                );
-            }
-            if *upperBound > max_bound {
-                return Err(
-                    "bounded-random upper bound exceeds its FheType range",
                 );
             }
             Ok(())
@@ -368,6 +410,28 @@ pub fn validate_scalar_values_for_executor_version(
     validate_scalar_values(op)?;
 
     if version >= V0_4_0 {
+        // 79a316a8e2 added this limit in October 2025 without bumping v0.3.
+        // Like typed-zero checks, only v0.4 onward guarantees it was present.
+        if let E::FheRandBounded(C::FheRandBounded {
+            upperBound,
+            randType,
+            ..
+        }) = op
+        {
+            let width = match *randType {
+                2 => 8,
+                3 => 16,
+                4 => 32,
+                5 => 64,
+                6 => 128,
+                _ => 256,
+            };
+            if width < 256 && *upperBound > (U256::from(1) << width) {
+                return Err(
+                    "bounded-random upper bound exceeds its FheType range",
+                );
+            }
+        }
         if let E::FheDiv(C::FheDiv {
             lhs,
             rhs,
@@ -893,6 +957,54 @@ pub fn validate_type_metadata(
 mod scalar_boundary_tests {
     use super::*;
     use alloy_primitives::Address;
+
+    #[test]
+    fn bounded_random_limits_follow_historical_executor_rules() {
+        for (ty, width) in
+            [(2, 8), (3, 16), (4, 32), (5, 64), (6, 128), (8, 256)]
+        {
+            let make_event = |bound| {
+                TfheContractEvents::FheRandBounded(
+                    TfheContract::FheRandBounded {
+                        caller: Address::ZERO,
+                        upperBound: bound,
+                        randType: ty,
+                        seed: Default::default(),
+                        result: Handle::ZERO,
+                    },
+                )
+            };
+            for minor in 1..=7 {
+                let version = ExecutorVersion::new(0, minor, 0);
+                for invalid in [U256::ZERO, U256::from(3)] {
+                    assert!(validate_scalar_values_for_executor_version(
+                        &make_event(invalid),
+                        version
+                    )
+                    .is_err());
+                }
+                let bound = U256::from(1) << width.min(255);
+                assert!(validate_scalar_values_for_executor_version(
+                    &make_event(bound),
+                    version
+                )
+                .is_ok());
+                if width < 256 {
+                    let over = make_event(bound << 1);
+                    assert!(validate_scalar_values(&over).is_ok());
+                    assert_eq!(
+                        validate_scalar_values_for_executor_version(
+                            &over, version
+                        )
+                        .is_ok(),
+                        minor < 4
+                    );
+                    assert!(validate_scalar_values_for_current_executor(&over)
+                        .is_err());
+                }
+            }
+        }
+    }
 
     #[test]
     fn executor_version_parser_rejects_unreviewed_versions() {

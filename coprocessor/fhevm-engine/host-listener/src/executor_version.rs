@@ -20,7 +20,7 @@ use tracing::warn;
 use crate::contracts::TfheContract::getVersionCall;
 use crate::database::event_operands::{
     executor_upgrade_transitions_for_proxy, requires_executor_version,
-    ExecutorVersion, ExecutorVersionSchedule,
+    ExecutorVersion, ExecutorVersionSchedule, ExecutorVersionTransition,
 };
 use crate::database::ingest::BlockLogs;
 
@@ -42,6 +42,8 @@ pub(crate) struct ExecutorVersionRequest {
     pub(crate) parent_hash: B256,
     pub(crate) tfhe_proxy: Option<Address>,
     pub(crate) persisted_parent_version: Option<ExecutorVersion>,
+    pub(crate) persisted_schedule: Option<ExecutorVersionSchedule>,
+    pub(crate) legacy_ending_version: Option<ExecutorVersion>,
     upgrades: Vec<(u64, Address)>,
     operation_indices: Vec<u64>,
 }
@@ -73,6 +75,8 @@ impl ExecutorVersionRequest {
             parent_hash: block.summary.parent_hash,
             tfhe_proxy,
             persisted_parent_version: None,
+            persisted_schedule: None,
+            legacy_ending_version: None,
             upgrades,
             operation_indices,
         }
@@ -104,7 +108,23 @@ impl ExecutorVersionResolver {
         let Some(proxy) = request.tfhe_proxy else {
             return Ok(ExecutorVersionSchedule::default());
         };
-        let mut upgrades = request.upgrades.into_iter().peekable();
+        let mut schedule =
+            ExecutorVersionSchedule::new(request.persisted_parent_version);
+        schedule.parent_checkpoint = Some(request.persisted_parent_version);
+        schedule.transitions = request
+            .upgrades
+            .into_iter()
+            .map(|(index, implementation)| ExecutorVersionTransition {
+                after_log_index: index,
+                implementation: Some(implementation),
+                version: None,
+            })
+            .collect();
+        if let Some(saved) = request.persisted_schedule {
+            schedule
+                .merge_checkpoint(&saved)
+                .map_err(anyhow::Error::msg)?;
+        }
         let operation_in_segment = |start: Option<u64>, end: Option<u64>| {
             let first = start.map_or(0, |index| {
                 request.operation_indices.partition_point(|op| *op <= index)
@@ -114,11 +134,13 @@ impl ExecutorVersionResolver {
                 .get(first)
                 .is_some_and(|op| end.is_none_or(|index| *op <= index))
         };
-        let mut initial = request.persisted_parent_version;
-        if initial.is_none()
+        if schedule.initial_version.is_none()
             && operation_in_segment(
                 None,
-                upgrades.peek().map(|(index, _)| *index),
+                schedule
+                    .transitions
+                    .first()
+                    .map(|transition| transition.after_log_index),
             )
         {
             // Genesis has no parent state. Its header anchors any predeploys.
@@ -127,15 +149,26 @@ impl ExecutorVersionResolver {
             } else {
                 request.parent_hash
             };
-            initial = Some(self.lookup(provider, proxy, hash, timeout).await?);
+            schedule.initial_version =
+                Some(self.lookup(provider, proxy, hash, timeout).await?);
         }
-        let mut schedule = ExecutorVersionSchedule::new(initial);
-        while let Some((index, implementation)) = upgrades.next() {
-            let next = upgrades.peek().map(|(index, _)| *index);
-            let required = operation_in_segment(Some(index), next);
+        for position in 0..schedule.transitions.len() {
+            let transition = schedule.transitions[position];
+            if transition.version.is_some() {
+                continue;
+            }
+            let next = schedule
+                .transitions
+                .get(position + 1)
+                .map(|transition| transition.after_log_index);
+            let required =
+                operation_in_segment(Some(transition.after_log_index), next);
             // Checkpoint the last upgrade when possible. Bootstrap proxies
             // and other unused implementations can lack getVersion entirely.
             let version = if required || next.is_none() {
+                let implementation = transition
+                    .implementation
+                    .context("Missing executor upgrade implementation")?;
                 match self
                     .lookup(
                         provider,
@@ -152,7 +185,23 @@ impl ExecutorVersionResolver {
             } else {
                 None
             };
-            schedule.add_transition(index, version);
+            schedule.transitions[position].version = version;
+        }
+        // Earlier revisions stored only an ending version. If the new delivery
+        // disagrees, check canonical end-of-block state before replacing it.
+        // Applying that ending version to every log would misvalidate operations
+        // before an upgrade, so incomplete deliveries must be refetched.
+        if let Some(saved) = request.legacy_ending_version {
+            let resolved = schedule.ending_version().context(
+                "Cannot replace a legacy executor checkpoint with an unresolved schedule",
+            )?;
+            if saved != resolved {
+                let canonical = self
+                    .lookup(provider, proxy, request.block_hash, timeout)
+                    .await?;
+                anyhow::ensure!(canonical == resolved,
+                    "Executor delivery conflicts with canonical ending version; refetch the complete block");
+            }
         }
         Ok(schedule)
     }

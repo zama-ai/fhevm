@@ -56,8 +56,20 @@ It must serve the configured chain and support canonical block-hash `eth_call`
 (EIP-1898). The listener recognizes executor versions 0.1.0 through 0.7.0.
 Update the version rules before deploying an executor that reports a new version.
 
-Contiguous blocks reuse the exact parent's committed version. Blocks without
-executor operations can advance before the proxy is deployed or while it uses
+Contiguous blocks reuse the exact parent's committed version. Each block also
+stores its upgrade log positions, implementations, and resolved versions. Replays
+merge that evidence under the history admission lock, so partial deliveries and
+RPC failures cannot discard a resolved upgrade. A fuller delivery can add an
+upgrade omitted earlier. An unresolved newly discovered upgrade clears the
+inherited ending version until its implementation can be resolved.
+
+Checkpoints written before upgrade schedules were stored require a canonical
+end-of-block lookup to reconcile a conflicting version. An unresolved replay
+preserves the old checkpoint and waits for RPC recovery. HTTP and WebSocket
+ingestion repair missing finalized predecessors before retrying a failed version
+lookup, allowing those predecessors to carry forward an existing checkpoint.
+
+Blocks without executor operations can advance before the proxy is deployed or while it uses
 the deployment placeholder. An upgrade without subsequent executor operations
 can commit with its ending version unresolved if the implementation lookup fails.
 The first operation that needs an unresolved version reads historical state and
@@ -151,7 +163,7 @@ There are 3 types of events related to:
 ### Database Events
 
 > Status: proposal
-> Database events are used to hint the scheduler to dispath workload and to notice workload completion.
+> Database events are used to hint the scheduler to dispatch workload and to notice workload completion.
 
 > https://stackoverflow.com/questions/56747634/how-do-i-use-the-postgres-crate-to-receive-table-modification-events-from-postgr
 
