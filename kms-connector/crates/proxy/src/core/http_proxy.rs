@@ -22,6 +22,7 @@ use pingora::{
     prelude::HttpPeer,
     proxy::{FailToProxy, ProxyHttp, Session},
 };
+use std::time::Duration;
 use tracing::{Span, error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -81,6 +82,14 @@ impl Proxy {
             ));
         }
         Ok(())
+    }
+
+    /// What is left of `request_read_timeout` for the client to send its request body, counted
+    /// from the request head.
+    fn body_read_budget(&self, ctx: &RequestContext) -> Duration {
+        self.config
+            .request_read_timeout
+            .saturating_sub(ctx.observation.elapsed())
     }
 
     /// Writes an error body as JSON, or nothing if an answer has already started.
@@ -250,11 +259,15 @@ impl ProxyHttp for Proxy {
     // does not match: it gets a truncated request and a closed connection instead.
     async fn request_body_filter(
         &self,
-        _session: &mut Session,
+        session: &mut Session,
         body: &mut Option<Bytes>,
         end_of_stream: bool,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
+        // Pingora's read timeout applies per read, so we apply what is left of
+        // `request_read_timeout` to bound the whole body.
+        session.set_read_timeout(Some(self.body_read_budget(ctx)));
+
         if let Some(chunk) = body {
             ctx.body_len += chunk.len();
             if ctx.body_len > self.config.max_body_bytes {
@@ -313,6 +326,9 @@ impl ProxyHttp for Proxy {
             upstream_request.insert_header(X_FORWARDED_FOR, addr.ip().to_string())?;
         }
         upstream_request.insert_header(X_FORWARDED_PROTO, self.config.scheme())?;
+
+        // Caps the first body read to what is left of `request_read_timeout`.
+        session.set_read_timeout(Some(self.body_read_budget(ctx)));
         Ok(())
     }
 
