@@ -2,6 +2,8 @@
 # (renderRelayerHttpConfig): http.endpoint (RELAYER_HTTP_PORT), http.supported_chain_ids, the two
 # thresholds, auth.chain_id, auth.protocol_config, auth.address and endpoints (one per KMS committee
 # party's proxy).
+# The preview env merges this file too (ci/preview-env/scripts/deploy/deploy-relayer.sh); a change here rebuilds
+# the relayer-http image (.github/workflows/relayer-http-docker-build.yml).
 name: relayer-http-local
 log:
   format: json   # as in production: the dashboard's log panels parse it (relayer-http/OBSERVABILITY.md)

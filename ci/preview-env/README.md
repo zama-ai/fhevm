@@ -493,13 +493,17 @@ Its config is the compose stack's template
 fields of `relayer/values-relayer-http-e2e.yaml` merged over it; the script fills
 in the per-deploy fields from the same **`kms-connector-http`** ConfigMap the
 test-suite reads: one endpoint per party (proxy URL + tx-sender `audience`),
-thresholds `t+1` (public) / `n-t` (user, as for the relayer), the host chain ids,
-and the host `ProtocolConfig` address for FhevmSig. It signs with the same fixed
+thresholds `n-t` for both flows (as for the relayer), the host chain ids, and
+the host `ProtocolConfig` address for FhevmSig. It signs with the same fixed
 test key as the e2e suite. It does not verify the proxies' self-signed
 certificates (`skip_tls_verification: true`). Like the relayer, it is part of
 every preview env (a failed install fails the deploy) and is published on the
 tailnet as `relayer-http-<namespace>` (`RELAYER_HTTP_TS_URL` in the PR comment /
-run summary). Pin the image with `relayer_http_version`.
+run summary). The image is the PR's build when the PR changes `relayer-http/**`,
+its path dependencies or that template (the filter of
+`relayer-http-docker-build.yml`), the base commit's otherwise; a stacked PR
+resolves it from `main` (gotchas in `101-preview-env.md`). Pin it with
+`relayer_http_version`.
 
 ### Unified relayer URL
 
