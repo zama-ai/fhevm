@@ -213,9 +213,18 @@ history.
 
 GCS window alignment pins the rewind anchor before lowering its cursor. During
 cutover, GCS checkpoints are promoted with the cursor; an identity conflict
-records a halt and aborts the merge. Gateway readiness requires verified
-checkpoints for both the GCS and BCS cursor in addition to the existing window,
-replay and unresolved-proof checks.
+records a halt and aborts the merge. Gateway readiness requires a verified
+checkpoint at Green's cursor. The pinned v0.14 Blue listener (consensus version
+1) predates Gateway checkpoints: while it has no BCS checkpoint history, its
+watermark reaching the window and its pre-window proofs being settled provide
+the original v0.14 readiness guarantee. This does not attest to Blue's block
+hash. The halt, pending-replay and Green window-alignment checks still apply.
+
+All other live versions require the exact Blue cursor checkpoint. A v0.14
+deployment that already has a BCS checkpoint (including an audited baseline)
+also requires an exact match as its watermark advances. Use a checkpoint-writing
+listener after seeding a baseline. Cutover still checks retained identities for
+conflicts and promotes Green's verified checkpoints with its cursor.
 
 ### Gateway rollout baseline
 

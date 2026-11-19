@@ -1000,7 +1000,12 @@ async fn transition_to_dry_run_started(
 /// this check is intentionally proposal-wide, not filtered by chain_id,
 /// mirroring `prune_gcs_verify_proofs_before_start`.
 ///
-/// Four conditions, all against the Gateway-block domain:
+/// An unresolved halt or replay blocks both fleets. Green must have a checkpoint
+/// at its cursor. Blue must too, except for the v0.14 consensus-1 writer which
+/// only persisted heights. Once Blue has checkpoint history, require its exact
+/// cursor even on a v0.14 stack (e.g. a backport or an audited baseline).
+///
+/// Watermark, alignment and proof requirements apply to all versions:
 ///   1. Green's own watermark: `gcs.gw_listener_last_block.last_block_num >=
 ///      gw_start_block`. Reads the GCS schema explicitly (not `public`), since
 ///      the green gw-listener tails the Gateway into the GCS schema from
@@ -1054,12 +1059,23 @@ async fn check_gw_dry_run_ready(
                 AND c.block_number = g.last_block_num
                WHERE g.dummy_id = TRUE AND g.last_block_num IS NOT NULL
            )
-           AND EXISTS (
-               SELECT 1 FROM public.gw_listener_last_block b
-               JOIN public.listener_block_checkpoints c
-                 ON c.source = 'gateway' AND c.stack_role = 'BCS'
-                AND c.block_number = b.last_block_num
-               WHERE b.dummy_id = TRUE AND b.last_block_num IS NOT NULL
+           AND (
+               EXISTS (
+                   SELECT 1 FROM public.gw_listener_last_block b
+                   JOIN public.listener_block_checkpoints c
+                     ON c.source = 'gateway' AND c.stack_role = 'BCS'
+                    AND c.block_number = b.last_block_num
+                   WHERE b.dummy_id
+               ) OR (
+                   EXISTS (
+                       SELECT 1 FROM public.versioning
+                       WHERE singleton AND consensus_version = 1
+                         AND stack_version IN ('v0.14', '0.14', 'v0.14.0', '0.14.0')
+                   ) AND NOT EXISTS (
+                       SELECT 1 FROM public.listener_block_checkpoints
+                       WHERE source = 'gateway' AND stack_role = 'BCS'
+                   )
+               )
            )
            AND NOT EXISTS (
                SELECT 1 FROM public.verify_proofs
@@ -5415,6 +5431,92 @@ mod tests {
         assert_eq!(host_latches, vec![false, false]);
     }
 
+    #[tokio::test]
+    async fn gateway_readiness_across_the_legacy_blue_upgrade() {
+        let (_db, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        create_gcs_schema(&pool).await.unwrap();
+        sqlx::query(
+            "UPDATE public.upgrade_state SET gw_window_rewound = TRUE WHERE stack_role = 'GCS'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Write only the columns available to the pinned v0.14.2-0 Blue listener.
+        let advance_blue = |height: i64| {
+            sqlx::query(
+                "INSERT INTO public.gw_listener_last_block (dummy_id, last_block_num)
+             VALUES (TRUE, $1) ON CONFLICT (dummy_id) DO UPDATE
+             SET last_block_num = EXCLUDED.last_block_num",
+            )
+            .bind(height)
+            .execute(&pool)
+        };
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.gw_listener_last_block (dummy_id, last_block_num)
+             VALUES (TRUE, 101) ON CONFLICT (dummy_id) DO UPDATE SET last_block_num = 101"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        advance_blue(99).await.unwrap();
+        seed_gateway_checkpoint(&pool, "GCS", 42, 101).await;
+        assert!(
+            !check_gw_dry_run_ready(&pool, 100).await.unwrap(),
+            "Blue is behind"
+        );
+        advance_blue(100).await.unwrap();
+        assert!(check_gw_dry_run_ready(&pool, 100).await.unwrap());
+        advance_blue(101).await.unwrap();
+        assert!(check_gw_dry_run_ready(&pool, 101).await.unwrap());
+
+        sqlx::query(
+            "INSERT INTO public.verify_proofs
+            (zk_proof_id, chain_id, contract_address, user_address, block_number)
+            VALUES (1, 1, '0xc', '0xu', 99)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(
+            !check_gw_dry_run_ready(&pool, 101).await.unwrap(),
+            "pre-window proof is pending"
+        );
+        sqlx::query("UPDATE public.verify_proofs SET verified = TRUE WHERE zk_proof_id = 1")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(check_gw_dry_run_ready(&pool, 101).await.unwrap());
+
+        sqlx::query("DELETE FROM public.listener_block_checkpoints WHERE stack_role = 'GCS'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !check_gw_dry_run_ready(&pool, 101).await.unwrap(),
+            "Green needs its exact checkpoint"
+        );
+        seed_gateway_checkpoint(&pool, "GCS", 42, 101).await;
+
+        for (version, consensus) in [("0.15.0", 1_i64), ("v0.14", 2), ("unknown", 1)] {
+            sqlx::query("UPDATE public.versioning SET stack_version=$1, consensus_version=$2 WHERE singleton")
+                .bind(version).bind(consensus).execute(&pool).await.unwrap();
+            assert!(
+                !check_gw_dry_run_ready(&pool, 101).await.unwrap(),
+                "{version}/{consensus} must supply a Blue checkpoint"
+            );
+        }
+        set_live_versions_behind(&pool).await;
+        seed_gateway_checkpoint(&pool, "BCS", 42, 100).await;
+        assert!(
+            !check_gw_dry_run_ready(&pool, 101).await.unwrap(),
+            "an earlier Blue checkpoint cannot cover a later cursor"
+        );
+        seed_gateway_checkpoint(&pool, "BCS", 42, 101).await;
+        assert!(check_gw_dry_run_ready(&pool, 101).await.unwrap());
+    }
+
     /// A restart after the host gate finishes must restore an incomplete
     /// Gateway gate instead of leaving the zkproof-worker paused forever.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -5456,9 +5558,8 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed blue Gateway watermark");
-        for role in ["BCS", "GCS"] {
-            seed_gateway_checkpoint(&pool, role, 1, 1).await;
-        }
+        // The previous-release Blue writer records only its watermark.
+        seed_gateway_checkpoint(&pool, "GCS", 1, 1).await;
 
         let cancel = CancellationToken::new();
         reconcile(
