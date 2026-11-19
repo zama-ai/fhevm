@@ -11,7 +11,11 @@ use thiserror::Error;
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, Instrument};
+use tracing::{error, info, warn, Instrument};
+
+/// PostgreSQL's `deadlock_detected` SQLSTATE.
+/// See <https://www.postgresql.org/docs/current/errcodes-appendix.html>.
+const PG_DEADLOCK_DETECTED: &str = "40P01";
 
 /// True if the DB connection is lost/unusable, so we should exit and let k8s
 /// restart us rather than retry on a dead pool.
@@ -255,8 +259,6 @@ impl PostgresPoolManager {
                 return Ok(());
             }
 
-            backoff_delay = std::cmp::min(backoff_delay * 2, Duration::from_secs(60));
-
             match operation(self.pool.clone(), ct.clone()).await {
                 Ok(()) => return Ok(()),
                 Err(err) => {
@@ -267,7 +269,22 @@ impl PostgresPoolManager {
                             error!(error=%err, "Fatal DB connection error; not retrying");
                             return Err(err);
                         }
+                        if db_err
+                            .as_database_error()
+                            .and_then(|err| err.code())
+                            .as_deref()
+                            == Some(PG_DEADLOCK_DETECTED)
+                        {
+                            // PostgreSQL aborts one victim and releases its transaction
+                            // locks, breaking the cycle. The other participant does not
+                            // get this deadlock error and can continue. Retry only the victim,
+                            // without sleeping or advancing the error backoff.
+                            // Further contention can still cause another deadlock.
+                            warn!(error=%err, "Database deadlock; retrying immediately");
+                            continue;
+                        }
                     }
+                    backoff_delay = std::cmp::min(backoff_delay * 2, Duration::from_secs(60));
                     error!(error=%err, "Service error; retrying...");
                     cancellable_sleep(&ct, backoff_delay).await;
                 }
@@ -351,6 +368,136 @@ async fn cancellable_sleep(cancel_token: &CancellationToken, duration: Duration)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{borrow::Cow, cell::RefCell, collections::VecDeque};
+    use tokio::time::Instant;
+
+    #[derive(Debug, Error)]
+    #[error("test database error")]
+    struct TestDatabaseError(&'static str);
+
+    impl sqlx::error::DatabaseError for TestDatabaseError {
+        fn message(&self) -> &str {
+            "test database error"
+        }
+
+        fn code(&self) -> Option<Cow<'_, str>> {
+            Some(Cow::Borrowed(self.0))
+        }
+
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            sqlx::error::ErrorKind::Other
+        }
+    }
+
+    fn database_error(code: &'static str) -> ServiceError {
+        sqlx::Error::Database(Box::new(TestDatabaseError(code))).into()
+    }
+
+    fn test_manager() -> PostgresPoolManager {
+        let url = "postgresql://postgres@localhost/unused";
+        PostgresPoolManager {
+            pool: PgPoolOptions::new().connect_lazy(url).unwrap(),
+            _pool_refresh_handle: Arc::new(PoolRefreshHandle::default()),
+            cancel_token: CancellationToken::new(),
+            params: Params {
+                url: url.into(),
+                max_connections: 1,
+                acquire_timeout: Duration::from_secs(5),
+                retry_db_conn_interval: Duration::from_secs(2),
+                auto_explain_with_min_duration: None,
+            },
+        }
+    }
+
+    async fn retry_errors(errors: Vec<ServiceError>) -> (Vec<Duration>, Result<(), ServiceError>) {
+        let manager = test_manager();
+        let errors = RefCell::new(VecDeque::from(errors));
+        let attempts = RefCell::new(Vec::new());
+        let start = Instant::now();
+        let result = manager
+            .run_with_db_retry(|_, _| {
+                attempts.borrow_mut().push(start.elapsed());
+                std::future::ready(errors.borrow_mut().pop_front().map_or(Ok(()), Err))
+            })
+            .await;
+        (attempts.into_inner(), result)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn deadlocks_do_not_sleep_or_increase_backoff() {
+        // Enough deadlocks to reach the 60s cap if they advanced the backoff.
+        let mut errors: Vec<_> = (0..8).map(|_| database_error("40P01")).collect();
+        errors.push(ServiceError::InternalError("ordinary failure".into()));
+        let (attempts, result) = retry_errors(errors).await;
+        result.unwrap();
+        let mut expected = vec![Duration::ZERO; 9];
+        expected.push(Duration::from_secs(4));
+        assert_eq!(attempts, expected);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn deadlocks_preserve_existing_backoff() {
+        let (attempts, result) = retry_errors(vec![
+            ServiceError::InternalError("first failure".into()),
+            ServiceError::InternalError("second failure".into()),
+            database_error("40P01"),
+            database_error("40P01"),
+            ServiceError::InternalError("third failure".into()),
+        ])
+        .await;
+        result.unwrap();
+        assert_eq!(attempts, [0, 4, 12, 12, 12, 28].map(Duration::from_secs));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn other_errors_still_use_backoff() {
+        let (attempts, result) = retry_errors(vec![
+            ServiceError::InternalError("deadlock detected".into()),
+            database_error("40001"),
+            database_error("23505"),
+        ])
+        .await;
+        result.unwrap();
+        assert_eq!(attempts, [0, 4, 12, 28].map(Duration::from_secs));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fatal_errors_are_not_retried() {
+        for error in [sqlx::Error::PoolClosed.into(), database_error("57P01")] {
+            let (attempts, result) = retry_errors(vec![error]).await;
+            assert!(result.is_err());
+            assert_eq!(attempts, [Duration::ZERO]);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn immediate_deadlock_retry_honors_cancellation() {
+        let manager = test_manager();
+        let attempts = std::cell::Cell::new(0);
+        let start = Instant::now();
+        manager
+            .run_with_db_retry(|_, cancel_token| {
+                attempts.set(attempts.get() + 1);
+                cancel_token.cancel();
+                std::future::ready(Err(database_error("40P01")))
+            })
+            .await
+            .unwrap();
+        assert_eq!(attempts.get(), 1);
+        assert_eq!(start.elapsed(), Duration::ZERO);
+    }
 
     #[test]
     fn sqlstate_classification() {

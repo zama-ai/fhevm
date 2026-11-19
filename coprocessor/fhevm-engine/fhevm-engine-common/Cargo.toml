@@ -60,6 +60,9 @@ compact-hex = []
 [build-dependencies]
 tonic-build = { workspace = true }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
 [[bin]]
 name = "generate-keys"
 path = "src/bin/generate_keys.rs"
