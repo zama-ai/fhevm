@@ -18,10 +18,6 @@ import {
 // npx vitest run --config src/vitest.config.ts src/core/coprocessor/ZkProofBuilder.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
-vi.mock('../key/fetchFheEncryptionKey.js', () => ({
-  fetchFheEncryptionKeyWasm: vi.fn().mockResolvedValue({} as any),
-}));
-
 ////////////////////////////////////////////////////////////////////////////////
 // Constants
 ////////////////////////////////////////////////////////////////////////////////
@@ -61,22 +57,32 @@ describe('ZkProofBuilder', () => {
 
     /// Invalid User Address
     await expect(
-      builder.build(context, { contractAddress, userAddress: invalidAddress, extraData: '0x00' }),
+      builder.build(context, { contractAddress, userAddress: invalidAddress, extraData: '0x00', fheEncryptionKey: {} }),
     ).rejects.toThrow(new ZkProofError({ message: `Invalid user address: ${invalidAddress}` }));
 
     /// Invalid User Address (wrong length, non-checksummed)
     await expect(
-      builder.build(context, { contractAddress, userAddress: invalidShortAddress, extraData: '0x00' }),
+      builder.build(context, {
+        contractAddress,
+        userAddress: invalidShortAddress,
+        extraData: '0x00',
+        fheEncryptionKey: {},
+      }),
     ).rejects.toThrow(new ZkProofError({ message: `Invalid user address: ${invalidShortAddress}` }));
 
     /// Invalid Contract Address
     await expect(
-      builder.build(context, { contractAddress: invalidAddress, userAddress, extraData: '0x00' }),
+      builder.build(context, { contractAddress: invalidAddress, userAddress, extraData: '0x00', fheEncryptionKey: {} }),
     ).rejects.toThrow(new ZkProofError({ message: `Invalid contract address: ${invalidAddress}` }));
 
     /// Invalid Contract Address (wrong length, non-checksummed)
     await expect(
-      builder.build(context, { contractAddress: invalidShortAddress, userAddress, extraData: '0x00' }),
+      builder.build(context, {
+        contractAddress: invalidShortAddress,
+        userAddress,
+        extraData: '0x00',
+        fheEncryptionKey: {},
+      }),
     ).rejects.toThrow(new ZkProofError({ message: `Invalid contract address: ${invalidShortAddress}` }));
 
     /// Invalid values for add* methods
@@ -155,9 +161,9 @@ describe('ZkProofBuilder', () => {
 
     const context = makeMockContext({ aclAddress: '0x0' });
 
-    await expect(builder.build(context, { contractAddress, userAddress, extraData: '0x00' })).rejects.toThrow(
-      new ZkProofError({ message: 'Invalid ACL address: 0x0' }),
-    );
+    await expect(
+      builder.build(context, { contractAddress, userAddress, extraData: '0x00', fheEncryptionKey: {} }),
+    ).rejects.toThrow(new ZkProofError({ message: 'Invalid ACL address: 0x0' }));
   });
 
   it('throws on invalid chainId', async () => {
@@ -167,9 +173,9 @@ describe('ZkProofBuilder', () => {
 
     const context = makeMockContext({ chainId: -1 });
 
-    await expect(builder.build(context, { contractAddress, userAddress, extraData: '0x00' })).rejects.toThrow(
-      new ZkProofError({ message: 'Invalid chain ID uint64: -1' }),
-    );
+    await expect(
+      builder.build(context, { contractAddress, userAddress, extraData: '0x00', fheEncryptionKey: {} }),
+    ).rejects.toThrow(new ZkProofError({ message: 'Invalid chain ID uint64: -1' }));
   });
 
   it('throws on negative values', () => {

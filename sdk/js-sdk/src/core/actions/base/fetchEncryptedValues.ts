@@ -1,13 +1,15 @@
 import type { RelayerInputProofOptions } from '../../types/relayer.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type { BytesHex } from '../../types/primitives.js';
+import type { BytesHex, ChecksummedAddress } from '../../types/primitives.js';
 import type { ZkProofLike } from '../../types/zkProof-p.js';
 import type { EncryptedValue } from '../../types/encryptedTypes.js';
 import { fetchVerifiedInputProof as fetchVerifiedInputProof_ } from '../../coprocessor/fetchVerifiedInputProof.js';
 import { assertIsZkProof } from '../../coprocessor/ZkProof-p.js';
 import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 import { retryOnStaleCache } from '../../caching/retryOnStaleCache-p.js';
+import { recordCacheUsage } from '../../caching/cacheUsage-p.js';
+import { readVersionedCoprocessorSignersContext } from '../../host-contracts/readCoprocessorSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -37,9 +39,19 @@ export async function fetchEncryptedValues(
   const fhevmContext = await initPublicAction(fhevm);
   // A changed coprocessor signer set is refreshed and the request sent once
   // more: the proof stays valid.
-  const result = await retryOnStaleCache(fhevm, fhevmContext, (cacheUsage) =>
-    fetchVerifiedInputProof_(fhevm, { zkProof, ...rest, fhevmContext, cacheUsage }),
-  );
+  const result = await retryOnStaleCache(fhevm, fhevmContext, async (cacheUsage) => {
+    const coprocessorSigners = await readVersionedCoprocessorSignersContext(fhevm, {
+      address: fhevm.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
+      fhevmContext,
+    });
+    recordCacheUsage(cacheUsage, 'coprocessorSigners', coprocessorSigners.version);
+    return fetchVerifiedInputProof_(fhevm, {
+      zkProof,
+      ...rest,
+      fhevmContext,
+      coprocessorSigners: coprocessorSigners.value,
+    });
+  });
   return {
     encryptedValues: result.inputHandles.map(
       (encryptedValue) => encryptedValue.bytes32Hex as unknown as EncryptedValue,

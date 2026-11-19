@@ -1,4 +1,3 @@
-import type { CacheUsage } from '../caching/cacheUsage-p.js';
 import type { WithEncryptWithPad } from '../types/coreFhevmRuntime.js';
 import type { FhevmBase } from '../types/coreFhevmClient.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
@@ -29,7 +28,7 @@ import { recordCacheUsage } from '../caching/cacheUsage-p.js';
 import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
 import {
   permitRequestStaleContextError,
-  readKmsSignersContextFromPermitExtraData,
+  readVersionedKmsSignersContextFromPermitExtraData,
 } from '../host-contracts/readKmsSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -145,15 +144,16 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
     context,
     fhevmContext,
     async (cacheUsage) => {
-      const permitUsage: CacheUsage = {};
-      const kmsSignersContext = await readKmsSignersContextFromPermitExtraData(context, {
-        kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-        protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-        extraData: signedPermitExtraData,
-        cacheUsage: permitUsage,
-      });
-      // Recorded only once the request goes to the relayer (see retryOnStaleCache-p).
-      recordCacheUsage(cacheUsage, 'kmsContext', permitUsage.kmsContext);
+      const { value: kmsSignersContext, version: kmsContextVersion } =
+        await readVersionedKmsSignersContextFromPermitExtraData(context, {
+          kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+          protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as
+            | ChecksummedAddress
+            | undefined,
+          extraData: signedPermitExtraData,
+        });
+      // The request goes to the relayer: a failure may come from a KMS context switch.
+      recordCacheUsage(cacheUsage, 'kmsContext', kmsContextVersion);
       const padDecryptResponses = await context.runtime.relayer.fetchPadShares(context, {
         payload: {
           kmsDecryptEip712Message: signedPermit.eip712.message,

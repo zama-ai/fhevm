@@ -14,7 +14,7 @@ import type { ZkProof } from './zkProof-p.js';
 import type { WithEncrypt } from './coreFhevmRuntime.js';
 import type { FhevmBase, OptionalNativeClient } from './coreFhevmClient.js';
 import type { FhevmChain } from './fhevmChain.js';
-import type { FhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
+import type { FheEncryptionKeyWasm } from './fheEncryptionKey.js';
 
 export interface ZkProofBuilder {
   addBool(value: boolean | number | bigint | BoolValueLike): this;
@@ -33,7 +33,7 @@ export interface ZkProofBuilder {
       readonly contractAddress: string;
       readonly userAddress: string;
       readonly extraData: string;
-      readonly fhevmContext: FhevmClientFrozenContext;
+      readonly fheEncryptionKey: FheEncryptionKeyWasm;
     },
   ): Promise<ZkProof>;
 }

@@ -7,6 +7,7 @@ import { createTypedValue } from '../../base/typedValue.js';
 import { createZkProofBuilder } from '../../coprocessor/ZkProofBuilder-p.js';
 import { resolveRawValueTypeName } from '../../handle/FheType.js';
 import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
+import { fetchFheEncryptionKeyWasm } from '../../key/fetchFheEncryptionKey.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -33,11 +34,12 @@ export async function generateZkProof(
   }
 
   const fhevmContext = await initPublicAction(fhevm);
+  const fheEncryptionKey = await fetchFheEncryptionKeyWasm(fhevm, { fhevmContext });
 
   return builder.build(fhevm, {
     contractAddress,
     userAddress,
     extraData: hardCodedExtraData,
-    fhevmContext,
+    fheEncryptionKey,
   });
 }
