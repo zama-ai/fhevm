@@ -365,6 +365,7 @@ jobs:
       coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-prf-versions: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-versions }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
@@ -442,6 +443,7 @@ jobs:
       coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-prf-versions: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-versions }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
