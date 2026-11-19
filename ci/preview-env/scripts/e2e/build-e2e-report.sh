@@ -125,4 +125,5 @@ report=$(mktemp --suffix=.md)
 } > "${report}"
 
 echo "report_path=${report}" >> "$GITHUB_OUTPUT"
+echo "failed=${overall_failed}" >> "$GITHUB_OUTPUT"
 cat "${report}" >> "$GITHUB_STEP_SUMMARY"

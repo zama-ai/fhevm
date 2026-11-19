@@ -146,6 +146,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cp target/${CARGO_PROFILE}/upgrade-controller /out/ && \
     cp target/${CARGO_PROFILE}/coprocessor-proxy /out/ && \
     cp target/${CARGO_PROFILE}/prf-service /out/ && \
+    cp target/${CARGO_PROFILE}/pad-worker /out/ && \
     cp target/${CARGO_PROFILE}/resolve_database_url /out/ && \
     cp target/${CARGO_PROFILE}/bootstrap_versioning /out/
 
@@ -341,3 +342,16 @@ COPY --from=builder --chown=fhevm:fhevm /out/prf-service /usr/local/bin/prf-serv
 USER fhevm:fhevm
 
 CMD ["/usr/local/bin/prf-service"]
+
+# =============================================================================
+# Stage 2l: pad-worker runtime
+# =============================================================================
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS pad-worker
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/pad-worker /usr/local/bin/pad-worker
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/pad-worker"]

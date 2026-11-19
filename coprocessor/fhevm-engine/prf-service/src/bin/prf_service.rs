@@ -64,6 +64,12 @@ struct Args {
         default_value = "8388608"
     )]
     max_body_bytes_per_connector: NonZeroU32,
+    /// Pending rows older than this do not count in the budget. Set it above the connectors' deadline.
+    #[arg(long, env = "PAD_PENDING_MAX_AGE", default_value = "10m", value_parser = humantime::parse_duration)]
+    pad_pending_max_age: Duration,
+    /// A claim younger than this keeps an expired row in progress. Use the pad-worker value.
+    #[arg(long, env = "PAD_CLAIM_TIMEOUT", default_value = "5m", value_parser = humantime::parse_duration)]
+    pad_claim_timeout: Duration,
 
     /// Time to serve after SIGTERM, closing each connection after its response, before the stop.
     #[arg(long, env = "PRF_SHUTDOWN_DELAY", default_value = "0s", value_parser = humantime::parse_duration)]
@@ -127,6 +133,8 @@ async fn main() -> anyhow::Result<()> {
         database_pool_size = args.database_pool_size,
         max_concurrent_per_connector = args.max_concurrent_per_connector,
         max_in_flight_per_connector = args.max_in_flight_per_connector,
+        pad_pending_max_age = ?args.pad_pending_max_age,
+        pad_claim_timeout = ?args.pad_claim_timeout,
         max_adds_per_connector = MAX_ADDS_PER_CONNECTOR,
         pad_poll_interval = ?PAD_POLL_INTERVAL,
         shutdown_delay = ?args.shutdown_delay,
@@ -156,6 +164,8 @@ async fn main() -> anyhow::Result<()> {
             pad_poll_interval: PAD_POLL_INTERVAL,
             max_body_bytes: args.max_body_bytes,
             max_body_bytes_per_connector: args.max_body_bytes_per_connector,
+            pad_pending_max_age: args.pad_pending_max_age,
+            pad_claim_timeout: args.pad_claim_timeout,
         },
         pool,
         cancel_token.clone(),
