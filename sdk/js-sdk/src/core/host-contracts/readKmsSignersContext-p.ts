@@ -15,6 +15,7 @@ import { LatestValueCache, type CachedValue } from '../caching/latestValueCache.
 import { uint256ToBytes32Hex } from '../base/uint.js';
 import { isBytes32Hex } from '../base/bytes.js';
 import { recordCacheUsage } from '../caching/cacheUsage-p.js';
+import { ensureError } from '../base/errors/utils.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -221,22 +222,24 @@ export async function readKmsSignersContextFromPermitExtraData(
  * current one is now cached): {@link InvalidSignedPermitError}, with the
  * request's error as `cause`, when the permit no longer names the current
  * context; else the request's own error (e.g. a v1 permit after an
- * epoch-only switch).
+ * epoch-only switch). A request error that is not an `Error` is wrapped in
+ * one. Never throws (see `createStaleError` in `retryOnStaleCache`).
  */
 export function permitRequestStaleContextError(
   context: Context & { readonly chain: FhevmChain },
   permitExtraData: KmsExtraData,
   error: unknown,
-): unknown {
+): Error {
+  const requestError = ensureError(error);
   const current = kmsContextCache.peekCurrent(context);
   if (current === undefined || _namesKmsContext(permitExtraData, current.value.extraData)) {
-    return error;
+    return requestError;
   }
   return new InvalidSignedPermitError({
     message:
       `The KMS context switched since the permit was signed for ${_formatKmsContext(permitExtraData)} ` +
       `(now ${_formatKmsContext(current.value.extraData)}): sign a new permit`,
-    cause: error instanceof Error ? error : undefined,
+    cause: requestError,
   });
 }
 

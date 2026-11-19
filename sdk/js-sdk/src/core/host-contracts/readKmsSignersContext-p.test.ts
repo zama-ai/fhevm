@@ -249,7 +249,24 @@ describe('KMS context cache', () => {
     const v2 = createKmsExtraDataV2({ kmsContextId: 5n as Uint256BigInt, kmsEpochId: 1n as Uint256BigInt });
     const error = permitRequestStaleContextError(client, v2, requestError);
     expect(error).toBeInstanceOf(InvalidSignedPermitError);
-    expect((error as Error).cause).toBe(requestError);
+    expect(error.cause).toBe(requestError);
+  });
+
+  it('a request error that is not an Error is wrapped in one', async () => {
+    const { client, current } = makeSwitchingClient();
+    await readCurrentKmsSignersContext(client, v14);
+    current.epochId = 2n;
+    await refreshCurrentKmsContext(client, kmsContextVersion(5n, 1n));
+
+    const v1 = createKmsExtraDataV1({ kmsContextId: 5n as Uint256BigInt });
+    const passed = permitRequestStaleContextError(client, v1, 'timed out');
+    expect(passed).toBeInstanceOf(Error);
+    expect(passed.cause).toBe('timed out');
+
+    const v2 = createKmsExtraDataV2({ kmsContextId: 5n as Uint256BigInt, kmsEpochId: 1n as Uint256BigInt });
+    const error = permitRequestStaleContextError(client, v2, 'timed out');
+    expect(error).toBeInstanceOf(InvalidSignedPermitError);
+    expect((error.cause as Error).cause).toBe('timed out');
   });
 
   describe('clients sharing a slot, one through a lagging RPC', () => {

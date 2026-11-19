@@ -45,18 +45,13 @@ export async function decryptValuesFromPairsWithGateway(fhevm: Context, paramete
   // A failure once the request is sent checks the KMS context and caches a
   // switched one, for the next permit. Not run again: the permit names the old
   // context.
+  // Parsed up front: `createStaleError` must not throw.
+  const permitExtraData = createKmsExtraDataFromBytesHex(parameters.signedPermit.eip712.message.extraData);
   const kmsSigncryptedShares: KmsSigncryptedShares = await retryOnStaleCache(
     fhevm,
     fhevmContext,
     (cacheUsage) => _fetchKmsSigncryptedShares(fhevm, { ...parameters, cacheUsage }),
-    {
-      createStaleError: (_stale, error) =>
-        permitRequestStaleContextError(
-          fhevm,
-          createKmsExtraDataFromBytesHex(parameters.signedPermit.eip712.message.extraData),
-          error,
-        ),
-    },
+    { createStaleError: (_stale, error) => permitRequestStaleContextError(fhevm, permitExtraData, error) },
   );
 
   // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values

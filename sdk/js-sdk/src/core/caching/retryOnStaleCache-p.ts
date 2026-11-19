@@ -50,9 +50,10 @@ export type RetryOnStaleCacheOptions = {
   /**
    * For a request bound to the value it used (e.g. a user decryption, bound to
    * its permit's KMS context): on a stale value, the request is not run again;
-   * returns the error to throw.
+   * returns the error to throw. Must not throw. `error` is the request's
+   * error, which may not be an `Error`.
    */
-  readonly createStaleError: (stale: StaleValue, error: unknown) => unknown;
+  readonly createStaleError: (stale: StaleValue, error: unknown) => Error;
 };
 
 /**
