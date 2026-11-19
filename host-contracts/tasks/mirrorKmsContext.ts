@@ -1,4 +1,4 @@
-import type { Interface } from 'ethers';
+import type { Interface, Provider } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -43,8 +43,14 @@ export async function assertReplicaNeedsContextSwitch(
   }
 }
 
-// All four mirror tasks share the same CLI surface.
-function addMirrorTaskParams(definition: ConfigurableTaskDefinition, readTarget: string): ConfigurableTaskDefinition {
+/**
+ * Adds the parameters that locate the canonical ProtocolConfig. The mirror tasks and the replay task
+ * use them.
+ *
+ * @param definition - The task definition to extend.
+ * @returns The task definition.
+ */
+export function addCanonicalSourceParams(definition: ConfigurableTaskDefinition): ConfigurableTaskDefinition {
   return definition
     .addParam(
       'canonicalRpcUrl',
@@ -57,7 +63,23 @@ function addMirrorTaskParams(definition: ConfigurableTaskDefinition, readTarget:
       'Address of the ProtocolConfig contract on the canonical host chain.',
       undefined,
       types.string,
-    )
+    );
+}
+
+/**
+ * Builds the provider of the canonical host chain. The cache is off, so each read reaches the RPC.
+ *
+ * @param hre - The Hardhat runtime environment.
+ * @param canonicalRpcUrl - The RPC URL of the canonical host chain.
+ * @returns The provider.
+ */
+export function canonicalProvider(hre: HardhatRuntimeEnvironment, canonicalRpcUrl: string): Provider {
+  return new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
+}
+
+// The four context and epoch mirror tasks take the same parameters.
+function addMirrorTaskParams(definition: ConfigurableTaskDefinition, readTarget: string): ConfigurableTaskDefinition {
+  return addCanonicalSourceParams(definition)
     .addOptionalParam(
       'blockNumber',
       `Canonical block height to read ${readTarget} from; must already be finalized. Defaults to the latest finalized block.`,
@@ -79,15 +101,14 @@ type MirrorTaskArgs = {
   useInternalProxyAddress: boolean;
 };
 
-// Reads canonical's active state and resolves the replica target, shared by all four mirror tasks.
+// Reads canonical's active state and resolves the replica target, shared by the four context and epoch mirror tasks.
 async function loadMirrorInputs(
   hre: HardhatRuntimeEnvironment,
   { canonicalRpcUrl, canonicalProtocolConfigAddress, blockNumber, useInternalProxyAddress }: MirrorTaskArgs,
 ): Promise<{ iface: Interface; snapshot: CanonicalSnapshot; target: string }> {
   const iface = await getProtocolConfigReplicaInterface(hre);
-  const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
   const snapshot = await readCanonicalSnapshot(hre, {
-    canonicalProvider,
+    canonicalProvider: canonicalProvider(hre, canonicalRpcUrl),
     canonicalProtocolConfigAddress,
     blockNumber,
   });
@@ -196,3 +217,100 @@ addMirrorTaskParams(
     `Broadcast mirrorKmsEpoch(context=${snapshot.currentKmsContextId}, epoch=${snapshot.currentEpochId}) on ${target} (tx: ${hash}).`,
   );
 });
+
+// -----------------------------------------------------------------------------------------
+// mirrorKmsContextDestruction / mirrorKmsEpochDestruction: mirror a canonical destruction. The
+// operator gives the destroyed ID. The tasks read nothing from canonical.
+// -----------------------------------------------------------------------------------------
+
+task(
+  'task:buildMirrorKmsContextDestructionCalldata',
+  'Builds Aragon proposal calldata for ProtocolConfigReplica.mirrorKmsContextDestruction (DAO path, never broadcasts)',
+)
+  .addParam('contextId', 'The KMS context ID that the canonical ProtocolConfig destroyed', undefined, types.string)
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'Resolve the ProtocolConfigReplica address from the /addresses directory instead of the environment',
+    false,
+    types.boolean,
+  )
+  .setAction(async function (
+    { contextId, useInternalProxyAddress }: { contextId: string; useInternalProxyAddress: boolean },
+    hre,
+  ): Promise<void> {
+    const iface = await getProtocolConfigReplicaInterface(hre);
+    const calldata = iface.encodeFunctionData('mirrorKmsContextDestruction', [BigInt(contextId)]);
+
+    console.log('ProtocolConfigReplica.mirrorKmsContextDestruction');
+    console.log('  contextId:', contextId);
+    console.log('  target:', requireProtocolConfigAddress(useInternalProxyAddress));
+    console.log('  calldata:', calldata);
+  });
+
+task(
+  'task:mirrorKmsContextDestruction',
+  'Broadcasts ProtocolConfigReplica.mirrorKmsContextDestruction with the deployer key',
+)
+  .addParam('contextId', 'The KMS context ID that the canonical ProtocolConfig destroyed', undefined, types.string)
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'Resolve the ProtocolConfigReplica address from the /addresses directory instead of the environment',
+    false,
+    types.boolean,
+  )
+  .setAction(async function (
+    { contextId, useInternalProxyAddress }: { contextId: string; useInternalProxyAddress: boolean },
+    hre,
+  ): Promise<void> {
+    const iface = await getProtocolConfigReplicaInterface(hre);
+    const calldata = iface.encodeFunctionData('mirrorKmsContextDestruction', [BigInt(contextId)]);
+    const target = requireProtocolConfigAddress(useInternalProxyAddress);
+    const hash = await broadcast(hre, target, calldata);
+    console.log(`Broadcast mirrorKmsContextDestruction(${contextId}) on ${target} (tx: ${hash}).`);
+  });
+
+task(
+  'task:buildMirrorKmsEpochDestructionCalldata',
+  'Builds Aragon proposal calldata for ProtocolConfigReplica.mirrorKmsEpochDestruction (DAO path, never broadcasts)',
+)
+  .addParam('epochId', 'The KMS epoch ID that the canonical ProtocolConfig destroyed', undefined, types.string)
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'Resolve the ProtocolConfigReplica address from the /addresses directory instead of the environment',
+    false,
+    types.boolean,
+  )
+  .setAction(async function (
+    { epochId, useInternalProxyAddress }: { epochId: string; useInternalProxyAddress: boolean },
+    hre,
+  ): Promise<void> {
+    const iface = await getProtocolConfigReplicaInterface(hre);
+    const calldata = iface.encodeFunctionData('mirrorKmsEpochDestruction', [BigInt(epochId)]);
+
+    console.log('ProtocolConfigReplica.mirrorKmsEpochDestruction');
+    console.log('  epochId:', epochId);
+    console.log('  target:', requireProtocolConfigAddress(useInternalProxyAddress));
+    console.log('  calldata:', calldata);
+  });
+
+task(
+  'task:mirrorKmsEpochDestruction',
+  'Broadcasts ProtocolConfigReplica.mirrorKmsEpochDestruction with the deployer key',
+)
+  .addParam('epochId', 'The KMS epoch ID that the canonical ProtocolConfig destroyed', undefined, types.string)
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'Resolve the ProtocolConfigReplica address from the /addresses directory instead of the environment',
+    false,
+    types.boolean,
+  )
+  .setAction(async function (
+    { epochId, useInternalProxyAddress }: { epochId: string; useInternalProxyAddress: boolean },
+    hre,
+  ): Promise<void> {
+    const iface = await getProtocolConfigReplicaInterface(hre);
+    const calldata = iface.encodeFunctionData('mirrorKmsEpochDestruction', [BigInt(epochId)]);
+    const target = requireProtocolConfigAddress(useInternalProxyAddress);
+    const hash = await broadcast(hre, target, calldata);
+    console.log(`Broadcast mirrorKmsEpochDestruction(${epochId}) on ${target} (tx: ${hash}).`);
+  });

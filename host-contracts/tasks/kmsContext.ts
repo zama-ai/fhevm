@@ -108,6 +108,18 @@ export function encodeDestroyKmsEpoch(iface: Interface, epochId: bigint): Encode
   return { functionSignature, calldata, decodedArgs: [epochId] };
 }
 
+/**
+ * Returns the `n - t` quorum of a committee, as ProtocolConfigBase._faultTolerantQuorum does. The
+ * quorum is at least 1.
+ *
+ * @param committeeSize - The number of nodes in the committee.
+ * @param mpcThreshold - The MPC threshold of the committee.
+ * @returns The quorum.
+ */
+export function faultTolerantQuorum(committeeSize: number, mpcThreshold: bigint): number {
+  return Math.max(1, committeeSize - Number(mpcThreshold));
+}
+
 // Broadcasts the byte-identical payload the DAO would sign, using the deployer key. On devnet / the
 // test-suite the deployer is the ACL owner, so the call is authorized; this is the no-DAO path.
 export async function broadcast(hre: HardhatRuntimeEnvironment, target: string, calldata: string): Promise<string> {
@@ -552,9 +564,9 @@ async function fillContextSwitch(
 
   // The old-side target is n - t of the previous committee, which is the active one during an in-flight switch.
   // Floored at 1, like the creation quorum in ProtocolConfig, so `t = n` does not print a target of 0.
-  const threshold = Math.max(
-    1,
-    previousSigners.length - Number(await pc.getMpcThresholdForContext(status.activeContextId)),
+  const threshold = faultTolerantQuorum(
+    previousSigners.length,
+    await pc.getMpcThresholdForContext(status.activeContextId),
   );
   status.previousSignerThreshold = threshold;
 

@@ -1,9 +1,10 @@
 import { Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
-import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
+import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
 import { assertBridgeEndpointImmutable } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { readCanonicalDomainFromEnv } from './utils/protocolConfigCanonicalEnv';
 import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
@@ -110,17 +111,12 @@ async function upgradeCurrentToNew(
 // embeds the wrong addresses.
 async function deployImplementationForPreparedUpgrade(
   proxyAddress: string,
-  expectedArtifactName: string,
   currentImplementation: string,
   newImplementation: string,
   verifyContract: boolean,
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
 ): Promise<void> {
-  await compileImplementations(currentImplementation, newImplementation, hre);
-
-  await checkImplementationArtifacts(expectedArtifactName, currentImplementation, newImplementation, hre);
-
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
   const currentImplementationFactory = await hre.ethers.getContractFactory(currentImplementation, deployer);
@@ -194,6 +190,14 @@ async function checkImplementationArtifacts(
     );
   }
 
+  await checkNewImplementationArtifact(expectedArtifactName, newImplementation, hre);
+}
+
+async function checkNewImplementationArtifact(
+  expectedArtifactName: string,
+  newImplementation: string,
+  hre: HardhatRuntimeEnvironment,
+): Promise<void> {
   const newImplementationArtifact = await hre.artifacts.readArtifact(newImplementation);
   if (newImplementationArtifact.contractName !== expectedArtifactName) {
     throw new Error(
@@ -244,6 +248,9 @@ async function prepareUpgradeContract(
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
 ) {
+  await compileImplementations(taskArgs.currentImplementation, taskArgs.newImplementation, hre);
+  await checkImplementationArtifacts(contractName, taskArgs.currentImplementation, taskArgs.newImplementation, hre);
+
   if (taskArgs.useInternalProxyAddress) {
     loadHostAddresses();
   }
@@ -251,7 +258,6 @@ async function prepareUpgradeContract(
 
   await deployImplementationForPreparedUpgrade(
     proxyAddress,
-    contractName,
     taskArgs.currentImplementation,
     taskArgs.newImplementation,
     taskArgs.verifyContract,
@@ -530,6 +536,85 @@ task('task:prepareUpgradeProtocolConfig')
   .setAction(async function (taskArgs: TaskArguments, hre) {
     await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
   });
+
+// These tasks serve only the upgrade of a v0.14 ProtocolConfig proxy to ProtocolConfigReplica. A proxy
+// that initializeFromCanonical initialized is already at reinitializer version 4, so reinitializeV3
+// reverts on it. The current artifact is not a ProtocolConfigReplica, so the tasks check only the
+// name of the new artifact. The OpenZeppelin plugin still checks the storage layout of the current
+// implementation against the new one.
+async function loadProtocolConfigReplicaUpgrade(
+  taskArgs: TaskArguments,
+  hre: HardhatRuntimeEnvironment,
+): Promise<{ proxyAddress: string; reinitializeArgs: unknown[] }> {
+  const { canonicalProtocolConfigAddress, canonicalChainId } = readCanonicalDomainFromEnv();
+  await compileImplementations(taskArgs.currentImplementation, taskArgs.newImplementation, hre);
+  await checkNewImplementationArtifact('ProtocolConfigReplica', taskArgs.newImplementation, hre);
+  if (taskArgs.useInternalProxyAddress) {
+    loadHostAddresses();
+  }
+  return {
+    proxyAddress: getRequiredEnvVar('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
+    reinitializeArgs: [canonicalProtocolConfigAddress, canonicalChainId],
+  };
+}
+
+function addProtocolConfigReplicaUpgradeParams(definition: ConfigurableTaskDefinition): ConfigurableTaskDefinition {
+  return definition
+    .addParam(
+      'currentImplementation',
+      'The currently deployed implementation solidity contract path and name, eg: previous-contracts/ProtocolConfig.sol:ProtocolConfig',
+    )
+    .addParam(
+      'newImplementation',
+      'The new implementation solidity contract path and name, eg: contracts/ProtocolConfigReplica.sol:ProtocolConfigReplica',
+    )
+    .addOptionalParam(
+      'useInternalProxyAddress',
+      'If proxy address from the /addresses directory should be used',
+      false,
+      types.boolean,
+    )
+    .addOptionalParam(
+      'verifyContract',
+      'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+      true,
+      types.boolean,
+    );
+}
+
+addProtocolConfigReplicaUpgradeParams(
+  task(
+    'task:upgradeProtocolConfigReplica',
+    'Upgrades a v0.14 ProtocolConfig proxy to ProtocolConfigReplica. Reads the canonical domain from CANONICAL_PROTOCOL_CONFIG_ADDRESS and CANONICAL_CHAIN_ID.',
+  ),
+).setAction(async function (taskArgs: TaskArguments, hre) {
+  const { proxyAddress, reinitializeArgs } = await loadProtocolConfigReplicaUpgrade(taskArgs, hre);
+  await upgradeCurrentToNew(
+    proxyAddress,
+    taskArgs.currentImplementation,
+    taskArgs.newImplementation,
+    taskArgs.verifyContract,
+    hre,
+    reinitializeArgs,
+  );
+});
+
+addProtocolConfigReplicaUpgradeParams(
+  task(
+    'task:prepareUpgradeProtocolConfigReplica',
+    'Deploys a ProtocolConfigReplica implementation and prints the upgrade calldata. Reads the canonical domain from CANONICAL_PROTOCOL_CONFIG_ADDRESS and CANONICAL_CHAIN_ID.',
+  ),
+).setAction(async function (taskArgs: TaskArguments, hre) {
+  const { proxyAddress, reinitializeArgs } = await loadProtocolConfigReplicaUpgrade(taskArgs, hre);
+  await deployImplementationForPreparedUpgrade(
+    proxyAddress,
+    taskArgs.currentImplementation,
+    taskArgs.newImplementation,
+    taskArgs.verifyContract,
+    hre,
+    reinitializeArgs,
+  );
+});
 
 task('task:upgradeKMSGeneration')
   .addParam(

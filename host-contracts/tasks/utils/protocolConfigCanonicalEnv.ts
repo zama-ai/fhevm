@@ -104,6 +104,28 @@ export function readCanonicalSnapshotFromEnv(): CanonicalSnapshot {
   };
 }
 
+/**
+ * Reads the EIP-712 domain fields of the canonical ProtocolConfig from CANONICAL_PROTOCOL_CONFIG_ADDRESS
+ * and CANONICAL_CHAIN_ID. A replica verifies signatures under this domain. A reinitializer runs once,
+ * so a wrong value here stays in the replica until its next upgrade.
+ *
+ * @returns The address of the canonical ProtocolConfig and the chain ID of the canonical host chain.
+ * @throws If a variable is not set, the address is not valid, or the chain ID is not a decimal string.
+ */
+export function readCanonicalDomainFromEnv(): {
+  readonly canonicalProtocolConfigAddress: string;
+  readonly canonicalChainId: bigint;
+} {
+  const canonicalChainId = requireDecimal('CANONICAL_CHAIN_ID');
+  const canonicalProtocolConfigAddress = getRequiredEnvVar('CANONICAL_PROTOCOL_CONFIG_ADDRESS');
+  if (!isAddress(canonicalProtocolConfigAddress)) {
+    throw new Error(
+      `"CANONICAL_PROTOCOL_CONFIG_ADDRESS" env variable must be a valid address, got ${JSON.stringify(canonicalProtocolConfigAddress)}.`,
+    );
+  }
+  return { canonicalProtocolConfigAddress, canonicalChainId };
+}
+
 // Serializes a snapshot into the flat KEY=value map the deploy tasks read, with bigints as decimal
 // strings because an environment variable carries a string. task:exportCanonicalProtocolConfig writes
 // it. The return type is keyed on the same tuple the tasks read, so a renamed key fails to compile.

@@ -201,6 +201,15 @@ export async function activateDefinedKmsContext(
   await confirmEpochActivation(pc, signers, context.contextId, epochId);
 }
 
+// Opens a same-set resharing on the active context from the `pc` runner, which must be the owner, and
+// activates it with `signers`. Returns the new epoch ID.
+export async function reshareKmsEpoch(pc: ProtocolConfig, signers: Signer[]): Promise<bigint> {
+  const receipt = await (await pc.defineNewEpochForCurrentKmsContext()).wait();
+  const epochId = findEventArg(pc, receipt!.logs, 'NewKmsEpoch', 'epochId');
+  await confirmEpochActivation(pc, signers, await pc.getCurrentKmsContextId(), epochId);
+  return epochId;
+}
+
 // Signs each signer's ContextDestructionConfirmation and submits it from the signer account.
 export async function confirmContextDestruction(
   pc: ProtocolConfig,

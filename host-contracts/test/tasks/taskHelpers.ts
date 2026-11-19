@@ -85,7 +85,7 @@ export function buildProtocolConfigThresholds() {
   };
 }
 
-async function upgradeEmptyProxy(
+export async function upgradeEmptyProxy(
   proxyAddress: string,
   deployer: Wallet,
   contractName: string,
@@ -155,19 +155,14 @@ export async function deployFreshProtocolConfigReplicaProxy(
   epochId: bigint,
   kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
   thresholds: KmsThresholdsStruct,
+  canonicalProtocolConfigAddress = PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG_ADDRESS,
+  canonicalChainId = PLACEHOLDER_CANONICAL_CHAIN_ID,
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
   await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfigReplica', {
     call: {
       fn: 'initializeFromCanonical',
-      args: [
-        contextId,
-        epochId,
-        kmsNodes,
-        thresholds,
-        PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG_ADDRESS,
-        PLACEHOLDER_CANONICAL_CHAIN_ID,
-      ],
+      args: [contextId, epochId, kmsNodes, thresholds, canonicalProtocolConfigAddress, canonicalChainId],
     },
   });
   return proxyAddress;
@@ -181,21 +176,44 @@ export interface ControllableKmsCommittee {
   signerSigners: Signer[];
 }
 
-// Builds a two-node committee from distinct funded accounts (skipping account 0, which is typically
-// the deployer). Each node uses one account as its tx-sender and another as its signer.
-export async function buildControllableKmsCommittee(): Promise<ControllableKmsCommittee> {
-  const accounts = await ethers.getSigners();
-  const [txSender0, signer0, txSender1, signer1] = accounts.slice(1, 5);
-  const node = (txSenderSigner: Signer, signerSigner: Signer, index: number) => ({
-    txSenderAddress: (txSenderSigner as unknown as { address: string }).address,
-    signerAddress: (signerSigner as unknown as { address: string }).address,
+// The node of a test committee at position `index`.
+export function buildKmsNode(txSenderAddress: string, signerAddress: string, index: number) {
+  return {
+    txSenderAddress,
+    signerAddress,
     ipAddress: `127.0.0.${index + 1}`,
     storageUrl: `https://committee-s${index}.example.com`,
     partyId: index,
     mpcIdentity: `127.0.0.${index + 1}`,
     caCert: '0x',
     storagePrefix: '',
-  });
+  };
+}
+
+// Runs `action` and returns the lines that it printed with console.log.
+export async function captureConsoleLog(action: () => Promise<unknown>): Promise<string[]> {
+  const lines: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => void lines.push(args.join(' '));
+  try {
+    await action();
+  } finally {
+    console.log = original;
+  }
+  return lines;
+}
+
+// Builds a two-node committee from distinct funded accounts (skipping account 0, which is typically
+// the deployer). Each node uses one account as its tx-sender and another as its signer.
+export async function buildControllableKmsCommittee(): Promise<ControllableKmsCommittee> {
+  const accounts = await ethers.getSigners();
+  const [txSender0, signer0, txSender1, signer1] = accounts.slice(1, 5);
+  const node = (txSenderSigner: Signer, signerSigner: Signer, index: number) =>
+    buildKmsNode(
+      (txSenderSigner as unknown as { address: string }).address,
+      (signerSigner as unknown as { address: string }).address,
+      index,
+    );
   return {
     nodes: [node(txSender0, signer0, 0), node(txSender1, signer1, 1)],
     // Reusing the same committee for the rotated context satisfies both creation-quorum sides

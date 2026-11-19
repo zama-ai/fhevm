@@ -24,6 +24,7 @@ import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/prepareCoprocessorUpgrade';
 import './tasks/removePauser';
+import './tasks/replayKmsLifecycle';
 import './tasks/swapPauser';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
