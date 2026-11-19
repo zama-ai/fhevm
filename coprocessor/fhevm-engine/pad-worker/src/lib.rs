@@ -36,7 +36,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
-use upload::{s3_key, Uploader};
+use upload::Uploader;
 
 /// The same limit as the database check of `HealthStatus`.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -228,8 +228,8 @@ impl PadWorker {
         Ok(())
     }
 
-    /// Evaluates and signs the output of `claim`. Also returns the ct64.
-    async fn compute(&self, claim: Claim) -> Result<(Output, Vec<u8>), OutputError> {
+    /// Evaluates and signs the output of `claim`, with both forms.
+    async fn compute(&self, claim: Claim) -> Result<Output, OutputError> {
         let evaluator = self.evaluator.clone();
         let outputs = tokio::task::spawn_blocking(move || {
             evaluator.evaluate(claim.prf_instance, claim.label, claim.pad_length)
@@ -253,6 +253,7 @@ impl PadWorker {
             .map_err(|e| OutputError::Signing(format!("signing: {e}")))?;
         let output = Output {
             claim,
+            ct64: Some(outputs.ct64),
             ct128: outputs.ct128,
             attestation: PrfOutputAttestation {
                 version: payload.version,
@@ -262,7 +263,7 @@ impl PadWorker {
                 signature: signature.as_bytes().to_vec(),
             },
         };
-        Ok((output, outputs.ct64))
+        Ok(output)
     }
 
     /// Computes, signs and writes one claimed row. Fails only on a lost database connection.
@@ -278,7 +279,7 @@ impl PadWorker {
         }
         metrics::count_evaluation(claim.prf_instance);
         let _running = Running::new(&self.running, claim);
-        let (output, ct64) = match self.compute(claim).await {
+        let output = match self.compute(claim).await {
             Ok(computed) => computed,
             Err(OutputError::Evaluation(message)) => {
                 warn!(?claim, message, "PRF evaluation failed");
@@ -288,14 +289,11 @@ impl PadWorker {
             }
             Err(OutputError::Signing(message)) => return self.retry(&claim, &message).await,
         };
-        match rows::write_output(
-            &self.pool,
-            &claim,
-            &ct64,
-            &output.ct128,
-            &output.attestation,
-        )
-        .await
+        let ct64 = output
+            .ct64
+            .as_deref()
+            .expect("a computed output has its ct64");
+        match rows::write_output(&self.pool, &claim, ct64, &output.ct128, &output.attestation).await
         {
             Ok(true) => {}
             // Another pod claimed or completed the row, or the GC deleted it: do not upload.
@@ -317,7 +315,7 @@ impl PadWorker {
         let Some(_slot) = uploader.slot(wait).await else {
             return Ok(());
         };
-        if let Err(e) = uploader.upload(&s3_key(&output.claim), &output).await {
+        if let Err(e) = uploader.upload(&output).await {
             warn!(claim = ?output.claim, error = %e, "S3 upload failed");
             return Ok(());
         }

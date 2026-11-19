@@ -230,11 +230,13 @@ pub async fn release(pool: &PgPool, prf_instance: u16, claims: &[Claim]) -> sqlx
 /// A complete row to upload to S3.
 pub struct Output {
     pub claim: Claim,
+    /// `None` when the GC of the ct64 deleted it first.
+    pub ct64: Option<Vec<u8>>,
     pub ct128: Vec<u8>,
     pub attestation: PrfOutputAttestation,
 }
 
-/// Claims up to `limit` complete rows that have no S3 copy and no live claim.
+/// Claims up to `limit` complete rows that have no S3 copy and no live claim, with their ct64.
 pub async fn claim_uploads(
     pool: &PgPool,
     prf_instance: u16,
@@ -255,7 +257,10 @@ pub async fn claim_uploads(
                   ciphertext_digest AS "ciphertext_digest!",
                   ciphertext128_digest AS "ciphertext128_digest!", signer AS "signer!",
                   signature AS "signature!", attestation_version AS "attestation_version!",
-                  claim_token AS "claim_token!""#,
+                  claim_token AS "claim_token!",
+                  (SELECT c.ciphertext64 FROM pad_ct64 c
+                    WHERE c.prf_instance = pads.prf_instance AND c.label = pads.label
+                      AND c.pad_length = pads.pad_length) AS ciphertext64"#,
         i32::from(prf_instance),
         claim_timeout.as_secs_f64(),
         limit,
@@ -275,6 +280,7 @@ pub async fn claim_uploads(
                     pad_length: u16::try_from(row.pad_length).expect("pad_length is in range"),
                     token: row.claim_token,
                 },
+                ct64: row.ciphertext64,
                 ct128: row.ciphertext128,
                 attestation: PrfOutputAttestation {
                     version,

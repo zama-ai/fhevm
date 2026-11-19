@@ -1,10 +1,12 @@
-//! The S3 copy of the pad outputs. The object metadata holds the attestation.
+//! The S3 copy of the pad outputs: one object for each form. The object metadata holds the
+//! attestation.
 
 use crate::rows::{Claim, Output};
 use anyhow::{ensure, Context};
 use aws_sdk_s3::{primitives::ByteStream, types::ChecksumMode, Client};
 use base64::Engine;
 use ciphertext_attestation::{PrfOutputAttestation, S3_METADATA_ATTESTATION_KEY};
+use fhevm_engine_common::prf_output::prf_output_s3_key;
 use sha2::{Digest, Sha256};
 use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -51,19 +53,31 @@ impl Uploader {
         }
     }
 
-    /// Uploads the output to `key`, then checks the stored object. Hold a `slot` while it runs.
-    pub async fn upload(&self, key: &str, output: &Output) -> anyhow::Result<()> {
+    /// Uploads the ct64, if the output has it, and the ct128, then checks the stored objects.
+    /// Hold a `slot` while it runs.
+    pub async fn upload(&self, output: &Output) -> anyhow::Result<()> {
+        if let Some(ct64) = &output.ct64 {
+            self.put(&s3_key(&output.claim, Form::Ct64), ct64, output)
+                .await
+                .context("ct64")?;
+        }
+        self.put(&s3_key(&output.claim, Form::Ct128), &output.ct128, output)
+            .await
+            .context("ct128")
+    }
+
+    async fn put(&self, key: &str, body: &[u8], output: &Output) -> anyhow::Result<()> {
         let attestation = serde_json::to_string(&output.attestation)?;
-        let checksum = self.sha256_checksum.then(|| {
-            base64::engine::general_purpose::STANDARD.encode(Sha256::digest(&output.ct128))
-        });
+        let checksum = self
+            .sha256_checksum
+            .then(|| base64::engine::general_purpose::STANDARD.encode(Sha256::digest(body)));
         self.client
             .put_object()
             .bucket(&self.bucket)
             .key(key)
             .metadata(S3_METADATA_ATTESTATION_KEY, &attestation)
             .set_checksum_sha256(checksum.clone())
-            .body(ByteStream::from(output.ct128.clone()))
+            .body(ByteStream::from(body.to_vec()))
             .send()
             .await
             .context("put")?;
@@ -81,25 +95,23 @@ impl Uploader {
         )?;
         ensure!(stored == output.attestation, "other attestation in S3");
         ensure!(
-            object.content_length() == i64::try_from(output.ct128.len()).ok(),
-            "other ct128 length in S3"
+            object.content_length() == i64::try_from(body.len()).ok(),
+            "other length in S3"
         );
         if let Some(checksum) = checksum {
             ensure!(
                 object.checksum_sha256() == Some(checksum.as_str()),
-                "other ct128 checksum in S3"
+                "other checksum in S3"
             );
         }
         Ok(())
     }
 }
 
-/// The key of an output, `pads/{prf}/{label}/{padLength}/ct128`.
-pub fn s3_key(claim: &Claim) -> String {
-    format!(
-        "pads/{}/{}/{}/ct128",
-        claim.prf_instance,
-        hex::encode(claim.label),
-        claim.pad_length
-    )
+/// A form of an output. Each form has its own S3 object.
+pub use fhevm_engine_common::prf_output::PrfOutputForm as Form;
+
+/// The key of a form of an output, `pads/{form}/{prf}/{label}/{padLength}`.
+pub fn s3_key(claim: &Claim, form: Form) -> String {
+    prf_output_s3_key(claim.prf_instance, claim.label, claim.pad_length, form)
 }

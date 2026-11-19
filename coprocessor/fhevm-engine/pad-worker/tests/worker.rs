@@ -9,7 +9,7 @@ use fhevm_engine_common::healthz_server::HealthCheckService;
 use pad_worker::{
     evaluator::{PadEvaluator, PadOutputs},
     rows,
-    upload::{s3_key, Uploader},
+    upload::{s3_key, Form, Uploader},
     Config, PadWorker,
 };
 use sqlx::{postgres::PgPoolOptions, types::Uuid, PgPool};
@@ -462,38 +462,38 @@ async fn uploads_the_output_with_its_attestation() {
     until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
 
     let label = B256::repeat_byte(0xab);
-    let key = format!("pads/{INSTANCE}/{}/64/ct128", hex::encode(label));
-    assert_eq!(
-        s3_key(&rows::Claim {
-            prf_instance: INSTANCE,
-            label,
-            pad_length: 64,
-            token: Uuid::nil(),
-        }),
-        key
-    );
-    let object = client
-        .get_object()
-        .bucket(BUCKET)
-        .key(&key)
-        .send()
-        .await
+    let claim = rows::Claim {
+        prf_instance: INSTANCE,
+        label,
+        pad_length: 64,
+        token: Uuid::nil(),
+    };
+    let expected = common::evaluator().evaluate(INSTANCE, label, 64).unwrap();
+    for (form, body) in [(Form::Ct64, expected.ct64), (Form::Ct128, expected.ct128)] {
+        let key = s3_key(&claim, form);
+        assert_eq!(
+            key,
+            format!("pads/{}/{INSTANCE}/{}/64", form.name(), hex::encode(label))
+        );
+        let object = client
+            .get_object()
+            .bucket(BUCKET)
+            .key(&key)
+            .send()
+            .await
+            .unwrap();
+        let attestation: PrfOutputAttestation = serde_json::from_str(
+            &object.metadata().unwrap()[ciphertext_attestation::S3_METADATA_ATTESTATION_KEY],
+        )
         .unwrap();
-    let attestation: PrfOutputAttestation = serde_json::from_str(
-        &object.metadata().unwrap()[ciphertext_attestation::S3_METADATA_ATTESTATION_KEY],
-    )
-    .unwrap();
-    attestation
-        .verify(&PrfOutputRef::new(INSTANCE, label, 64), signer.address())
-        .unwrap();
-    let body = object.body.collect().await.unwrap().into_bytes();
-    assert_eq!(
-        body.as_ref(),
-        common::evaluator()
-            .evaluate(INSTANCE, label, 64)
-            .unwrap()
-            .ct128
-    );
+        attestation
+            .verify(&PrfOutputRef::new(INSTANCE, label, 64), signer.address())
+            .unwrap();
+        assert_eq!(
+            object.body.collect().await.unwrap().into_bytes().as_ref(),
+            body
+        );
+    }
 
     cancel.cancel();
     run.await.unwrap().unwrap();
@@ -523,8 +523,42 @@ async fn a_failed_upload_is_tried_again() {
     client.create_bucket().bucket(BUCKET).send().await.unwrap();
     until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
 
+    // Resubmit uploads both forms, with the stored bytes.
+    let (ct64, ct128): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT c.ciphertext64, p.ciphertext128 FROM pads p JOIN pad_ct64 c USING (label)",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let claim = rows::Claim {
+        prf_instance: INSTANCE,
+        label: B256::repeat_byte(1),
+        pad_length: 64,
+        token: Uuid::nil(),
+    };
+    assert_eq!(
+        object(&client, &s3_key(&claim, Form::Ct64)).await,
+        Some(ct64)
+    );
+    assert_eq!(
+        object(&client, &s3_key(&claim, Form::Ct128)).await,
+        Some(ct128)
+    );
+
     cancel.cancel();
     run.await.unwrap().unwrap();
+}
+
+/// The body of the object at `key`, or `None` if there is none.
+async fn object(client: &aws_sdk_s3::Client, key: &str) -> Option<Vec<u8>> {
+    let object = client
+        .get_object()
+        .bucket(BUCKET)
+        .key(key)
+        .send()
+        .await
+        .ok()?;
+    Some(object.body.collect().await.unwrap().into_bytes().to_vec())
 }
 
 #[tokio::test]
@@ -1221,6 +1255,52 @@ async fn uploads_a_complete_row_without_a_claim() {
         .await
         .unwrap();
     until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn uploads_the_ct128_when_the_gc_deleted_the_ct64() {
+    let (_instance, pool) = db().await;
+    let (_localstack, client, uploader) = s3().await;
+    client.create_bucket().bucket(BUCKET).send().await.unwrap();
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+
+    // A pad-worker without S3 completes the row and stops. Then the GC of the ct64 deletes it.
+    let (_signer, cancel, run) = start(&pool, config(), Arc::new(common::evaluator()));
+    until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+    sqlx::query("DELETE FROM pad_ct64")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Without a claim, resubmit uploads the row at once.
+    sqlx::query("UPDATE pads SET claimed_at = NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_signer, cancel, run) = start_with(
+        &pool,
+        config(),
+        Arc::new(common::evaluator()),
+        Some(uploader),
+    );
+    until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
+
+    // The row completes with the ct128 only, so the GC can delete it.
+    let claim = rows::Claim {
+        prf_instance: INSTANCE,
+        label: B256::repeat_byte(1),
+        pad_length: 64,
+        token: Uuid::nil(),
+    };
+    assert!(object(&client, &s3_key(&claim, Form::Ct128))
+        .await
+        .is_some());
+    assert!(object(&client, &s3_key(&claim, Form::Ct64)).await.is_none());
 
     cancel.cancel();
     run.await.unwrap().unwrap();
