@@ -155,6 +155,7 @@ jobs:
       # runs. `outcome`, not `conclusion`: with continue-on-error, `conclusion` is
       # always `success`.
       - name: Install ethers for the wallet sweep
+        id: ethers
         if: steps.safe-chain.outcome == 'success'
         continue-on-error: true
         run: |
@@ -162,6 +163,7 @@ jobs:
           npm install --silent --no-save ethers@6
 
       - name: Return leftover testnet funds to the treasury
+        id: sweep
         continue-on-error: true
         # Each refund waits for one confirmation on Sepolia/Amoy; bounded so a stalled
         # RPC cannot eat the job's 30m and strand the namespace.
@@ -244,10 +246,16 @@ jobs:
           echo ":warning: Teardown of namespace \`${NAMESPACE}\` FAILED - Crossplane-managed AWS resources may still be leaking; check the run and clean up manually." >> "$GITHUB_STEP_SUMMARY"
 
       # Runs after the teardown so the namespace is always deleted, but turns the
-      # job red when the sweep was skipped: the leftover funds in the namespace's
-      # wallets are lost, so make it visible.
-      - name: Report skipped wallet sweep
-        if: steps.safe-chain.outcome == 'failure' && steps.destroy.outputs.deleted == 'true'
+      # job red when the sweep was skipped or failed: the leftover funds in the
+      # namespace's wallets are lost, so make it visible. safe-chain and ethers are
+      # checked on their own because without ethers the sweep script finds no
+      # treasury and exits 0.
+      - name: Report skipped or failed wallet sweep
+        if: >-
+          (steps.safe-chain.outcome == 'failure' ||
+          steps.ethers.outcome == 'failure' ||
+          steps.sweep.outcome == 'failure') &&
+          steps.destroy.outputs.deleted == 'true'
         run: |
-          echo "::error::safe-chain failed to install: the wallet sweep was skipped and leftover testnet funds in ${NAMESPACE} were not returned to the treasury."
+          echo "::error::The wallet sweep was skipped or failed: leftover testnet funds in ${NAMESPACE} may not have been returned to the treasury."
           exit 1
