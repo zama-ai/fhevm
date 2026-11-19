@@ -150,7 +150,8 @@ pub async fn fail(pool: &PgPool, claim: &Claim, message: &str) -> sqlx::Result<(
 }
 
 /// After a temporary error: holds the claim for a backoff that grows with each attempt. Never fails
-/// the row: a row that keeps failing expires. Changes only a row with the token of `claim`.
+/// the row: a row that keeps failing expires. Changes only a row with the token of `claim`. Clears
+/// the token, so that a late renewal or release does not change the backoff.
 pub async fn retry(
     pool: &PgPool,
     claim: &Claim,
@@ -161,7 +162,8 @@ pub async fn retry(
         "UPDATE pads
             SET attempts = attempts + 1, error_message = $4,
                 claimed_at = NOW() - make_interval(secs => $5)
-                             + make_interval(secs => LEAST((attempts + 1) * $6, $7))
+                             + make_interval(secs => LEAST((attempts + 1) * $6, $7)),
+                claim_token = NULL
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3
             AND signature IS NULL AND NOT is_error AND claim_token = $8",
         i32::from(claim.prf_instance),
@@ -172,6 +174,30 @@ pub async fn retry(
         RETRY_BACKOFF_STEP_SECS,
         RETRY_BACKOFF_MAX_SECS,
         claim.token,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Renews the claims of running evaluations. Skips the rows claimed again. Skips locked rows: the
+/// next tick renews them.
+pub async fn renew(pool: &PgPool, prf_instance: u16, claims: &[Claim]) -> sqlx::Result<()> {
+    let labels: Vec<Vec<u8>> = claims.iter().map(|c| c.label.to_vec()).collect();
+    let lengths: Vec<i32> = claims.iter().map(|c| i32::from(c.pad_length)).collect();
+    let tokens: Vec<Uuid> = claims.iter().map(|c| c.token).collect();
+    sqlx::query!(
+        "UPDATE pads SET claimed_at = NOW() WHERE ctid IN (
+             SELECT ctid FROM pads
+              WHERE prf_instance = $1
+                AND (label, pad_length, claim_token)
+                    IN (SELECT * FROM UNNEST($2::BYTEA[], $3::INTEGER[], $4::UUID[]))
+                AND signature IS NULL AND NOT is_error
+                FOR UPDATE SKIP LOCKED)",
+        i32::from(prf_instance),
+        &labels,
+        &lengths,
+        &tokens,
     )
     .execute(pool)
     .await?;

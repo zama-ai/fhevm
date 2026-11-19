@@ -333,11 +333,30 @@ async fn a_temporary_error_retries_the_row_after_a_backoff() {
     let claim_timeout = Duration::from_secs(60);
     let claim = || rows::claim(&pool, INSTANCE, Duration::from_secs(600), claim_timeout);
     let first = claim().await.unwrap().unwrap();
+    // Moves `claimed_at` back by more than the longest backoff.
+    let end_backoff = || {
+        sqlx::query("UPDATE pads SET claimed_at = claimed_at - INTERVAL '1 minute'").execute(&pool)
+    };
 
-    for _ in 0..5 {
-        rows::retry(&pool, &first, "signer down", claim_timeout)
+    let claimed_at = || {
+        sqlx::query_scalar::<_, f64>("SELECT EXTRACT(EPOCH FROM claimed_at)::FLOAT8 FROM pads")
+            .fetch_one(&pool)
+    };
+
+    let mut current = first;
+    for attempt in 1..=5 {
+        rows::retry(&pool, &current, "signer down", claim_timeout)
             .await
             .unwrap();
+        // The backoff holds the row, and a late renewal does not change it.
+        let backoff = claimed_at().await.unwrap();
+        rows::renew(&pool, INSTANCE, &[current]).await.unwrap();
+        assert_eq!(claimed_at().await.unwrap(), backoff);
+        assert!(claim().await.unwrap().is_none());
+        if attempt < 5 {
+            end_backoff().await.unwrap();
+            current = claim().await.unwrap().unwrap();
+        }
     }
     let (attempts, failed, message): (i32, bool, String) =
         sqlx::query_as("SELECT attempts, is_error, error_message FROM pads")
@@ -349,14 +368,9 @@ async fn a_temporary_error_retries_the_row_after_a_backoff() {
         (attempts, failed, message.as_str()),
         (5, false, "signer down")
     );
-    // The backoff holds the row.
-    assert!(claim().await.unwrap().is_none());
 
     // After the backoff, the row can be claimed again.
-    sqlx::query("UPDATE pads SET claimed_at = claimed_at - INTERVAL '1 minute'")
-        .execute(&pool)
-        .await
-        .unwrap();
+    end_backoff().await.unwrap();
     let again = claim().await.unwrap().unwrap();
     assert_eq!(again.label, first.label);
     assert_ne!(again.token, first.token);
@@ -912,6 +926,46 @@ impl PadEvaluator for Slow {
     }
 }
 
+/// As `Slow`, and counts its evaluations.
+struct CountedSlow {
+    slow: Slow,
+    evaluations: AtomicUsize,
+}
+
+impl PadEvaluator for CountedSlow {
+    fn evaluate(&self, prf: u16, label: B256, pad_length: u16) -> anyhow::Result<PadOutputs> {
+        self.evaluations.fetch_add(1, Ordering::SeqCst);
+        self.slow.evaluate(prf, label, pad_length)
+    }
+}
+
+#[tokio::test]
+async fn a_long_evaluation_keeps_its_claim() {
+    let (_instance, pool) = db().await;
+    // 3 claim timeouts: without the renewal, a free slot claims the row again. The renewal runs
+    // every 1 s, 2 s before the claim goes stale.
+    let evaluator = Arc::new(CountedSlow {
+        slow: Slow {
+            delay: Duration::from_secs(9),
+            row_1: common::evaluator()
+                .evaluate(INSTANCE, B256::repeat_byte(1), 64)
+                .unwrap(),
+        },
+        evaluations: AtomicUsize::default(),
+    });
+    let config = Config {
+        claim_timeout: Duration::from_secs(3),
+        ..config()
+    };
+    let (_signer, cancel, run) = start(&pool, config, evaluator.clone());
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
+
+    assert_eq!(evaluator.evaluations.load(Ordering::SeqCst), 1);
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+}
+
 #[tokio::test]
 async fn a_stop_lets_the_claimed_rows_complete() {
     let (_instance, pool) = db().await;
@@ -1036,6 +1090,61 @@ async fn the_release_skips_the_rows_that_another_transaction_locks() {
             .await
             .unwrap();
     assert_eq!(claimed, vec![true, false]);
+}
+
+#[tokio::test]
+async fn the_renewal_skips_the_rows_claimed_again_and_the_locked_rows() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    add_row(&pool, INSTANCE, 2, 1, 0.0).await;
+    let mut claims = Vec::new();
+    for _ in 0..2 {
+        let claim = rows::claim(
+            &pool,
+            INSTANCE,
+            Duration::from_secs(600),
+            Duration::from_secs(60),
+        );
+        claims.push(claim.await.unwrap().unwrap());
+    }
+    sqlx::query("UPDATE pads SET claimed_at = NOW() - INTERVAL '1 hour'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let renewed = || {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT claimed_at > NOW() - INTERVAL '1 minute' FROM pads ORDER BY label",
+        )
+        .fetch_all(&pool)
+    };
+
+    // A renewal with stale tokens changes nothing.
+    let stale: Vec<rows::Claim> = claims
+        .iter()
+        .map(|claim| rows::Claim {
+            token: Uuid::nil(),
+            ..*claim
+        })
+        .collect();
+    rows::renew(&pool, INSTANCE, &stale).await.unwrap();
+    assert_eq!(renewed().await.unwrap(), vec![false, false]);
+
+    let mut other = pool.begin().await.unwrap();
+    sqlx::query("SELECT 1 FROM pads WHERE label = $1 FOR UPDATE")
+        .bind(B256::repeat_byte(1).as_slice())
+        .execute(other.as_mut())
+        .await
+        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        rows::renew(&pool, INSTANCE, &claims),
+    )
+    .await
+    .expect("the renewal does not wait for locked rows")
+    .unwrap();
+
+    other.commit().await.unwrap();
+    assert_eq!(renewed().await.unwrap(), vec![false, true]);
 }
 
 #[tokio::test]

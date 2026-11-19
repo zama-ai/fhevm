@@ -159,6 +159,7 @@ impl PadWorker {
         let slots = Arc::new(Semaphore::new(worker.config.max_concurrent.get()));
         let mut tasks = JoinSet::new();
         tasks.spawn(worker.clone().gc());
+        tasks.spawn(worker.clone().renew_claims());
         if let Some(uploader) = worker.uploader.clone() {
             tasks.spawn(worker.clone().resubmit(uploader));
         }
@@ -323,6 +324,28 @@ impl PadWorker {
         rows::set_uploaded(&self.pool, &output.claim)
             .await
             .or_else(non_fatal)
+    }
+
+    /// Renews the running claims 3 times in each `claim_timeout`, so no pod computes a row again.
+    async fn renew_claims(self: Arc<Self>) -> anyhow::Result<()> {
+        loop {
+            tokio::select! {
+                () = self.cancel_token.cancelled() => return Ok(()),
+                () = sleep(self.config.claim_timeout / 3) => {}
+            }
+            let running: Vec<Claim> = self
+                .running
+                .lock()
+                .expect("running claims")
+                .iter()
+                .copied()
+                .collect();
+            if !running.is_empty() {
+                rows::renew(&self.pool, self.config.prf_instance, &running)
+                    .await
+                    .or_else(non_fatal)?;
+            }
+        }
     }
 
     /// Deletes old and expired rows, and sets the row age metrics.
