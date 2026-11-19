@@ -17,6 +17,12 @@ The proxy needs a `kubernetes.io/tls` secret (`kmsConnectorProxy.tls.secretName`
 
 By default the secret must exist before the proxy starts. Set `kmsConnectorProxy.tls.certManager.enabled` to `true` to have the chart create it with cert-manager (ignored when TLS is disabled), which must be installed in the cluster: a self-signed `Issuer` and a `Certificate` that writes the secret. The certificate covers the proxy Service name and its `.<namespace>.svc` and `.<namespace>.svc.cluster.local` forms, and it is valid for 10 years. Leave it disabled when the secret is managed outside the chart: cert-manager overwrites an existing secret with the same name.
 
+### Deployment requirement
+
+The proxy must not be reachable directly from the internet. It authenticates each request and caps its body's size and the time to send it (1 MiB and 30 s by default). It does not protect its connections before that: Pingora 0.9 caps neither their number, nor how long they can stay idle, nor the time a client takes to send a request head, so slow or idle connections can use up the replica's memory.
+
+The chart only creates a `ClusterIP` Service for the proxy. Expose it only through an HTTP load balancer that takes the clients' connections itself and forwards a request once its head is complete. The standard exposure for operators is an AWS Application Load Balancer with AWS WAF. A TCP (layer 4) load balancer is not enough: it forwards slow and idle connections unchanged.
+
 ## Installing the Chart
 
 To pull and install the OCI Helm chart from ghcr.io:
