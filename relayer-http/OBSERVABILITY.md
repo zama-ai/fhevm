@@ -49,8 +49,8 @@ TODO: the relayer-http release notes do not exist yet; create them with the firs
 | Level | Use                                                                                          |
 | ----- | -------------------------------------------------------------------------------------------- |
 | ERROR | the relayer's own software is broken: startup, server, panic, internal error                  |
-| WARN  | degradation: one per retry or skipped retry, per KMS node call failed or cut, per response rejected |
-| INFO  | the summary line; process lifecycle                                                           |
+| WARN  | degradation: one per retry or skipped retry, per KMS node call failed or cut, per response rejected, per KMS node excluded by the circuit breaker (or kept at its floor) |
+| INFO  | the summary line; process lifecycle; the KMS node set's lifecycle: a node included again, the breakers reset |
 | DEBUG | per-step detail; on by default for relayer-http's own lines (`RUST_LOG=warn,relayer_http=debug`) |
 
 A failed request is INFO: its summary line's outcome says so. WARN comes only from the degradation behind it.

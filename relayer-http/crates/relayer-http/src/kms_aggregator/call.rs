@@ -1,5 +1,5 @@
 //! One node call: sign → semaphore permit → POST → decode → retry per the class of the failure, cancellable and
-//! bounded by the deadline.
+//! bounded by the deadline. A probe of an excluded node (`breaker.rs`) is the same call with one attempt.
 
 use std::sync::Arc;
 
@@ -8,10 +8,11 @@ use kms_connector_api::ErrorCode;
 use reqwest::header::HeaderValue;
 use serde::de::DeserializeOwned;
 use tokio::sync::Semaphore;
-use tokio::time::{Duration, Instant, sleep};
+use tokio::time::{Duration, Instant, sleep, sleep_until};
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
+use tracing::{Instrument, warn};
 
+use super::breaker::{CircuitBreakers, Verdict};
 use super::client::{AttemptError, ConnectorClient, Endpoint, decode};
 use super::config::{CallConfig, ConfigError, KmsAggregatorConfig, RetryClass};
 use super::signer::RequestSigner;
@@ -61,10 +62,12 @@ impl Retries {
     }
 }
 
-/// Why a call stops retrying, in decision order: a rejected credential and a non-retryable error are final
-/// whatever the budget; then the class's budget; then a wait that would end after the deadline.
+/// Why a call stops retrying, in decision order: a probe makes one attempt whatever the failure; a rejected
+/// credential and a non-retryable error are final whatever the budget; then the class's budget; then a wait that
+/// would end after the deadline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GiveUp {
+    Probe,
     Auth,
     NonRetryable,
     BudgetExhausted,
@@ -72,8 +75,10 @@ enum GiveUp {
 }
 
 impl GiveUp {
-    fn decide(failure: &AttemptError, budget_left: bool, fits: bool) -> Option<Self> {
-        if failure.is_auth() {
+    fn decide(failure: &AttemptError, probe: bool, budget_left: bool, fits: bool) -> Option<Self> {
+        if probe {
+            Some(Self::Probe)
+        } else if failure.is_auth() {
             Some(Self::Auth)
         } else if !failure.is_retryable() {
             Some(Self::NonRetryable)
@@ -88,6 +93,7 @@ impl GiveUp {
 
     fn as_str(self) -> &'static str {
         match self {
+            Self::Probe => "probe",
             Self::Auth => "auth",
             Self::NonRetryable => "non_retryable",
             Self::BudgetExhausted => "budget_exhausted",
@@ -111,10 +117,13 @@ enum Stage {
 }
 
 /// How far a call got: the attempts that reached the node pool (signing failures excluded), the retries of each
-/// class it used (signing failures included: the policy counts them), and where the current attempt stands.
+/// class it used (signing failures included: the policy counts them), the node's last answer, and where the
+/// current attempt stands. `probe`: the call is a probe of an excluded node, one attempt and no retry (`breaker.rs`).
 struct Progress {
+    probe: bool,
     attempts: u32,
     retries: Retries,
+    last_code: Option<ErrorCode>,
     stage: Stage,
 }
 
@@ -161,11 +170,14 @@ pub struct CallResult<R> {
     pub attempts: u32,
     pub retries: Retries,
     pub elapsed: Duration,
+    /// The code of the node's last answer during the call; `None` when it never answered (a signing failure is
+    /// not an answer). Tells a hung node from a legitimate retry cut at the deadline (`breaker.rs`).
+    pub last_code: Option<ErrorCode>,
     pub result: Result<R, CallError>,
 }
 
-/// Shared by every aggregation: the HTTP client, the signer, the endpoints, the call semaphore, the retry policy
-/// and the metrics every attempt and call records.
+/// Shared by every aggregation: the HTTP client, the signer, the endpoints, the call semaphore, the retry policy,
+/// the circuit breakers and the metrics every attempt and call records.
 pub struct Caller {
     client: Arc<dyn ConnectorClient>,
     signer: Arc<RequestSigner>,
@@ -175,6 +187,8 @@ pub struct Caller {
     /// The transient waits in milliseconds, rendered once for the `aggregation started` line (`[200, 300]`).
     retries_waits_ms: String,
     permits: Semaphore,
+    /// One switch per endpoint, shared by both flows (`breaker.rs`).
+    breakers: CircuitBreakers,
 }
 
 impl Caller {
@@ -201,6 +215,17 @@ impl Caller {
             .iter()
             .map(|wait| wait.as_millis() as u64)
             .collect();
+        let breaker = &cfg.circuit_breaker;
+        let breakers = CircuitBreakers::new(
+            breaker.enabled,
+            endpoints
+                .iter()
+                .map(|endpoint| endpoint.name.clone())
+                .collect(),
+            cfg.min_nodes(),
+            breaker.exclude_for,
+            metrics.clone(),
+        );
         Ok(Self {
             client,
             signer,
@@ -209,7 +234,75 @@ impl Caller {
             cfg: cfg.call.clone(),
             retries_waits_ms: format!("{waits_ms:?}"),
             permits,
+            breakers,
         })
+    }
+
+    /// The per-node circuit breakers (`breaker.rs`), consulted by every aggregation.
+    pub fn circuit_breakers(&self) -> &CircuitBreakers {
+        &self.breakers
+    }
+
+    /// Closes every circuit breaker: for the dynamic configuration, after a refreshed endpoint list. Returns how
+    /// many nodes were out.
+    pub fn reset_circuit_breakers(&self) -> usize {
+        self.breakers.reset()
+    }
+
+    /// Sends `body` to the endpoint at `index` beside an aggregation, as a probe of an open circuit breaker: one
+    /// attempt and no retry (a retry would only delay the verdict: an unhealthy answer keeps the node out for
+    /// another window, any other answer puts it back and the next request's call retries as usual), detached from
+    /// the aggregation, cut at `deadline`, its verdict goes to the breakers and its answer is dropped. The
+    /// aggregation never waits for it; nothing else cancels it.
+    pub fn probe<R: DeserializeOwned + Send + 'static>(
+        self: &Arc<Self>,
+        flow: FlowName,
+        index: usize,
+        route: &'static str,
+        body: Bytes,
+        deadline: Instant,
+        generation: u64,
+    ) {
+        let caller = self.clone();
+        tokio::spawn(
+            async move {
+                let Some(endpoint) = caller.endpoints().get(index).cloned() else {
+                    return;
+                };
+                let cancel = CancellationToken::new();
+                // The call runs as a child task: a panic inside it is a `JoinError` here, never a node left
+                // probing forever.
+                let mut call = tokio::spawn({
+                    let (caller, endpoint, cancel) =
+                        (caller.clone(), endpoint.clone(), cancel.clone());
+                    async move {
+                        caller
+                            .call_with::<R>(true, flow, &endpoint, route, body, deadline, cancel)
+                            .await
+                    }
+                    .in_current_span()
+                });
+                let joined = tokio::select! {
+                    biased;
+                    () = sleep_until(deadline) => {
+                        cancel.cancel();
+                        (&mut call).await
+                    }
+                    joined = &mut call => joined,
+                };
+                let verdict = match joined {
+                    Ok(call) => Verdict::of(&call, true),
+                    Err(_) => Verdict::Ignored,
+                };
+                caller.breakers.on_probe_outcome(
+                    &endpoint.name,
+                    &verdict,
+                    Instant::now(),
+                    generation,
+                );
+            }
+            .in_current_span(),
+        );
     }
 
     /// The transient waits as logged by `aggregation started`, in milliseconds.
@@ -246,14 +339,32 @@ impl Caller {
         deadline: Instant,
         cancel: CancellationToken,
     ) -> CallResult<R> {
+        self.call_with(false, flow, endpoint, route, body, deadline, cancel)
+            .await
+    }
+
+    /// `call`, as a probe (one attempt) when `probe` is true.
+    #[allow(clippy::too_many_arguments)]
+    async fn call_with<R: DeserializeOwned>(
+        &self,
+        probe: bool,
+        flow: FlowName,
+        endpoint: &Endpoint,
+        route: &str,
+        body: Bytes,
+        deadline: Instant,
+        cancel: CancellationToken,
+    ) -> CallResult<R> {
         let started = Instant::now();
         let mut record = CallRecord {
             metrics: &self.metrics,
             kms_node: &endpoint.name,
             flow,
             progress: Progress {
+                probe,
                 attempts: 0,
                 retries: Retries::default(),
+                last_code: None,
                 stage: Stage::Idle,
             },
         };
@@ -267,6 +378,7 @@ impl Caller {
             attempts: record.progress.attempts,
             retries: record.progress.retries,
             elapsed: started.elapsed(),
+            last_code: record.progress.last_code,
             result,
         }
     }
@@ -337,9 +449,12 @@ impl Caller {
             };
             match failure {
                 AttemptError::Signer(_) => self.metrics.signer_error(flow),
-                _ => self
-                    .metrics
-                    .attempt_error(&endpoint.name, flow, failure.code().as_str()),
+                _ => {
+                    // The node answered, or the path to it failed: its last answer for the breaker's verdict.
+                    progress.last_code = Some(failure.code());
+                    self.metrics
+                        .attempt_error(&endpoint.name, flow, failure.code().as_str());
+                }
             }
             // Expired at the node: sign again on the next attempt.
             if failure.code() == ErrorCode::AuthExpired {
@@ -353,7 +468,7 @@ impl Caller {
                 .delay_for(class, retries.of(class).saturating_add(1), retry_after);
             let budget_left = retries.of(class) < self.cfg.max_retries(class);
             let fits = delay < deadline.saturating_duration_since(Instant::now());
-            let give_up = GiveUp::decide(&failure, budget_left, fits);
+            let give_up = GiveUp::decide(&failure, progress.probe, budget_left, fits);
             attempt_failed(
                 &endpoint.name,
                 tries,
@@ -406,7 +521,7 @@ struct Decision {
 }
 
 /// One failed attempt: one WARN per retry or skipped retry (`OBSERVABILITY.md`), with the decision the policy
-/// took: the retry class, the wait before the next attempt (`retry_in_ms`, `null` when the call gives up), the
+/// took: the retry class, the wait before the next attempt (`retry_in_ms`, absent when the call gives up), the
 /// node's parsed `Retry-After` when it sent one, and the give-up reason. The node task runs in the `aggregation`
 /// span, so the line also carries the request's id. A signing failure is the relayer's own and is reported as
 /// such: nothing reached the node, so there is no code and no header.
@@ -679,6 +794,18 @@ pub(crate) mod tests {
             assert_eq!(last["fields"]["give_up_reason"], reason, "{last}");
             assert!(last["fields"]["retry_in_ms"].is_null(), "{last}");
         }
+    }
+
+    #[test]
+    fn a_probe_gives_up_after_one_attempt() {
+        // Budget left and a wait that fits: a request's call retries, a probe never does.
+        let retryable = AttemptError::Transport("refused".to_owned());
+        assert_eq!(GiveUp::decide(&retryable, false, true, true), None);
+        assert_eq!(
+            GiveUp::decide(&retryable, true, true, true),
+            Some(GiveUp::Probe)
+        );
+        assert_eq!(GiveUp::Probe.as_str(), "probe");
     }
 
     #[tokio::test(start_paused = true)]
@@ -1022,6 +1149,42 @@ pub(crate) mod tests {
         // Nor is it the node's latency.
         let node = histogram_sum(metrics, "relayer_http_kms_attempt_duration_seconds");
         assert!((node - 0.01).abs() < 1e-9, "{node}");
+    }
+
+    /// One call to a node scripted with `script`, cut by its caller after `cut_after`.
+    async fn run_cut_after(
+        script: Vec<Reply>,
+        cut_after: Duration,
+    ) -> CallResult<UserDecryptionResponse> {
+        let mock = MockClient::new(vec![script], ms(10));
+        let caller = mock.clone().caller(secs(5), 1);
+        let cancel = CancellationToken::new();
+        let cut = cancel.clone();
+        tokio::spawn(async move {
+            sleep(cut_after).await;
+            cut.cancel();
+        });
+        call_node(&caller, 0, secs(5), &cancel).await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn last_code_is_the_last_answer_and_ignores_signing_failures() {
+        // Answered `acl_denied`, then hung on the retry and cut: the last answer stays.
+        let result = run_cut_after(vec![ACL, HANG], secs(1)).await;
+        assert!(matches!(result.result, Err(CallError::Cancelled)));
+        assert_eq!(result.last_code, Some(ErrorCode::AclDenied));
+        // Cut before any answer: nothing.
+        let result = run_cut_after(vec![HANG], secs(1)).await;
+        assert_eq!(result.last_code, None);
+        // A final failure is the last answer; a connection refused counts as the path's `upstream_transient`.
+        let (_, result) = run(vec![MALFORMED], 1).await;
+        assert_eq!(result.last_code, Some(ErrorCode::Malformed));
+        let (_, result) = run(vec![REFUSED], 0).await;
+        assert_eq!(result.last_code, Some(ErrorCode::UpstreamTransient));
+        // A signing failure never reached the node: not an answer.
+        let signer = TestSigner::new(Duration::ZERO, true);
+        let (_, _, result) = run_signed_by(&signer, vec![OK], 1).await;
+        assert_eq!(result.last_code, None);
     }
 
     #[tokio::test(start_paused = true)]

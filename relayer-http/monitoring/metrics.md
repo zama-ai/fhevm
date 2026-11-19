@@ -14,5 +14,9 @@ Exposed as Prometheus text on `GET /metrics`, on the port of `metrics.endpoint` 
 | `relayer_http_kms_call_slot_wait_seconds` | histogram (14 buckets) | `flow` | 51 | One attempt: seconds spent waiting for an outbound call slot (`kms_aggregator.max_concurrent_calls`). |
 | `relayer_http_signer_errors_total` | counter | `flow` | 3 | One failed attempt to sign a connector call (the signing key unreachable or refusing): nothing was sent, the KMS node is not at fault. |
 | `relayer_http_kms_wait_after_threshold_seconds` | histogram (10 buckets) | `flow` | 39 | One aggregation that reached its threshold: seconds from reaching it to the answer, spent waiting for the remaining KMS nodes (until every node finished or the deadline). Buckets 5 ms to 5 s. |
+| `relayer_http_kms_node_excluded` | gauge | `kms_node` | 13 | 1 while the circuit breaker leaves the KMS node out (open, or being probed), 0 while it is in use; 0 for every node at startup and after a reset. |
+| `relayer_http_kms_exclusions_total` | counter | `kms_node`, `code` | 312 | One exclusion of a KMS node by the circuit breaker, after a call or after a failed probe; `code` is the node's last answer during that call (`upstream_transient`, `overloaded`, `timeout`), or `cancelled` when it never answered before the deadline. |
+| `relayer_http_kms_probes_total` | counter | `kms_node`, `outcome` | 52 | One probe of an excluded KMS node that ended: `succeeded` (it answered, the node is in use again), `failed` (unhealthy, excluded for another window), `cancelled` (nothing known, probed again by the next request). |
+| `relayer_http_kms_floor_hits_total` | counter | `kms_node` | 13 | One unhealthy KMS node kept in use because excluding it would leave fewer than `circuit_breaker.min_nodes`: more nodes are unhealthy than the breaker may exclude, requests wait for the deadline again. Starts at 0 for every node. |
 
-Worst case for one pod: 2613 series (budget 5000).
+Worst case for one pod: 3003 series (budget 5000).

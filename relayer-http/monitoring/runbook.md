@@ -23,7 +23,7 @@ The 95th percentile of a flow's requests is above 0.8 x the call timeout: they a
 
 More than half of the attempts to one KMS node fail with an error that blames the node or the path to it. The codes that do not (client-caused errors, cut attempts, relayer panics) are not counted: the list is `not_node_health()` in `metrics.rs`, also used by the operator dashboard's "<flow>: KMS node health" (`error %`) and "<flow>: attempt error ratio by KMS node".
 
-1. Operator dashboard, "<flow>: KMS node health" then "<flow>: failed attempts by KMS node and code": the code says why. `sender_authentication_failed`: the relayer's FhevmSig key is not accepted by that node's connector. `upstream_transient`, `overloaded`: the node or the network to it. A node that hangs is not counted here: it shows as slow in "<flow>: attempt latency p95 by KMS node", and in `cut`.
+1. Operator dashboard, "<flow>: KMS node health" then "<flow>: failed attempts by KMS node and code": the code says why. `sender_authentication_failed`: the relayer's FhevmSig key is not accepted by that node's connector. `upstream_transient`, `overloaded`: the node or the network to it. A node that hangs is not counted here: it shows as slow in "<flow>: attempt latency p95 by KMS node", and in `cut`. With the circuit breaker on, "KMS nodes excluded" (Service row) says whether it already left the node out: then the requests no longer wait for it, and its failed attempts are its probes.
 2. Click the node in the health table: the lookup lists the requests it failed or was cut from. Contact the node's operator with a `decryption_id` from one of them: their connector computes the same hash.
 
 ## RelayerHttpCallSlotWaitHigh
@@ -47,6 +47,21 @@ Signing a connector call fails: the relayer's signing key (a local key, or an AW
 
 1. Logs: WARN `signing failed` lines carry the `error` of the signer (for AWS KMS: the permission or network error) and the `kms_node` whose call it was.
 2. Check the signing key: for AWS KMS the pod's role and the key policy, and the endpoint's reachability. The relayer's requests fail with `unknown` while it lasts; they show in `failed_kms_nodes` of the summary line.
+
+## RelayerHttpKmsFloorReached
+
+The circuit breaker (`kms_aggregator/docs.md`, Circuit breaker) leaves an unhealthy KMS node out for a window unless that would leave fewer than `circuit_breaker.min_nodes` in use. It reached that floor: more nodes are unhealthy than it may exclude, so the extra ones stay in use and the requests wait for the deadline again. One excluded node is routine and never alerts.
+
+1. Operator dashboard, "KMS nodes excluded" (Service row) and, in the Pod row, "Excluded KMS nodes" and "Exclusions by KMS node and code": which nodes are out and what they last answered (`upstream_transient`, `overloaded`, `timeout`, or `cancelled` for no answer at all). "Floor hits by KMS node" names the node kept in use.
+2. A node that answers errors shows in "<flow>: KMS node health" and fires RelayerHttpKmsNodeFailing; a node that hangs does not (its cut attempts are `cancelled`, not counted there): it shows in "<flow>: attempt latency p95 by KMS node" and as `cancelled` in the exclusions. Contact their operators with a `decryption_id` from the lookup.
+3. Logs: `node excluded` and `node kept: floor reached` (WARN) carry the `kms_node`, its `last_code` and `closed_nodes`; the `call cut` or `call failed` line before them, same `request_id`, says what happened. `node included` (INFO) marks the recovery.
+
+## RelayerHttpKmsFloorReachedAndSlow
+
+The floor is reached (RelayerHttpKmsFloorReached) and the 95th percentile of the requests is above 4 s (0.8 x the default call timeout, the threshold of RelayerHttpSlowRequests): more than one KMS node is slow or down. The relayer itself serves, at the deadline.
+
+1. Follow RelayerHttpKmsFloorReached: the KMS operators of the excluded and kept nodes are the ones to call.
+2. If the floor was raised on purpose (`min_nodes` close to the node count), the breaker cannot help: lower it within `max(thresholds)..=n-1`, or accept the latency until the nodes recover.
 
 ## Incident debugging
 

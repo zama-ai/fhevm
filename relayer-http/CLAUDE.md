@@ -40,6 +40,7 @@ relayer-http/
     │   └── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per route: wire types, validation, handler (fills the Summary)
     └── kms_aggregator/        # fan-out to the KMS connectors and t-of-n aggregation; start with its docs.md
         ├── mod.rs, config.rs, client.rs, call.rs, aggregator.rs, signer.rs   # signer: FhevmSig headers (RFC-038)
+        ├── breaker.rs                                  # per-node circuit breaker: verdict, switches, floor, probes
         ├── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per flow: checks, counting, output
         ├── mock.rs, scenarios.rs                       # test only: scripted connector, YAML scenario runner
         └── scenarios/*.yaml                            # behaviour scenarios, run by the test suite
@@ -54,7 +55,8 @@ configuration → behaviour). The implementation plans live outside the reposito
 One YAML file (`config/config.yaml` is the example), five sections: `name`, `log` (optional, defaults to JSON
 lines), `http` (bind address, body limit, body read timeout, supported chain ids, optional request limits defaulting to the connector's), `metrics` (optional: `endpoint`, default `0.0.0.0:9898`, the Prometheus listener on its own port) and `kms_aggregator` (deadline,
 two retry budgets: `call.retries.waits`, the explicit list of waits for transient errors, and `call.rate_limit` for
-rate limits, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
+rate limits, the per-node circuit breaker `circuit_breaker` (on by default; `min_nodes` left out is one node fewer than the endpoints, and an enabled breaker must be allowed one node out), thresholds, optional checks, the KMS
+endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
 unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`; a list is one comma-separated value). Every connector call carries an `FhevmSig` header (RFC-038)
 signed for that endpoint's `audience`; the signing key is never in the file: `kms_aggregator.auth.signer` names the env
 var holding it, or an AWS KMS key, and startup fails unless that key has the address `kms_aggregator.auth.address` and signs a test message. Local variants go to `config/*.local.yaml`, ignored by git.
@@ -136,11 +138,15 @@ the runtime arithmetic relies on (`1s <= call.timeout <= 60s`, every retry wait 
 capped) so that no arithmetic can overflow later. A panic inside a spawned task is counted as a failure, never propagated.
 
 **Fail fast.** Never wait for something that cannot change the outcome: when `counted + pending < threshold` the
-remaining calls are cancelled at once. One deadline per request, no queue, no ETA; the client retries.
+remaining calls are cancelled at once. One deadline per request, no queue, no ETA; the client retries. A probe of an
+excluded KMS node never delays a request: it runs beside the aggregation, makes one attempt, and only its verdict is
+kept.
 
 **HPA compatible.** No per-request state outside the request's own future: no shared map, no registry, no sticky
-session. Every replica is identical; the call semaphore is per pod. If per-request state is ever needed, it goes behind
-a trait so that Redis (or another store) can back it later.
+session. Every replica is identical; the call semaphore is per pod. Per-node health state in memory (the circuit
+breakers, `kms_aggregator/breaker.rs`) is allowed: it is about the KMS nodes, not about a request, and replicas may
+disagree for one window. If per-request state is ever needed, it goes behind a trait so that Redis (or another
+store) can back it later.
 
 **Errors.** Modules return typed errors (`thiserror`), with what the caller needs to act (counts, dominant connector
 error). Errors are reported once, in the summary line of the request that the boundary answering the client emits. No `error!`

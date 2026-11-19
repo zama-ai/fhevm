@@ -28,7 +28,7 @@ fn label_bound(name: &str) -> usize {
 /// Series per label combination: one for a counter; one per bucket, `+Inf`, the sum and the count for a histogram.
 fn series_per_combination(def: &MetricDef) -> usize {
     match def.kind {
-        Kind::Counter => 1,
+        Kind::Counter | Kind::Gauge => 1,
         Kind::Histogram(buckets) => buckets.len() + 3,
     }
 }
@@ -67,6 +67,7 @@ fn metrics() -> String {
     for def in METRICS {
         let kind = match def.kind {
             Kind::Counter => "counter".to_owned(),
+            Kind::Gauge => "gauge".to_owned(),
             Kind::Histogram(buckets) => format!("histogram ({} buckets)", buckets.len()),
         };
         let series = worst_case_series(def);
@@ -133,6 +134,16 @@ fn references_are_current() {
             "monitoring/{name} is out of date: regenerate with `make -C relayer-http/dev references`"
         );
     }
+}
+
+#[test]
+fn a_gauge_counts_one_series_per_combination() {
+    let gauge = METRICS
+        .iter()
+        .find(|def| def.name == "relayer_http_kms_node_excluded")
+        .unwrap();
+    assert!(matches!(gauge.kind, Kind::Gauge));
+    assert_eq!(worst_case_series(gauge), label_bound("kms_node"));
 }
 
 #[test]

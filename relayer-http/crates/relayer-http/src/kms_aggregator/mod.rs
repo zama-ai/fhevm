@@ -1,6 +1,7 @@
 //! Fan-out to the KMS connector endpoints and t-of-n aggregation of decryption responses. Start with `docs.md`.
 
 mod aggregator;
+mod breaker;
 mod call;
 mod client;
 pub mod config;
@@ -12,6 +13,7 @@ mod scenarios;
 mod signer;
 
 pub use aggregator::{AggregationError, Aggregator, Tally, note_node_panic};
+pub use breaker::CircuitBreakers;
 pub use call::{CallError, CallResult, Caller};
 pub use client::{
     AttemptError, ConnectorClient, Endpoint, HttpClient, HttpReply, MAX_RESPONSE_BYTES,

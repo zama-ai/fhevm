@@ -82,3 +82,32 @@ groups:
           summary: "relayer-http cannot sign its calls to the KMS nodes"
           description: "Signing a connector call failed {{ $value | humanize }} time(s) in the last 5 minutes: the signing key is unreachable or refuses, and no request reaches the KMS nodes it affects."
           runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpsignerfailing"
+
+      - alert: RelayerHttpKmsFloorReached
+        # The circuit breaker (kms_aggregator/docs.md, Circuit breaker) excludes an unhealthy KMS node unless that would
+        # leave fewer than circuit_breaker.min_nodes in use: a floor hit means more nodes are unhealthy than it may
+        # exclude, and the requests wait for the deadline again. A single excluded node is routine and never alerts.
+        # The counter starts at 0 for every node with the process (`announce_nodes`), so a first hit is an increase.
+        expr: |
+          sum(increase(relayer_http_kms_floor_hits_total[10m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "relayer-http's circuit breaker is at its floor: more KMS nodes are unhealthy than it may exclude"
+          description: "{{ $value | humanize }} time(s) in the last 10 minutes an unhealthy KMS node was kept in use because excluding it would leave fewer than circuit_breaker.min_nodes: requests wait for the deadline again. relayer_http_kms_node_excluded says which nodes are out, relayer_http_kms_exclusions_total by code why (cancelled: no answer at all, the node hangs)."
+          runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpkmsfloorreached"
+
+      - alert: RelayerHttpKmsFloorReachedAndSlow
+        # The floor is reached and the requests are at the deadline (the same p95 as RelayerHttpSlowRequests, over
+        # both flows): more than one KMS node is slow or down, the relayer itself serves.
+        expr: |
+          (sum(increase(relayer_http_kms_floor_hits_total[10m])) > 0)
+            and on() (max(histogram_quantile(0.95, sum by (flow, le) (rate(relayer_http_request_duration_seconds_bucket{flow!="none", outcome!~"rejected|cancelled"}[5m])))) > 4)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "relayer-http's circuit breaker is at its floor and requests wait for the deadline"
+          description: "More than one KMS node is slow or down: the circuit breaker kept an unhealthy node in use {{ $value | humanize }} time(s) in the last 10 minutes and the 95th percentile of requests is above 4 s. The relayer serves, at the deadline; the KMS operators are the ones to call."
+          runbook_url: "https://github.com/zama-ai/fhevm/blob/main/relayer-http/monitoring/runbook.md#relayerhttpkmsfloorreachedandslow"

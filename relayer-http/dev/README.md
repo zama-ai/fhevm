@@ -35,6 +35,19 @@ By default the stack pulls the relayer-http image resolved for the target (`RELA
 
 Use it when the change must be seen through the stack as deployed: the config template (`test-suite/fhevm/templates/config/relayer-http.yaml`), the TLS path to the proxies, the relayer proxy route. For code iteration with logs in the terminal, `make run` below is faster (no image build).
 
+**Trying the circuit breaker** (`kms_aggregator/docs.md`, section 7). It is on in the stack: the template enables
+it and the renderer sets `min_nodes` to the committee size minus one (3 with the 4-party committee, whose
+thresholds are 2 and 3, so one node may be out); `enabled: false` in the template turns it off. Run
+`./fhevm-cli up --override relayer-http`,
+run a flow once, stop one party's proxy (`docker ps | grep connector-2-proxy`, then `docker stop` it), and run the
+flow again: the first run after the stop is slow (the retries against the refused connection, about 3 s, or the
+5 s deadline when the connection hangs) and logs `node excluded` for `kms_2`; the next ones answer at the healthy
+latency with 3 shares and `aggregation started` names the node under `excluded_nodes`.
+Start the proxy again: the first run more than 30 s after the exclusion probes it (`node probed`, debug; one attempt,
+no retry: while the proxy is still down that is one `attempt failed` with `give_up_reason` `probe`, then
+`probe failed: node excluded`), the next one includes it again (`node included`, INFO, and
+`relayer_http_kms_node_excluded{kms_node="kms_2"}` back to 0 on the metrics port, host 3092).
+
 ### In the preview env
 
 The preview env (`ci/preview-env/README.md`, section relayer-http) deploys the same template, merged under
@@ -101,7 +114,7 @@ make -C relayer-http/dev stop-monitoring
   - Prometheus lists both targets on `:9390/targets`; the one not running shows down.
 - `load`: k6 (`grafana/k6` image) sends a mix to `TARGET=fhevm-cli` (default) or `host`: public decrypts of subsets of the last decrypted fixture's handles (so repeats of the same `decryption_id`), plus requests rejected with 400 and 404 (`dev/load/relayer-http.js`). `RATE` and `DURATION` override the profile. The valid requests need the current KMS context's `extraData`, read through the e2e container. User decrypts reaching the KMS nodes need a signature: `make user-decrypt`.
 - `check-dashboards`: an ignored test (`monitoring::grafana`). It first checks that Grafana serves each dashboard file as it is now (restart the stack if not). It logs a scenario through the real code (a repeated user decrypt, a public decrypt that succeeds then fails, a rejected request), pushes those lines to Loki under an `app` label of its own, runs every query of every dashboard through Grafana, and compares the log panels with the counts the scenario implies, the failed request being the lookup's selected one. A query Prometheus or Loki refuses fails it. Grafana loads every `*.json` under `monitoring/`, subdirectories included: a stray copy with the same uid makes it serve either.
-- `upgrade-fhevm-cli-relayer`: tags the image `ghcr.io/zama-ai/fhevm/relayer-http:local` (`RELAYER_HTTP_LOCAL_TAG`) and recreates only `fhevm-relayer-http`, with the stack's rendered config and env (`FHEVM_STATE_DIR` when fhevm-cli runs from another checkout). The next `./fhevm-cli up` restores the published image. The build uses the production Dockerfile, so its private base images need logins first: `chainctl auth login` and `chainctl auth configure-docker` for `cgr.dev/zama.ai`, and `docker login ghcr.io` for the builder image. fhevm-cli itself has no local build for relayer-http, and published images older than the metrics serve no `/metrics`.
+- `upgrade-fhevm-cli-relayer`: tags the image `ghcr.io/zama-ai/fhevm/relayer-http:local` (`RELAYER_HTTP_LOCAL_TAG`), or `fhevm-local` when the stack was started with `--override relayer-http` (its runtime compose file pins that tag, and a pinned image wins over the version variable: built under another tag, the recreated container would keep the override's previous build), and recreates only `fhevm-relayer-http`, with the stack's rendered config and env (`FHEVM_STATE_DIR` when fhevm-cli runs from another checkout). The next `./fhevm-cli up` restores the published image. The build uses the production Dockerfile, so its private base images need logins first: `chainctl auth login` and `chainctl auth configure-docker` for `cgr.dev/zama.ai`, and `docker login ghcr.io` for the builder image. fhevm-cli itself has no local build for relayer-http, and published images older than the metrics serve no `/metrics`.
 - Logs: Alloy ships both relayers' lines (JSON, the stack's config) to Loki as `app="relayer-http"`, as the dashboards expect; the lookup's search box takes a handle, a `decryption_id`, a `request_id`, a user or a contract address, and a row clicked in its table fills the request_id box and the Selected request section; the Lines box switches that section between `info` and `debug` (every line, the per-node DEBUG steps of a healthy request included). A recreated stack relayer shows up within a minute (Alloy's discovery interval).
 - Alerts: evaluated by Prometheus, listed with their state on `:9390/alerts`; no Alertmanager, so nothing is sent.
 - Ports: uncommon on purpose; override with `RELAYER_HTTP_STACK_METRICS_PORT`, `RELAYER_HTTP_METRICS_PORT`, `RELAYER_HTTP_PROMETHEUS_PORT`, `RELAYER_HTTP_GRAFANA_PORT`, `RELAYER_HTTP_LOKI_PORT` (3310). `RELAYER_HTTP_MONITORING_HOST` (default `127.0.0.1`) is the address they listen on; a LAN address (or `0.0.0.0`) lets another machine browse them, and exposes the anonymous Grafana to that network.

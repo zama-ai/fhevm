@@ -130,7 +130,8 @@ export const renderRelayerConfig = (
 /**
  * Renders the relayer-http config: the KMS proxies and audiences the e2e suite gets
  * (KMS_CONNECTOR_ENDPOINT_URLS / KMS_CONNECTOR_TX_SENDER_ADDRESSES), thresholds from the MPC
- * threshold t (public t+1, user 2t+1), the host chains' ids, and the discovered ProtocolConfig.
+ * threshold t (public t+1, user 2t+1), the circuit breaker's floor (one node may be out), the
+ * host chains' ids, and the discovered ProtocolConfig.
  */
 export const renderRelayerHttpConfig = (
   state: Pick<State, "discovery">,
@@ -143,6 +144,7 @@ export const renderRelayerHttpConfig = (
     kms_aggregator: {
       public_decrypt: Record<string, unknown>;
       user_decrypt: Record<string, unknown>;
+      circuit_breaker: Record<string, unknown>;
       auth: Record<string, unknown>;
       endpoints: unknown[];
     };
@@ -167,5 +169,7 @@ export const renderRelayerHttpConfig = (
     url,
     audience: audiences[index] ?? "",
   }));
+  // The breaker may leave one node out; relayer-http requires the floor within max(thresholds)..=n-1.
+  aggregator.circuit_breaker.min_nodes = aggregator.endpoints.length - 1;
   return YAML.stringify(config);
 };

@@ -27,6 +27,9 @@ kms_aggregator:
     rate_limit:
       max_retries: 1
       initial_delay: 1s
+  circuit_breaker:   # min_nodes is rendered from the committee: one node may be out
+    enabled: true
+    exclude_for: 30s
   public_decrypt:
     threshold: 1
   user_decrypt:

@@ -20,11 +20,14 @@ export RELAYER_HTTP_LOKI_PORT          ?= 3310
 # Where this machine reaches them: loopback when they listen on every interface.
 MONITORING_URL_HOST := $(if $(filter 0.0.0.0,$(RELAYER_HTTP_MONITORING_HOST)),127.0.0.1,$(RELAYER_HTTP_MONITORING_HOST))
 # `make upgrade-fhevm-cli-relayer`: the stack's state (rendered config and env; FHEVM_STATE_DIR when fhevm-cli runs from another
-# checkout) and the tag of the image built from this checkout.
+# checkout) and the tag of the image built from this checkout. A stack started with `--override relayer-http` carries
+# a runtime compose file that pins the tag `fhevm-local`: the image must be built under that tag, or the recreated
+# container keeps the override's previous build (the pinned image wins over RELAYER_HTTP_VERSION).
 export FHEVM_STATE_DIR ?= $(abspath $(ROOT)/../.fhevm)
-RELAYER_HTTP_LOCAL_TAG ?= local
+RELAYER_HTTP_OVERRIDE_COMPOSE := $(wildcard $(FHEVM_STATE_DIR)/runtime/compose/relayer-http.yml)
+RELAYER_HTTP_LOCAL_TAG ?= $(if $(RELAYER_HTTP_OVERRIDE_COMPOSE),fhevm-local,local)
 STACK_COMPOSE := docker compose -p fhevm -f $(abspath $(ROOT)/../test-suite/fhevm/docker-compose/relayer-http-docker-compose.yml) \
-	$(addprefix -f ,$(wildcard $(FHEVM_STATE_DIR)/runtime/compose/relayer-http.yml))
+	$(addprefix -f ,$(RELAYER_HTTP_OVERRIDE_COMPOSE))
 # Pinned like the listener's monitoring stack; promtool ships in the Prometheus image.
 PROMTOOL := docker run --rm -i --entrypoint promtool prom/prometheus:v3.9.1
 PROMTOOL_MONITORING := docker run --rm -v $(ROOT)/monitoring:/monitoring:ro -w /monitoring --entrypoint promtool prom/prometheus:v3.9.1
