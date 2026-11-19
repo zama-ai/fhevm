@@ -34,10 +34,15 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     ///      to reject the misconfiguration loudly rather than silently bricking the context.
     uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
+    /// @dev EIP-712 domain name and version of the canonical ProtocolConfig. The KMS signers sign under them.
+    string internal constant EIP712_NAME = "ProtocolConfig";
+    string internal constant EIP712_VERSION = "1";
+
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
     //
-    // Used by the struct hash helpers of the four KMS lifecycle confirmations.
+    // The four KMS lifecycle confirmations. The canonical recovers one signer per call. A replica
+    // verifies a quorum of them under the canonical's domain.
     // -----------------------------------------------------------------------------------------
 
     /// @dev Hash of the ContextCreationConfirmation type.
@@ -66,8 +71,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfig
     struct ProtocolConfigStorage {
-        /// @notice Monotonic allocation counter for KMS context IDs: the latest issued ID.
-        ///         Always `>= latestActiveKmsContextId`. Differs while a context is Pending/Created.
+        /// @notice Monotonic allocation counter for KMS context IDs on the canonical. Unused on a replica.
         uint256 currentKmsContextId;
         /// @notice KMS nodes per context.
         mapping(uint256 contextId => KmsNode[]) kmsNodesForContext;
@@ -93,9 +97,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice The most recently activated KMS context ID, the one reads resolve against.
         ///         Several contexts may remain in the `Active` state at once (prior contexts are not
         ///         demoted on rotation, so in-flight requests stay valid). This points at the newest.
-        ///         Updated only on activation, unlike the `currentKmsContextId` allocation counter.
+        ///         Updated only on activation, unlike the canonical `currentKmsContextId` allocation counter.
         uint256 latestActiveKmsContextId;
-        /// @notice Epoch ID counter.
+        /// @notice Epoch ID counter on the canonical. Unused on a replica.
         uint256 epochCounter;
         /// @notice The most recently activated epoch ID. Multiple epochs may remain `Active`. This
         ///         points at the newest, which new reads resolve against.
@@ -146,12 +150,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     function getCurrentKmsContextId() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.latestActiveKmsContextId;
-    }
-
-    /// @inheritdoc IProtocolConfigBase
-    function getCurrentKmsContextIdCounter() external view virtual returns (uint256) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.currentKmsContextId;
     }
 
     /// @inheritdoc IProtocolConfigBase
@@ -294,7 +292,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     /**
      * @dev Returns true if the context was ever stored, even if it has since been destroyed.
-     * Used for historical reads (e.g. context anchors) that must remain accessible post-destruction.
+     * Used for historical reads after a destruction and to reject a submit onto a stored committee.
      */
     function _kmsContextExists(uint256 kmsContextId) internal view virtual returns (bool) {
         return _getProtocolConfigStorage().kmsNodesForContext[kmsContextId].length != 0;
@@ -311,24 +309,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         if (!_isValidKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
-    }
-
-    /**
-     * @dev Stores the committee under `contextId`, moves both ID counters to the pair and activates it.
-     *      Use it where the context ID is set from outside, not allocated. The caller emits any events.
-     *      The caller must ensure `contextId > currentKmsContextId` and `epochId > epochCounter`.
-     */
-    function _storeAndActivateKmsContextAndEpoch(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNode[] memory nodes,
-        KmsThresholds calldata thresholds
-    ) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        _storeKmsNodesAndThresholds(contextId, nodes, thresholds);
-        $.currentKmsContextId = contextId;
-        $.epochCounter = epochId;
-        _activateKmsContextAndEpoch(contextId, epochId);
     }
 
     /**
@@ -403,6 +383,15 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         $.epochState[epochId] = EpochState.Active;
         $.contextForEpoch[epochId] = contextId;
         $.latestActiveEpochId = epochId;
+    }
+
+    /**
+     * @dev Resets the state of `epochId` to None and removes its context link.
+     */
+    function _clearEpoch(uint256 epochId) internal virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        $.epochState[epochId] = EpochState.None;
+        delete $.contextForEpoch[epochId];
     }
 
     /**
