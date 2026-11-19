@@ -44,6 +44,10 @@ use tracing::warn;
 use tracing::{debug, error, info, Instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+#[cfg(test)]
+#[path = "tests/batch_publication.rs"]
+mod batch_publication;
+
 const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy)]
