@@ -126,9 +126,11 @@ Module version pinning and the encryption-key cache are covered in
   settings.
 - A key that fails the check is never used. A downloaded one is fetched again
   on the next call.
-- A client whose own key fails the check keeps failing with the same error and
-  never uses the Relayer's key instead. Create a new client with a valid key,
-  or without one.
+- A failed check is not remembered: the next call checks again, so a
+  temporary cause (e.g. a lagging RPC node) clears without a new client. A
+  client with its own key keeps it meanwhile and never uses the Relayer's key
+  instead. A key that is no longer active never passes: create a new client
+  with a valid key, or without one.
 - Network errors are thrown as they are; the next call retries.
 - Cleartext mode serves filler key bytes and skips the check.
 
@@ -138,7 +140,7 @@ the SDK checks their digests (SHAKE256), and ids when the Relayer serves a
 `KMSGeneration` contract (label ids served by current Relayers are skipped; the
 digest alone binds the bytes to the active key). A Relayer serving another key
 could otherwise read the encrypted inputs. A key that fails the check is never
-used and is not kept: encryption throws `FheEncryptionKeyVerificationError`.
+used and is not cached: encryption throws `FheEncryptionKeyVerificationError`.
 
 `fheEncryptionKey` (optional) preloads the public key and CRS so the client
 skips the download. Before the client is ready, the SDK checks it. If it
@@ -146,10 +148,9 @@ equals the key already cached for the Relayer and `KMSGeneration`, the cached ke
 by this client. Otherwise it is checked against the active key in
 `KMSGeneration`. If the check fails, `ready` of an encrypt client rejects with
 `FheEncryptionKeyVerificationError` (other clients fail on their first key
-fetch), and every later key fetch of the client throws the same error, with no
-RPC call: the client drops its copy, keeps only the error, and never uses the
-Relayer's key instead.
-If it passes, it replaces the cached key, which is stale (only one key
+fetch). The client keeps its copy, checks it again on every later key fetch
+(or `ready`), and never uses the Relayer's key instead.
+Once it passes, it replaces the cached key, which is stale (only one key
 is active at a time), and the client drops its copy; later key fetches use the
 cache or go to the Relayer.
 Its `metadata.relayerUrl` must equal the chain's `relayerUrl` exactly, else

@@ -16,7 +16,6 @@ import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext
 import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
-import type { FheEncryptionKeyVerificationError } from '../errors/FheEncryptionKeyVerificationError.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 import { verifyTrustedValue } from '../base/trustedValue.js';
@@ -36,7 +35,6 @@ const GET_FROZEN_CONTEXT_PROMISE = Symbol('CoreFhevmHostClient.getFrozenContextP
 const SET_FROZEN_CONTEXT_PROMISE = Symbol('CoreFhevmHostClient.setFrozenContextPromise');
 const GET_PROVIDED_FHE_ENCRYPTION_KEY = Symbol('CoreFhevmHostClient.getProvidedFheEncryptionKey');
 const RELEASE_PROVIDED_FHE_ENCRYPTION_KEY = Symbol('CoreFhevmHostClient.releaseProvidedFheEncryptionKey');
-const GET_PROVIDED_FHE_ENCRYPTION_KEY_ERROR = Symbol('CoreFhevmHostClient.getProvidedFheEncryptionKeyError');
 
 const UNRESOLVED_FHEVM_CONTEXT_MESSAGE = 'Fhevm context has not been resolved. Await client.ready before.';
 
@@ -45,11 +43,7 @@ type SetFrozenContextFn = (frozenContext: FhevmClientFrozenContext) => void;
 type GetFrozenContextPromiseFn = () => Promise<FhevmClientFrozenContext> | undefined;
 type SetFrozenContextPromiseFn = (frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined) => void;
 type GetProvidedFheEncryptionKeyFn = () => FheEncryptionKeyBytes | undefined;
-type ReleaseProvidedFheEncryptionKeyFn = (
-  fheEncryptionKey: FheEncryptionKeyBytes,
-  error?: FheEncryptionKeyVerificationError,
-) => void;
-type GetProvidedFheEncryptionKeyErrorFn = () => FheEncryptionKeyVerificationError | undefined;
+type ReleaseProvidedFheEncryptionKeyFn = (fheEncryptionKey: FheEncryptionKeyBytes) => void;
 
 ////////////////////////////////////////////////////////////////////////////////
 // CoreFhevmImpl
@@ -69,14 +63,13 @@ class CoreFhevmImpl<
   readonly #chain: chain | undefined;
   readonly #options: ResolvedFhevmOptions;
   // Caller-provided key / CRS bytes (`options.fheEncryptionKey`), kept out of
-  // the public resolved options and released once checked: on a pass, the
-  // cache holds them; on a failed check, only the error is kept.
+  // the public resolved options and released once they pass the check: the
+  // cache holds them from then on. A client whose own key fails the check
+  // keeps it: every later call checks it again (the cause may be transient,
+  // e.g. a lagging RPC node), and the client never falls back to the relayer's
+  // key. A key that is not the active one fails too (only the active key may
+  // be used).
   #providedFheEncryptionKey: FheEncryptionKeyBytes | undefined;
-  // A client whose own key fails the check keeps the error, never the key:
-  // every later call throws it, and the client never falls back to the
-  // relayer's key. A key that is not the active one fails too (only the active
-  // key may be used). To use another key, create a new client.
-  #providedFheEncryptionKeyError: FheEncryptionKeyVerificationError | undefined;
   readonly #initFns: Set<(client: FhevmBase<FhevmChain>) => Promise<void>>;
   #readyPromise: Promise<void> | undefined;
 
@@ -125,7 +118,6 @@ class CoreFhevmImpl<
     // A copy: the caller changing its arrays later cannot bypass the check.
     this.#providedFheEncryptionKey =
       providedFheEncryptionKey === undefined ? undefined : copyFheEncryptionKeyBytes(providedFheEncryptionKey);
-    this.#providedFheEncryptionKeyError = undefined;
     this.#initFns = new Set();
     this.#readyPromise = undefined;
 
@@ -309,18 +301,11 @@ class CoreFhevmImpl<
       },
       [RELEASE_PROVIDED_FHE_ENCRYPTION_KEY]: {
         // Only the bytes that were checked: a no-op if already released.
-        value: (fheEncryptionKey: FheEncryptionKeyBytes, error?: FheEncryptionKeyVerificationError): void => {
+        value: (fheEncryptionKey: FheEncryptionKeyBytes): void => {
           if (this.#providedFheEncryptionKey === fheEncryptionKey) {
             this.#providedFheEncryptionKey = undefined;
-            this.#providedFheEncryptionKeyError = error;
           }
         },
-        configurable: false,
-        enumerable: false,
-        writable: false,
-      },
-      [GET_PROVIDED_FHE_ENCRYPTION_KEY_ERROR]: {
-        value: (): FheEncryptionKeyVerificationError | undefined => this.#providedFheEncryptionKeyError,
         configurable: false,
         enumerable: false,
         writable: false,
@@ -785,33 +770,18 @@ export function getProvidedFheEncryptionKey(
 }
 
 /**
- * Drops the client's reference to the caller-provided key / CRS bytes once
- * checked:
- * - passed (no `error`): the global cache holds them from then on; a later
- *   fetch, after a cache eviction, downloads the active key from the relayer;
- * - failed (`error`): the client keeps only the error, returned by
- *   {@link getProvidedFheEncryptionKeyError}; every later fetch throws it.
+ * Drops the client's reference to the caller-provided key / CRS bytes once they
+ * pass the check: the global cache holds them from then on; a later fetch,
+ * after a cache eviction, downloads the active key from the relayer. A key
+ * that fails the check is never released: the client keeps it and checks it
+ * again on the next call.
  */
 export function releaseProvidedFheEncryptionKey(
   fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
   fheEncryptionKey: FheEncryptionKeyBytes,
-  error?: FheEncryptionKeyVerificationError,
 ): void {
   const f = asCoreFhevm(fhevm) as CoreFhevm & {
     readonly [RELEASE_PROVIDED_FHE_ENCRYPTION_KEY]: ReleaseProvidedFheEncryptionKeyFn;
   };
-  f[RELEASE_PROVIDED_FHE_ENCRYPTION_KEY](fheEncryptionKey, error);
-}
-
-/**
- * The error of the caller-provided key / CRS bytes that failed the check, once
- * released by {@link releaseProvidedFheEncryptionKey}; `undefined` otherwise.
- */
-export function getProvidedFheEncryptionKeyError(
-  fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
-): FheEncryptionKeyVerificationError | undefined {
-  const f = asCoreFhevm(fhevm) as CoreFhevm & {
-    readonly [GET_PROVIDED_FHE_ENCRYPTION_KEY_ERROR]: GetProvidedFheEncryptionKeyErrorFn;
-  };
-  return f[GET_PROVIDED_FHE_ENCRYPTION_KEY_ERROR]();
+  f[RELEASE_PROVIDED_FHE_ENCRYPTION_KEY](fheEncryptionKey);
 }

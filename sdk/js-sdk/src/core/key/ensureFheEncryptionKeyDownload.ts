@@ -8,11 +8,7 @@ import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext
 import type { CacheEntry } from './FheEncryptionKeyCache-p.js';
 import { unsafeBytesEquals } from '../base/bytes.js';
 import { FheEncryptionKeyVerificationError } from '../errors/FheEncryptionKeyVerificationError.js';
-import {
-  getProvidedFheEncryptionKey,
-  getProvidedFheEncryptionKeyError,
-  releaseProvidedFheEncryptionKey,
-} from '../runtime/CoreFhevm-p.js';
+import { getProvidedFheEncryptionKey, releaseProvidedFheEncryptionKey } from '../runtime/CoreFhevm-p.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import {
   requiresKeyVerification,
@@ -80,11 +76,13 @@ export function getFheEncryptionKeySlot(context: {
  * Outcomes of the check:
  * - pass: a provided key is cached and the client releases it;
  * - {@link FheEncryptionKeyVerificationError}: a downloaded key leaves the
- *   cache, the next call downloads again; the client drops a provided key and
- *   keeps only the error: later calls throw it, with no RPC call and no
- *   download;
+ *   cache, the next call downloads again; the client keeps a provided key and
+ *   the next call checks it again (the cause may be transient, e.g. a lagging
+ *   RPC node), never downloading the relayer's key instead;
  * - any other error (e.g. network): the key stays as is, the next call checks
  *   it again.
+ *
+ * A failed check is never remembered: the next call reads KMSGeneration again.
  *
  * Callers use the returned entry, the one checked, never the slot's current
  * one: another entry may have taken the slot since.
@@ -103,11 +101,6 @@ export async function ensureFheEncryptionKeyDownload(
 ): Promise<ClientFheEncryptionKey> {
   const relayerUrl = context.chain.fhevm.relayerUrl;
   const runtime = context.runtime;
-  // A provided key that failed the check: only its error is left.
-  const providedError = getProvidedFheEncryptionKeyError(context);
-  if (providedError !== undefined) {
-    throw providedError;
-  }
 
   // Checks the client's own setup, even when another client filled the cache.
   const slot = getFheEncryptionKeySlot(context);
@@ -140,8 +133,8 @@ export async function ensureFheEncryptionKeyDownload(
 ////////////////////////////////////////////////////////////////////////////////
 
 // Each client's check of each key (bytes object): concurrent calls on a
-// client share one set of KMSGeneration reads. A key that fails the check stays
-// failed; any other error (e.g. network) is retried by the next call.
+// client share one set of KMSGeneration reads. A failed check (any error) is
+// forgotten: the next call reads KMSGeneration again.
 const clientVerifications = new WeakMap<FheEncryptionKeyBytes, WeakMap<Context, Promise<void>>>();
 
 function _verifyFheEncryptionKeyBytesForClient(context: Context, bytes: FheEncryptionKeyBytes): Promise<void> {
@@ -150,7 +143,7 @@ function _verifyFheEncryptionKeyBytesForClient(context: Context, bytes: FheEncry
   }
   const checks = clientVerifications.get(bytes) ?? new WeakMap<Context, Promise<void>>();
   clientVerifications.set(bytes, checks);
-  return _memoize(checks, context, () => verifyFheEncryptionKeyBytes(context, bytes).then(() => undefined), true);
+  return _memoize(checks, context, () => verifyFheEncryptionKeyBytes(context, bytes).then(() => undefined));
 }
 
 async function _verifyCachedFheEncryptionKey(
@@ -176,8 +169,8 @@ async function _verifyCachedFheEncryptionKey(
 
 // The use of each client's provided key (its own copy): concurrent calls on a
 // client share the one in flight. A failed use is forgotten: the client keeps
-// the error of a key that fails the check (see ensureFheEncryptionKeyDownload),
-// any other error is retried by the next call.
+// the key and the next call checks it again (see
+// ensureFheEncryptionKeyDownload).
 const providedKeyUses = new WeakMap<FheEncryptionKeyBytes, Promise<ClientFheEncryptionKey>>();
 
 function _useProvidedFheEncryptionKey(
@@ -185,45 +178,33 @@ function _useProvidedFheEncryptionKey(
   provided: FheEncryptionKeyBytes,
   slot: string,
 ): Promise<ClientFheEncryptionKey> {
-  return _memoize(
-    providedKeyUses,
-    provided,
-    async (): Promise<ClientFheEncryptionKey> => {
-      try {
-        const cachedEntry = await _getSameCachedEntry(slot, provided);
-        let checked: ClientFheEncryptionKey;
-        if (cachedEntry !== undefined) {
-          checked = await _verifyCachedFheEncryptionKey(context, slot, cachedEntry);
-        } else {
-          await _verifyFheEncryptionKeyBytesForClient(context, provided);
-          // Another client may have cached the same key during the check: use
-          // its entry rather than orphan it.
-          const sameEntry = await _getSameCachedEntry(slot, provided);
-          if (sameEntry !== undefined) {
-            checked = await _verifyCachedFheEncryptionKey(context, slot, sameEntry);
-          } else {
-            const entry = globalFheEncryptionKeyCache.replaceBytes(
-              context.runtime,
-              slot,
-              context.chain.fhevm.relayerUrl,
-              provided,
-            );
-            checked = { slot, entry, bytes: provided };
-          }
-        }
-        // The cache holds the key from now on.
-        releaseProvidedFheEncryptionKey(context, provided);
-        return checked;
-      } catch (e) {
-        if (e instanceof FheEncryptionKeyVerificationError) {
-          // The client keeps only the error, not the bytes.
-          releaseProvidedFheEncryptionKey(context, provided, e);
-        }
-        throw e;
+  return _memoize(providedKeyUses, provided, async (): Promise<ClientFheEncryptionKey> => {
+    // On any error the client keeps the key: the next call checks it again.
+    const cachedEntry = await _getSameCachedEntry(slot, provided);
+    let checked: ClientFheEncryptionKey;
+    if (cachedEntry !== undefined) {
+      checked = await _verifyCachedFheEncryptionKey(context, slot, cachedEntry);
+    } else {
+      await _verifyFheEncryptionKeyBytesForClient(context, provided);
+      // Another client may have cached the same key during the check: use
+      // its entry rather than orphan it.
+      const sameEntry = await _getSameCachedEntry(slot, provided);
+      if (sameEntry !== undefined) {
+        checked = await _verifyCachedFheEncryptionKey(context, slot, sameEntry);
+      } else {
+        const entry = globalFheEncryptionKeyCache.replaceBytes(
+          context.runtime,
+          slot,
+          context.chain.fhevm.relayerUrl,
+          provided,
+        );
+        checked = { slot, entry, bytes: provided };
       }
-    },
-    false,
-  );
+    }
+    // The cache holds the key from now on.
+    releaseProvidedFheEncryptionKey(context, provided);
+    return checked;
+  });
 }
 
 /**
@@ -241,23 +222,17 @@ async function _getSameCachedEntry(slot: string, provided: FheEncryptionKeyBytes
 
 /**
  * Memoizes `start()` under `key`: concurrent and later calls share it. A
- * rejection is forgotten, so the next call starts again, except a
- * {@link FheEncryptionKeyVerificationError} when `keepVerificationError`.
+ * rejection (any error) is forgotten, so the next call starts again.
  */
-function _memoize<K extends object, T>(
-  memo: WeakMap<K, Promise<T>>,
-  key: K,
-  start: () => Promise<T>,
-  keepVerificationError: boolean,
-): Promise<T> {
+function _memoize<K extends object, T>(memo: WeakMap<K, Promise<T>>, key: K, start: () => Promise<T>): Promise<T> {
   const memoized = memo.get(key);
   if (memoized !== undefined) {
     return memoized;
   }
   const check = start();
   memo.set(key, check);
-  check.catch((e: unknown) => {
-    if (!(keepVerificationError && e instanceof FheEncryptionKeyVerificationError) && memo.get(key) === check) {
+  check.catch(() => {
+    if (memo.get(key) === check) {
       memo.delete(key);
     }
   });
