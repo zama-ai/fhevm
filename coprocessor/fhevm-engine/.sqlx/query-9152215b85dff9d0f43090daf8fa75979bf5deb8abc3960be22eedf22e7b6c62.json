@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pads\n            SET ciphertext128 = $4, ciphertext_digest = $5, ciphertext128_digest = $6,\n                signer = $7, signature = $8, attestation_version = $9, claimed_at = NOW()\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3\n            AND signature IS NULL AND NOT is_error AND claim_token = $10",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9152215b85dff9d0f43090daf8fa75979bf5deb8abc3960be22eedf22e7b6c62"
+}
