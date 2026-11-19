@@ -79,8 +79,9 @@ class CoreFhevmImpl<
   readonly #chain: chain | undefined;
   readonly #options: ResolvedFhevmOptions;
   // Caller-provided key / CRS bytes (`options.fheEncryptionKey`), kept out of
-  // the public resolved options and released once checked: on a pass, the
-  // cache holds them; on a failed check, only the error is kept.
+  // the public resolved options. Used only while no key is cached, then
+  // released: on a pass, the cache holds them; when a key was cached first,
+  // that key is used; on a failed check, only the error is kept.
   #providedFheEncryptionKey: FheEncryptionKeyBytes | undefined;
   // A client whose own key fails the check keeps the error, never the key:
   // every later call throws it, and the client never falls back to the
@@ -732,8 +733,8 @@ export function getProvidedFheEncryptionKey(
 /**
  * Drops the client's reference to the caller-provided key / CRS bytes once
  * checked:
- * - passed (no `error`): the global cache holds them from then on; a later
- *   fetch, after a cache eviction, downloads the active key from the relayer;
+ * - no `error`: the global cache holds them, or another key cached first;
+ *   later fetches use the cache, refreshed like any cached key;
  * - failed (`error`): the client keeps only the error, returned by
  *   {@link getProvidedFheEncryptionKeyError}; every later fetch throws it.
  */

@@ -917,26 +917,26 @@ describe('fetchFheEncryptionKeyBytes', () => {
       return fetchFheEncryptionKeyBytes(client, { fhevmContext });
     }
 
-    it('rejects stale provided bytes, as on an empty cache, and never falls back to the cached key', async () => {
-      await warmCache();
+    it('ignores provided bytes, unchecked, and uses the cached key', async () => {
+      const cached = await warmCache();
       const entry = keyCache.peek(KMSGEN_SLOT);
+      const debug = vi.fn();
       const { client, fetchFheEncryptionKeyBytesFn } = makeClient({
         chain: ethereumChain,
         handlers: kmsGenerationHandlers(),
         fheEncryptionKey: keyBytes({ publicKey: new Uint8Array([9]) as Bytes }),
       });
+      (client.runtime.config as { logger?: unknown }).logger = { debug };
 
-      const error = await fetchFheEncryptionKeyBytes(client, { fhevmContext }).catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(FheEncryptionKeyVerificationError);
+      await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).resolves.toBe(cached);
       expect(keyCache.peek(KMSGEN_SLOT)).toBe(entry);
-
-      await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toBe(error);
+      expect(getProvidedFheEncryptionKey(client)).toBeUndefined();
+      expect(getProvidedFheEncryptionKeyError(client)).toBeUndefined();
+      expect(debug).toHaveBeenCalledWith('Provided FHE encryption key ignored: a key is already cached.');
       expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
     });
 
     it('checks the provided bytes once for concurrent calls on a client', async () => {
-      const stale = keyBytes({ crs: CRS.slice(1) as Bytes });
-      keyCache.set(KMSGEN_SLOT, stale);
       const { client, readContract } = makeClient({
         chain: ethereumChain,
         handlers: kmsGenerationHandlers(),
@@ -947,7 +947,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
         fetchFheEncryptionKeyBytes(client, { fhevmContext }),
         fetchFheEncryptionKeyBytes(client, { fhevmContext }),
       ]);
-      // Checked once, then it replaces the stale cached key.
+      // Checked once, then cached.
       expect(results[0]).toEqual(keyBytes());
       expect(results[1]).toBe(results[0]);
       const reads = readContract.mock.calls.map(([, p]) => p.functionName);
@@ -956,7 +956,6 @@ describe('fetchFheEncryptionKeyBytes', () => {
     });
 
     it('rejects concurrent and later calls with the same error when the check fails', async () => {
-      await warmCache();
       const { client, readContract } = makeClient({
         chain: ethereumChain,
         handlers: kmsGenerationHandlers(),
@@ -1001,47 +1000,23 @@ describe('fetchFheEncryptionKeyBytes', () => {
       expect(fetchFheEncryptionKeyBytesFn).toHaveBeenCalledOnce();
     });
 
-    it('evicts the cached entry for provided bytes identical to it that fail the check, and remembers the error', async () => {
-      keyCache.set(KMSGEN_SLOT, keyBytes());
-      // Another active CRS for this client.
-      const { client, readContract, fetchFheEncryptionKeyBytesFn } = makeClient({
-        chain: ethereumChain,
-        handlers: kmsGenerationHandlers({ getCrsMaterials: () => [[], digest('PDAT_CRS', new Uint8Array([0]))] }),
-        fheEncryptionKey: keyBytes(),
-      });
-
-      const error = await fetchFheEncryptionKeyBytes(client, { fhevmContext }).catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(FheEncryptionKeyVerificationError);
-      expect(keyCache.peek(KMSGEN_SLOT)).toBeUndefined();
-      const reads = readContract.mock.calls.length;
-
-      // Remembered: the same error, with no RPC call and no relayer download.
-      await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toBe(error);
-      expect(readContract).toHaveBeenCalledTimes(reads);
-      expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
-      expect(keyCache.peek(KMSGEN_SLOT)).toBeUndefined();
-    });
-
-    it('replaces a stale cached key with different provided bytes that pass the check', async () => {
+    it('never replaces a stale cached key with provided bytes: the cached key fails the check, as for any client', async () => {
       const stale = keyBytes({ crs: CRS.slice(1) as Bytes });
       keyCache.set(KMSGEN_SLOT, stale);
-      const entry = keyCache.peek(KMSGEN_SLOT);
-      const { client, readContract, fetchFheEncryptionKeyBytesFn } = makeClient({
+      const { client, fetchFheEncryptionKeyBytesFn } = makeClient({
         chain: ethereumChain,
         handlers: kmsGenerationHandlers(),
         fheEncryptionKey: keyBytes(),
       });
 
-      await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).resolves.toEqual(keyBytes());
-      expect(readContract).toHaveBeenCalled();
+      await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toThrow(
+        FheEncryptionKeyVerificationError,
+      );
       expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
-      // A new entry takes the slot: callers holding the old one keep the old key.
-      expect(keyCache.peek(KMSGEN_SLOT)).not.toBe(entry);
-      expect(entry?.value).toBe(stale);
-
-      // Released: a refetch after an eviction downloads from the relayer.
-      keyCache.clear();
-      await fetchFheEncryptionKeyBytes(client, { fhevmContext });
+      // Evicted: the next call downloads the active key; the provided one is gone.
+      expect(keyCache.peek(KMSGEN_SLOT)).toBeUndefined();
+      expect(getProvidedFheEncryptionKey(client)).toBeUndefined();
+      await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).resolves.toEqual(keyBytes());
       expect(fetchFheEncryptionKeyBytesFn).toHaveBeenCalledOnce();
     });
   });
@@ -1334,12 +1309,9 @@ describe('fetchFheEncryptionKeyBytes with several clients', () => {
     },
   );
 
-  it('uses the entry it checked when a provided key replaces the slot during its check', async () => {
-    const OLD = keyBytes();
-    const NEW = keyBytes({ publicKey: new Uint8Array([0xb0]) as Bytes, crs: new Uint8Array([0xb1]) as Bytes });
+  it('uses the key another client cached during the check of a provided key: the cached key wins', async () => {
     const gate = deferred();
-    // Client A still sees OLD as active, client B sees NEW (a key rotation).
-    const a = makeClient({
+    const provider = makeClient({
       chain: ethereumChain,
       handlers: precomputedHandlers({
         getCrsMaterials: async () => {
@@ -1347,37 +1319,19 @@ describe('fetchFheEncryptionKeyBytes with several clients', () => {
           return [[], CRS_DIGEST];
         },
       }),
-      relayer: { fetchFheEncryptionKeyBytes: vi.fn(async () => OLD) },
+      fheEncryptionKey: keyBytes(),
     });
-    const b = makeClient({
-      chain: ethereumChain,
-      handlers: kmsGenerationHandlers({
-        getKeyMaterials: () => [[], [{ keyType: 1, digest: digest('PDAT_KEY', NEW.publicKeyBytes.bytes) }]],
-        getCrsMaterials: () => [[], digest('PDAT_CRS', NEW.crsBytes.bytes)],
-      }),
-      fheEncryptionKey: NEW,
-    });
-    const deserialize = vi.fn(async ({ publicKeyBytes }: { readonly publicKeyBytes: { readonly bytes: Bytes } }) => ({
-      bytes: publicKeyBytes.bytes,
-    }));
-    a.client.runtime.extend((() => ({
-      encrypt: { deserializeFheEncryptionPublicKey: deserialize, deserializeFheEncryptionCrs: async () => ({}) },
-    })) as unknown as EncryptModuleFactory);
+    const other = makeClient({ chain: ethereumChain, handlers: precomputedHandlers() });
 
-    const bytesA = fetchFheEncryptionKeyBytes(a.client, { fhevmContext });
-    const wasmA = fetchFheEncryptionKeyWasm(a.client as unknown as Fhevm<FhevmChain, WithEncrypt>, { fhevmContext });
-    await vi.waitFor(() => expect(countReads(a.readContract, 'getCrsMaterials')).toBe(1));
-    const oldEntry = keyCache.peek(KMSGEN_SLOT);
-
-    await expect(fetchFheEncryptionKeyBytes(b.client, { fhevmContext })).resolves.toEqual(NEW);
-    expect(keyCache.peek(KMSGEN_SLOT)).not.toBe(oldEntry);
+    const provided = fetchFheEncryptionKeyBytes(provider.client, { fhevmContext });
+    await vi.waitFor(() => expect(countReads(provider.readContract, 'getCrsMaterials')).toBe(1));
+    const downloaded = await fetchFheEncryptionKeyBytes(other.client, { fhevmContext });
+    const entry = keyCache.peek(KMSGEN_SLOT);
 
     gate.resolve();
-    await expect(bytesA).resolves.toBe(OLD);
-    const wasm = (await wasmA) as unknown as { readonly publicKey: { readonly bytes: Bytes } };
-    expect(wasm.publicKey.bytes).toBe(OLD.publicKeyBytes.bytes);
-    // The slot keeps B's key.
-    await expect(cachedBytes(KMSGEN_SLOT)).resolves.toEqual(NEW);
+    await expect(provided).resolves.toBe(downloaded);
+    expect(keyCache.peek(KMSGEN_SLOT)).toBe(entry);
+    expect(getProvidedFheEncryptionKey(provider.client)).toBeUndefined();
   });
 
   it("uses a provided key without waiting for another client's download in flight", async () => {

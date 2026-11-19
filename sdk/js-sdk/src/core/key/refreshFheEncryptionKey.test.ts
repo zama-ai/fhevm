@@ -9,7 +9,7 @@ import { shake256 } from '@noble/hashes/sha3.js';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
 import { bytesToHex } from '../base/bytes.js';
-import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
+import { createCoreFhevm, getProvidedFheEncryptionKey } from '../runtime/CoreFhevm-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
 import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 import { invalidateVersionCache } from '../host-contracts/HostContractVersion-p.js';
@@ -55,6 +55,14 @@ const version = (gen: Generation): string => `${id32(gen.keyId)}:${id32(gen.crsI
 
 const RELAYER_URL = 'https://relayer.test';
 const chain: FhevmChain = { ...sepolia, fhevm: { ...sepolia.fhevm, relayerUrl: RELAYER_URL } };
+
+/** A generation's key as a caller provides it (`options.fheEncryptionKey`). */
+const providedKey = (gen: Generation): FheEncryptionKeyBytes =>
+  ({
+    publicKeyBytes: { id: id32(gen.keyId), bytes: gen.publicKey },
+    crsBytes: { id: id32(gen.crsId), capacity: 2048 as UintNumber, bytes: gen.crs },
+    metadata: { relayerUrl: RELAYER_URL, chainId: chain.id },
+  }) as unknown as FheEncryptionKeyBytes;
 const fhevmContext = createFhevmClientFrozenContext({});
 
 /**
@@ -234,6 +242,45 @@ describe('key material cache', () => {
     } as unknown as FheEncryptionKeyBytes;
     const checked = await ensureFheEncryptionKeyDownload(newClient(undefined, provided), { fhevmContext });
     expect(checked.version).toBe(version(GEN1));
+  });
+
+  describe('a provided key', () => {
+    const slotOf = (client: Client) => fheEncryptionKeyCacheForTests.peek(getFheEncryptionKeySlot(client));
+
+    it('is ignored when a key is cached: the client uses the cached key', async () => {
+      const { newClient } = makeWorld();
+      const other = newClient();
+      const fetched = await fetchBytes(other);
+      const entry = slotOf(other);
+
+      const provider = newClient(undefined, providedKey(GEN1));
+      await expect(fetchBytes(provider)).resolves.toBe(fetched);
+      expect(slotOf(other)).toBe(entry);
+      expect(getProvidedFheEncryptionKey(provider)).toBeUndefined();
+    });
+
+    it('is cached when the slot is empty, and a second client uses it', async () => {
+      const { newClient, downloads } = makeWorld();
+      const provider = newClient(undefined, providedKey(GEN1));
+      const provided = await fetchBytes(provider);
+      expect(slotOf(provider)).toMatchObject({ version: version(GEN1), value: provided });
+
+      await expect(fetchBytes(newClient())).resolves.toBe(provided);
+      expect(downloads).not.toHaveBeenCalled();
+    });
+
+    it('without key verification: cached unchecked, replaced by the first download after the TTL', async () => {
+      const { newClient, downloads, activeIdReads } = makeWorld({ labelIds: true, unverified: true });
+      const provider = newClient(undefined, providedKey(GEN2));
+      const provided = await fetchBytes(provider);
+      expect(activeIdReads()).toBe(0);
+      expect(slotOf(provider)?.value).toBe(provided);
+
+      const other = newClient({ keyMaterial: { ttl: 0 } });
+      await expect(fetchBytes(other)).resolves.toMatchObject({ publicKeyBytes: { bytes: GEN1.publicKey } });
+      expect(downloads).toHaveBeenCalledOnce();
+      expect(slotOf(provider)?.value).not.toBe(provided);
+    });
   });
 
   describe('refresh after a key rotation', () => {
@@ -467,6 +514,19 @@ describe('encryption after a key rotation', () => {
 
     world.state.relayer = GEN2;
     await expect(request.send()).resolves.toBe(version(GEN2));
+  });
+
+  it('a provided key, once cached, is refreshed after a rotation like any cached key', async () => {
+    const world = makeWorld();
+    const client = world.newClient(undefined, providedKey(GEN1));
+    const request = encryptRequest(world, client);
+    await expect(request.send()).resolves.toBe(version(GEN1));
+    expect(world.downloads).not.toHaveBeenCalled();
+    world.state.chain = GEN2;
+    world.state.relayer = GEN2;
+
+    await expect(request.send()).resolves.toBe(version(GEN2));
+    expect(world.downloads).toHaveBeenCalledOnce();
   });
 
   it('the relayer still serves the old key: the request error as is, and the cached key stays', async () => {

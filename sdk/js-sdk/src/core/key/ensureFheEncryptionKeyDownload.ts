@@ -6,7 +6,7 @@ import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { FetchFheEncryptionKeyBytesParameters } from '../modules/relayer/types.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { FheEncryptionKeySource } from '../types/fheEncryptionKey.js';
-import { isBytes32Hex, unsafeBytesEquals } from '../base/bytes.js';
+import { isBytes32Hex } from '../base/bytes.js';
 import { uint256ToBytes32Hex } from '../base/uint.js';
 import { LatestValueCache, type CachedValue } from '../caching/latestValueCache.js';
 import { FheEncryptionKeyVerificationError } from '../errors/FheEncryptionKeyVerificationError.js';
@@ -191,12 +191,11 @@ export function getFheEncryptionKeySlot(context: {
  * (e.g. auth) for both the bytes and the encryption paths. Does not convert
  * the key.
  *
- * A caller-provided key (`options.fheEncryptionKey`) replaces the download:
- * - equal to the cached key, once downloaded: the cached key is used, checked
- *   for this client;
- * - otherwise (including while a download is in flight): checked, then cached,
- *   replacing a cached key, which is stale (only one key is active at a time),
- *   unless the cache holds the same key by then: that one is used, as above.
+ * A caller-provided key (`options.fheEncryptionKey`) is used only while no
+ * key is cached, and only if it passes the check (it is the current key). It
+ * is then cached, as an ordinary cached key. A key cached first, before the
+ * call or during the check, wins: the client drops the provided key. Clients
+ * that do not check keys cache it unchecked.
  *
  * Outcomes of the check:
  * - pass: a provided key is cached and the client releases it;
@@ -226,7 +225,10 @@ export async function ensureFheEncryptionKeyDownload(
 
   const provided = getProvidedFheEncryptionKey(context);
   if (provided !== undefined) {
-    return _useProvidedFheEncryptionKey(context, slot, provided);
+    const admitted = await _useProvidedFheEncryptionKey(context, slot, provided);
+    if (admitted !== undefined) {
+      return admitted;
+    }
   }
 
   return _checkCachedFheEncryptionKey(context, slot, await keyMaterialCache.get(context, parameters));
@@ -333,40 +335,36 @@ function _verifyFheEncryptionKeyBytesForClient(
 ////////////////////////////////////////////////////////////////////////////////
 
 // The use of each client's provided key (its own copy): concurrent calls on a
-// client share the one in flight. A failed use is forgotten: the client keeps
-// the error of a key that fails the check (see ensureFheEncryptionKeyDownload),
-// any other error is retried by the next call.
-const providedKeyUses = new WeakMap<FheEncryptionKeyBytes, Promise<ClientFheEncryptionKey>>();
+// client share the one in flight. Resolves to the key once cached, or to
+// `undefined` when a key was cached first: the client uses that one. A failed
+// use is forgotten: the client keeps the error of a key that fails the check
+// (see ensureFheEncryptionKeyDownload), any other error is retried by the
+// next call.
+const providedKeyUses = new WeakMap<FheEncryptionKeyBytes, Promise<ClientFheEncryptionKey | undefined>>();
 
 function _useProvidedFheEncryptionKey(
   context: Context,
   slot: string,
   provided: FheEncryptionKeyBytes,
-): Promise<ClientFheEncryptionKey> {
+): Promise<ClientFheEncryptionKey | undefined> {
   return memoizeUntilRejected(
     providedKeyUses,
     provided,
-    async (): Promise<ClientFheEncryptionKey> => {
+    async (): Promise<ClientFheEncryptionKey | undefined> => {
       try {
-        let checked: ClientFheEncryptionKey;
-        const cached = _cachedSameKey(slot, provided);
-        if (cached !== undefined) {
-          checked = await _checkCachedFheEncryptionKey(context, slot, cached);
-        } else {
+        if (keyMaterialCache.peek(slot) === undefined) {
           const activeIds = await _verifyFheEncryptionKeyBytesForClient(context, provided);
-          // Another client may have cached the same key during the check: use it.
-          const cachedNow = _cachedSameKey(slot, provided);
-          if (cachedNow !== undefined) {
-            checked = await _checkCachedFheEncryptionKey(context, slot, cachedNow);
-          } else {
+          // Not if another client cached a key during the check.
+          if (keyMaterialCache.peek(slot) === undefined) {
             const version = activeIds === undefined ? _bytesVersion(provided) : fheEncryptionKeyVersion(activeIds);
             keyMaterialCache.set(slot, version, provided);
-            checked = { bytes: provided, version };
+            releaseProvidedFheEncryptionKey(context, provided);
+            return { bytes: provided, version };
           }
         }
-        // The cache holds the key from now on.
+        context.runtime.config.logger?.debug?.('Provided FHE encryption key ignored: a key is already cached.');
         releaseProvidedFheEncryptionKey(context, provided);
-        return checked;
+        return undefined;
       } catch (e) {
         if (e instanceof FheEncryptionKeyVerificationError) {
           // The client keeps only the error, not the bytes.
@@ -377,12 +375,6 @@ function _useProvidedFheEncryptionKey(
     },
     false,
   );
-}
-
-/** The cached key if it is `provided`'s bytes. Never waits for a download. */
-function _cachedSameKey(slot: string, provided: FheEncryptionKeyBytes): CachedValue<FheEncryptionKeyBytes> | undefined {
-  const cached = keyMaterialCache.peek(slot);
-  return cached !== undefined && _sameFheEncryptionKeyBytes(provided, cached.value) ? cached : undefined;
 }
 
 /**
@@ -410,17 +402,4 @@ export function memoizeUntilRejected<K extends object, T>(
     }
   });
   return check;
-}
-
-/**
- * Ids aside: a label id and a 32-byte hex id can name the same bytes. The
- * check against the active ids decides (a relayer serving the right bytes under
- * a wrong id fails the check for clients reusing that entry).
- */
-function _sameFheEncryptionKeyBytes(a: FheEncryptionKeyBytes, b: FheEncryptionKeyBytes): boolean {
-  return (
-    a === b ||
-    (unsafeBytesEquals(a.publicKeyBytes.bytes, b.publicKeyBytes.bytes) &&
-      unsafeBytesEquals(a.crsBytes.bytes, b.crsBytes.bytes))
-  );
 }

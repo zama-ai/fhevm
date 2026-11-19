@@ -144,17 +144,15 @@ could otherwise read the encrypted inputs. A key that fails the check is never
 used and is not kept: encryption throws `FheEncryptionKeyVerificationError`.
 
 `fheEncryptionKey` (optional) preloads the public key and CRS so the client
-skips the download. Before the client is ready, the SDK checks it. If it
-equals the key already cached for the Relayer and `KMSGeneration`, the cached key is used, checked
-by this client. Otherwise it is checked against the active key in
-`KMSGeneration`. If the check fails, `ready` of an encrypt client rejects with
-`FheEncryptionKeyVerificationError` (other clients fail on their first key
-fetch), and every later key fetch of the client throws the same error, with no
-RPC call: the client drops its copy, keeps only the error, and never uses the
-Relayer's key instead.
-If it passes, it replaces the cached key, which is stale (only one key
-is active at a time), and the client drops its copy; later key fetches use the
-cache or go to the Relayer.
+skips the download. A provided key is used only at init, and only when no key
+is cached yet. It is admitted only if it is the current key. From then on it is
+an ordinary cached key and is refreshed when it goes stale.
+
+- **A key is already cached** for the Relayer and `KMSGeneration`: the provided key is ignored, and the client uses the cached key, checked by this client.
+- **The check passes** (against the active key in `KMSGeneration`): the provided key is cached and the client drops its copy, unless another client cached a key during the check: that key is used.
+- **The check fails**: `ready` of an encrypt client rejects with `FheEncryptionKeyVerificationError` (a client without `ready` fails on its first key fetch). Every later key fetch of the client throws the same error, with no RPC call: the client keeps only the error and never uses the Relayer's key instead.
+- **Cleartext mode** (no check): the provided key is cached unchecked; the first download after its TTL replaces it.
+
 Its `metadata.relayerUrl` must equal the chain's `relayerUrl` exactly, else
 creating the client throws `FhevmConfigError`.
 The client keeps a copy of these bytes, and `fetchFheEncryptionKeyBytes()`

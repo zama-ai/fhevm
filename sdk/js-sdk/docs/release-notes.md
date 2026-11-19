@@ -44,6 +44,9 @@
   throws `CachedValueStaleError` (underlying error as `cause`) instead of the underlying error. A
   user decryption failing after a KMS context switch throws `InvalidSignedPermitError`: sign a new
   permit. See [Caching](clients.md#caching).
+- **A provided key never replaces a cached key.** A key passed as `options.fheEncryptionKey` is
+  used only when no key is cached yet, and only if it is the current key. It is then cached like a
+  downloaded key and refreshed when it goes stale. When a key is already cached, it is ignored.
 - **Breaking: `ignoreCache` removed** from `fetchFheEncryptionKeyBytes`. It had no effect; use
   `client.forceRefreshCachedValue('keyMaterial')`.
 - **Breaking: permits for a previous KMS context are refused.** A user or delegated decryption (and
