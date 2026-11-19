@@ -124,6 +124,11 @@ impl FhevmKeys {
     }
 
     pub fn new_config() -> Config {
+        Self::new_config_builder().build()
+    }
+
+    /// The coprocessor key configuration, before `build`.
+    pub fn new_config_builder() -> ConfigBuilder {
         ConfigBuilder::with_custom_parameters(TFHE_PARAMS)
             .enable_noise_squashing(TFHE_NOISE_SQUASHING_PARAMS.parameters)
             .enable_noise_squashing_compression(
@@ -137,7 +142,6 @@ impl FhevmKeys {
                 TFHE_COMPACT_PK_PARAMS.ksk_params,
             ))
             .enable_ciphertext_re_randomization(TFHE_PKS_RERANDOMIZATION_PARAMS)
-            .build()
     }
 
     pub fn set_server_key_for_current_thread(&self) {
