@@ -99,18 +99,6 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     /// @param contextId The submitted context ID.
     error KmsContextAlreadyStored(uint256 contextId);
 
-    /// @notice The ID is above the active one.
-    /// @dev Retry after the replica activates an ID above it. If the signatures no longer verify then
-    ///      and the ID is valid on the replica, the owner calls `mirrorKmsContextDestruction`.
-    /// @param contextId The context ID to destroy.
-    error KmsContextDestructionAheadOfReplica(uint256 contextId);
-
-    /// @notice The ID is above the active one.
-    /// @dev Retry after the replica activates an ID above it. If the signatures no longer verify then
-    ///      and the ID is valid on the replica, the owner calls `mirrorKmsEpochDestruction`.
-    /// @param epochId The epoch ID to destroy.
-    error KmsEpochDestructionAheadOfReplica(uint256 epochId);
-
     /// @notice There are fewer signatures than the quorum.
     /// @param signatureCount The number of signatures.
     /// @param quorum The required number of signatures.
@@ -156,8 +144,8 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /**
      * @notice Applies a canonical context destruction.
-     * @dev Needs `n - t` signatures from the active committee. An ID below the active one that was
-     *      never stored has no effect.
+     * @dev Needs `n - t` signatures from the active committee. Reverts if the ID is not live on the
+     *      replica.
      * @param destroyedContextId The context ID to destroy.
      * @param signatures The ContextDestructionConfirmation signatures.
      * @param extraData The extra data that every signature commits to.
@@ -170,8 +158,8 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /**
      * @notice Applies a canonical epoch destruction.
-     * @dev Needs `n - t` signatures from the active committee. An ID below the active one that was
-     *      never stored has no effect.
+     * @dev Needs `n - t` signatures from the active committee. Reverts if the epoch is not Active on the
+     *      replica.
      * @param destroyedEpochId The epoch ID to destroy.
      * @param signatures The EpochDestructionConfirmation signatures.
      * @param extraData The extra data that every signature commits to.
@@ -214,16 +202,14 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /**
      * @notice Destroys a context.
-     * @dev Unlike the submit path, the ID can be above the active one, for a forged ID that a recovery
-     *      removes.
+     * @dev Unlike the submit path, the ID does not need to be live on the replica.
      * @param destroyedContextId The context ID to destroy.
      */
     function mirrorKmsContextDestruction(uint256 destroyedContextId) external;
 
     /**
      * @notice Destroys an epoch.
-     * @dev Unlike the submit path, the ID can be above the active one, for a forged ID that a recovery
-     *      removes.
+     * @dev Unlike the submit path, the epoch does not need to be Active on the replica.
      * @param destroyedEpochId The epoch ID to destroy.
      */
     function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external;

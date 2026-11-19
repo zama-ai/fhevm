@@ -36,9 +36,7 @@ interface IProtocolConfigReplica {
     error InvalidKmsEpoch(uint256 epochId);
     error InvalidNullThreshold(string thresholdName);
     error KmsContextAlreadyStored(uint256 contextId);
-    error KmsContextDestructionAheadOfReplica(uint256 contextId);
     error KmsContextNotAboveActive(uint256 contextId);
-    error KmsEpochDestructionAheadOfReplica(uint256 epochId);
     error KmsEpochNotAboveActive(uint256 epochId);
     error KmsNodeNullSigner();
     error KmsNodeNullTxSender();
@@ -1067,32 +1065,10 @@ interface IProtocolConfigReplica {
   },
   {
     "type": "error",
-    "name": "KmsContextDestructionAheadOfReplica",
-    "inputs": [
-      {
-        "name": "contextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "KmsContextNotAboveActive",
     "inputs": [
       {
         "name": "contextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "KmsEpochDestructionAheadOfReplica",
-    "inputs": [
-      {
-        "name": "epochId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -2958,91 +2934,6 @@ error KmsContextAlreadyStored(uint256 contextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `KmsContextDestructionAheadOfReplica(uint256)` and selector `0x9874bc5e`.
-```solidity
-error KmsContextDestructionAheadOfReplica(uint256 contextId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct KmsContextDestructionAheadOfReplica {
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<KmsContextDestructionAheadOfReplica>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: KmsContextDestructionAheadOfReplica) -> Self {
-                (value.contextId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for KmsContextDestructionAheadOfReplica {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { contextId: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for KmsContextDestructionAheadOfReplica {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "KmsContextDestructionAheadOfReplica(uint256)";
-            const SELECTOR: [u8; 4] = [152u8, 116u8, 188u8, 94u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsContextNotAboveActive(uint256)` and selector `0x08262f2b`.
 ```solidity
 error KmsContextNotAboveActive(uint256 contextId);
@@ -3115,91 +3006,6 @@ error KmsContextNotAboveActive(uint256 contextId);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `KmsEpochDestructionAheadOfReplica(uint256)` and selector `0x866e4a5b`.
-```solidity
-error KmsEpochDestructionAheadOfReplica(uint256 epochId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct KmsEpochDestructionAheadOfReplica {
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<KmsEpochDestructionAheadOfReplica>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: KmsEpochDestructionAheadOfReplica) -> Self {
-                (value.epochId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for KmsEpochDestructionAheadOfReplica {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { epochId: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for KmsEpochDestructionAheadOfReplica {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "KmsEpochDestructionAheadOfReplica(uint256)";
-            const SELECTOR: [u8; 4] = [134u8, 110u8, 74u8, 91u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
                 )
             }
             #[inline]
@@ -10807,11 +10613,7 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
         #[allow(missing_docs)]
         KmsContextAlreadyStored(KmsContextAlreadyStored),
         #[allow(missing_docs)]
-        KmsContextDestructionAheadOfReplica(KmsContextDestructionAheadOfReplica),
-        #[allow(missing_docs)]
         KmsContextNotAboveActive(KmsContextNotAboveActive),
-        #[allow(missing_docs)]
-        KmsEpochDestructionAheadOfReplica(KmsEpochDestructionAheadOfReplica),
         #[allow(missing_docs)]
         KmsEpochNotAboveActive(KmsEpochNotAboveActive),
         #[allow(missing_docs)]
@@ -10852,8 +10654,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
             [119u8, 221u8, 190u8, 129u8],
             [121u8, 149u8, 187u8, 207u8],
             [132u8, 102u8, 128u8, 74u8],
-            [134u8, 110u8, 74u8, 91u8],
-            [152u8, 116u8, 188u8, 94u8],
             [202u8, 168u8, 20u8, 163u8],
             [207u8, 133u8, 144u8, 32u8],
             [209u8, 140u8, 79u8, 240u8],
@@ -10875,8 +10675,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
             ::core::stringify!(InvalidKmsContext),
             ::core::stringify!(InvalidKmsEpoch),
             ::core::stringify!(KmsNodeNullTxSender),
-            ::core::stringify!(KmsEpochDestructionAheadOfReplica),
-            ::core::stringify!(KmsContextDestructionAheadOfReplica),
             ::core::stringify!(InvalidHighThreshold),
             ::core::stringify!(KmsEpochNotAboveActive),
             ::core::stringify!(KmsTxSenderAlreadyRegistered),
@@ -10898,8 +10696,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
             <InvalidKmsContext as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidKmsEpoch as alloy_sol_types::SolError>::SIGNATURE,
             <KmsNodeNullTxSender as alloy_sol_types::SolError>::SIGNATURE,
-            <KmsEpochDestructionAheadOfReplica as alloy_sol_types::SolError>::SIGNATURE,
-            <KmsContextDestructionAheadOfReplica as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidHighThreshold as alloy_sol_types::SolError>::SIGNATURE,
             <KmsEpochNotAboveActive as alloy_sol_types::SolError>::SIGNATURE,
             <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
@@ -10933,7 +10729,7 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
     impl alloy_sol_types::SolInterface for IProtocolConfigReplicaErrors {
         const NAME: &'static str = "IProtocolConfigReplicaErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 20usize;
+        const COUNT: usize = 18usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -10958,14 +10754,8 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                 Self::KmsContextAlreadyStored(_) => {
                     <KmsContextAlreadyStored as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::KmsContextDestructionAheadOfReplica(_) => {
-                    <KmsContextDestructionAheadOfReplica as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::KmsContextNotAboveActive(_) => {
                     <KmsContextNotAboveActive as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::KmsEpochDestructionAheadOfReplica(_) => {
-                    <KmsEpochDestructionAheadOfReplica as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsEpochNotAboveActive(_) => {
                     <KmsEpochNotAboveActive as alloy_sol_types::SolError>::SELECTOR
@@ -11142,32 +10932,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                             .map(IProtocolConfigReplicaErrors::KmsNodeNullTxSender)
                     }
                     KmsNodeNullTxSender
-                },
-                {
-                    fn KmsEpochDestructionAheadOfReplica(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
-                        <KmsEpochDestructionAheadOfReplica as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                IProtocolConfigReplicaErrors::KmsEpochDestructionAheadOfReplica,
-                            )
-                    }
-                    KmsEpochDestructionAheadOfReplica
-                },
-                {
-                    fn KmsContextDestructionAheadOfReplica(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
-                        <KmsContextDestructionAheadOfReplica as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                IProtocolConfigReplicaErrors::KmsContextDestructionAheadOfReplica,
-                            )
-                    }
-                    KmsContextDestructionAheadOfReplica
                 },
                 {
                     fn InvalidHighThreshold(
@@ -11400,32 +11164,6 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                     KmsNodeNullTxSender
                 },
                 {
-                    fn KmsEpochDestructionAheadOfReplica(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
-                        <KmsEpochDestructionAheadOfReplica as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IProtocolConfigReplicaErrors::KmsEpochDestructionAheadOfReplica,
-                            )
-                    }
-                    KmsEpochDestructionAheadOfReplica
-                },
-                {
-                    fn KmsContextDestructionAheadOfReplica(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
-                        <KmsContextDestructionAheadOfReplica as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                IProtocolConfigReplicaErrors::KmsContextDestructionAheadOfReplica,
-                            )
-                    }
-                    KmsContextDestructionAheadOfReplica
-                },
-                {
                     fn InvalidHighThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
@@ -11555,18 +11293,8 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                         inner,
                     )
                 }
-                Self::KmsContextDestructionAheadOfReplica(inner) => {
-                    <KmsContextDestructionAheadOfReplica as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::KmsContextNotAboveActive(inner) => {
                     <KmsContextNotAboveActive as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::KmsEpochDestructionAheadOfReplica(inner) => {
-                    <KmsEpochDestructionAheadOfReplica as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -11667,20 +11395,8 @@ function submitKmsEpochDestruction(uint256 destroyedEpochId, bytes[] memory sign
                         out,
                     )
                 }
-                Self::KmsContextDestructionAheadOfReplica(inner) => {
-                    <KmsContextDestructionAheadOfReplica as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::KmsContextNotAboveActive(inner) => {
                     <KmsContextNotAboveActive as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::KmsEpochDestructionAheadOfReplica(inner) => {
-                    <KmsEpochDestructionAheadOfReplica as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

@@ -150,8 +150,8 @@ contract ProtocolConfigReplica is
         if (destroyedContextId == activeContextId) {
             revert LatestActiveKmsContextCannotBeDestroyed(destroyedContextId);
         }
-        if (destroyedContextId > activeContextId) {
-            revert KmsContextDestructionAheadOfReplica(destroyedContextId);
+        if (!_isLiveKmsContext(destroyedContextId)) {
+            revert InvalidKmsContext(destroyedContextId);
         }
         bytes32 structHash = _contextDestructionStructHash(destroyedContextId, extraData);
         uint256 quorum = _faultTolerantQuorum(activeContextId);
@@ -167,12 +167,11 @@ contract ProtocolConfigReplica is
         bytes calldata extraData
     ) external virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 activeEpochId = $.latestActiveEpochId;
-        if (destroyedEpochId == activeEpochId) {
+        if (destroyedEpochId == $.latestActiveEpochId) {
             revert LatestActiveKmsEpochCannotBeDestroyed(destroyedEpochId);
         }
-        if (destroyedEpochId > activeEpochId) {
-            revert KmsEpochDestructionAheadOfReplica(destroyedEpochId);
+        if ($.epochState[destroyedEpochId] != EpochState.Active) {
+            revert InvalidKmsEpoch(destroyedEpochId);
         }
         bytes32 structHash = _epochDestructionStructHash(destroyedEpochId, extraData);
         uint256 activeContextId = $.latestActiveKmsContextId;
