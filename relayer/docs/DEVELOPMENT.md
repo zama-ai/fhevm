@@ -4,7 +4,7 @@ This document covers building, testing, linting, and running the relayer locally
 It is intended for people who hack on the relayer code.
 For operator-facing self-hosting instructions, see [SELF_HOSTING.md](SELF_HOSTING.md).
 
-For contribution guidelines, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
+For contribution guidelines, see [../../CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## Table of Contents
 
