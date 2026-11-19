@@ -310,6 +310,24 @@ task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, 
   process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS = proxyAddress;
 });
 
+task('task:deployEmptyProxyForCiphertextRoots').setAction(async function (_, { ethers, upgrades, run }) {
+  ensureAddressesDirectoryExists();
+
+  if (readExistingHostEnv().CIPHERTEXT_ROOTS_CONTRACT_ADDRESS) {
+    console.warn(
+      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains CIPHERTEXT_ROOTS_CONTRACT_ADDRESS.',
+    );
+    return;
+  }
+
+  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
+
+  const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setCiphertextRootsAddress', { address: proxyAddress });
+  process.env.CIPHERTEXT_ROOTS_CONTRACT_ADDRESS = proxyAddress;
+});
+
 ////////////////////////////////////////////////////////////////////////////////
 // ACL
 ////////////////////////////////////////////////////////////////////////////////

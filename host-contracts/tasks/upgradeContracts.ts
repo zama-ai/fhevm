@@ -3,6 +3,7 @@ import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
 import { assertBridgeEndpointImmutable } from './taskDeploy';
+import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
@@ -629,6 +630,47 @@ task('task:prepareUpgradeCiphertextRoots')
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
     await prepareUpgradeContract('CiphertextRoots', 'CIPHERTEXT_ROOTS_CONTRACT_ADDRESS', taskArgs, hre);
+  });
+
+// Governance prepare for the first CiphertextRoots upgrade: EmptyUUPSProxy -> CiphertextRoots via
+// initializeFromEmptyProxy, after task:deployEmptyProxyForCiphertextRoots. New chains get CiphertextRoots
+// from task:deployAllHostContracts. Later upgrades go through task:prepareUpgradeCiphertextRoots.
+task('task:prepareUpgradeCiphertextRootsFromEmptyProxy')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    if (taskArgs.useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('CIPHERTEXT_ROOTS_CONTRACT_ADDRESS');
+    const protocolConfigAddress = getRequiredEnvVar('PROTOCOL_CONFIG_CONTRACT_ADDRESS');
+    // CiphertextRoots only runs on the canonical host, which needs the full ProtocolConfig, not a replica.
+    await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfig');
+
+    await hre.run('compile:specific', { contract: 'contracts' });
+
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
+      proxyAddress,
+      contractName: 'contracts/CiphertextRoots.sol:CiphertextRoots',
+      innerFunctionName: 'initializeFromEmptyProxy',
+      decodedArgs: [],
+    });
+
+    printUpgradeProposal(preparedUpgrade);
+    if (taskArgs.verifyContract) {
+      await verifyProposalImplementation(hre, preparedUpgrade);
+    }
+    return preparedUpgrade;
   });
 
 task('task:upgradeInputVerifier')
