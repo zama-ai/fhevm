@@ -13,26 +13,37 @@ Dispatch `test-suite-e2e-tests.yml` on this branch with:
 - `coprocessor-sns-worker-version=c0e6428` (ordered locks) or `4c5425f` (retry only)
 
 The ordinary encrypted-input → add → user/public-decrypt smoke test runs first.
-Then SNS stops, 16 clients each set up a fresh encrypted input and produce 2,000
-distinct public outputs total (20 independent additions per transaction, with a
-different scalar per output). Input proofs are setup rather than regenerated for
-every batch: the benchmark targets SNS capacity. TFHE prepares
-every CT64. Four identical SNS processes start against this single operator DB,
-with batches of 20, four Rayon threads each, and S3 migration disabled. Keeping a
-prebuilt backlog separates SNS capacity from producer/proof/TFHE throughput.
+The load phase uses PR #5024's publication scenario, scaled to 2,000 handles.
+Four identical SNS processes warm their keys on an empty queue, then Docker pauses
+them. A host contract issues 125 transactions with 16 fresh publicly decryptable
+`euint8` handles each, using trivial encryption. Once all CT64 and pending SNS
+tasks are ready, the four processes resume together against this single operator
+database. They use batches of 20, four Rayon threads each, 24 database connections,
+four concurrent uploads, two-second polling and five-second upload resubmission.
+S3 migration stays disabled, and the original 256-stripe trigger definitions are
+verified and saved without modification. No sleeps or scheduling barriers are
+inserted into transactions or trigger functions.
 
 The test records committed handles and failures per worker, CPU time, cohort
-backlog and upload progress every two seconds. It requires all four workers to
-process tasks, observed CPU activity on all four within the same sampling
-interval. Ordered locking requires zero task failures and zero database/logged
-deadlocks; retry-only records recovered deadlocks and task failures for comparison. It checks DB
-completion and canonical CT64/CT128 object presence for every handle, then public
-decryption of 64 evenly spread handles. Decryption is outside drain timing.
+backlog and upload progress at approximately one-second intervals. Key warm-up CPU
+is excluded, and generation, CT64 preparation, SNS computation and full upload
+durations are reported separately. Host CPU details are retained for comparison.
+All four workers must process tasks, with overlapping full batches on different
+workers. Ordered locking requires zero task failures and zero database/logged
+deadlocks. Retry-only must reproduce at least one PostgreSQL deadlock and an SNS
+immediate retry; otherwise its deadlock comparison is explicitly inconclusive,
+even if performance and functionality checks complete. Upload timeouts and missing
+savepoints are counted separately from SNS deadlock retries.
+
+The test checks DB completion, canonical CT64/CT128 objects and Gateway material
+consensus for all 2,000 handles, then publicly decrypts 64 evenly spread handles.
+Gateway and decryption checks are outside drain timing.
 
 The Actions summary and `sns-four-worker-load-*` artifact contain the manifest,
 CSV measurements, final metrics, worker logs, PostgreSQL logs and summary. Concurrent CPU activity
 does not establish linear speedup or eliminate ordinary waits on shared stripes;
 these runs have no one-worker throughput control or unpatched baseline.
-The 2,000-handle cohort is 100 full batches of 20; at the first measured rate of
-about 1.4 handles/s, SNS processing takes roughly 24 minutes, plus setup.
+The 2,000-handle cohort is 100 full batches of 20. Earlier throughput figures used
+`euint64` additions and cold SNS startup, so they are not directly comparable to
+this lighter, warmed publication workload.
 The three-hour ceiling is a failure bound rather than an expected duration.

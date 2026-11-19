@@ -11,9 +11,35 @@ type Output = { handle: string; expected: string; transaction: string };
 async function main() {
   // This script is injected into the disposable CI E2E container, never a deployed network.
   assert.equal(Number((await ethers.provider.getNetwork()).chainId), 12345, 'local E2E chain only');
-  const sdk = await createInstance();
+  assert.match(await ethers.provider.send('web3_clientVersion', []), /anvil/i);
   if (process.env.SNS_LOAD_PHASE === 'verify') {
     const outputs: Output[] = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert(process.env.GATEWAY_RPC_URL && process.env.CIPHERTEXT_COMMITS_ADDRESS);
+    const gateway = new ethers.JsonRpcProvider(process.env.GATEWAY_RPC_URL);
+    try {
+      const commits = new ethers.Contract(
+        process.env.CIPHERTEXT_COMMITS_ADDRESS!,
+        ['function isCiphertextMaterialAdded(bytes32) view returns (bool)'],
+        gateway,
+      );
+      const deadline = Date.now() + 300000;
+      let pending = outputs;
+      while (pending.length && Date.now() < deadline) {
+        const missing: Output[] = [];
+        for (let i = 0; i < pending.length; i += 32) {
+          const group = pending.slice(i, i + 32);
+          const added = await Promise.all(group.map((output) => commits.isCiphertextMaterialAdded(output.handle)));
+          missing.push(...group.filter((_, index) => !added[index]));
+        }
+        pending = missing;
+        if (pending.length) await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      assert.equal(pending.length, 0, 'all cohort handles must reach Gateway material consensus');
+      console.log(`Verified Gateway material consensus for all ${outputs.length} handles`);
+    } finally {
+      gateway.destroy();
+    }
+    const sdk = await createInstance();
     const sample = Array.from({ length: 64 }, (_, i) => outputs[Math.floor((i * outputs.length) / 64)]);
     // Decryption is deliberately outside the measured SNS drain interval.
     for (let i = 0; i < sample.length; i += 8) {
@@ -26,53 +52,25 @@ async function main() {
   }
 
   const target = Number(process.env.SNS_LOAD_HANDLES ?? '2000');
-  assert(Number.isSafeInteger(target) && target >= 2000 && target <= 100000);
-  const producers = 16;
-  const outputs: Output[] = [];
-  let next = 0;
+  assert(Number.isSafeInteger(target) && target >= 2000 && target <= 100000 && target % 16 === 0);
   const started = Date.now();
-  const clients = await Promise.all(
-    Array.from({ length: producers }, async (_, producer) => {
-      const signer = await getSigner(producer);
-      const contract = await (await ethers.getContractFactory('SnsLoad', signer)).deploy();
-      await contract.waitForDeployment();
-      const address = await contract.getAddress();
-      // Proof setup is outside the measured SNS interval. Reuse the encrypted operand,
-      // varying every scalar to create fresh independent non-trivial output handles.
-      const value = BigInt(producer + 1);
-      const encrypted = await sdk.encryptUint64({ value, contractAddress: address, userAddress: signer.address });
-      const seeded = await (await contract.setInput(encrypted.handles[0], encrypted.inputProof)).wait();
-      assert(seeded && seeded.status === 1);
-      return { contract, address, value };
-    }),
-  );
-  await Promise.all(
-    clients.map(async ({ contract, address, value }) => {
-      while (next < target) {
-        const start = next;
-        const count = Math.min(20, target - start);
-        next += count;
-        const receipt = await (await contract.produce(42 + start, count, { gasLimit: 15000000 })).wait();
-        assert(receipt && receipt.status === 1);
-        const batch: Output[] = [];
-        for (const log of receipt.logs) {
-          if (log.address.toLowerCase() !== address.toLowerCase()) continue;
-          const event = contract.interface.parseLog(log);
-          if (event?.name !== 'Output') continue;
-          batch.push({
-            handle: String(event.args.handle).toLowerCase(),
-            expected: String(value + BigInt(event.args.offset)),
-            transaction: receipt.hash,
-          });
-        }
-        assert.equal(batch.length, count);
-        outputs.push(...batch);
-        // Durable partial manifest and progress for a failed producer or long CI run.
-        fs.writeFileSync(manifestPath, JSON.stringify(outputs));
-        console.log(`Generated ${outputs.length}/${target} handles in ${((Date.now() - started) / 1000).toFixed(1)}s`);
-      }
-    }),
-  );
+  const signer = await getSigner(0);
+  const contract = await (await ethers.getContractFactory('SnsLoad', signer)).deploy();
+  await contract.waitForDeployment();
+  const transactions: string[] = [];
+  for (let issued = 0; issued < target; issued += 16) {
+    const receipt = await (await contract.issue()).wait();
+    assert(receipt && receipt.status === 1);
+    transactions.push(receipt.hash);
+    console.log(`Generated ${issued + 16}/${target} handles in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  }
+  const handles = (await contract.handles()) as string[];
+  const outputs: Output[] = handles.map((handle, index) => ({
+    handle: handle.toLowerCase(),
+    expected: String(index % 256),
+    transaction: transactions[Math.floor(index / 16)],
+  }));
+  fs.writeFileSync(manifestPath, JSON.stringify(outputs));
   assert.equal(outputs.length, target);
   assert.equal(new Set(outputs.map((output) => output.handle)).size, target, 'every output must be fresh');
 }
