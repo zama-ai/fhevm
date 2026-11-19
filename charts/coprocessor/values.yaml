@@ -2048,9 +2048,9 @@ coprocessorProxy:
   requestHeadTimeoutSeconds: 2
   # Time a client connection can stay idle between two requests before the proxy closes it. At
   # least 1. A client's pool, and a front layer, must close its idle connections to the proxy
-  # sooner (AWS ALB: 60 s by default), or a request it sends as the proxy closes the connection
-  # fails.
-  clientIdleTimeoutSeconds: 65
+  # sooner, or a request it sends as the proxy closes the connection fails. 120 leaves a front layer
+  # room for an idle timeout longer than prf-service holds a request.
+  clientIdleTimeoutSeconds: 120
 
   # Ingress allowed from this release's proxy pods to prf-service.
   prfServiceNetworkPolicy:

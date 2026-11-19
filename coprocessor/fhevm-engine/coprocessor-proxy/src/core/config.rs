@@ -146,11 +146,12 @@ pub struct Config {
     pub request_head_timeout: Duration,
     /// How long a client connection can stay idle between two requests before the proxy closes
     /// it. A client or front layer must close its idle connections to the proxy sooner: otherwise
-    /// a request it sends as the proxy closes the connection fails. AWS ALB's default is 60 s.
+    /// a request it sends as the proxy closes the connection fails. The default leaves a front layer
+    /// room for an idle timeout longer than prf-service holds a request.
     #[arg(
         long,
         env = "COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT",
-        default_value = "65s",
+        default_value = "120s",
         value_parser = parse_whole_seconds
     )]
     pub client_idle_timeout: Duration,
@@ -270,7 +271,7 @@ mod tests {
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(10));
         assert_eq!(config.shutdown_delay, Duration::ZERO);
         assert_eq!(config.request_head_timeout, Duration::from_secs(2));
-        assert_eq!(config.client_idle_timeout, Duration::from_secs(65));
+        assert_eq!(config.client_idle_timeout, Duration::from_secs(120));
         assert_eq!(config.threads.get(), 2);
         assert_eq!(config.max_requests_per_signer.get(), 200);
         assert_eq!(config.max_connections.get(), 4096);

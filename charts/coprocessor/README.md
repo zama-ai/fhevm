@@ -155,7 +155,7 @@ their memory stays under the container's limit:
   is not complete. A connector sends its head at once.
 - The proxy closes the connection after any answer it gives before authentication, so only an
   authenticated client keeps one past its first head. A connection also closes after
-  `coprocessorProxy.clientIdleTimeoutSeconds` (65 by default) without a request, and after 1000
+  `coprocessorProxy.clientIdleTimeoutSeconds` (120 by default) without a request, and after 1000
   requests, so that long-lived connections spread again over the replicas.
 
 Memory for connections is at most the sum of three terms, about 446 MB with the defaults, under the
@@ -198,7 +198,7 @@ The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open
 connection: a per-client connection limit must allow the connector's concurrent PRF requests.
 
 A connector's pool, and a front layer, must close their idle connections to the proxy sooner than
-`clientIdleTimeoutSeconds`, for example after 10 s; an AWS ALB's default is 60 s. Otherwise a
+`clientIdleTimeoutSeconds`, for example after 10 s. Otherwise a
 request sent as the proxy closes the connection fails with a connection error, which the client
 then has to retry.
 
