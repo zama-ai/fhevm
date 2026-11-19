@@ -1,6 +1,7 @@
 import type { FhevmCacheName } from '../types/cache.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { Logger } from '../types/logger.js';
 import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 import { getCacheTtl } from './cacheOptions-p.js';
 
@@ -47,6 +48,10 @@ const MAX_SLOTS = 100;
  *   Nothing expires in the background.
  * - Concurrent reads of a slot share one; a read that ends stores its value
  *   (an unchanged one only renews the read time). On error nothing is stored.
+ * - A slot never moves backwards. A read older than the stored value (e.g.
+ *   from a client whose RPC lags) is not stored: the caller gets the stored,
+ *   newer value. "Older" is the order of {@link compareVersions}; versions
+ *   with no order are stored as read.
  * - A request that fails because its value went stale passes the value's
  *   version to {@link refresh}.
  */
@@ -60,13 +65,36 @@ export abstract class LatestValueCache<TContext extends { readonly options: obje
 
   /**
    * Reads the current value and its version. Given the cached value, it may
-   * read the version first and return the cached value when unchanged.
+   * read the version first and return the cached value when unchanged. When
+   * the version read is older (e.g. an RPC that lags), it returns
+   * `cached.value` with the version read: the cache keeps `cached`, its read
+   * time unchanged, and logs a warning.
    */
   protected abstract fetch(
     context: TContext,
     parameters: TParams,
     cached: CachedValue<TValue> | undefined,
   ): Promise<{ readonly version: string; readonly value: TValue }>;
+
+  /**
+   * Orders two versions: negative when `a` is older than `b`, `0` when equal,
+   * positive when newer; `undefined` when they have no order. Override it
+   * when versions follow on-chain ids that only increase. By default, only
+   * equal versions are ordered.
+   */
+  protected compareVersions(a: string, b: string): number | undefined {
+    return a === b ? 0 : undefined;
+  }
+
+  /** Whether `version` is known to be newer than `than` (see {@link compareVersions}). */
+  public isNewerVersion(version: string, than: string): boolean {
+    return (this.compareVersions(version, than) ?? 0) > 0;
+  }
+
+  /** Where to log, e.g. an older read ignored. None by default. */
+  protected getLogger(_context: TContext): Logger | undefined {
+    return undefined;
+  }
 
   /** Clock for TTL checks, in milliseconds. */
   protected now(): number {
@@ -111,19 +139,34 @@ export abstract class LatestValueCache<TContext extends { readonly options: obje
 
   /**
    * Reads the value again (or joins the read in flight). With
-   * `staleVersion`: returns the cached value unread when it has another
-   * version, and reads once more when a joined read (started earlier) returns
-   * `staleVersion`. The result may still have `staleVersion`: the caller
-   * decides what that means.
+   * `staleVersion`:
+   * - returns the cached value unread when it is newer than `staleVersion`;
+   * - reads once more when a joined read (started earlier) returns
+   *   `staleVersion` or an older version;
+   * - reads at most twice, and never throws for an older read: a read older
+   *   than `staleVersion` (e.g. an RPC that lags) is logged and returned, and
+   *   the caller treats it as unchanged.
+   *
+   * The result may still have `staleVersion`: the caller decides what that
+   * means.
    */
   public async refresh(context: TContext, parameters: TParams, staleVersion?: string): Promise<CachedValue<TValue>> {
     const slot = this.#getSlot(this.getSlotKey(context, parameters));
-    if (staleVersion !== undefined && slot.latest !== undefined && slot.latest.version !== staleVersion) {
+    if (staleVersion === undefined) {
+      return this.#readOrRetry(slot, context, parameters);
+    }
+    if (slot.latest !== undefined && this.isNewerVersion(slot.latest.version, staleVersion)) {
       return slot.latest;
     }
     const joined = slot.pendingRead !== undefined;
-    const cached = await this.#readOrRetry(slot, context, parameters);
-    return joined && cached.version === staleVersion ? this.#readOrRetry(slot, context, parameters) : cached;
+    let cached = await this.#readOrRetry(slot, context, parameters);
+    if (joined && (this.compareVersions(cached.version, staleVersion) ?? 1) <= 0) {
+      cached = await this.#readOrRetry(slot, context, parameters);
+    }
+    if (this.isNewerVersion(staleVersion, cached.version)) {
+      this.warnOlderRead(context, cached.version, staleVersion);
+    }
+    return cached;
   }
 
   /** {@link refresh} of the value the client uses now. */
@@ -148,9 +191,15 @@ export abstract class LatestValueCache<TContext extends { readonly options: obje
     return this.#slots.get(slotKey)?.latest;
   }
 
-  /** Stores a value read by the caller; a read in flight no longer stores its own. */
+  /**
+   * Stores a value read by the caller; a read in flight no longer stores its
+   * own. A value older than the stored one is not stored.
+   */
   public set(slotKey: string, version: string, value: TValue): void {
     const slot = this.#getSlot(slotKey);
+    if (slot.latest !== undefined && this.isNewerVersion(slot.latest.version, version)) {
+      return;
+    }
     slot.pendingRead = undefined;
     slot.latest = this.#stamp(version, value);
   }
@@ -168,8 +217,47 @@ export abstract class LatestValueCache<TContext extends { readonly options: obje
     this.#slots = new Map();
   }
 
+  /** Logs a read older than the value kept: for the operator, the client's RPC lags. */
+  public warnOlderRead(context: TContext, readVersion: string, newerVersion: string): void {
+    this.getLogger(context)?.warn?.(
+      `${this.cacheName}: this client's RPC returned version ${readVersion}, older than the cached ` +
+        `${newerVersion}, which is kept. The RPC node lags behind the chain; if this repeats, check the RPC endpoint.`,
+    );
+  }
+
   #stamp(version: string, value: TValue): CachedValue<TValue> {
     return Object.freeze({ version, value, timestamp: this.now() });
+  }
+
+  // A value read. When `fetch` kept the value at the start after an older
+  // read, that value stays as is: not read again, so its read time is not
+  // renewed. Otherwise see `#keepNewest`.
+  #settle(
+    context: TContext,
+    slot: Slot<TValue>,
+    cachedAtStart: CachedValue<TValue> | undefined,
+    read: { readonly version: string; readonly value: TValue },
+    store: boolean,
+  ): CachedValue<TValue> {
+    if (read.value === cachedAtStart?.value && this.isNewerVersion(cachedAtStart.version, read.version)) {
+      const kept = slot.latest ?? cachedAtStart;
+      this.warnOlderRead(context, read.version, kept.version);
+      return kept;
+    }
+    return this.#keepNewest(context, slot, this.#stamp(read.version, read.value), store);
+  }
+
+  // A value read: stored when `store`, unless older than the stored one,
+  // which is then returned instead (the slot never moves backwards).
+  #keepNewest(context: TContext, slot: Slot<TValue>, cached: CachedValue<TValue>, store: boolean): CachedValue<TValue> {
+    if (slot.latest !== undefined && this.isNewerVersion(slot.latest.version, cached.version)) {
+      this.warnOlderRead(context, cached.version, slot.latest.version);
+      return slot.latest;
+    }
+    if (store) {
+      slot.latest = cached;
+    }
+    return cached;
   }
 
   #getSlot(key: string): Slot<TValue> {
@@ -189,18 +277,16 @@ export abstract class LatestValueCache<TContext extends { readonly options: obje
       return slot.pendingRead;
     }
     const cachedAtStart = slot.latest;
-    const pendingRead = this.fetch(context, parameters, cachedAtStart).then(
-      ({ version, value }) => {
-        const cached = this.#stamp(version, value);
+    const pendingRead: Promise<CachedValue<TValue>> = this.fetch(context, parameters, cachedAtStart).then(
+      (read) => {
         // Not stored if `set` replaced the value meanwhile, nor if it is the
         // value at the start, unchanged, which `evict` removed meanwhile.
-        if (slot.pendingRead === pendingRead) {
+        const own = slot.pendingRead === pendingRead;
+        if (own) {
           slot.pendingRead = undefined;
-          if (value !== cachedAtStart?.value || slot.latest?.value === value) {
-            slot.latest = cached;
-          }
         }
-        return cached;
+        const store = own && (read.value !== cachedAtStart?.value || slot.latest?.value === read.value);
+        return this.#settle(context, slot, cachedAtStart, read, store);
       },
       (e: unknown) => {
         if (slot.pendingRead === pendingRead) {
@@ -226,13 +312,10 @@ export abstract class LatestValueCache<TContext extends { readonly options: obje
             throw e;
           }
           const latestAtRetry = slot.latest;
-          const { version, value } = await this.fetch(context, parameters, latestAtRetry);
-          const cached = this.#stamp(version, value);
+          const read = await this.fetch(context, parameters, latestAtRetry);
           // Not stored if `set` or `evict` changed the slot meanwhile.
-          if (slot.pendingRead === undefined && slot.latest === latestAtRetry) {
-            slot.latest = cached;
-          }
-          return cached;
+          const store = slot.pendingRead === undefined && slot.latest === latestAtRetry;
+          return this.#settle(context, slot, latestAtRetry, read, store);
         })
       : pendingRead;
   }

@@ -245,11 +245,10 @@ export type BaseActions = {
    * that failed. The cache is shared by every client; concurrent calls share
    * one fetch.
    *
-   * Resolves once the cache holds a value other than `staleVersion`.
+   * Only reads again: resolves once the read is done, whatever version it
+   * found (an older one, from an RPC that lags, is logged and not cached).
    *
    * @throws {FhevmConfigError} on an unknown `cacheName`.
-   * @throws {CachedValueStaleError} when the value fetched still has
-   * `staleVersion`: refreshing cannot fix the failure.
    * @throws the fetch error, as is.
    *
    * @example

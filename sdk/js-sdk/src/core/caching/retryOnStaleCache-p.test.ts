@@ -278,20 +278,22 @@ describe('refresh and retry', () => {
     await expect(request.send()).resolves.toBe(SIGNER_B);
   });
 
-  it('forceRefreshCachedValue: one fetch for concurrent calls, none once replaced, CachedValueStaleError if unchanged', async () => {
+  it('forceRefreshCachedValue: one fetch for concurrent calls, no error if unchanged', async () => {
     const world = makeWorld();
     await inputProofRequest(world).send();
     const v1 = coprocessorSignersVersion({ threshold: 1, signers: [SIGNER_A] });
     const refresh = () =>
       refreshCachedValue(world.client, { cacheName: 'coprocessorSigners', staleVersion: v1, fhevmContext });
 
-    await expect(refresh()).rejects.toMatchObject({ name: 'CachedValueStaleError', staleVersion: v1 });
+    await expect(refresh()).resolves.toBeUndefined();
 
     world.chainState.coprocessorSigner = SIGNER_B;
     const readsBefore = world.reads('getCoprocessorSigners');
     await Promise.all([refresh(), refresh(), refresh()]);
-    await refresh();
     expect(world.reads('getCoprocessorSigners') - readsBefore).toBe(1);
+    // Signer-set versions have no order: a later refresh reads again.
+    await refresh();
+    expect(world.reads('getCoprocessorSigners') - readsBefore).toBe(2);
   });
 
   it('createStaleError (a user decryption): refreshed, not run again, the createStaleError error with the request error as cause', async () => {
@@ -361,6 +363,53 @@ describe('KMS context', () => {
       fhevmContext,
     });
     await expect(request.send()).resolves.toBe(6n);
+  });
+
+  it('a lagging RPC: the newer context is kept, one run, the request error and a warning (no loop)', async () => {
+    const world = makeWorld();
+    const request = publicDecryptRequest(world);
+    await request.send();
+    request.run.mockClear();
+    // The RPC now answers the older context 4 (it lags), and stays behind.
+    world.chainState.kmsContextId = 4n;
+
+    for (let i = 0; i < 3; i++) {
+      await expect(request.send()).rejects.toMatchObject({ name: 'RelayerResponseApiError' });
+    }
+    // One run per send: an older read is never taken as a refreshed value.
+    expect(request.run).toHaveBeenCalledTimes(3);
+    expect(world.warn).toHaveBeenCalledWith(expect.stringContaining('lags behind the chain'));
+    // Once the RPC catches up, requests work again on the cached context.
+    world.chainState.kmsContextId = 5n;
+    await expect(request.send()).resolves.toBe(5n);
+  });
+
+  it('forceRefreshCachedValue: an older context read is no error; the lag is logged, the cache kept', async () => {
+    const world = makeWorld();
+    const request = publicDecryptRequest(world);
+    await request.send();
+    world.chainState.kmsContextId = 4n;
+
+    await expect(
+      refreshCachedValue(world.client, {
+        cacheName: 'kmsContext',
+        staleVersion: kmsContextVersion(5n, 1n),
+        fhevmContext,
+      }),
+    ).resolves.toBeUndefined();
+    expect(world.warn).toHaveBeenCalledWith(expect.stringContaining('lags behind the chain'));
+    world.chainState.kmsContextId = 5n;
+    await expect(request.send()).resolves.toBe(5n);
+  });
+
+  it('autoRefreshOnStale: false: an older context read is logged as a lag, not taken as stale', async () => {
+    const world = makeWorld({ autoRefreshOnStale: false });
+    const request = publicDecryptRequest(world);
+    await request.send();
+    world.chainState.kmsContextId = 4n;
+
+    await expect(request.send()).rejects.toMatchObject({ name: 'RelayerResponseApiError' });
+    expect(world.warn).toHaveBeenCalledWith(expect.stringContaining('lags behind the chain'));
   });
 
   it('a request bound to its permit (autoRefreshOnStale: false): CachedValueStaleError, not createStaleError', async () => {

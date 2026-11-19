@@ -244,6 +244,22 @@ describe('key material cache', () => {
     expect(checked.version).toBe(version(GEN1));
   });
 
+  it('never goes back to an older key read through a lagging RPC, and does not download it', async () => {
+    const { state, newClient, downloads } = makeWorld();
+    const client = newClient({ keyMaterial: { ttl: 0 } });
+    await fetchBytes(client);
+    state.chain = GEN2;
+    state.relayer = GEN2;
+    expect(await fetchVersion(client)).toBe(version(GEN2));
+    // The RPC (and the relayer) serve GEN1 again.
+    state.chain = GEN1;
+    state.relayer = GEN1;
+
+    expect(await fetchVersion(client)).toBe(version(GEN2));
+    expect(downloads).toHaveBeenCalledTimes(2);
+    expect(fheEncryptionKeyCacheForTests.peek(getFheEncryptionKeySlot(client))?.version).toBe(version(GEN2));
+  });
+
   describe('a provided key', () => {
     const slotOf = (client: Client) => fheEncryptionKeyCacheForTests.peek(getFheEncryptionKeySlot(client));
 
@@ -305,20 +321,13 @@ describe('key material cache', () => {
       expect(before.publicKeyBytes.bytes).toEqual(GEN1.publicKey);
     });
 
-    it('fails without a download when the chain still has the cached key', async () => {
+    it('reads the ids again, without a download, when the chain still has the cached key', async () => {
       const { newClient, downloads } = makeWorld();
       const client = newClient();
       await fetchBytes(client);
-      const error = await refreshCachedValue(client, {
-        cacheName: 'keyMaterial',
-        staleVersion: version(GEN1),
-        fhevmContext,
-      }).catch((e: unknown) => e);
-      expect(error).toMatchObject({
-        name: 'CachedValueStaleError',
-        cacheName: 'keyMaterial',
-        staleVersion: version(GEN1),
-      });
+      await expect(
+        refreshCachedValue(client, { cacheName: 'keyMaterial', staleVersion: version(GEN1), fhevmContext }),
+      ).resolves.toBeUndefined();
       expect(downloads).toHaveBeenCalledTimes(1);
     });
 

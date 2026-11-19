@@ -1,8 +1,9 @@
-import type { EthereumModule } from '../modules/ethereum/types.js';
+import type { EthereumModule, TrustedClient } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
 import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
+import { verifyTrustedValue } from '../base/trustedValue.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
 import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
@@ -249,5 +250,67 @@ describe('KMS context cache', () => {
     const error = permitRequestStaleContextError(client, v2, requestError);
     expect(error).toBeInstanceOf(InvalidSignedPermitError);
     expect((error as Error).cause).toBe(requestError);
+  });
+
+  describe('clients sharing a slot, one through a lagging RPC', () => {
+    /** Two clients on one runtime (one slot): B reads `current`, A, whose RPC lags, always reads context 5. */
+    function makeClients() {
+      const current = { contextId: 5n, epochId: 1n };
+      const lagging = { name: 'lagging' };
+      const readContract = vi.fn(
+        async (trustedClient: TrustedClient, parameters: { readonly functionName: string }): Promise<unknown> => {
+          await Promise.resolve();
+          if (parameters.functionName === 'getContextSignersAndThresholdFromExtraData') {
+            return [[SIGNER_A], 1n];
+          }
+          if (parameters.functionName !== 'getCurrentKmsContextAndEpoch') {
+            throw new Error(`No mocked handler for ${parameters.functionName}`);
+          }
+          const native = verifyTrustedValue(trustedClient, PRIVATE_ETHERS_TOKEN);
+          return native === lagging ? [5n, 1n] : [current.contextId, current.epochId];
+        },
+      );
+      const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
+        ethereum: { readContract } as unknown as EthereumModule,
+        relayer: {} as RelayerModule,
+        config: {},
+      });
+      const b = createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain: sepolia, client: { name: 'b' }, runtime });
+      // TTL 0: A reads on every call.
+      const a = createCoreFhevm(PRIVATE_ETHERS_TOKEN, {
+        chain: sepolia,
+        client: lagging,
+        runtime,
+        options: { cache: { kmsContext: { ttl: 0 } } },
+      });
+      return { a, b, current };
+    }
+
+    it('A never stores its older context over the one B stored, and gets the stored one', async () => {
+      const { a, b, current } = makeClients();
+      await readCurrentKmsSignersContext(b, v14);
+      current.contextId = 6n;
+      await refreshCurrentKmsContext(b, kmsContextVersion(5n, 1n));
+
+      expect((await readCurrentKmsSignersContext(a, v14)).id).toBe(6n);
+      expect(kmsContextCache.peekCurrent(b)?.version).toBe(kmsContextVersion(6n, 1n));
+    });
+
+    it("refresh after B's request failed on context 6 never returns A's context 5", async () => {
+      const { a, b, current } = makeClients();
+      current.contextId = 6n;
+      await readCurrentKmsSignersContext(b, v14);
+      await readCurrentKmsSignersContext(a, v14);
+
+      await expect(refreshCurrentKmsContext(b, kmsContextVersion(6n, 1n))).resolves.toBe(kmsContextVersion(6n, 1n));
+    });
+
+    it('orders versions by context id, then epoch id', () => {
+      const newer = (x: string, y: string): boolean => kmsContextCache.isNewerVersion(x, y);
+      expect(newer(kmsContextVersion(6n, 1n), kmsContextVersion(5n, 9n))).toBe(true);
+      expect(newer(kmsContextVersion(5n, 2n), kmsContextVersion(5n, 1n))).toBe(true);
+      expect(newer(kmsContextVersion(5n, 1n), kmsContextVersion(5n, 2n))).toBe(false);
+      expect(newer(kmsContextVersion(5n, 1n), kmsContextVersion(5n, 1n))).toBe(false);
+    });
   });
 });

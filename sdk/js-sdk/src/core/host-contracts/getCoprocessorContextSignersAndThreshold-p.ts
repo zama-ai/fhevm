@@ -1,4 +1,5 @@
 import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
+import type { Logger } from '../types/logger.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
@@ -38,6 +39,10 @@ class CoprocessorSignersCache extends LatestValueCache<Context, Parameters, Retu
 
   // One slot per chain and contract: two chains can deploy at the same address.
   // A client with no chain reads by address only.
+  protected override getLogger(context: Context): Logger | undefined {
+    return context.runtime.config.logger;
+  }
+
   protected override getSlotKey(context: Context, params: Parameters): string {
     return `${context.runtime.uid.toLowerCase()}:${context.chain?.id ?? ''}:${params.address.toLowerCase()}`;
   }

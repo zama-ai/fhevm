@@ -1,3 +1,4 @@
+import type { Logger } from '../types/logger.js';
 import { describe, expect, it, vi } from 'vitest';
 import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 import { LatestValueCache, type CachedValue } from './latestValueCache.js';
@@ -18,6 +19,17 @@ type TestFetch = (
   parameters: object,
   cached: CachedValue<TestValue> | undefined,
 ) => Promise<{ readonly version: string; readonly value: TestValue }>;
+
+/** `vN` versions are ordered by N; any other version has no order. */
+function compareTestVersions(a: string, b: string): number | undefined {
+  const n = (v: string): number | undefined => (/^v\d+$/.test(v) ? Number(v.slice(1)) : undefined);
+  const x = n(a);
+  const y = n(b);
+  if (x === undefined || y === undefined) {
+    return a === b ? 0 : undefined;
+  }
+  return x - y;
+}
 
 /** A cache with one slot; reads and the clock are given by the test. */
 class TestCache extends LatestValueCache<TestContext, object, TestValue> {
@@ -45,6 +57,16 @@ class TestCache extends LatestValueCache<TestContext, object, TestValue> {
 
   protected override now(): number {
     return this.#nowFn();
+  }
+
+  public readonly warn = vi.fn();
+
+  protected override getLogger(): Logger {
+    return { debug: undefined, warn: this.warn, error: undefined };
+  }
+
+  protected override compareVersions(a: string, b: string): number | undefined {
+    return compareTestVersions(a, b);
   }
 
   protected override ttl(context: TestContext): number {
@@ -236,5 +258,89 @@ describe('LatestValueCache', () => {
     const next = cache.get(ctx(1_000), {});
     await expect(next).resolves.toMatchObject({ version: 'v1' });
     expect(cache.peek(SLOT)).toBeDefined();
+  });
+
+  describe('a slot never moves backwards', () => {
+    /** The next read returns `v1`, as through a client whose RPC lags. */
+    const lagOnce = (fetchFn: ReturnType<typeof makeCache>['fetchFn']): void => {
+      fetchFn.mockImplementationOnce(async () => ({ version: 'v1', value: { data: 'v1' } }));
+    };
+
+    it('does not store a read older than the stored value: the caller gets the stored one', async () => {
+      const { cache, fetchFn, change } = makeCache();
+      change('v2');
+      const stored = await cache.get(ctx(1_000), {});
+      lagOnce(fetchFn);
+      await expect(cache.get(ctx(0), {})).resolves.toBe(stored);
+      expect(cache.peek(SLOT)).toBe(stored);
+      expect(cache.warn).toHaveBeenCalledWith(
+        "keyMaterial: this client's RPC returned version v1, older than the cached v2, which is kept. " +
+          'The RPC node lags behind the chain; if this repeats, check the RPC endpoint.',
+      );
+    });
+
+    it('an older read the fetch answers with the cached value: kept as is, its read time not renewed', async () => {
+      const { cache, fetchFn, change, advance } = makeCache();
+      change('v2');
+      const stored = await cache.get(ctx(1_000), {});
+      fetchFn.mockImplementationOnce(async (_c, _p, cached) => ({ version: 'v1', value: cached!.value }));
+      advance(500);
+      await expect(cache.get(ctx(0), {})).resolves.toBe(stored);
+      expect(cache.peek(SLOT)).toBe(stored);
+      expect(cache.peek(SLOT)?.timestamp).toBe(stored.timestamp);
+      expect(cache.warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('a request that fails on v2 never gets v1 back from refresh(v2)', async () => {
+      // B stores v2; A, whose RPC lags, reads v1.
+      const { cache, fetchFn, change } = makeCache();
+      change('v2');
+      await cache.get(ctx(1_000), {});
+      lagOnce(fetchFn);
+      await cache.get(ctx(0), {});
+      // B's request fails: refresh(v2) reads again, through B's RPC.
+      await expect(cache.refresh(ctx(), {}, 'v2')).resolves.toMatchObject({ version: 'v2' });
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    });
+
+    it('refresh(staleVersion) reads again when the stored value is older than staleVersion', async () => {
+      const { cache, fetchFn, change } = makeCache();
+      change('v2');
+      const b = await cache.get(ctx(1_000), {});
+      // The slot loses v2, then A stores v1.
+      cache.evict(SLOT, b.value);
+      lagOnce(fetchFn);
+      await cache.get(ctx(0), {});
+      expect(cache.peek(SLOT)).toMatchObject({ version: 'v1' });
+
+      await expect(cache.refresh(ctx(), {}, 'v2')).resolves.toMatchObject({ version: 'v2' });
+      expect(cache.peek(SLOT)).toMatchObject({ version: 'v2' });
+    });
+
+    it('refresh(staleVersion) returns a read older than staleVersion with a warning, no error', async () => {
+      const { cache, fetchFn } = makeCache();
+      lagOnce(fetchFn);
+      await expect(cache.refresh(ctx(), {}, 'v2')).resolves.toMatchObject({ version: 'v1' });
+      expect(cache.warn).toHaveBeenCalledWith(expect.stringContaining('lags behind the chain'));
+    });
+
+    it('set does not store a value older than the stored one', async () => {
+      const { cache, change } = makeCache();
+      change('v2');
+      const stored = await cache.get(ctx(1_000), {});
+      cache.set(SLOT, 'v1', { data: 'v1' });
+      expect(cache.peek(SLOT)).toBe(stored);
+    });
+
+    it('versions with no order: stored as read, and refresh reads again', async () => {
+      const { cache, fetchFn, change } = makeCache();
+      change('a');
+      await cache.get(ctx(1_000), {});
+      change('b');
+      await cache.get(ctx(0), {});
+      expect(cache.peek(SLOT)).toMatchObject({ version: 'b' });
+      await expect(cache.refresh(ctx(), {}, 'a')).resolves.toMatchObject({ version: 'b' });
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    });
   });
 });

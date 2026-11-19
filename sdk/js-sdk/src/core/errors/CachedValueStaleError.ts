@@ -24,9 +24,6 @@ export type CachedValueStaleErrorParams = Prettify<
  * input proof rejected after a key rotation) and the SDK did not recover:
  * `autoRefreshOnStale` is `false`, or the retry failed on a stale value
  * again. Call `forceRefreshCachedValue(cacheName, staleVersion)`, then retry.
- *
- * `forceRefreshCachedValue` also throws it when the value read again still has
- * `staleVersion`: refreshing cannot help.
  */
 export class CachedValueStaleError extends FhevmErrorBase {
   readonly #cacheName: FhevmCacheName;

@@ -203,6 +203,11 @@ you have nothing to do.
 | `'kmsContext'`         | KMS context, its signers and threshold | runtime, chain id and contract addresses | `contextId:epochId`         |
 | `'coprocessorSigners'` | coprocessor signers and threshold      | runtime, chain id and contract address   | hash of signers + threshold |
 
+- A cached value never moves back to an older version. When a client's RPC returns an older version than the cached one, the RPC lags behind the chain: the SDK keeps the cached value (its TTL is not renewed), throws no error for it, and logs a warning naming the cache and both versions. If the warning repeats, check the RPC endpoint. A lag that returns the cached version itself cannot be detected.
+- `'kmsContext'`: a later context, or a later epoch of the same context, is newer.
+- `'keyMaterial'`: a later key id or CRS id (the other one unchanged or later) is newer.
+- `'coprocessorSigners'`: a hash has no order. The last value read is cached, so a lagging RPC can replace a newer signer set.
+
 ```ts
 const client = createFhevmClient({
   chain: sepolia,
@@ -229,7 +234,8 @@ const client = createFhevmClient({
 | Encryption or public decryption fails on a stale value                        | Refreshes it, logs a warning, retries once | The result                                                                              |
 | The retry fails on a stale value again                                        | Stops                                      | `CachedValueStaleError`                                                               |
 | The value cannot be read again (e.g. RPC error)                               | Logs a warning                             | The request's own error                                                                 |
-| Bad signature, signer set unchanged                                           | No refresh, no retry                       | `UnknownSignerError`, `ThresholdSignerError` or `DuplicateSignerError`                  |
+| The value read again is unchanged, or older (the RPC lags)                    | Keeps the cached value, no retry; logs a warning if older | The request's own error. The next failing request reads again                |
+| Bad signature, signer set read again unchanged                                         | No refresh, no retry                       | `UnknownSignerError`, `ThresholdSignerError` or `DuplicateSignerError`                  |
 | User or delegated decryption, or `encryptValuesWithPad`; KMS context switched | Loads the new context, no retry            | `InvalidSignedPermitError` (`cause`: the request's error): sign a new permit            |
 | `autoRefreshOnStale: false`                                              | Reads only the version, cache untouched    | `CachedValueStaleError`; for a user decryption, `forceRefreshCachedValue` then sign a new permit |
 
@@ -251,9 +257,9 @@ try {
 
 `forceRefreshCachedValue(cacheName, staleVersion)`:
 
-- Fetches only if the cache still holds `staleVersion` (without it: always). Concurrent calls share one fetch.
-- Resolves once the cache holds another version; rejects with the fetch error.
-- Rejects with `CachedValueStaleError` when the fetched value is the same: refreshing cannot help.
+- Fetches unless the cache holds a newer version than `staleVersion` (without it: always). Concurrent calls share one fetch.
+- Only reads again: resolves once the read is done, whatever version it found; rejects only with the read error.
+- If nothing changed, the retried request fails with its own error. An older version read means the client's RPC lags: it is logged as a warning (see [Caching](#caching)) and the cached value is kept.
 
 #### Key rotation
 

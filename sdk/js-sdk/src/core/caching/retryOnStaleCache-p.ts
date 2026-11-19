@@ -25,10 +25,10 @@ const CACHES: Readonly<Record<FhevmCacheName, LatestValueCache<Context, unknown,
 
 /**
  * Fetches `cacheName` again into the cache (see `LatestValueCache.refresh` for
- * `staleVersion`). Concurrent calls share one fetch.
+ * `staleVersion`). Concurrent calls share one fetch. It only reads again: an
+ * unchanged value, or an older one (logged by the cache: the RPC lags), is no
+ * error.
  *
- * @throws {CachedValueStaleError} when the value read again still has
- * `staleVersion`: refreshing cannot fix the failure.
  * @throws the fetch error.
  */
 export async function refreshCachedValue(
@@ -40,14 +40,7 @@ export async function refreshCachedValue(
   },
 ): Promise<void> {
   const { cacheName, staleVersion, fhevmContext } = parameters;
-  const { version } = await CACHES[cacheName].refreshCurrent(context, fhevmContext, staleVersion);
-  if (staleVersion !== undefined && version === staleVersion) {
-    throw new CachedValueStaleError({
-      cacheName,
-      staleVersion,
-      message: `The ${cacheName} read again (version ${staleVersion}) is the cached one: refreshing it cannot help.`,
-    });
-  }
+  await CACHES[cacheName].refreshCurrent(context, fhevmContext, staleVersion);
 }
 
 /** A cached value a failed request used, found stale (read again, its version changed). */
@@ -152,7 +145,8 @@ function _sleep(ms: number): Promise<void> {
  * Reads again each value the failed request used whose cache may explain the
  * error. The first one whose version changed is the stale one: with
  * `refresh`, the new value is cached; without, only its version is read. A
- * failed read proves nothing: it is logged, and the request's error stands.
+ * failed read, or one older than the value used, proves nothing: it is
+ * logged (failed) or skipped (older), and the request's error stands.
  */
 async function _findStaleValue(
   context: Context,
@@ -170,6 +164,14 @@ async function _findStaleValue(
       const current = refresh
         ? (await cache.refreshCurrent(context, fhevmContext, used)).version
         : await cache.readCurrentVersion(context, fhevmContext);
+      // An older version (e.g. a lagging RPC) proves nothing; with `refresh`,
+      // the cache has logged it.
+      if (cache.isNewerVersion(used, current)) {
+        if (!refresh) {
+          cache.warnOlderRead(context, current, used);
+        }
+        continue;
+      }
       if (current !== used) {
         return { cacheName, version: used };
       }

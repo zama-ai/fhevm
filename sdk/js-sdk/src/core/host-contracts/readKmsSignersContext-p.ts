@@ -1,4 +1,5 @@
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
+import type { Logger } from '../types/logger.js';
 import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
@@ -12,6 +13,7 @@ import { assertIsKmsExtraData, createKmsExtraDataV2 } from '../kms/kmsExtraData-
 import { getKmsContextSignersAndThresholdFromExtraData } from './getKmsContextSignersAndThresholdFromExtraData-p.js';
 import { LatestValueCache, type CachedValue } from '../caching/latestValueCache.js';
 import { uint256ToBytes32Hex } from '../base/uint.js';
+import { isBytes32Hex } from '../base/bytes.js';
 import { recordCacheUsage } from '../caching/cacheUsage-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -47,10 +49,18 @@ type KmsContextValue = {
 // contracts. A read reads the ids first and keeps the cached signers when
 // the ids are unchanged.
 //
+// Versions are ordered: a later context, or a later epoch of the same
+// context, is newer (ProtocolConfig only increases both ids). The cached
+// context never goes back to an older one, e.g. read through a lagging RPC.
+//
 ////////////////////////////////////////////////////////////////////////////////
 
 class KmsContextCache extends LatestValueCache<Context, Parameters, KmsContextValue> {
   public readonly cacheName = 'kmsContext';
+
+  protected override getLogger(context: Context): Logger | undefined {
+    return context.runtime.config.logger;
+  }
 
   protected override getSlotKey(context: Context, params: Parameters): string {
     return [context.runtime.uid, context.chain?.id ?? '', params.kmsVerifierAddress, params.protocolConfigAddress ?? '']
@@ -70,6 +80,10 @@ class KmsContextCache extends LatestValueCache<Context, Parameters, KmsContextVa
   ): Promise<{ readonly version: string; readonly value: KmsContextValue }> {
     const extraData = await _readCurrentKmsExtraData(context, params);
     const version = kmsContextVersion(extraData.kmsContextId, extraData.kmsEpochId);
+    // Unchanged, or older (a lagging RPC): the cached context stays.
+    if (cached !== undefined && this.isNewerVersion(cached.version, version)) {
+      return { version, value: cached.value };
+    }
     if (cached?.version === version) {
       return cached;
     }
@@ -78,6 +92,15 @@ class KmsContextCache extends LatestValueCache<Context, Parameters, KmsContextVa
       extraData,
     });
     return { version, value: Object.freeze({ extraData, signers, threshold }) };
+  }
+
+  protected override compareVersions(a: string, b: string): number | undefined {
+    const x = _parseKmsContextVersion(a);
+    const y = _parseKmsContextVersion(b);
+    if (x === undefined || y === undefined) {
+      return a === b ? 0 : undefined;
+    }
+    return x.contextId === y.contextId ? _compare(x.epochId, y.epochId) : _compare(x.contextId, y.contextId);
   }
 
   // Any failure of a KMS request handed to the relayer (an error, a timeout,
@@ -105,6 +128,18 @@ export const kmsContextCache = new KmsContextCache();
 /** The cache version of a KMS context: `contextId:epochId`, as 32-byte hex. */
 export function kmsContextVersion(kmsContextId: bigint, kmsEpochId: bigint): string {
   return `${uint256ToBytes32Hex(kmsContextId)}:${uint256ToBytes32Hex(kmsEpochId)}`;
+}
+
+function _parseKmsContextVersion(version: string): { contextId: bigint; epochId: bigint } | undefined {
+  const [contextId, epochId, ...rest] = version.split(':');
+  if (rest.length > 0 || !isBytes32Hex(contextId) || !isBytes32Hex(epochId)) {
+    return undefined;
+  }
+  return { contextId: BigInt(contextId), epochId: BigInt(epochId) };
+}
+
+function _compare(a: bigint, b: bigint): number {
+  return a === b ? 0 : a < b ? -1 : 1;
 }
 
 function _currentKmsContextParameters(context: Context & { readonly chain: FhevmChain }): Parameters {

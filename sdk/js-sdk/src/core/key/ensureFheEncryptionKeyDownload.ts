@@ -1,4 +1,5 @@
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { Logger } from '../types/logger.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmBase, OptionalNativeClient, ResolvedFhevmOptions } from '../types/coreFhevmClient.js';
 import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
@@ -50,10 +51,20 @@ type ActiveIds = { readonly keyId: bigint; readonly crsId: bigint };
 // caching.
 // Clients that do not check keys download again when the TTL runs out.
 //
+// Versions are ordered by the active ids: KMSGeneration only increases the
+// key id and the CRS id, each on its own. A version is newer when one id
+// moved forward and the other did not move back; any other pair of versions
+// has no order. The cached key never goes back to an older one, e.g. read
+// through a lagging RPC.
+//
 ////////////////////////////////////////////////////////////////////////////////
 
 class KeyMaterialCache extends LatestValueCache<Context, Parameters, FheEncryptionKeyBytes> {
   public readonly cacheName = 'keyMaterial';
+
+  protected override getLogger(context: Context): Logger | undefined {
+    return context.runtime.config.logger;
+  }
 
   protected override getSlotKey(context: Context): string {
     return getFheEncryptionKeySlot(context);
@@ -70,6 +81,10 @@ class KeyMaterialCache extends LatestValueCache<Context, Parameters, FheEncrypti
     }
     const activeIds = await readActiveFheEncryptionKeyIds(context);
     const version = fheEncryptionKeyVersion(activeIds);
+    // Unchanged, or older (a lagging RPC): no download, the cached key stays.
+    if (cached !== undefined && this.isNewerVersion(cached.version, version)) {
+      return { version, value: cached.value };
+    }
     if (cached?.version === version) {
       return cached;
     }
@@ -78,6 +93,20 @@ class KeyMaterialCache extends LatestValueCache<Context, Parameters, FheEncrypti
       return { version, value: bytes };
     }
     return { version: await _admitLabelIdKey(context, bytes), value: bytes };
+  }
+
+  protected override compareVersions(a: string, b: string): number | undefined {
+    const x = _parseKeyVersion(a);
+    const y = _parseKeyVersion(b);
+    if (x === undefined || y === undefined) {
+      return a === b ? 0 : undefined;
+    }
+    const key = _compare(x.keyId, y.keyId);
+    const crs = _compare(x.crsId, y.crsId);
+    if (key !== 0 && crs === -key) {
+      return undefined;
+    }
+    return key !== 0 ? key : crs;
   }
 
   // An input proof rejected by the coprocessors: the key may have rotated.
@@ -127,6 +156,18 @@ async function _admitLabelIdKey(context: Context, bytes: FheEncryptionKeyBytes):
 /** The cache version of key material: `keyId:crsId`, as 32-byte hex. */
 export function fheEncryptionKeyVersion(ids: ActiveIds): string {
   return `${uint256ToBytes32Hex(ids.keyId)}:${uint256ToBytes32Hex(ids.crsId)}`;
+}
+
+function _parseKeyVersion(version: string): ActiveIds | undefined {
+  const [keyId, crsId, ...rest] = version.split(':');
+  if (rest.length > 0 || !isBytes32Hex(keyId) || !isBytes32Hex(crsId)) {
+    return undefined;
+  }
+  return { keyId: BigInt(keyId), crsId: BigInt(crsId) };
+}
+
+function _compare(a: bigint, b: bigint): number {
+  return a === b ? 0 : a < b ? -1 : 1;
 }
 
 /** The version of bytes no client checks: the relayer's ids, as served. */

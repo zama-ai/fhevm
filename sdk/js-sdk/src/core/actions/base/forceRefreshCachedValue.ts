@@ -14,15 +14,14 @@ import { FhevmConfigError } from '../../errors/FhevmConfigError.js';
  * signers (`'coprocessorSigners'`). The cache is shared: the new value serves
  * every client. Concurrent calls share one fetch.
  *
- * Resolves once the cache holds a value other than `staleVersion`; then
+ * Only reads again: resolves once the read is done, whatever version it
+ * found (an older one, from an RPC that lags, is logged and not cached); then
  * retry the failed request. `staleVersion` is the version that failed it
  * (`CachedValueStaleError.staleVersion`): with it, nothing is fetched when the
- * cache already holds another version; without it, the value is always
- * fetched.
+ * cache already holds a newer version; without it, the value is always
+ * fetched. The cache never goes back to an older version.
  *
  * @throws {FhevmConfigError} on an unknown `cacheName`.
- * @throws {CachedValueStaleError} when the value fetched still has
- * `staleVersion`: refreshing cannot fix the failure.
  * @throws the fetch error, as is.
  */
 export async function forceRefreshCachedValue(
