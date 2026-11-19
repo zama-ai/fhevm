@@ -179,7 +179,14 @@ describe("env", () => {
     });
     expect(pair.instanceEnvs["coprocessor-prf-service.1"]).toEqual({
       DATABASE_URL: "postgresql://prf_service:prf_service@db:5432/coprocessor_1",
+    });    // The pad-worker's env file is its coprocessor's, with its database login as the pad_worker role.
+    expect(pair.instanceEnvs["coprocessor-pad-worker.1"]).toEqual({
+      ...pair.instanceEnvs["coprocessor.1"],
+      DATABASE_URL: "postgresql://pad_worker:pad_worker@db:5432/coprocessor_1",
     });
+    expect(pair.instanceEnvs["coprocessor-pad-worker"].TX_SENDER_PRIVATE_KEY).toBe(
+      pair.componentEnvs.coprocessor.TX_SENDER_PRIVATE_KEY,
+    );
   });
 
   test("points the e2e suite at every coprocessor's proxy, signing as KMS party 1's connector", async () => {
@@ -218,6 +225,9 @@ describe("env", () => {
     expect(suite.PRF_SERVICE_METRICS_URLS).toBe(
       "http://coprocessor-prf-service:9100/metrics,http://coprocessor1-prf-service:9100/metrics",
     );
+    expect(suite.PAD_WORKER_METRICS_URLS).toBe(
+      "http://coprocessor-pad-worker:9100/metrics,http://coprocessor1-pad-worker:9100/metrics",
+    );
     expect(suite.COPROCESSOR_PROXY_METRICS_URLS).toBe(
       "http://coprocessor-proxy:9100/metrics,http://coprocessor1-proxy:9100/metrics",
     );
@@ -228,6 +238,11 @@ describe("env", () => {
     expect(pair.componentEnvs["kms-connector"].KMS_CONNECTOR_TX_SENDER_ADDRESS).toBe(
       pair.componentEnvs["host-sc"].KMS_TX_SENDER_ADDRESS_0,
     );
+    // Each committee party's connector key, party 1 first.
+    const connectorKeys = suite.KMS_CONNECTOR_PRIVATE_KEYS.split(",");
+    expect(connectorKeys).toHaveLength(Number(pair.componentEnvs["gateway-sc"].NUM_KMS_NODES));
+    expect(connectorKeys[0]).toBe(suite.KMS_CONNECTOR_PRIVATE_KEY);
+    expect(connectorKeys[1]).toBe(pair.instanceEnvs["kms-connector.2"].KMS_CONNECTOR_PRIVATE_KEY);
 
     // Bundles without the proxy image, and blue-green stacks, run no proxy.
     const blueGreen: State = {
@@ -243,8 +258,10 @@ describe("env", () => {
         "COPROCESSOR_PROXY_URLS",
         "COPROCESSOR_SIGNER_ADDRESSES",
         "PRF_SERVICE_METRICS_URLS",
+        "PAD_WORKER_METRICS_URLS",
         "COPROCESSOR_PROXY_METRICS_URLS",
         "KMS_CONNECTOR_PRIVATE_KEY",
+        "KMS_CONNECTOR_PRIVATE_KEYS",
       ]) {
         expect(gated.componentEnvs["test-suite"][key]).toBe("");
       }

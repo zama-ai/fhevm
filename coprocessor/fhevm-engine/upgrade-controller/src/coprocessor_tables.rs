@@ -454,6 +454,12 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
+    // The pad-worker runs outside blue-green, and Unmask in both stacks reads the same ct64.
+    CoprocessorTable {
+        name: "pad_ct64",
+        duplicated: false,
+        conflict_cols: &[],
+    },
     // Deprecated: only test/migration code writes input_blobs, no live service
     // does, so it needs no gcs.* duplicate. Remove together with the table.
     CoprocessorTable {

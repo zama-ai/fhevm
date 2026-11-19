@@ -23,11 +23,13 @@ import {
   requiresLegacyKmsBootstrapBudget,
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
+  runsCoprocessorProxy,
   supportsCanonicalProtocolConfigSeeding,
   supportsConnectorHttp,
   supportsCoprocessorProxy,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
+  supportsPadWorker,
   supportsPrfService,
   supportsUpgradeController,
   validateBundleCompatibility,
@@ -481,6 +483,22 @@ describe("compat", () => {
     expect(supportsPrfService(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-prf-service"] }]))).toBe(true);
     expect(supportsPrfService(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }]))).toBe(false);
     expect(supportsPrfService(stateFor({}, [{ group: "kms-connector" }]))).toBe(false);
+  });
+
+  test("enables the pad-worker only when its image is pinned or locally built, and runs the proxy only with it", () => {
+    const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
+      versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
+      overrides,
+    });
+    expect(supportsPadWorker(stateFor({}))).toBe(false);
+    expect(supportsPadWorker(stateFor({ COPROCESSOR_PAD_WORKER_VERSION: "02f6cc0" }))).toBe(true);
+    expect(supportsPadWorker(stateFor({}, [{ group: "coprocessor" }]))).toBe(true);
+    expect(supportsPadWorker(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-pad-worker"] }]))).toBe(true);
+    expect(supportsPadWorker(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }]))).toBe(false);
+    // The suite behind the proxy needs a pad-worker that computes its output.
+    const proxyAndPrf = { COPROCESSOR_PROXY_VERSION: "02f6cc0", COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0" };
+    expect(runsCoprocessorProxy(stateFor(proxyAndPrf))).toBe(false);
+    expect(runsCoprocessorProxy(stateFor({ ...proxyAndPrf, COPROCESSOR_PAD_WORKER_VERSION: "02f6cc0" }))).toBe(true);
   });
 
   test("enables the kms-connector HTTP path only when both the endpoint and proxy images are pinned or locally built", () => {

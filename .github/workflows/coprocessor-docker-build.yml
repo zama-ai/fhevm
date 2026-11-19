@@ -63,6 +63,9 @@ on:
       prf_service_build_result:
         description: "Result of the build-prf-service job"
         value: ${{ jobs.build-prf-service.result }}
+      pad_worker_build_result:
+        description: "Result of the build-pad-worker job"
+        value: ${{ jobs.build-pad-worker.result }}
   workflow_dispatch:
     inputs:
       build_db_migration:
@@ -107,6 +110,10 @@ on:
         default: true
       build_prf_service:
         description: "Enable/disable build for Coprocessor's PRF Service"
+        type: boolean
+        default: true
+      build_pad_worker:
+        description: "Enable/disable build for Coprocessor's Pad Worker"
         type: boolean
         default: true
   push:
@@ -366,6 +373,26 @@ jobs:
           - shared/ciphertext-attestation/**
           - shared/fhevm-sig-auth/**
 
+  check-changes-pad-worker:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
+      docker-image: fhevm/coprocessor/pad-worker
+      filters: |
+        pad-worker:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/pad-worker/**
+          - coprocessor/fhevm-engine/coprocessor-api/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
+          - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/rust_bindings/**
+          - shared/ciphertext-attestation/**
+
   ########################################################################
   #                        BUILD DECISIONS                               #
   # Centralizes all build/re-tag logic in one place for maintainability  #
@@ -389,6 +416,7 @@ jobs:
       - check-changes-upgrade-controller
       - check-changes-coprocessor-proxy
       - check-changes-prf-service
+      - check-changes-pad-worker
     outputs:
       db_migration: ${{ steps.decide.outputs.db_migration }}
       gw_listener: ${{ steps.decide.outputs.gw_listener }}
@@ -401,6 +429,7 @@ jobs:
       upgrade_controller: ${{ steps.decide.outputs.upgrade_controller }}
       coprocessor_proxy: ${{ steps.decide.outputs.coprocessor_proxy }}
       prf_service: ${{ steps.decide.outputs.prf_service }}
+      pad_worker: ${{ steps.decide.outputs.pad_worker }}
     steps:
       - id: decide
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -441,6 +470,7 @@ jobs:
               upgrade_controller: { changes: needs['check-changes-upgrade-controller'].outputs?.changes, build_input: inputs.build_upgrade_controller },
               coprocessor_proxy: { changes: needs['check-changes-coprocessor-proxy'].outputs?.changes, build_input: inputs.build_coprocessor_proxy },
               prf_service: { changes: needs['check-changes-prf-service'].outputs?.changes, build_input: inputs.build_prf_service },
+              pad_worker: { changes: needs['check-changes-pad-worker'].outputs?.changes, build_input: inputs.build_pad_worker },
             };
 
             core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
@@ -792,4 +822,32 @@ jobs:
     with:
       image-name: "fhevm/coprocessor/prf-service"
       previous-tag-or-commit: ${{ needs.check-changes-prf-service.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                              PAD WORKER                              #
+  ########################################################################
+  build-pad-worker:
+    needs: build-decisions
+    if: always() && needs.build-decisions.outputs.pad_worker == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/pad-worker"
+      docker-file: "coprocessor/fhevm-engine/pad-worker/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-pad-worker"
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+
+  re-tag-pad-worker-image:
+    needs: [build-decisions, check-changes-pad-worker]
+    if: always() && needs.build-decisions.outputs.pad_worker == 'retag'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/pad-worker"
+      previous-tag-or-commit: ${{ needs.check-changes-pad-worker.outputs.base-commit }}
       new-tag-or-commit: ${{ github.event.after }}
