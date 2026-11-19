@@ -89,6 +89,10 @@ pub struct ExecutorVersionTransition {
 pub struct ExecutorVersionSchedule {
     tracks_versions: bool,
     pub(crate) initial_version: Option<ExecutorVersion>,
+    /// A canonical RPC read at the parent hash stays valid across partial
+    /// deliveries. A version inherited from the parent row can be corrected.
+    #[serde(default)]
+    pub(crate) initial_version_from_rpc: bool,
     pub(crate) transitions: Vec<ExecutorVersionTransition>,
     /// The parent's DB value observed before RPC resolution, checked at commit.
     /// Outer None is used by test-only schedules that bypass the resolver.
@@ -101,6 +105,7 @@ impl ExecutorVersionSchedule {
         Self {
             tracks_versions: true,
             initial_version,
+            initial_version_from_rpc: false,
             transitions: Vec::new(),
             parent_checkpoint: None,
         }
@@ -130,6 +135,15 @@ impl ExecutorVersionSchedule {
         &mut self,
         saved: &Self,
     ) -> Result<(), &'static str> {
+        if saved.initial_version_from_rpc {
+            if self.initial_version_from_rpc
+                && self.initial_version != saved.initial_version
+            {
+                return Err("Conflicting canonical executor versions at the same parent hash");
+            }
+            self.initial_version = saved.initial_version;
+            self.initial_version_from_rpc = true;
+        }
         for transition in &saved.transitions {
             if let Some(current) = self.transitions.iter_mut().find(|current| {
                 current.after_log_index == transition.after_log_index

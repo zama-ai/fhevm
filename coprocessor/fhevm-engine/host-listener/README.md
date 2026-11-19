@@ -62,6 +62,9 @@ merge that evidence under the history admission lock, so partial deliveries and
 RPC failures cannot discard a resolved upgrade. A fuller delivery can add an
 upgrade omitted earlier. An unresolved newly discovered upgrade clears the
 inherited ending version until its implementation can be resolved.
+The listener also records when it read a block's starting version directly at
+the canonical parent hash. Empty replays can reuse that version after a restart.
+Starting versions inherited from the database follow corrections to the parent.
 
 Checkpoints written before upgrade schedules were stored require a canonical
 end-of-block lookup to reconcile a conflicting version. An unresolved replay

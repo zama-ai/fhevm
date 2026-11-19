@@ -120,6 +120,12 @@ impl ExecutorVersionResolver {
                 version: None,
             })
             .collect();
+        // Old schedules did not distinguish canonical reads from inherited versions.
+        let previously_resolved = request.legacy_ending_version.is_some()
+            || request
+                .persisted_schedule
+                .as_ref()
+                .is_some_and(|saved| saved.initial_version.is_some());
         if let Some(saved) = request.persisted_schedule {
             schedule
                 .merge_checkpoint(&saved)
@@ -134,14 +140,18 @@ impl ExecutorVersionResolver {
                 .get(first)
                 .is_some_and(|op| end.is_none_or(|index| *op <= index))
         };
+        let needs_initial_version = operation_in_segment(
+            None,
+            schedule
+                .transitions
+                .first()
+                .map(|transition| transition.after_log_index),
+        );
+        // An empty replay must not erase a known ending version. If the previous
+        // version no longer has a matching parent, verify it at the parent hash.
         if schedule.initial_version.is_none()
-            && operation_in_segment(
-                None,
-                schedule
-                    .transitions
-                    .first()
-                    .map(|transition| transition.after_log_index),
-            )
+            && (needs_initial_version
+                || (schedule.transitions.is_empty() && previously_resolved))
         {
             // Genesis has no parent state. Its header anchors any predeploys.
             let hash = if request.block_number == 0 {
@@ -151,6 +161,7 @@ impl ExecutorVersionResolver {
             };
             schedule.initial_version =
                 Some(self.lookup(provider, proxy, hash, timeout).await?);
+            schedule.initial_version_from_rpc = true;
         }
         for position in 0..schedule.transitions.len() {
             let transition = schedule.transitions[position];

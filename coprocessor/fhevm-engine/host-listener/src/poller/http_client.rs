@@ -723,6 +723,67 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn empty_replay_keeps_a_canonical_starting_version_after_restart() {
+        use crate::database::tfhe_event_propagate::Database;
+        use fhevm_engine_common::chain_id::ChainId;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let chain = ChainId::try_from(42_u64).unwrap();
+        let proxy = Address::repeat_byte(1);
+        let parent_hash = B256::with_last_byte(99);
+        let hash = B256::with_last_byte(100);
+        let block = version_block(
+            100,
+            hash,
+            parent_hash,
+            vec![operation_log(proxy, 100, hash, 0, 256)],
+        );
+        let empty = version_block(100, hash, parent_hash, vec![]);
+        let child_hash = B256::with_last_byte(101);
+        let child = version_block(
+            101,
+            child_hash,
+            hash,
+            vec![operation_log(proxy, 101, child_hash, 0, 256)],
+        );
+
+        for parent_row_exists in [false, true] {
+            let instance = setup_test_db(ImportMode::None).await.unwrap();
+            let mut db =
+                Database::new(&instance.db_url, chain, 16).await.unwrap();
+            let rpc = Asserter::new();
+            let client = mocked_client(rpc.clone());
+            if parent_row_exists {
+                let parent = version_block(
+                    99,
+                    parent_hash,
+                    B256::with_last_byte(98),
+                    vec![],
+                );
+                ingest_version_test_block(&mut db, &client, proxy, &parent)
+                    .await
+                    .unwrap();
+            }
+            rpc.push_success(&encoded_version("FHEVMExecutor v0.6.0"));
+            ingest_version_test_block(&mut db, &client, proxy, &block)
+                .await
+                .unwrap();
+            drop(db);
+
+            // The child's operation can only pass with the v0.6 checkpoint.
+            // A fresh resolver has no cached RPC response for either block.
+            let mut db =
+                Database::new(&instance.db_url, chain, 16).await.unwrap();
+            let offline = mocked_client(Asserter::new());
+            for delivery in [&empty, &child, &block] {
+                ingest_version_test_block(&mut db, &offline, proxy, delivery)
+                    .await
+                    .unwrap();
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn replay_preserves_upgrade_checkpoints_across_partial_and_concurrent_deliveries(
     ) {
         use crate::database::ingest::{
@@ -776,6 +837,12 @@ mod tests {
             Some(ExecutorVersion::new(0, 6, 0))
         );
         let child_hash = B256::with_last_byte(102);
+        // This child inherits v0.6 from the incomplete parent. A corrected
+        // parent must supersede that inherited version on child replay.
+        let empty_child = version_block(102, child_hash, hash, vec![]);
+        ingest_version_test_block(&mut db, &client, proxy, &empty_child)
+            .await
+            .unwrap();
         let stale_child = version_block(
             102,
             child_hash,
@@ -938,6 +1005,15 @@ mod tests {
         assert!(error
             .to_string()
             .contains("Parent executor checkpoint changed"));
+        let error = ingest_version_test_block(
+            &mut db,
+            &unavailable,
+            proxy,
+            &stale_child,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("trivial-encryption value"));
         let child = version_block(
             102,
             child_hash,
@@ -1054,6 +1130,38 @@ mod tests {
             schedule.ending_version(),
             Some(ExecutorVersion::new(0, 7, 0))
         );
+    }
+
+    #[tokio::test]
+    async fn empty_replay_rechecks_checkpoints_without_a_recorded_source() {
+        let proxy = Address::repeat_byte(1);
+        let block = version_block(
+            100,
+            B256::with_last_byte(100),
+            B256::with_last_byte(99),
+            vec![],
+        );
+        let version = ExecutorVersion::new(0, 6, 0);
+        for legacy_ending_only in [false, true] {
+            let mut request =
+                ExecutorVersionRequest::from_block(&block, Some(proxy));
+            if legacy_ending_only {
+                request.legacy_ending_version = Some(version);
+            } else {
+                // JSON written before the source of the initial version was stored.
+                request.persisted_schedule = Some(serde_json::from_value(serde_json::json!({
+                    "tracks_versions": true, "initial_version": version, "transitions": []
+                })).unwrap());
+            }
+            let rpc = Asserter::new();
+            rpc.push_success(&encoded_version("FHEVMExecutor v0.6.0"));
+            let schedule = mocked_client(rpc)
+                .executor_version_schedule(request)
+                .await
+                .unwrap();
+            assert_eq!(schedule.ending_version(), Some(version));
+            assert!(schedule.initial_version_from_rpc);
+        }
     }
 
     #[tokio::test]
