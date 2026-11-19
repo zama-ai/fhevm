@@ -52,7 +52,8 @@ struct Conf {
     #[arg(short, long, value_enum, default_value = "private-key")]
     signer_type: SignerType,
 
-    #[arg(short, long)]
+    /// Prefer the env var: a flag value is visible in the process list.
+    #[arg(short, long, env = "TX_SENDER_PRIVATE_KEY", hide_env_values = true)]
     private_key: Option<String>,
 
     /// An optional DB URL.
