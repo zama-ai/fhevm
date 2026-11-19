@@ -45,6 +45,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       // The owner mirror path moved to ProtocolConfigReplica, which non-canonical hosts run.
       // Canonical ProtocolConfig no longer declares these, and nothing off-chain subscribes to them.
       "error NonIncreasingEpochId(uint256,uint256)",
+      // No code reverts with this error, so IProtocolConfigBase no longer declares it.
+      "error NonIncreasingKmsContextId(uint256,uint256)",
       "event MirrorKmsContextAndEpoch(uint256 indexed,uint256 indexed,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])",
       "event MirrorKmsEpoch(uint256 indexed,uint256 indexed)",
       // The lifecycle confirmations carry the KMS signer's EIP-712 signature.
