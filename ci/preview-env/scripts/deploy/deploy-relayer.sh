@@ -22,7 +22,7 @@ case "${kind}" in
     # user_decrypt share reconstruction threshold MUST match the deployed
     # KMS party count (n-t). values-relayer-e2e.yaml is only a placeholder.
     reconstruct=$(kms_reconstruct "${NB_KMS_CORE}")
-    relayer_values=$(mktemp --suffix=.yaml)
+    relayer_values=$(mktemp "${TMPDIR:-/tmp}/relayer.XXXXXX")
     cp ci/preview-env/relayer/values-relayer-e2e.yaml "${relayer_values}"
     UDST="${reconstruct}" yq -i \
       '.env += [{"name": "APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD", "value": strenv(UDST)}]' \

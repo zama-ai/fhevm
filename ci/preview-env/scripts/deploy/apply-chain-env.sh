@@ -216,9 +216,13 @@ set_kms_host_chain() {
       ;;
   esac
 }
+# Chart 1.3.1 (kms-connector v0.10) renders KMS_CONNECTOR_CHAIN_ID from
+# commonConfig.chainId and ignores gatewayChainId. Later charts read
+# gatewayChainId. Set both so the EIP-712 domain matches the gateway.
 GATEWAY_HTTP="${GATEWAY_HTTP}" GATEWAY_CHAIN_ID="${GATEWAY_CHAIN_ID}" yq -i '
   .commonConfig.gatewayUrl = strenv(GATEWAY_HTTP) |
-  .commonConfig.gatewayChainId = strenv(GATEWAY_CHAIN_ID)
+  .commonConfig.gatewayChainId = strenv(GATEWAY_CHAIN_ID) |
+  .commonConfig.chainId = strenv(GATEWAY_CHAIN_ID)
 ' "${kms}"
 set_kms_host_chain "${kms}" ethereum "${HOST_HTTP}" "${HOST_CHAIN_ID}"
 if rpc_from_secret; then

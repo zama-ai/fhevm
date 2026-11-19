@@ -109,6 +109,11 @@ EOF
         (.scDeploy.env[] | select(.name == "CHAIN_ID").value) = strenv(KEYGEN_CHAIN_ID) |
         .scDeploy.deployCommands[0] = strenv(KEYGEN_EXPORT)
       ' "${keygen_values}"
+      # gateway-contracts v0.10 hardhat network "staging" reads CHAIN_ID_GATEWAY
+      # and otherwise stays on 54321. CHAIN_ID is not consulted.
+      NAME="CHAIN_ID_GATEWAY" VALUE="${keygen_chain_id}" yq -i \
+        '.scDeploy.env |= (map(select(.name != strenv(NAME))) + [{"name": strenv(NAME), "value": strenv(VALUE)}])' \
+        "${keygen_values}"
       keygen_tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")
     fi
     if [[ "${long_keygen}" == "true" ]]; then

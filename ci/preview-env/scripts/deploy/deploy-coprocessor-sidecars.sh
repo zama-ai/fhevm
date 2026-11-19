@@ -60,7 +60,7 @@ case "${kind}" in
         --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
         --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
         --set-string "hostListenerPollerShared.image.tag=${poller_tag}" \
-        "${tracing[@]}" &
+        ${tracing[@]+"${tracing[@]}"} &
     done
     wait
     ;;

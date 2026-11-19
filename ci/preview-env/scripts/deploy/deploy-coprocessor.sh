@@ -95,14 +95,26 @@ prepare_legacy_coprocessor_values() {
   kubectl create secret generic coprocessor-db-url -n "${NAMESPACE}" \
     --from-literal="coprocessor-db-url=${db_url}" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  CHART="${chart}" PRIV="${privkey}" CM="coprocessor-${party}" yq -n '
+  if [[ "${EXTERNAL_CHAINS:-false}" == "true" ]]; then
+    : "${HOST_HTTP:?}" "${HOST_WS:?}" "${GATEWAY_WS:?}" "${HOST_CHAIN_ID:?}"
+    legacy_host_ws="${HOST_WS}"
+    legacy_host_http="${HOST_HTTP}"
+    legacy_gw_ws="${GATEWAY_WS}"
+    legacy_host_chain="${HOST_CHAIN_ID}"
+  else
+    legacy_host_ws="ws://anvil-host-anvil-node:8545"
+    legacy_host_http="http://anvil-host-anvil-node:8545"
+    legacy_gw_ws="ws://anvil-gateway-anvil-node:8546"
+    legacy_host_chain="12345"
+  fi
+  CHART="${chart}" PRIV="${privkey}" CM="coprocessor-${party}" LEGACY_HOST_WS="${legacy_host_ws}" yq -n '
     .config.enabled = false |
     .hostListener.enabled = true |
     .hostListener.serviceAccountName = strenv(CM) |
     .hostListener.env = [
       {"name": "DATABASE_URL", "valueFrom": {"secretKeyRef": {"name": "coprocessor-db-url", "key": "coprocessor-db-url"}}},
       {"name": "TENANT_API_KEY", "valueFrom": {"secretKeyRef": {"name": "coprocessor-api-key", "key": "coprocessor-api-key"}}},
-      {"name": "ETHEREUM_RPC_URL", "value": "ws://anvil-host-anvil-node:8545"},
+      {"name": "ETHEREUM_RPC_URL", "value": strenv(LEGACY_HOST_WS)},
       {"name": "ACL_CONTRACT_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "host-sc-addresses", "key": "acl.address"}}},
       {"name": "FHEVM_EXECUTOR_CONTRACT_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "host-sc-addresses", "key": "fhevm_executor.address"}}}
     ] |
@@ -122,12 +134,13 @@ prepare_legacy_coprocessor_values() {
       {"name": "S3_BUCKET_NAME", "valueFrom": {"configMapKeyRef": {"name": strenv(CM), "key": "S3_BUCKET_NAME"}}}
     ]
   ' > "${legacy}"
-  PRIV="${privkey}" yq -i '
-    (.. | select(type == "!!str")) |= sub("ws://gateway-rpc-node:8548"; "ws://anvil-gateway-anvil-node:8546") |
+  PRIV="${privkey}" LEGACY_GW_WS="${legacy_gw_ws}" LEGACY_HOST_HTTP="${legacy_host_http}" LEGACY_HOST_CHAIN="${legacy_host_chain}" yq -i '
+    (.. | select(type == "!!str")) |= sub("ws://gateway-rpc-node:8548"; strenv(LEGACY_GW_WS)) |
+    (.. | select(type == "!!str")) |= sub("ws://anvil-gateway-anvil-node:8546"; strenv(LEGACY_GW_WS)) |
     (.. | select(type == "!!str")) |= sub("gateway-sc-addresses"; "gw-sc-addresses") |
     (.txSender.env[] | select(.name == "TX_SENDER_PRIVATE_KEY").value) = strenv(PRIV) |
-    .txSender.env += [{"name": "ETHEREUM_RPC_URL", "value": "http://anvil-host-anvil-node:8545"}] |
-    .gwListener.env += [{"name": "CHAIN_ID", "value": "12345"}] |
+    .txSender.env += [{"name": "ETHEREUM_RPC_URL", "value": strenv(LEGACY_HOST_HTTP)}] |
+    .gwListener.env += [{"name": "CHAIN_ID", "value": strenv(LEGACY_HOST_CHAIN)}] |
     .tfheWorker.args[] |= sub("^--run-bg-worker=true$"; "--run-bg-worker") |
     .tfheWorker.args[] |= sub("^--run-server=true$"; "--run-server") |
     .tfheWorker.args[] |= sub("^--generate-fhe-keys=true$"; "--generate-fhe-keys") |
@@ -160,6 +173,12 @@ run_legacy_coprocessor_migration() {
   if [[ "${BLUE_GREEN:-false}" == "true" ]]; then
     tag="${BCS_IMAGE_TAG}"
   fi
+  if [[ "${EXTERNAL_CHAINS:-false}" == "true" ]]; then
+    : "${HOST_CHAIN_ID:?}"
+    migration_chain="${HOST_CHAIN_ID}"
+  else
+    migration_chain="12345"
+  fi
   job="coprocessor-${party}-db-init"
   echo "coprocessor chart 0.7.x: migrating database without the wget init"
   kubectl delete job "${job}" -n "${NAMESPACE}" --ignore-not-found
@@ -188,7 +207,7 @@ spec:
                   name: coprocessor-api-key
                   key: coprocessor-api-key
             - name: CHAIN_ID
-              value: "12345"
+              value: "${migration_chain}"
             - name: ACL_CONTRACT_ADDRESS
               valueFrom:
                 configMapKeyRef:
@@ -289,10 +308,10 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
   fi
   helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \
     -n "${NAMESPACE}" "${values_files[@]}" \
-    "${polygon_args[@]}" \
-    "${bcs_overlay[@]}" \
+    ${polygon_args[@]+"${polygon_args[@]}"} \
+    ${bcs_overlay[@]+"${bcs_overlay[@]}"} \
     ${coproc_gpu_overlay[@]+"${coproc_gpu_overlay[@]}"} \
-    "${fleet_json[@]}" \
+    ${fleet_json[@]+"${fleet_json[@]}"} \
     --set-string "fullnameOverride=coprocessor-${i}" \
     "${common_args[@]}" \
     "${bcs_images[@]}"

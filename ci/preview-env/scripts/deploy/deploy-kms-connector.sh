@@ -52,7 +52,7 @@ set_host_chain_acl() {
   NAME="$2" ACL="$3" yq -i \
     '.commonConfig.hostChains[strenv(NAME)].aclAddress = strenv(ACL)' "$1"
 }
-kms_values=$(mktemp --suffix=.yaml)
+kms_values=$(mktemp "${TMPDIR:-/tmp}/kms-connector.XXXXXX")
 cp ci/preview-env/kms-connector/values-kms-connector-e2e.yaml "${kms_values}"
 set_host_chain_acl "${kms_values}" ethereum "${acl}"
 
@@ -60,7 +60,7 @@ polygon_args=()
 if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
   polygon_acl=$(kubectl get configmap polygon-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
   require_nonempty "${polygon_acl}" "polygon-sc-addresses[acl.address] is empty"
-  polygon_values=$(mktemp --suffix=.yaml)
+  polygon_values=$(mktemp "${TMPDIR:-/tmp}/kms-connector-polygon.XXXXXX")
   cp ci/preview-env/kms-connector/values-kms-connector-polygon-e2e.yaml "${polygon_values}"
   set_host_chain_acl "${polygon_values}" ethereum "${acl}"
   set_host_chain_acl "${polygon_values}" polygon "${polygon_acl}"
@@ -144,48 +144,49 @@ echo "Connector HTTP: urls=${urls} tx-senders=${tx_senders} threshold=${threshol
 kms_core_url() { echo "http://kms-core-${1}-core-${1}:50100"; }
 keygen_redirect() { echo "kms-insecure-keygen-redirect-${1}"; }
 keygen_redirect_port=3000 # the script's default; service.ports in values-kms-insecure-keygen-redirect-e2e.yaml
+# The connector redirect arrived after the v0.13 preview. Those cores take the
+# on-chain keygen (gateway before the host migration) and the worker calls
+# KeyGenPreproc / KeyGen on kms-core directly.
+kms_core_before_redirect() {
+  [[ "${KMS_CORE_TAG:-}" =~ ^v0\.1[23]\. ]]
+}
 kms_worker_endpoint() {
-  if [[ "${KEYGEN:?}" == "insecure" ]]; then
+  if [[ "${KEYGEN:?}" == "insecure" ]] && ! kms_core_before_redirect; then
     echo "http://$(keygen_redirect "${1}"):${keygen_redirect_port}"
   else
     kms_core_url "${1}"
   fi
 }
 
-# KEYGEN=insecure: each kms-worker reaches its kms-core through a redirect that
-# switches keygen to the Insecure* RPCs (see values-kms-insecure-keygen-redirect-e2e.yaml).
-if [[ "${KEYGEN}" == "insecure" ]]; then
+# KEYGEN=insecure on a current core: each kms-worker reaches its kms-core through
+# a redirect that switches keygen to the Insecure* RPCs.
+if [[ "${KEYGEN}" == "insecure" ]] && ! kms_core_before_redirect; then
   pids=()
-  # InsecureKeyGenPreproc landed after v0.13 (present in v0.14.2). Older cores
-  # return Unimplemented for that RPC, which the connector treats as fatal.
-  preproc_mode=()
-  if [[ "${KMS_CORE_TAG:-}" =~ ^v0\.1[23]\. ]]; then
-    echo "kms ${KMS_CORE_TAG}: preprocessing stays on KeyGenPreproc; KeyGen still uses InsecureKeyGen"
-    preproc_mode=("secure-preproc")
-  fi
   for i in $(seq 1 "${NB_KMS_CORE}"); do
-    proxy_args=("$(kms_core_url "${i}")" ${preproc_mode[@]+"${preproc_mode[@]}"})
     helm upgrade --install "$(keygen_redirect "${i}")" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
       -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-insecure-keygen-redirect-e2e.yaml \
       --set-string "fullnameOverride=$(keygen_redirect "${i}")" \
       --set-file "configmapFiles.files.kms-test-keygen-proxy\.cjs=test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs" \
-      --set-json "args=$(jq -nc --args '$ARGS.positional' -- "${proxy_args[@]}")" \
+      --set-json "args=[\"$(kms_core_url "${i}")\"]" \
       --wait &
     pids+=($!)
   done
   for pid in "${pids[@]}"; do
     wait "${pid}"
   done
+elif kms_core_before_redirect; then
+  echo "kms ${KMS_CORE_TAG}: no keygen redirect; workers call $(kms_core_url 1) directly"
 fi
 
 for i in $(seq 1 "${NB_KMS_CORE}"); do
   helm upgrade --install "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" \
     -n "${NAMESPACE}" -f "${kms_values}" \
-    "${polygon_args[@]}" \
+    ${polygon_args[@]+"${polygon_args[@]}"} \
     --set-string "commonConfig.gatewayContractAddresses.decryption=${decryption}" \
     --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
-    "${kms_generation_args[@]}" \
-    "${protocol_args[@]}" \
+    ${kms_generation_args[@]+"${kms_generation_args[@]}"} \
+    ${protocol_args[@]+"${protocol_args[@]}"} \
+    --set-string "commonConfig.chainId=${GATEWAY_CHAIN_ID:?}" \
     --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
     --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
     --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=$(kms_worker_endpoint "${i}")" \
@@ -203,6 +204,6 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     --set-string "kmsConnectorEndpoint.image.tag=$(jq -r .kms_connector_endpoint <<<"${TAGS_JSON}")" \
     --set-string "kmsConnectorProxy.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/proxy" \
     --set-string "kmsConnectorProxy.image.tag=$(jq -r .kms_connector_proxy <<<"${TAGS_JSON}")" \
-    "${tracing[@]}"
+    ${tracing[@]+"${tracing[@]}"}
 done
 sleep 60
