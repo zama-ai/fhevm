@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 
 # ── Planner (generate dependency recipe) ─────────────────────────────
-FROM rust:1.92-slim-bookworm AS planner
+FROM rust:1.97-slim-bookworm AS planner
 RUN cargo install cargo-chef
 WORKDIR /app
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ── Builder (cook deps, then build app) ──────────────────────────────
-FROM rust:1.92-slim-bookworm AS builder
+FROM rust:1.97-slim-bookworm AS builder
 RUN apt-get update \
     && apt-get install -y pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/* \

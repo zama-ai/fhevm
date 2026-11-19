@@ -543,7 +543,7 @@ impl RmqConsumer {
             AMQPValue::LongString(config.base.queue.clone().into()),
         );
 
-        let retry_queue = format!("{}.retry", &config.base.queue);
+        let retry_queue = format!("{}.retry", config.base.queue);
         channel
             .queue_declare(
                 ShortString::from(retry_queue.as_str()),
@@ -574,7 +574,7 @@ impl RmqConsumer {
                 source: e,
             })?;
 
-        let error_queue = format!("{}.error", &config.base.queue);
+        let error_queue = format!("{}.error", config.base.queue);
         channel
             .queue_declare(
                 ShortString::from(error_queue.as_str()),
@@ -674,7 +674,7 @@ impl RmqConsumer {
             AMQPValue::LongString(config.base.queue.clone().into()),
         );
 
-        let cron_queue = format!("{}.cron-job", &config.base.queue);
+        let cron_queue = format!("{}.cron-job", config.base.queue);
         channel
             .queue_declare(
                 ShortString::from(cron_queue.as_str()),
