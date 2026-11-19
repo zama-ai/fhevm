@@ -137,6 +137,8 @@ spec:
               value: "0.0.0.0:{{ $proxy.ports.metrics }}"
             - name: COPROCESSOR_PROXY_SHUTDOWN_DELAY
               value: "{{ int $proxy.shutdownDelaySeconds }}s"
+            - name: COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT
+              value: "{{ int $proxy.clientIdleTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
               value: {{ $canonicalChainId | quote }}
             - name: COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS

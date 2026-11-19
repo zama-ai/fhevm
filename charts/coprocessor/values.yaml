@@ -2135,6 +2135,10 @@ coprocessorProxy:
   # stops accepting connections. Must exceed the time the pod's removal from the Service takes to
   # reach every node. The pod's termination budget is this delay, the drain grace and 10 s.
   shutdownDelaySeconds: 10
+  # Time a client connection can stay idle between two requests before the proxy closes it. Must
+  # exceed the idle timeout of any layer in front of the proxy, which closes its idle connections
+  # first.
+  clientIdleTimeoutSeconds: 120
   # Requests per second each signer (KMS connector) can send to one replica; more get `429`.
   # The Service balances connections, not requests, and a connector opens one per in-flight
   # request, so a signer's limit is up to about `replicas` times this: adding replicas raises it.
