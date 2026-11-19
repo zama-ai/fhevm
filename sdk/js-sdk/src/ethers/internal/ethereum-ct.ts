@@ -15,6 +15,7 @@ import type {
 import type { BytesHex, ChecksummedAddress } from '../../core/types/primitives.js';
 import type { TypedDataField } from 'ethers';
 import {
+  call,
   decode,
   encode,
   encodePacked,
@@ -39,6 +40,7 @@ export const cleartextEthereumModule: CleartextEthereumModuleFactory = () => {
       signTypedData,
       getChainId,
       readContract,
+      call,
       mnemonicToAccount: (parameters: MnemonicToAccountParameters): MnemonicToAccountReturnType => {
         const signer = HDNodeWallet.fromPhrase(parameters.mnemonic, undefined, parameters.path);
         return {

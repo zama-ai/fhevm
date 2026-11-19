@@ -58,6 +58,11 @@ export type FheTestBaseEnv = {
   readonly protocolVersion: ProtocolVersion;
   readonly fheEncryptionKeyTfheVersion: string;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
+  /**
+   * Sepolia RPC URL, set when the host chain is not Ethereum:
+   * the SDK checks the FHE key / CRS against Sepolia's KMSGeneration.
+   */
+  readonly keyVerificationRpcUrl?: string | undefined;
 };
 
 // ---------------------------------------------------------------------------

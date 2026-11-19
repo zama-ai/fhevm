@@ -1,6 +1,6 @@
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import type { Auth } from '@fhevm/sdk/types';
+import type { Auth, FhevmKeyVerification } from '@fhevm/sdk/types';
 import type { Signer } from 'ethers';
 import { JsonRpcProvider, getBytes, hexlify } from 'ethers';
 
@@ -16,6 +16,26 @@ import type {
 type FhevmClient = ReturnType<typeof createFhevmClient>;
 type CreateFhevmClientParameters = Parameters<typeof createFhevmClient>[0];
 type FhevmClientProvider = CreateFhevmClientParameters['provider'];
+/** The FHE public key and CRS bytes, as fetched or as `options.fheEncryptionKey`. */
+export type FheEncryptionKeyBytes = Awaited<ReturnType<FhevmClient['fetchFheEncryptionKeyBytes']>>;
+
+/**
+ * Reads the canonical host's KMSGeneration address. The SDK checks the FHE key
+ * / CRS against it and throws FhevmConfigError without it. The fhevm CLI
+ * exports it on host-contracts >= v0.13 only; older hosts keep KMSGeneration
+ * on the gateway, which this check does not support. `fallback` is the
+ * network default, used when the variable is unset.
+ */
+export function requireKmsGenerationAddress(fallback?: string): string {
+  const address = process.env.KMS_GENERATION_CONTRACT_ADDRESS || fallback;
+  if (!address) {
+    throw new Error(
+      'KMS_GENERATION_CONTRACT_ADDRESS is required: the SDK checks the FHE key / CRS against the ' +
+        'canonical host KMSGeneration contract (host-contracts >= v0.13; older hosts are not supported)',
+    );
+  }
+  return address;
+}
 
 export class FhevmSdk implements SdkInstance {
   #fullClient: FhevmClient;
@@ -69,6 +89,12 @@ export class FhevmSdk implements SdkInstance {
     readonly kmsContractAddress: string;
     readonly inputVerifierContractAddress: string;
     readonly aclContractAddress: string;
+    /** Host-chain KMSGeneration. Set on Ethereum hosts only; others use `keyVerification`. */
+    readonly kmsGenerationAddress?: string;
+    /** Ethereum chain def + client to read KMSGeneration from, for non-Ethereum hosts. */
+    readonly keyVerification?: FhevmKeyVerification<FhevmClientProvider>;
+    /** Preloaded key / CRS bytes (`options.fheEncryptionKey`): checked against KMSGeneration before `ready`. */
+    readonly fheEncryptionKey?: FheEncryptionKeyBytes;
     readonly relayerUrl: string;
     readonly rpcUrl: string;
     readonly gatewayChainId: number;
@@ -81,6 +107,9 @@ export class FhevmSdk implements SdkInstance {
       kmsContractAddress,
       inputVerifierContractAddress,
       aclContractAddress,
+      kmsGenerationAddress,
+      keyVerification,
+      fheEncryptionKey,
       relayerUrl,
       rpcUrl,
       gatewayChainId,
@@ -94,6 +123,8 @@ export class FhevmSdk implements SdkInstance {
     if (!hasFhevmRuntimeConfig()) {
       setFhevmRuntimeConfig({
         singleThread: false,
+        // Runtime auth reaches the shared FHE key download too.
+        ...(auth ? { auth: toSdkAuth(auth) } : {}),
         logger: {
           debug: (message: string) => console.log(message),
           warn: (message: string) => console.log(message),
@@ -110,6 +141,7 @@ export class FhevmSdk implements SdkInstance {
             acl: { address: aclContractAddress as `0x${string}` },
             inputVerifier: { address: inputVerifierContractAddress as `0x${string}` },
             kmsVerifier: { address: kmsContractAddress as `0x${string}` },
+            ...(kmsGenerationAddress ? { kmsGeneration: { address: kmsGenerationAddress as `0x${string}` } } : {}),
           },
           relayerUrl: sanitizedRelayerUrl,
           gateway: {
@@ -125,9 +157,18 @@ export class FhevmSdk implements SdkInstance {
           },
         },
       }),
+      options: {
+        ...(keyVerification ? { keyVerification } : {}),
+        ...(fheEncryptionKey ? { fheEncryptionKey } : {}),
+      },
     });
     await fullClient.ready;
     return new FhevmSdk(fullClient, toSdkAuth(auth));
+  }
+
+  /** The active FHE public key and CRS bytes, as served by the relayer and checked by the SDK. */
+  fetchFheEncryptionKeyBytes(): Promise<FheEncryptionKeyBytes> {
+    return this.#fullClient.fetchFheEncryptionKeyBytes();
   }
 
   get supportsWildcard(): boolean {

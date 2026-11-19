@@ -5,6 +5,8 @@ import type {
   EncodePackedReturnType,
   EncodeParameters,
   EncodeReturnType,
+  EthCallParameters,
+  EthCallResult,
   EthereumModuleFactory,
   GetChainIdReturnType,
   TrustedClient,
@@ -20,7 +22,7 @@ import type { TypedDataField } from 'ethers';
 import type { BytesHex } from '../../core/types/primitives.js';
 import { asChecksummedAddress } from '../../core/base/address.js';
 import { AbiCoder, solidityPacked, verifyTypedData } from 'ethers';
-import { getEthersContract, getNetwork } from './utils.js';
+import { getEthersContract, getEthersProvider, getNetwork } from './utils.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // encodePacked
@@ -92,6 +94,35 @@ export async function readContract(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// call (raw eth_call / STATICCALL)
+////////////////////////////////////////////////////////////////////////////////
+
+export async function call(
+  hostPublicClient: TrustedClient<EthersT.ContractRunner>,
+  parameters: EthCallParameters,
+): Promise<EthCallResult> {
+  const provider = getEthersProvider(hostPublicClient);
+  try {
+    const data = await provider.call({
+      to: parameters.to,
+      data: parameters.data,
+      ...(parameters.gas !== undefined ? { gasLimit: parameters.gas } : {}),
+    });
+    // ethers' `Provider.call` always resolves to a hex string ('0x' for empty).
+    return { success: true, data: data as BytesHex };
+  } catch (err) {
+    // ethers tags a clean EVM revert as CALL_EXCEPTION — a definitive rejection.
+    // Anything else is transport-level and rethrown so the precautionary caller
+    // can degrade gracefully.
+    if (typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'CALL_EXCEPTION') {
+      const reason = err instanceof Error ? err.message : 'isValidSignature call reverted';
+      return { success: false, reason };
+    }
+    throw err;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // getChainId
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -160,6 +191,7 @@ export const ethereumModule: EthereumModuleFactory = () => {
       signTypedData,
       getChainId,
       readContract,
+      call,
     }),
   });
 };

@@ -1,4 +1,5 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
+import type { FhevmKeyVerification } from '@fhevm/sdk/types';
 import type {
   createFhevmBaseClient as createViemFhevmBaseClient,
   createFhevmDecryptClient as createViemFhevmDecryptClient,
@@ -15,6 +16,7 @@ import {
   anvil as viemAnvil,
   polygonAmoy as viemPolygonAmoy,
 } from 'viem/chains';
+import { sepolia } from '@fhevm/sdk/chains';
 import { isCleartext, prepareChains } from './setupCommon.js';
 
 // ---------------------------------------------------------------------------
@@ -37,6 +39,7 @@ export type FheTestViemConfig = {
   readonly protocolVersion: FheTestBaseEnv['protocolVersion'];
   readonly fheEncryptionKeyTfheVersion: string;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
+  readonly keyVerification?: FhevmKeyVerification<PublicClient> | undefined;
 };
 
 type CreateViemClientParameters = {
@@ -46,19 +49,19 @@ type CreateViemClientParameters = {
 
 export type CreateViemBaseClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmOptions | undefined;
+    readonly options?: FhevmOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmBaseClient>;
 
 export type CreateViemEncryptClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmEncryptOptions | undefined;
+    readonly options?: FhevmEncryptOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmEncryptClient>;
 
 export type CreateViemDecryptClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmDecryptOptions | undefined;
+    readonly options?: FhevmDecryptOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmDecryptClient>;
 
@@ -109,6 +112,13 @@ function _buildConfig(env: FheTestBaseEnv): FheTestViemConfig {
     protocolVersion: env.protocolVersion,
     fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
     moduleVersions: env.moduleVersions,
+    keyVerification:
+      env.keyVerificationRpcUrl === undefined
+        ? undefined
+        : {
+            chain: sepolia,
+            client: createPublicClient({ chain: viemSepolia, transport: http(env.keyVerificationRpcUrl) }),
+          },
   };
 }
 
@@ -140,14 +150,28 @@ export function isMultichain(): boolean {
 export function getViemClientOptions(
   config: FheTestViemConfig,
   moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
-): FhevmOptions | undefined {
-  return moduleVersions === undefined ? undefined : { moduleVersions };
+): FhevmOptions<PublicClient> | undefined {
+  return _withKeyVerification(config, moduleVersions === undefined ? undefined : { moduleVersions });
 }
 
 export function getViemEncryptClientOptions(
   config: FheTestViemConfig,
   moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
-): FhevmEncryptOptions | undefined {
+): FhevmEncryptOptions<PublicClient> | undefined {
+  return _withKeyVerification(config, _getViemEncryptModuleVersionsOptions(moduleVersions));
+}
+
+// Adds the config's keyVerification (non-Ethereum hosts only) to `options`.
+function _withKeyVerification(
+  config: FheTestViemConfig,
+  options: FhevmEncryptOptions<PublicClient> | undefined,
+): FhevmEncryptOptions<PublicClient> | undefined {
+  return config.keyVerification === undefined ? options : { ...options, keyVerification: config.keyVerification };
+}
+
+function _getViemEncryptModuleVersionsOptions(
+  moduleVersions: FhevmModuleVersions | undefined,
+): FhevmEncryptOptions<PublicClient> | undefined {
   if (moduleVersions === undefined) {
     return undefined;
   }
@@ -167,7 +191,7 @@ export function getViemEncryptClientOptions(
 
 export function getViemDecryptClientOptions(
   moduleVersions: FhevmModuleVersions | undefined,
-): FhevmDecryptOptions | undefined {
+): FhevmDecryptOptions<PublicClient> | undefined {
   if (moduleVersions === undefined) {
     return undefined;
   }

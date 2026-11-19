@@ -15,6 +15,7 @@ import type {
 import type { Bytes65Hex, BytesHex, ChecksummedAddress } from '../../core/types/primitives.js';
 import { generatePrivateKey, mnemonicToAccount, privateKeyToAccount, sign } from 'viem/accounts';
 import {
+  call,
   decode,
   encode,
   encodePacked,
@@ -38,6 +39,7 @@ export const cleartextEthereumModule: CleartextEthereumModuleFactory = () => {
       signTypedData,
       getChainId,
       readContract,
+      call,
       mnemonicToAccount: (parameters: MnemonicToAccountParameters): MnemonicToAccountReturnType => {
         const signer = mnemonicToAccount(parameters.mnemonic, { path: parameters.path });
         const pk = signer.getHdKey().privateKey;

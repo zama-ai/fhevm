@@ -1,4 +1,5 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
+import type { FhevmKeyVerification } from '@fhevm/sdk/types';
 import type {
   createFhevmBaseClient as createEthersFhevmBaseClient,
   createFhevmDecryptClient as createEthersFhevmDecryptClient,
@@ -7,6 +8,7 @@ import type {
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
+import { sepolia } from '@fhevm/sdk/chains';
 import { ethers } from 'ethers';
 import { FHETestABI } from './FheTest-abi-v2.js';
 import { isCleartext, prepareChains } from './setupCommon.js';
@@ -55,6 +57,7 @@ export type FheTestEthersConfig = {
   readonly fheTestContract: ethers.Contract;
   readonly fheEncryptionKeyTfheVersion: string;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
+  readonly keyVerification?: FhevmKeyVerification<ethers.ContractRunner> | undefined;
 };
 
 type CreateEthersClientParameters = {
@@ -64,19 +67,19 @@ type CreateEthersClientParameters = {
 
 export type CreateEthersBaseClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmOptions | undefined;
+    readonly options?: FhevmOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmBaseClient>;
 
 export type CreateEthersEncryptClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmEncryptOptions | undefined;
+    readonly options?: FhevmEncryptOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmEncryptClient>;
 
 export type CreateEthersDecryptClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmDecryptOptions | undefined;
+    readonly options?: FhevmDecryptOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmDecryptClient>;
 
@@ -122,6 +125,10 @@ function _buildConfig(env: FheTestBaseEnv): FheTestEthersConfig {
     fheTestContract,
     fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
     moduleVersions: env.moduleVersions,
+    keyVerification:
+      env.keyVerificationRpcUrl === undefined
+        ? undefined
+        : { chain: sepolia, client: new ethers.JsonRpcProvider(env.keyVerificationRpcUrl) },
   };
 }
 
@@ -153,14 +160,28 @@ export function isMultichain(): boolean {
 export function getEthersClientOptions(
   config: FheTestEthersConfig,
   moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
-): FhevmOptions | undefined {
-  return moduleVersions === undefined ? undefined : { moduleVersions };
+): FhevmOptions<ethers.ContractRunner> | undefined {
+  return _withKeyVerification(config, moduleVersions === undefined ? undefined : { moduleVersions });
 }
 
 export function getEthersEncryptClientOptions(
   config: FheTestEthersConfig,
   moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
-): FhevmEncryptOptions | undefined {
+): FhevmEncryptOptions<ethers.ContractRunner> | undefined {
+  return _withKeyVerification(config, _getEthersEncryptModuleVersionsOptions(moduleVersions));
+}
+
+// Adds the config's keyVerification (non-Ethereum hosts only) to `options`.
+function _withKeyVerification(
+  config: FheTestEthersConfig,
+  options: FhevmEncryptOptions<ethers.ContractRunner> | undefined,
+): FhevmEncryptOptions<ethers.ContractRunner> | undefined {
+  return config.keyVerification === undefined ? options : { ...options, keyVerification: config.keyVerification };
+}
+
+function _getEthersEncryptModuleVersionsOptions(
+  moduleVersions: FhevmModuleVersions | undefined,
+): FhevmEncryptOptions<ethers.ContractRunner> | undefined {
   if (moduleVersions === undefined) {
     return undefined;
   }
@@ -180,7 +201,7 @@ export function getEthersEncryptClientOptions(
 
 export function getEthersDecryptClientOptions(
   moduleVersions: FhevmModuleVersions | undefined,
-): FhevmDecryptOptions | undefined {
+): FhevmDecryptOptions<ethers.ContractRunner> | undefined {
   if (moduleVersions === undefined) {
     return undefined;
   }

@@ -13,16 +13,18 @@ import type {
 } from '../types/coreFhevmClient.js';
 import type { FhevmRuntime, WithModule, WithModuleMap } from '../types/coreFhevmRuntime.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
+import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 import { verifyTrustedValue } from '../base/trustedValue.js';
 import { uid } from '../base/uid.js';
 import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js';
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
-import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
 import { cloneModuleVersions } from '../runtimeConfig-p.js';
 import { cloneFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
+import { copyFheEncryptionKeyBytes } from '../key/copyFheEncryptionKeyBytes-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -31,6 +33,8 @@ const GET_FROZEN_CONTEXT = Symbol('CoreFhevmHostClient.getFrozenContext');
 const SET_FROZEN_CONTEXT = Symbol('CoreFhevmHostClient.setFrozenContext');
 const GET_FROZEN_CONTEXT_PROMISE = Symbol('CoreFhevmHostClient.getFrozenContextPromise');
 const SET_FROZEN_CONTEXT_PROMISE = Symbol('CoreFhevmHostClient.setFrozenContextPromise');
+const GET_PROVIDED_FHE_ENCRYPTION_KEY = Symbol('CoreFhevmHostClient.getProvidedFheEncryptionKey');
+const RELEASE_PROVIDED_FHE_ENCRYPTION_KEY = Symbol('CoreFhevmHostClient.releaseProvidedFheEncryptionKey');
 
 const UNRESOLVED_FHEVM_CONTEXT_MESSAGE = 'Fhevm context has not been resolved. Await client.ready before.';
 
@@ -38,6 +42,8 @@ type GetFrozenContextFn = () => FhevmClientFrozenContext | undefined;
 type SetFrozenContextFn = (frozenContext: FhevmClientFrozenContext) => void;
 type GetFrozenContextPromiseFn = () => Promise<FhevmClientFrozenContext> | undefined;
 type SetFrozenContextPromiseFn = (frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined) => void;
+type GetProvidedFheEncryptionKeyFn = () => FheEncryptionKeyBytes | undefined;
+type ReleaseProvidedFheEncryptionKeyFn = (fheEncryptionKey: FheEncryptionKeyBytes) => void;
 
 ////////////////////////////////////////////////////////////////////////////////
 // CoreFhevmImpl
@@ -56,6 +62,14 @@ class CoreFhevmImpl<
   readonly #trustedClient: TrustedClient<client> | undefined;
   readonly #chain: chain | undefined;
   readonly #options: ResolvedFhevmOptions;
+  // Caller-provided key / CRS bytes (`options.fheEncryptionKey`), kept out of
+  // the public resolved options and released once they pass the check: the
+  // cache holds them from then on. A client whose own key fails the check
+  // keeps it: every later call checks it again (the cause may be transient,
+  // e.g. a lagging RPC node), and the client never falls back to the relayer's
+  // key. A key that is not the active one fails too (only the active key may
+  // be used).
+  #providedFheEncryptionKey: FheEncryptionKeyBytes | undefined;
   readonly #initFns: Set<(client: FhevmBase<FhevmChain>) => Promise<void>>;
   #readyPromise: Promise<void> | undefined;
 
@@ -98,7 +112,12 @@ class CoreFhevmImpl<
     this.#trustedClient =
       parameters.client !== undefined ? createTrustedClient(parameters.client, ownerToken) : undefined;
     this.#chain = parameters.chain;
-    this.#options = resolveOptions(parameters.options);
+    this.#options = resolveOptions(parameters.options, ownerToken);
+    const providedFheEncryptionKey = parameters.options?.fheEncryptionKey;
+    _assertProvidedFheEncryptionKeyRelayerUrl(providedFheEncryptionKey, parameters.chain);
+    // A copy: the caller changing its arrays later cannot bypass the check.
+    this.#providedFheEncryptionKey =
+      providedFheEncryptionKey === undefined ? undefined : copyFheEncryptionKeyBytes(providedFheEncryptionKey);
     this.#initFns = new Set();
     this.#readyPromise = undefined;
 
@@ -274,6 +293,23 @@ class CoreFhevmImpl<
         enumerable: false,
         writable: false,
       },
+      [GET_PROVIDED_FHE_ENCRYPTION_KEY]: {
+        value: (): FheEncryptionKeyBytes | undefined => this.#providedFheEncryptionKey,
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
+      [RELEASE_PROVIDED_FHE_ENCRYPTION_KEY]: {
+        // Only the bytes that were checked: a no-op if already released.
+        value: (fheEncryptionKey: FheEncryptionKeyBytes): void => {
+          if (this.#providedFheEncryptionKey === fheEncryptionKey) {
+            this.#providedFheEncryptionKey = undefined;
+          }
+        },
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      },
       extend: {
         value: (actionsFactory: (client: typeof this) => FhevmExtension) =>
           extendCoreFhevm(this, actionsFactory, (fn) => {
@@ -286,10 +322,25 @@ class CoreFhevmImpl<
       },
       init: {
         value: (): Promise<void> => {
-          this.#readyPromise ??= Promise.all(
-            [...this.#initFns].map((fn) => fn(this)),
-            // eslint-disable-next-line @typescript-eslint/no-empty-function
-          ).then(() => {}); // trick to cast to Promise<void>
+          if (this.#readyPromise === undefined) {
+            // Settles once every init fn has settled, with the first error if
+            // any: a retry never runs alongside an init fn still running.
+            const readyPromise = Promise.allSettled([...this.#initFns].map((fn) => fn(this))).then((results) => {
+              for (const result of results) {
+                if (result.status === 'rejected') {
+                  throw result.reason;
+                }
+              }
+            });
+            // A failed init is forgotten (e.g. a network error): its callers
+            // get the error, the next call runs init again.
+            readyPromise.catch(() => {
+              if (this.#readyPromise === readyPromise) {
+                this.#readyPromise = undefined;
+              }
+            });
+            this.#readyPromise = readyPromise;
+          }
           return this.#readyPromise;
         },
         configurable: false,
@@ -545,19 +596,9 @@ export function createCoreFhevm<chain extends FhevmChain, runtime extends FhevmR
   ownerToken: symbol,
   parameters: CreateCoreFhevmParameters<chain, runtime, client>,
 ): Fhevm<chain, runtime, client> {
-  // Pre-populate the global FheEncryptionKey cache if the caller provided one.
-  // Avoids a 50MB fetch later when encrypt is first called.
-  // No-op if an entry already exists for this relayerUrl (first write wins).
-  const fheEncryptionKey = parameters.options?.fheEncryptionKey;
-  if (fheEncryptionKey !== undefined) {
-    const relayerUrl = parameters.chain?.fhevm.relayerUrl;
-    globalFheEncryptionKeyCache.setBytes(
-      parameters.runtime,
-      relayerUrl ?? fheEncryptionKey.metadata.relayerUrl,
-      fheEncryptionKey,
-    );
-  }
-
+  // A caller-provided FheEncryptionKey is not written to the global cache here:
+  // the client keeps it privately and the key fetch caches it once it passes
+  // the KMSGeneration check (see ensureFheEncryptionKeyDownload).
   return new CoreFhevmImpl(PRIVATE_TOKEN, ownerToken, parameters);
 }
 
@@ -595,11 +636,45 @@ function extendCoreFhevm<T extends Fhevm<FhevmChain | undefined, FhevmRuntime, O
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions {
+function resolveOptions(options: FhevmOptions | undefined, ownerToken: symbol): ResolvedFhevmOptions {
+  // The native keyVerification client is wrapped like the host-chain one.
+  const keyVerification = options?.keyVerification;
   return Object.freeze<ResolvedFhevmOptions>({
     batchRpcCalls: options?.batchRpcCalls ?? false,
     moduleVersions: cloneModuleVersions(options?.moduleVersions),
+    keyVerification:
+      keyVerification === undefined
+        ? undefined
+        : Object.freeze({
+            chain: keyVerification.chain,
+            trustedClient: createTrustedClient(keyVerification.client, ownerToken),
+          }),
   });
+}
+
+/**
+ * A provided key from another relayer can never be used by this client: fail
+ * at creation, before any KMSGeneration read or cache change. Exact string
+ * match, as the cache slot is keyed by the relayer URL.
+ *
+ * @throws {FhevmConfigError}
+ */
+function _assertProvidedFheEncryptionKeyRelayerUrl(
+  fheEncryptionKey: FheEncryptionKeyBytes | undefined,
+  chain: FhevmChain | undefined,
+): void {
+  if (fheEncryptionKey === undefined || chain === undefined) {
+    return;
+  }
+  const actual = fheEncryptionKey.metadata.relayerUrl;
+  const expected = chain.fhevm.relayerUrl;
+  if (actual !== expected) {
+    throw new FhevmConfigError({
+      message:
+        `'options.fheEncryptionKey' comes from relayer "${actual}", but the client uses relayer "${expected}". ` +
+        'The FheEncryptionKey must originate from the same relayer.',
+    });
+  }
 }
 
 /**
@@ -611,7 +686,8 @@ function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions
  *
  * 1. **Lazy, idempotent init** — `await fhevm.ready`. Init is lazy and shared:
  *    the first public call triggers it and every later `ready` awaits the same
- *    in-flight promise, so this is safe regardless of prior `init()`/action calls.
+ *    in-flight or resolved promise, so this is safe regardless of prior
+ *    `init()`/action calls. A failed init is not kept: the next call retries.
  * 2. **Resolve the frozen context** — the on-chain-resolved version snapshot
  *    (protocol / PubKey-CRS / TFHE / TKMS / host-contract versions) is resolved
  *    exactly once during init (via `ensureFrozenContext`) and stored on the
@@ -677,3 +753,35 @@ export function getFrozenContextPromise(fhevm: unknown): Promise<FhevmClientFroz
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The caller-provided key / CRS bytes (`options.fheEncryptionKey`), until they
+ * are released by {@link releaseProvidedFheEncryptionKey}.
+ */
+export function getProvidedFheEncryptionKey(
+  fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
+): FheEncryptionKeyBytes | undefined {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & {
+    readonly [GET_PROVIDED_FHE_ENCRYPTION_KEY]: GetProvidedFheEncryptionKeyFn;
+  };
+  return f[GET_PROVIDED_FHE_ENCRYPTION_KEY]();
+}
+
+/**
+ * Drops the client's reference to the caller-provided key / CRS bytes once they
+ * pass the check: the global cache holds them from then on; a later fetch,
+ * after a cache eviction, downloads the active key from the relayer. A key
+ * that fails the check is never released: the client keeps it and checks it
+ * again on the next call.
+ */
+export function releaseProvidedFheEncryptionKey(
+  fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
+  fheEncryptionKey: FheEncryptionKeyBytes,
+): void {
+  const f = asCoreFhevm(fhevm) as CoreFhevm & {
+    readonly [RELEASE_PROVIDED_FHE_ENCRYPTION_KEY]: ReleaseProvidedFheEncryptionKeyFn;
+  };
+  f[RELEASE_PROVIDED_FHE_ENCRYPTION_KEY](fheEncryptionKey);
+}

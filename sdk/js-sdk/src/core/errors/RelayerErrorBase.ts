@@ -47,7 +47,6 @@ export abstract class RelayerErrorBase extends ErrorBase {
 
     super({
       ...params,
-      name: 'RelayerErrorBase',
       version: RelayerErrorBase.FULL_VERSION,
       docsUrl,
     });

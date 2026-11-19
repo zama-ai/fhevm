@@ -15,7 +15,7 @@ export function createFhevmCleartextClient<
 >(parameters: {
   readonly provider: provider;
   readonly chain: chain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<EthersT.ContractRunner> | undefined;
 }): FhevmClient<chain, WithAll, provider> {
   const c = createFhevmCleartextBaseClient(parameters);
 
