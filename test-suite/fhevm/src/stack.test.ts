@@ -134,6 +134,29 @@ describe("stack", () => {
     expect(plan.runtimeServices).toEqual(["listener-publisher-for-anvil"]);
   });
 
+  test("upgrade plan supports relayer-http local overrides and version locks", () => {
+    const local = resolveUpgradePlan({ overrides: [{ group: "relayer-http" }], scenario: defaultScenario }, "relayer-http");
+    expect(local.versionKeys).toEqual(["RELAYER_HTTP_VERSION"]);
+    expect(local.migrationServices).toEqual([]);
+    expect(local.runtimeServices).toEqual(["relayer-http"]);
+    expect(local.steps).toEqual(["relayer-http"]);
+    const locked = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "relayer-http", { lockFile: true });
+    expect(locked.runtimeServices).toEqual(["relayer-http"]);
+  });
+
+  test("relayer-http version locks must resolve the image once the override is dropped", () => {
+    const lock = (env: Record<string, string>) => ({ env } as never);
+    expect(() =>
+      resolveUpgradePlan({ overrides: [], scenario: defaultScenario, versions: lock({}) }, "relayer-http", { lockFile: true }),
+    ).toThrow(/the lock has no RELAYER_HTTP_VERSION/);
+    const plan = resolveUpgradePlan(
+      { overrides: [], scenario: defaultScenario, versions: lock({ RELAYER_HTTP_VERSION: "v1" }) },
+      "relayer-http",
+      { lockFile: true },
+    );
+    expect(plan.runtimeServices).toEqual(["relayer-http"]);
+  });
+
   test("runtime upgrade locks drop only overrides owned by the upgraded group", () => {
     expect(
       removeRuntimeUpgradeOverrides(

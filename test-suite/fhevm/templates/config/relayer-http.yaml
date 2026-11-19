@@ -21,9 +21,10 @@ kms_aggregator:
   call:
     timeout: 5s
     retries:
-      max_retries: 5
-      delay: 200ms
-      backoff_max: 4s
+      waits: [200ms, 300ms, 500ms, 800ms, 1s]
+    rate_limit:
+      max_retries: 1
+      initial_delay: 1s
   public_decrypt:
     threshold: 1
   user_decrypt:

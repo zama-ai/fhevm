@@ -251,7 +251,7 @@ CONNECTOR_PROXY_VERSION      # optional: omitted when the resolved images predat
 CORE_VERSION
 RELAYER_VERSION
 RELAYER_MIGRATE_VERSION
-RELAYER_HTTP_VERSION         # optional: omitted when relayer-http is not published at the resolved sha (GitOps targets never carry it)
+RELAYER_HTTP_VERSION         # optional: omitted when relayer-http is not published at the resolved sha (GitOps targets never carry it); `--override relayer-http` runs the working tree without it
 TEST_SUITE_VERSION
 ```
 
@@ -393,7 +393,9 @@ Supported groups:
 
 - `coprocessor`
 - `kms-connector`
+- `listener-core`
 - `relayer`
+- `relayer-http`
 - `gateway-contracts`
 - `host-contracts`
 - `test-suite`
@@ -403,8 +405,11 @@ Supported groups:
 ```sh
 ./fhevm-cli up --target latest-supported --override coprocessor
 ./fhevm-cli up --target latest-main --override relayer
+./fhevm-cli up --target latest-main --override relayer-http
 ./fhevm-cli up --target latest-main --override test-suite
 ```
+
+For `relayer-http`, the override builds `relayer-http/Dockerfile` from the repository root for the host platform and runs it as `fhevm-relayer-http` even when the bundle resolves no `RELAYER_HTTP_VERSION` (GitOps targets, shas that predate the image). It is the way to validate a change to `templates/config/relayer-http.yaml` in the stack: the rendered config and the relayer come from the same working tree, where the published image may still reject new keys.
 
 For `coprocessor`, this is also the shorthand local-dev scenario: one coprocessor instance, threshold `1`, source mode `local`.
 For `test-suite`, this is the explicit path that makes local e2e test edits take effect at runtime.
@@ -532,6 +537,7 @@ If a runtime override is already active and you only want to rebuild and restart
 
 ```sh
 ./fhevm-cli upgrade coprocessor
+./fhevm-cli upgrade relayer-http      # rebuild the working tree after an edit and restart fhevm-relayer-http
 ```
 
 `upgrade` restarts the selected runtime group in place. With `--lock-file`, it moves that group to the versions from the lock, regenerates env/compose, runs DB migration services when present, and restarts only the affected runtime services.

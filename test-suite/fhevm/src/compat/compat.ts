@@ -479,6 +479,10 @@ export const supportsCoprocessorProxy = (state: Pick<CompatState, "versions" | "
       override.group === "coprocessor" && (!override.services?.length || override.services.includes("coprocessor-proxy")),
   );
 
+/** relayer-http runs when the bundle resolves its image or the local override builds it from the working tree. */
+export const runsRelayerHttp = (state: Pick<CompatState, "versions" | "overrides">) =>
+  Boolean(state.versions.env.RELAYER_HTTP_VERSION) || state.overrides.some((override) => override.group === "relayer-http");
+
 /**
  * Whether a stack runs coprocessor-proxy: the bundle has the proxy and prf-service, and the stack is
  * not blue-green (one proxy per fleet comes later). Takes a state (`scenario`) or a stack spec (`blueGreen`).

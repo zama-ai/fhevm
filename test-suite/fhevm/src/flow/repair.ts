@@ -2,6 +2,7 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   runsCoprocessorProxy,
+  runsRelayerHttp,
   supportsHostListenerConsumer,
   supportsPrfService,
   supportsUpgradeController,
@@ -27,9 +28,9 @@ import {
 import type { LocalOverride, OverrideGroup, ResolvedCoprocessorScenarioInstance, State, StepName } from "../types";
 import { extraHostChains, hostChainsForState } from "./topology";
 
-const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "test-suite"] as const;
+const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "relayer-http", "test-suite"] as const;
 export type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
-const CLI_UPGRADEABLE_GROUPS: readonly UpgradeGroup[] = ["coprocessor", "listener-core", "relayer", "test-suite"];
+const CLI_UPGRADEABLE_GROUPS: readonly UpgradeGroup[] = ["coprocessor", "listener-core", "relayer", "relayer-http", "test-suite"];
 const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   "coprocessor": [
     "COPROCESSOR_DB_MIGRATION_VERSION",
@@ -64,6 +65,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   ],
   "listener-core": ["LISTENER_CORE_VERSION"],
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
+  "relayer-http": ["RELAYER_HTTP_VERSION"],
   "test-suite": ["TEST_SUITE_VERSION"],
 };
 type UpgradeComponentPlan = {
@@ -141,7 +143,7 @@ export const resumeSteadyStateServices = (state: State) => {
     ],
     "kms-connector": kmsConnectorServices(state).filter((service) => !service.endsWith("-db-migration")),
     "relayer": ["fhevm-relayer-db", "fhevm-relayer"],
-    ...(state.versions.env.RELAYER_HTTP_VERSION ? { "relayer-http": ["fhevm-relayer-http"] } : {}),
+    ...(runsRelayerHttp(state) ? { "relayer-http": ["fhevm-relayer-http"] } : {}),
     "relayer-proxy": ["fhevm-relayer-proxy"],
     "test-suite": [TEST_SUITE_CONTAINER],
   } satisfies Partial<Record<StepName, string[]>>;
@@ -215,6 +217,13 @@ export const resolveUpgradePlan = (
     if (lockFileMode) {
       return upgradePlan(group, [splitServices("listener-core", listenerCoreServicesForState(state))], ["listener-core"]);
     }
+  }
+  // RELAYER_HTTP_VERSION is optional in a bundle: a lock without it (GitOps targets) cannot run relayer-http once
+  // the local override is dropped, and compose would be asked for an image with an empty tag.
+  if (group === "relayer-http" && lockFileMode && state.versions && !runsRelayerHttp({ versions: state.versions, overrides: state.overrides })) {
+    throw new Error(
+      "upgrade relayer-http --lock-file: the lock has no RELAYER_HTTP_VERSION, so relayer-http cannot run from it; keep the local override, or lock a bundle that resolves the image",
+    );
   }
   const groupOverrides = state.overrides.filter((item) => item.group === group);
   if (!lockFileMode && group === "coprocessor" && !hasLocalCoprocessorInstance(state) && !groupOverrides.length) {

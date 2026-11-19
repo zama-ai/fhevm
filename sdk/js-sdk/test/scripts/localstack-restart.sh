@@ -31,6 +31,11 @@ Options:
                         would be executed, then exit without doing anything.
   --help, -h            Print this help message and exit.
 
+Environment:
+  FHEVM_CLI_UP_ARGS     Extra arguments appended to \`fhevm-cli up\`, for example
+                        "--override relayer-http" to build relayer-http from this
+                        checkout instead of pulling the image of the resolved bundle.
+
 Example:
   ./localstack-restart.sh --force
 EOF
@@ -190,7 +195,7 @@ print_dry_run() {
     if [[ "$FORCE" = true ]]; then
         echo "  $FHEVM_DIR/fhevm-cli down"
     fi
-    echo "  $FHEVM_DIR/fhevm-cli up"
+    echo "  $FHEVM_DIR/fhevm-cli up${FHEVM_CLI_UP_ARGS:+ $FHEVM_CLI_UP_ARGS}"
     echo "  cd $CONTRACTS_DIR"
     echo "  forge clean"
     echo "  ./scripts/fhetest-deploy.sh --chain $CHAIN"
@@ -240,8 +245,9 @@ if [[ "$FORCE" = true ]]; then
     fi
 fi
 
-# Start
-"$FHEVM_DIR/fhevm-cli" up
+# Start. FHEVM_CLI_UP_ARGS is word-split on purpose: it carries flags such as `--override relayer-http`.
+# shellcheck disable=SC2086
+"$FHEVM_DIR/fhevm-cli" up ${FHEVM_CLI_UP_ARGS:-}
 
 # Deploy FHETest.sol
 cd "$CONTRACTS_DIR"

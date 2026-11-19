@@ -1,5 +1,5 @@
-//! One node call: sign → semaphore permit → POST → decode → retry with backoff, cancellable and bounded by the
-//! deadline.
+//! One node call: sign → semaphore permit → POST → decode → retry per the class of the failure, cancellable and
+//! bounded by the deadline.
 
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use super::client::{AttemptError, ConnectorClient, Endpoint, decode};
-use super::config::{CallConfig, ConfigError, KmsAggregatorConfig};
+use super::config::{CallConfig, ConfigError, KmsAggregatorConfig, RetryClass};
 use super::signer::RequestSigner;
 use crate::metrics::{FlowName, Metrics};
 
@@ -38,6 +38,64 @@ impl CallError {
     }
 }
 
+/// Retries of one call, per class. Each budget is consumed once and never restarts within the call.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Retries {
+    pub transient: u32,
+    pub rate_limit: u32,
+}
+
+impl Retries {
+    fn of(self, class: RetryClass) -> u32 {
+        match class {
+            RetryClass::Transient => self.transient,
+            RetryClass::RateLimit => self.rate_limit,
+        }
+    }
+
+    fn bump(&mut self, class: RetryClass) {
+        match class {
+            RetryClass::Transient => self.transient += 1,
+            RetryClass::RateLimit => self.rate_limit += 1,
+        }
+    }
+}
+
+/// Why a call stops retrying, in decision order: a rejected credential and a non-retryable error are final
+/// whatever the budget; then the class's budget; then a wait that would end after the deadline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GiveUp {
+    Auth,
+    NonRetryable,
+    BudgetExhausted,
+    Deadline,
+}
+
+impl GiveUp {
+    fn decide(failure: &AttemptError, budget_left: bool, fits: bool) -> Option<Self> {
+        if failure.is_auth() {
+            Some(Self::Auth)
+        } else if !failure.is_retryable() {
+            Some(Self::NonRetryable)
+        } else if !budget_left {
+            Some(Self::BudgetExhausted)
+        } else if !fits {
+            Some(Self::Deadline)
+        } else {
+            None
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Auth => "auth",
+            Self::NonRetryable => "non_retryable",
+            Self::BudgetExhausted => "budget_exhausted",
+            Self::Deadline => "deadline",
+        }
+    }
+}
+
 /// The `code` of an attempt cut in flight.
 const CANCELLED: &str = "cancelled";
 
@@ -52,10 +110,11 @@ enum Stage {
     Sent(Instant),
 }
 
-/// How far a call got: the attempts that reached the node pool (signing failures excluded), and where the current
-/// one stands.
+/// How far a call got: the attempts that reached the node pool (signing failures excluded), the retries of each
+/// class it used (signing failures included: the policy counts them), and where the current attempt stands.
 struct Progress {
     attempts: u32,
+    retries: Retries,
     stage: Stage,
 }
 
@@ -95,10 +154,12 @@ impl Drop for CallRecord<'_> {
     }
 }
 
-/// What one node call produced, and what it cost.
+/// What one node call produced, and what it cost. `retries` counts every retried try, a signing failure included,
+/// so `retries.transient` can exceed `attempts - 1` when signing failed before anything reached the node.
 pub struct CallResult<R> {
     pub node: String,
     pub attempts: u32,
+    pub retries: Retries,
     pub elapsed: Duration,
     pub result: Result<R, CallError>,
 }
@@ -111,6 +172,8 @@ pub struct Caller {
     metrics: Arc<Metrics>,
     endpoints: Vec<Endpoint>,
     cfg: CallConfig,
+    /// The transient waits in milliseconds, rendered once for the `aggregation started` line (`[200, 300]`).
+    retries_waits_ms: String,
     permits: Semaphore,
 }
 
@@ -131,14 +194,27 @@ impl Caller {
                 .iter()
                 .map(|endpoint: &Endpoint| endpoint.name.as_str()),
         );
+        let waits_ms: Vec<u64> = cfg
+            .call
+            .retries
+            .waits
+            .iter()
+            .map(|wait| wait.as_millis() as u64)
+            .collect();
         Ok(Self {
             client,
             signer,
             metrics,
             endpoints,
             cfg: cfg.call.clone(),
+            retries_waits_ms: format!("{waits_ms:?}"),
             permits,
         })
+    }
+
+    /// The transient waits as logged by `aggregation started`, in milliseconds.
+    pub fn retries_waits_ms(&self) -> &str {
+        &self.retries_waits_ms
     }
 
     pub fn metrics(&self) -> &Arc<Metrics> {
@@ -152,6 +228,11 @@ impl Caller {
     /// The deadline of one aggregation and of every call in it.
     pub fn timeout(&self) -> Duration {
         self.cfg.timeout
+    }
+
+    /// The deadline and the retry budgets every call follows.
+    pub fn call_config(&self) -> &CallConfig {
+        &self.cfg
     }
 
     /// Calls one node until success, a terminal error, retries exhausted, or cancellation. `flow` labels the
@@ -172,6 +253,7 @@ impl Caller {
             flow,
             progress: Progress {
                 attempts: 0,
+                retries: Retries::default(),
                 stage: Stage::Idle,
             },
         };
@@ -183,6 +265,7 @@ impl Caller {
         CallResult {
             node: endpoint.name.clone(),
             attempts: record.progress.attempts,
+            retries: record.progress.retries,
             elapsed: started.elapsed(),
             result,
         }
@@ -204,6 +287,8 @@ impl Caller {
         loop {
             tries += 1;
             let mut attempt_started = Instant::now();
+            // The node's `Retry-After`, when it answered with one.
+            let mut retry_after = None;
             let outcome = match self
                 .authorization(&mut authorization, endpoint, route, &body)
                 .await
@@ -227,7 +312,10 @@ impl Caller {
                         .client
                         .post(endpoint, route, body.clone(), &header)
                         .await
-                        .and_then(decode::<R>);
+                        .and_then(|reply| {
+                            retry_after = reply.retry_after;
+                            decode::<R>(reply)
+                        });
                     progress.stage = Stage::Idle;
                     // Never hold a slot while sleeping.
                     drop(permit);
@@ -257,24 +345,31 @@ impl Caller {
             if failure.code() == ErrorCode::AuthExpired {
                 authorization = None;
             }
-            let delay = self.cfg.retries.delay_for(tries);
+            // The failure's class picks the budget and the curve; the deadline bounds both.
+            let class = failure.retry_class();
+            let retries = progress.retries;
+            let delay = self
+                .cfg
+                .delay_for(class, retries.of(class).saturating_add(1), retry_after);
+            let budget_left = retries.of(class) < self.cfg.max_retries(class);
             let fits = delay < deadline.saturating_duration_since(Instant::now());
-            // Never retry an authentication rejection (our key is wrong for that node), a non-retryable
-            // error, past `max_retries`, or when the delay would end after the deadline.
-            let gives_up = failure.is_auth()
-                || !failure.is_retryable()
-                || tries > self.cfg.retries.max_retries
-                || !fits;
+            let give_up = GiveUp::decide(&failure, budget_left, fits);
             attempt_failed(
                 &endpoint.name,
                 tries,
                 attempt_started.elapsed(),
                 &failure,
-                (!gives_up).then_some(delay),
+                Decision {
+                    class,
+                    delay,
+                    retry_after,
+                    give_up,
+                },
             );
-            if gives_up {
+            if give_up.is_some() {
                 return Err(CallError::Failed(failure));
             }
+            progress.retries.bump(class);
             sleep(delay).await;
         }
     }
@@ -300,25 +395,42 @@ impl Caller {
     }
 }
 
-/// One failed attempt, visible at the default level; the node task runs in the `aggregation` span, so the line
-/// also carries the request's id. `delay` is `None` when the call gives up. A signing failure is the relayer's own
-/// and is reported as such: nothing reached the node.
+/// What the policy decided after one failed attempt, for the log line.
+#[derive(Debug, Clone, Copy)]
+struct Decision {
+    class: RetryClass,
+    /// The wait before the next attempt (meaningful when the call retries).
+    delay: Duration,
+    retry_after: Option<Duration>,
+    give_up: Option<GiveUp>,
+}
+
+/// One failed attempt: one WARN per retry or skipped retry (`OBSERVABILITY.md`), with the decision the policy
+/// took: the retry class, the wait before the next attempt (`retry_in_ms`, `null` when the call gives up), the
+/// node's parsed `Retry-After` when it sent one, and the give-up reason. The node task runs in the `aggregation`
+/// span, so the line also carries the request's id. A signing failure is the relayer's own and is reported as
+/// such: nothing reached the node, so there is no code and no header.
 fn attempt_failed(
     kms_node: &str,
     attempt: u32,
     elapsed: Duration,
     failure: &AttemptError,
-    delay: Option<Duration>,
+    decision: Decision,
 ) {
-    let elapsed_ms = elapsed.as_millis() as u64;
-    let retry_in_ms = delay.map(|d| d.as_millis() as u64);
+    let ms = |d: Duration| d.as_millis() as u64;
+    let elapsed_ms = ms(elapsed);
+    let retry_class = decision.class.as_str();
+    let retry_in_ms = decision.give_up.is_none().then(|| ms(decision.delay));
+    let give_up_reason = decision.give_up.map(GiveUp::as_str);
     if let AttemptError::Signer(_) = failure {
         warn!(
             kms_node,
             attempt,
             elapsed_ms,
             error = %failure.digest(),
+            retry_class,
             retry_in_ms,
+            give_up_reason,
             "signing failed"
         );
     } else {
@@ -328,7 +440,10 @@ fn attempt_failed(
             elapsed_ms,
             error = %failure.digest(),
             code = failure.code().as_str(),
+            retry_class,
             retry_in_ms,
+            retry_after_ms = decision.retry_after.map(ms),
+            give_up_reason,
             "attempt failed"
         );
     }
@@ -445,32 +560,65 @@ pub(crate) mod tests {
     ) {
         let signer = Arc::new(RequestSigner::new(signer.clone(), test_domain(), secs(60)));
         let mock = MockClient::new(vec![script], ms(10));
-        let caller = mock.clone().caller_with(secs(5), max_retries, signer);
+        let caller = mock
+            .clone()
+            .caller_with(MockClient::call_config(secs(5), max_retries), signer);
         let result = call_node(&caller, 0, secs(5), &CancellationToken::new()).await;
         (mock, caller, result)
     }
 
-    /// One mock node with `script`, `max_retries`, a 5 s deadline, 10 ms per attempt.
+    /// One mock node with `script`, `max_retries` transient retries (one rate-limit retry), a 5 s deadline,
+    /// 10 ms per attempt.
     async fn run(
         script: Vec<Reply>,
         max_retries: u32,
     ) -> (Arc<MockClient>, CallResult<UserDecryptionResponse>) {
+        run_with(script, MockClient::call_config(secs(5), max_retries)).await
+    }
+
+    /// One mock node with `script` under `call`, the deadline being `call.timeout`, 10 ms per attempt.
+    async fn run_with(
+        script: Vec<Reply>,
+        call: CallConfig,
+    ) -> (Arc<MockClient>, CallResult<UserDecryptionResponse>) {
         let mock = MockClient::new(vec![script], ms(10));
-        let caller = mock.clone().caller(secs(5), max_retries);
-        let result = call_node(&caller, 0, secs(5), &CancellationToken::new()).await;
+        let caller = mock.clone().caller_with_call(call.clone());
+        let result = call_node(&caller, 0, call.timeout, &CancellationToken::new()).await;
         (mock, result)
+    }
+
+    /// A 429 with `Retry-After: <seconds>`.
+    fn rate_limited_after(seconds: u64) -> Reply {
+        Reply::RateLimitedAfter {
+            rate_limited_after: secs(seconds),
+        }
+    }
+
+    /// `transient` retries of 200 ms and `rate_limit` retries from 1 s under a 5 s deadline.
+    fn budgets(transient: u32, rate_limit: u32) -> CallConfig {
+        let mut call = MockClient::call_config(secs(5), transient);
+        call.rate_limit.max_retries = rate_limit;
+        call
+    }
+
+    /// The `attempt failed` lines of one `run(script, max_retries)`.
+    async fn attempt_lines(script: Vec<Reply>, max_retries: u32) -> Vec<serde_json::Value> {
+        let lines = capture_runs(&["attempt failed"], || {
+            let script = script.clone();
+            async move {
+                run(script, max_retries).await;
+            }
+        })
+        .await;
+        lines
+            .into_iter()
+            .filter(|l| l["fields"]["message"] == "attempt failed")
+            .collect()
     }
 
     #[tokio::test(start_paused = true)]
     async fn every_failed_attempt_is_a_warn_with_its_decision() {
-        let lines = capture_runs(&["attempt failed"], || async {
-            run(vec![RATE, MALFORMED], 2).await;
-        })
-        .await;
-        let lines: Vec<_> = lines
-            .iter()
-            .filter(|l| l["fields"]["message"] == "attempt failed")
-            .collect();
+        let lines = attempt_lines(vec![RATE, MALFORMED], 2).await;
         assert_eq!(lines.len(), 2, "{lines:?}");
         for (line, attempt) in lines.iter().zip(1..) {
             assert_eq!(line["level"], "WARN");
@@ -478,10 +626,59 @@ pub(crate) mod tests {
             assert_eq!(line["fields"]["attempt"], attempt);
             assert_eq!(line["fields"]["elapsed_ms"], 10);
         }
+        // A rate limit, retried after one window: the class, the wait, no header, no give-up.
         assert_eq!(lines[0]["fields"]["code"], "rate_limited");
-        assert!(lines[0]["fields"]["retry_in_ms"].as_u64().is_some());
+        assert_eq!(lines[0]["fields"]["retry_class"], "rate_limit");
+        assert_eq!(lines[0]["fields"]["retry_in_ms"], 1000);
+        assert!(
+            lines[0]["fields"]["retry_after_ms"].is_null(),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            lines[0]["fields"]["give_up_reason"].is_null(),
+            "{}",
+            lines[0]
+        );
+        // The give-up: no wait, the reason.
         assert_eq!(lines[1]["fields"]["code"], "malformed");
+        assert_eq!(lines[1]["fields"]["retry_class"], "transient");
         assert!(lines[1]["fields"]["retry_in_ms"].is_null(), "{}", lines[1]);
+        assert_eq!(lines[1]["fields"]["give_up_reason"], "non_retryable");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_after_is_reported_as_a_number() {
+        let lines = attempt_lines(vec![rate_limited_after(2), ACL, OK], 2).await;
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        // The header raised the wait: both are the parsed number of milliseconds, never the header value.
+        assert_eq!(lines[0]["fields"]["retry_class"], "rate_limit");
+        assert_eq!(lines[0]["fields"]["retry_in_ms"], 2000);
+        assert_eq!(lines[0]["fields"]["retry_after_ms"], 2000);
+        // A transient retry: no header.
+        assert_eq!(lines[1]["fields"]["retry_class"], "transient");
+        assert_eq!(lines[1]["fields"]["retry_in_ms"], 200);
+        assert!(
+            lines[1]["fields"]["retry_after_ms"].is_null(),
+            "{}",
+            lines[1]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn give_up_reasons() {
+        for (script, max_retries, reason) in [
+            (vec![AUTH], 2, "auth"),
+            (vec![MALFORMED], 2, "non_retryable"),
+            (vec![ACL], 1, "budget_exhausted"),
+            (vec![rate_limited_after(10)], 1, "deadline"),
+        ] {
+            let lines = attempt_lines(script, max_retries).await;
+            let last = lines.last().unwrap();
+            assert_eq!(last["level"], "WARN", "{reason}");
+            assert_eq!(last["fields"]["give_up_reason"], reason, "{last}");
+            assert!(last["fields"]["retry_in_ms"].is_null(), "{last}");
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -495,26 +692,114 @@ pub(crate) mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn retryable_error_is_retried_with_backoff_then_gives_up() {
+    async fn transient_error_is_retried_linearly_then_gives_up() {
         let (mock, r) = run(vec![ACL], 2).await;
         assert_eq!(r.result.unwrap_err().code(), Some(ErrorCode::AclDenied));
         assert_eq!(mock.attempts(0), 3);
-        // 3 attempts of 10 ms, delays 500 ms then 1 s.
-        assert_eq!((r.attempts, r.elapsed), (3, ms(1530)));
+        // 3 attempts of 10 ms, waits 200 ms then 400 ms.
+        assert_eq!((r.attempts, r.elapsed), (3, ms(630)));
+        assert_eq!(
+            r.retries,
+            Retries {
+                transient: 2,
+                rate_limit: 0
+            }
+        );
     }
 
     #[tokio::test(start_paused = true)]
-    async fn rate_limited_twice_then_success() {
-        let (_, r) = run(vec![RATE, RATE, OK], 2).await;
+    async fn transient_retries_are_linear() {
+        let (_, r) = run(vec![ACL, ACL, ACL, OK], 3).await;
         assert!(r.result.is_ok());
-        assert_eq!((r.attempts, r.elapsed), (3, ms(1530)));
+        // 4 attempts of 10 ms, waits 200 + 400 + 600 ms.
+        assert_eq!((r.attempts, r.elapsed), (4, ms(1240)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rate_limit_waits_one_window() {
+        let (_, r) = run(vec![RATE, OK], 0).await;
+        assert!(r.result.is_ok());
+        assert_eq!((r.attempts, r.elapsed), (2, ms(1020)));
+        assert_eq!(
+            r.retries,
+            Retries {
+                transient: 0,
+                rate_limit: 1
+            }
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rate_limit_backoff_doubles_from_the_floor() {
+        let (_, r) = run_with(vec![RATE, RATE, OK], budgets(0, 2)).await;
+        assert!(r.result.is_ok());
+        // Waits 1 s then 2 s.
+        assert_eq!((r.attempts, r.elapsed), (3, ms(3030)));
+        // A third 429 exhausts the two-retry budget: the call gives up after the second wait (`budget_exhausted`).
+        let (_, r) = run_with(vec![RATE], budgets(0, 2)).await;
+        assert_eq!(r.result.unwrap_err().code(), Some(ErrorCode::RateLimited));
+        assert_eq!((r.attempts, r.elapsed), (3, ms(3030)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_after_above_the_floor_is_the_base_of_the_curve() {
+        let (_, r) = run_with(vec![rate_limited_after(2), OK], budgets(0, 2)).await;
+        assert!(r.result.is_ok());
+        assert_eq!((r.attempts, r.elapsed), (2, ms(2020)));
+        // Then 4 s: does not fit before the 5 s deadline, the call gives up without sleeping.
+        let (_, r) = run_with(vec![rate_limited_after(2)], budgets(0, 2)).await;
+        assert_eq!(r.result.unwrap_err().code(), Some(ErrorCode::RateLimited));
+        assert_eq!((r.attempts, r.elapsed), (2, ms(2020)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_after_beyond_the_deadline_gives_up_at_once() {
+        let (_, r) = run(vec![rate_limited_after(10), OK], 0).await;
+        assert_eq!(r.result.unwrap_err().code(), Some(ErrorCode::RateLimited));
+        assert_eq!((r.attempts, r.elapsed), (1, ms(10)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_after_below_the_floor_keeps_the_floor() {
+        let (_, r) = run(vec![rate_limited_after(0), OK], 0).await;
+        assert!(r.result.is_ok());
+        assert_eq!((r.attempts, r.elapsed), (2, ms(1020)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn classes_have_independent_budgets() {
+        // One 429 then one acl_denied: one window, then one linear wait; each budget used once.
+        let (_, r) = run(vec![RATE, ACL, OK], 3).await;
+        assert!(r.result.is_ok());
+        assert_eq!((r.attempts, r.elapsed), (3, ms(1230)));
+        assert_eq!(
+            r.retries,
+            Retries {
+                transient: 1,
+                rate_limit: 1
+            }
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn budgets_never_restart() {
+        // No transient budget: the 429 is retried, the acl_denied is not.
+        let (_, r) = run_with(vec![RATE, OK], budgets(0, 1)).await;
+        assert!(r.result.is_ok());
+        let (_, r) = run_with(vec![ACL, OK], budgets(0, 1)).await;
+        assert_eq!(r.result.unwrap_err().code(), Some(ErrorCode::AclDenied));
+        assert_eq!(r.attempts, 1);
+        // A transient retry in between does not refill the rate-limit budget.
+        let (_, r) = run_with(vec![RATE, ACL, RATE, OK], budgets(1, 1)).await;
+        assert_eq!(r.result.unwrap_err().code(), Some(ErrorCode::RateLimited));
+        assert_eq!((r.attempts, r.elapsed), (3, ms(1230)));
     }
 
     #[tokio::test(start_paused = true)]
     async fn transport_error_is_retried() {
         let (_, r) = run(vec![REFUSED, OK], 1).await;
         assert!(r.result.is_ok());
-        assert_eq!((r.attempts, r.elapsed), (2, ms(520)));
+        assert_eq!((r.attempts, r.elapsed), (2, ms(220)));
     }
 
     #[tokio::test(start_paused = true)]
@@ -537,20 +822,11 @@ pub(crate) mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn backoff_is_capped_by_backoff_max() {
-        // Delays: 500ms, 1s, 2s, 4s, 4s (cap) = 11.5 s + 6 attempts of 10 ms; deadline 60 s.
-        let mock = MockClient::new(vec![vec![RATE, RATE, RATE, RATE, RATE, OK]], ms(10));
-        let caller = mock.clone().caller(secs(60), 5);
-        let r = call_node(&caller, 0, secs(60), &CancellationToken::new()).await;
-        assert!(r.result.is_ok());
-        assert_eq!((r.attempts, r.elapsed), (6, ms(11_560)));
-    }
-
-    #[tokio::test(start_paused = true)]
     async fn retry_that_does_not_fit_before_the_deadline_is_skipped() {
         let mock = MockClient::new(vec![vec![ACL, OK]], ms(10));
         let caller = mock.clone().caller(secs(5), 3);
-        let r = call_node(&caller, 0, ms(400), &CancellationToken::new()).await;
+        // 140 ms left after the attempt: the 200 ms wait would end after the deadline.
+        let r = call_node(&caller, 0, ms(150), &CancellationToken::new()).await;
         assert_eq!(r.result.unwrap_err().code(), Some(ErrorCode::AclDenied));
         assert_eq!((r.attempts, r.elapsed), (1, ms(10)));
     }
@@ -787,8 +1063,13 @@ pub(crate) mod tests {
                     .unwrap()
                     .starts_with("signer: ")
             );
+            // A signing failure consumes the transient budget and carries no header.
+            assert_eq!(line["fields"]["retry_class"], "transient");
+            assert!(line["fields"]["retry_after_ms"].is_null(), "{line}");
         }
+        assert_eq!(signing[0]["fields"]["retry_in_ms"], 200);
         assert!(signing[2]["fields"]["retry_in_ms"].is_null());
+        assert_eq!(signing[2]["fields"]["give_up_reason"], "budget_exhausted");
     }
 
     #[test]
@@ -798,6 +1079,12 @@ pub(crate) mod tests {
         assert_eq!(caller.endpoints().len(), 2);
         assert_eq!(caller.endpoints()[1].name, "node-1");
         assert_eq!(caller.timeout(), secs(3));
+        assert_eq!(caller.call_config().timeout, secs(3));
+        assert!(caller.call_config().retries.waits.is_empty());
+        assert_eq!(caller.retries_waits_ms(), "[]");
+        assert_eq!(caller.call_config().rate_limit.max_retries, 1);
+        let two_retries = MockClient::new(vec![vec![OK]], ms(1)).caller(secs(3), 2);
+        assert_eq!(two_retries.retries_waits_ms(), "[200, 400]");
     }
 
     #[test]

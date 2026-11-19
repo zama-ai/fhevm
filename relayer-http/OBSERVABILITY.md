@@ -63,7 +63,7 @@ A failed request is INFO: its summary line's outcome says so. WARN comes only fr
 
 **Panics** are one ERROR line, with their location and never their payload (it may hold request data): a request's `internal error` line, a KMS node task's `node task panicked` line, or `panicked` elsewhere. A failure logs a digest instead: the error with its field path, the body size, and the summary line's public fields. A KMS node's error response is logged as its code and message, truncated.
 
-**Never logged:** bodies, user signatures, shares, keys, header values (the outgoing FhevmSig header is a credential), URLs.
+**Never logged:** bodies, user signatures, shares, keys, header values (the outgoing FhevmSig header is a credential; the parsed `Retry-After` wait, `retry_after_ms`, is a number, not a header value), URLs.
 
 **Tests** capture the production JSON output with `logging::capture` and assert on fields and levels, never on substrings of the text. They cover: the summary line (exactly one per request, every outcome, its defined fields), the WARN of each degradation, and absence: no body, signature or header value appears in any line, whatever the outcome. Style rules (field names, fixed messages, `error` in Display form) are left to review against this policy, not to a lint.
 

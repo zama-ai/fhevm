@@ -21,6 +21,7 @@ import {
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   replaceRegistrySourceTag,
+  runsRelayerHttp,
   supportsCanonicalProtocolConfigSeeding,
   supportsConnectorHttp,
   supportsHostListenerConsumer,
@@ -1217,20 +1218,20 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForLog("fhevm-relayer", /All servers are ready and responding/);
       break;
     case "relayer-http":
-      // Optional image: bundles that predate relayer-http do not resolve RELAYER_HTTP_VERSION.
-      if (!state.versions.env.RELAYER_HTTP_VERSION) {
+      // Optional image: bundles that predate relayer-http do not resolve RELAYER_HTTP_VERSION; the local override
+      // builds it from the working tree instead.
+      if (!runsRelayerHttp(state)) {
         break;
       }
       await stepComposeUp("relayer-http", state);
-      await waitForContainer("fhevm-relayer-http", "running");
-      await waitForLog("fhevm-relayer-http", /relayer-http started/);
+      await waitForRelayerHttp();
       break;
     case "relayer-proxy":
       // Always started: without relayer-http, /v4 answers 502 and /v2, /v3 still reach the relayer.
       await stepComposeUp("relayer-proxy", state);
       await waitForContainer("fhevm-relayer-proxy", "running");
       console.log(`[relayer-proxy] /v2 -> relayer: HTTP ${await waitForRelayerProxyRoute("/v2/keyurl", 200)}`);
-      if (state.versions.env.RELAYER_HTTP_VERSION) {
+      if (runsRelayerHttp(state)) {
         // GET on a POST route: relayer-http answers 405, which proves the route.
         console.log(`[relayer-proxy] /v4 -> relayer-http: HTTP ${await waitForRelayerProxyRoute("/v4/user-decrypt")}`);
       }
@@ -1958,6 +1959,12 @@ const waitForRelayer = async () => {
   await waitForLog("fhevm-relayer", /All servers are ready and responding/);
 };
 
+// No compose healthcheck: the runtime image has no shell, so the startup log line is the readiness signal.
+const waitForRelayerHttp = async () => {
+  await waitForContainer("fhevm-relayer-http", "running");
+  await waitForLog("fhevm-relayer-http", /relayer-http started/);
+};
+
 const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices: string[]) => {
   if (group === "coprocessor") {
     const extraTargets = multiChainCoprocessorUpgradeTargets(state, runtimeServices);
@@ -1989,6 +1996,10 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
   }
   if (group === "relayer") {
     await waitForRelayer();
+    return;
+  }
+  if (group === "relayer-http") {
+    await waitForRelayerHttp();
     return;
   }
   await waitForTestSuite();

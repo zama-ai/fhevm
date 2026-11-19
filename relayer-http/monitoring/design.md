@@ -50,6 +50,7 @@ Status: ✅ exists · ➕ planned metric · 📜 computed from logs at query tim
 | Retries per call                                            | `relayer_http_kms_attempts`                                                                              | ✅     |
 | Does a node contribute answers, or get cut?                 | calls by `kms_node`, `flow`, `result`: counted, failed, rejected, cut by fail fast, cut by the deadline, cut by a client hangup | ➕     |
 | Which nodes failed one request, and why                     | the summary line's node lists; the `attempt failed` lines (`kms_node`, `attempt`, `code`, `error`)       | 📜     |
+| Why a call stopped retrying, and how much of each budget it used | the `attempt failed` lines (`retry_class`, `retry_in_ms`, `retry_after_ms`, `give_up_reason`); the `call failed` line (`transient_retries`, `rate_limit_retries`) | 📜     |
 
 - `retryable` and `status` follow from `code` (the connector's error codes, `kms-connector-api`): they add no series.
 

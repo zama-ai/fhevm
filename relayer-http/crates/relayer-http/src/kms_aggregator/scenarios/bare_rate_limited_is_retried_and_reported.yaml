@@ -1,9 +1,9 @@
-# A 429 without the connector body (an ingress, a future proxy limit) is retried like rate_limited and reported as
-# rate_limited: 4 nodes keep answering it, retried once after 500 ms, the threshold is missed.
+# A 429 without the connector body (an ingress, a proxy limit) is retried like rate_limited and reported as
+# rate_limited: 4 nodes keep answering it, retried once after one window (1 s), the threshold is missed.
 flow: user_decrypt
 threshold: 10
 timeout: 5s
-max_retries: 1
+rate_limit: { max_retries: 1 }
 nodes:
   - { count: 9, replies: [ok] }
   - { count: 4, replies: [bare_rate_limited] }
@@ -11,7 +11,7 @@ expect:
   outcome: threshold_not_reached
   counted: 9
   dominant: rate_limited
-  elapsed: 520ms
+  elapsed: 1020ms
   attempts: 17
   metrics:                     # a bare 429 is recorded under the connector code rate_limited
     answered: 17
