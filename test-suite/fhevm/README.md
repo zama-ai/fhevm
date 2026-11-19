@@ -468,6 +468,26 @@ If a runtime override is already active and you only want to rebuild and restart
 - `smoke`: use explicit `up ...` plus `test ...`
 - `test debug`: use `docker exec -it fhevm-test-suite-e2e-debug sh`
 
+## Concurrent SNS publication on v0.14
+
+Run the opt-in profile on an isolated, fully bootstrapped local Anvil stack. Use a v0.14 lock file with the digest mirror trigger installed, set `COPROCESSOR_SNS_WORKER_VERSION` to the image under test, and build the test suite from this checkout. Keep the primary SNS worker's S3 migration disabled.
+
+```sh
+# From test-suite/fhevm. Substitute the candidate SNS image tag for v0.14.7 in --arg.
+jq --arg sns v0.14.7 '.env |= (with_entries(if .key == "CORE_VERSION" then . else .value = "v0.14.7" end)
+  | .COPROCESSOR_SNS_WORKER_VERSION = $sns)' profiles/v0.14.4.json > /tmp/sns-v0.14.json
+./fhevm-cli up --lock-file /tmp/sns-v0.14.json --override test-suite
+./fhevm-cli test sns-batch-publication
+```
+
+The profile temporarily replaces the primary operator's SNS worker with four warmed replicas of the same image and restores it on exit. Run it without other workloads on that database. The host contract produces 640 publicly decryptable handles. All four replicas use batches of 20 against the same queue. The profile checks both digests for every handle, Gateway publication for every handle and the KMS plaintexts for three samples.
+
+The output counts full batches and deadlock retries per replica and reports the change in PostgreSQL's database deadlock counter. A trial without competing full batches is inconclusive. PostgreSQL scheduling varies, so one clean trial on the release image can pass. The database-backed worker tests also check the before-first-write lock invariant and the retry policy on a known deadlock error. Run them from `coprocessor/fhevm-engine` with Docker available.
+
+```sh
+cargo test --locked -p sns-worker --lib batch_publication
+```
+
 ## Coprocessor Scenarios
 
 Use `--scenario <name-or-file>` for consensus and stateful rollout runs. Bundled presets resolve by filename stem, and explicit file paths still work. The scenario file is the source of truth for:
