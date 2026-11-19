@@ -1,0 +1,19 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+
+metadata:
+  id: erc20.mint
+  name: Mint encrypted tokens
+  owner: qa
+  description: >-
+    Port of the e2e test 'should mint the contract': alice mints tokens, her balance handle has the layout of a euint64
+    computed on the host chain, she decrypts her balance and the total supply matches.
+  tags: [erc20, e2e]
+
+spec:
+  runtime: cucumber
+  entrypoint: ./mint.feature
+  supportCode:
+    - ./steps.ts
+  targets: [local, devnet]
+  timeoutSeconds: 600

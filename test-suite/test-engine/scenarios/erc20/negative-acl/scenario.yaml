@@ -1,0 +1,19 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+
+metadata:
+  id: erc20.negative-acl
+  name: No decryption of another user's balance
+  owner: qa
+  description: >-
+    Port of the e2e test 'negative-acl / should reject when user is not allowed for handle': after a transfer, bob
+    cannot user-decrypt alice's balance, and the relayer names the unauthorized user and handle.
+  tags: [erc20, e2e]
+
+spec:
+  runtime: cucumber
+  entrypoint: ./negative-acl.feature
+  supportCode:
+    - ./steps.ts
+  targets: [local, devnet]
+  timeoutSeconds: 600

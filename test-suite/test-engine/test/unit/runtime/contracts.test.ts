@@ -86,6 +86,19 @@ describe('Contracts (this.engine.contracts)', () => {
         );
       }
     }
+    // The config comes first; the e2e constructor arguments follow it.
+    const erc20 = contracts.artifact('EncryptedERC20');
+    assert.equal(
+      new Interface(erc20.abi).deploy.format('minimal'),
+      'constructor((address,address,address),string,string)',
+    );
+    for (const address of Object.values(config)) {
+      assert.ok(
+        !erc20.bytecode.toLowerCase().includes(address.slice(2).toLowerCase()),
+        `EncryptedERC20 embeds ${address}`,
+      );
+    }
     assert.throws(() => contracts.artifact('EngineCoprocessorConfig'), /no compiled contract/, 'abstract: no artifact');
+    assert.throws(() => contracts.artifact('Ownable2Step'), /no compiled contract/, 'library contract: no artifact');
   });
 });

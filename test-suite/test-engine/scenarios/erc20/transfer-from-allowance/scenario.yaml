@@ -1,0 +1,20 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+
+metadata:
+  id: erc20.transfer-from-allowance
+  name: TransferFrom within the allowance
+  owner: qa
+  description: >-
+    Port of the e2e test 'should be able to transferFrom only if allowance is sufficient': bob cannot spend more than
+    alice's allowance, then spends exactly the allowance; each user reuses the same transport keypair for both
+    decryptions.
+  tags: [erc20, e2e]
+
+spec:
+  runtime: cucumber
+  entrypoint: ./transfer-from-allowance.feature
+  supportCode:
+    - ./steps.ts
+  targets: [local, devnet]
+  timeoutSeconds: 600

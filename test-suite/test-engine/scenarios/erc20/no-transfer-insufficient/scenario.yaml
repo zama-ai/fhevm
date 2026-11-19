@@ -1,0 +1,19 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+
+metadata:
+  id: erc20.no-transfer-insufficient
+  name: No transfer with insufficient balance
+  owner: qa
+  description: >-
+    Port of the e2e test 'should not transfer tokens between two users': a transfer above alice's balance succeeds on
+    chain but moves nothing, so both balances are unchanged.
+  tags: [erc20, e2e]
+
+spec:
+  runtime: cucumber
+  entrypoint: ./no-transfer-insufficient.feature
+  supportCode:
+    - ./steps.ts
+  targets: [local, devnet]
+  timeoutSeconds: 600

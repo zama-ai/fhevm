@@ -1,6 +1,6 @@
 /**
- * The official end-to-end scenarios against the local fhEVM stack, through the one command a user
- * runs: `run --profile local`. Run with `npm run test:e2e:local`, which copies the package into the
+ * The official end-to-end scenarios (tag @e2e: fhe.input-decrypt and the ERC20 scenarios) against
+ * the local fhEVM stack, through the one command a user runs: `run --profile local`. Run with `npm run test:e2e:local`, which copies the package into the
  * e2e container (run.sh next to this file); the engine runs there, and its run directory is copied
  * back for the assertions.
  */
@@ -64,6 +64,23 @@ describe('Official end-to-end scenarios on the local stack', () => {
   it('passes fhe.input-decrypt with the single run command', () => {
     assert.equal(run.code, 0, run.output);
     assert.equal(scenarioOf(readReport(outputDir), 'fhe.input-decrypt').outcome, 'passed');
+  });
+
+  it('passes the ERC20 scenarios, each user reusing its transport keypair', () => {
+    const report = readReport(outputDir);
+    for (const id of [
+      'erc20.mint',
+      'erc20.transfer',
+      'erc20.no-transfer-insufficient',
+      'erc20.transfer-from-allowance',
+      'erc20.negative-acl',
+    ]) {
+      assert.equal(scenarioOf(report, id).outcome, 'passed', id);
+    }
+    const caches = entries
+      .filter((entry) => entry.scenarioId === 'erc20.transfer-from-allowance' && entry.kind === 'fhe.user-decrypt')
+      .map((entry) => entry.data.cache);
+    assert.deepEqual(caches, ['miss', 'miss', 'hit', 'hit']);
   });
 
   it('records the deployment, the transaction and every FHE operation with its relayer job', () => {

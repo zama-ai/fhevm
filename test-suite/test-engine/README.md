@@ -10,7 +10,7 @@ A manifest-driven, Cucumber-based engine for fhEVM end-to-end scenarios.
 
 The engine runs on Node.js (>= 22) and TypeScript compiled with `tsc`. No TypeScript loader is involved at runtime; Cucumber always loads plain JavaScript from `dist/`.
 
-> **Status:** Phase 1b, in progress. The engine infrastructure (profiles, planner rules, the scenario World, evidence, secret handling) is in place, and so are the first fhEVM building blocks: the typed `chain` profile section, the [Chain module](#using-the-chain) (wallets, transactions and deployments recorded as evidence), the typed `relayer` and `contracts` sections and the [FHE module](#using-fhe) (encryption, user, delegated and public decryption, with relayer job IDs as evidence), and the engine's own [test contracts](#using-the-engine-contracts), built once and deployed with the profile's coprocessor configuration. The engine uses nothing of the e2e suite. The first official fhEVM scenario, `fhe.input-decrypt`, passes on the local stack ([Running on the local stack](#running-on-the-local-stack)); `smoke.arithmetic` has no dependency on the stack. DevNet has not been validated yet.
+> **Status:** Phase 2 (ERC20 pilot), in progress; Phase 1 is complete. The engine infrastructure (profiles, planner rules, the scenario World, evidence, secret handling) is in place, and so are the first fhEVM building blocks: the typed `chain` profile section, the [Chain module](#using-the-chain) (wallets, transactions and deployments recorded as evidence), the typed `relayer` and `contracts` sections and the [FHE module](#using-fhe) (encryption, user, delegated and public decryption, with relayer job IDs as evidence), and the engine's own [test contracts](#using-the-engine-contracts), built once and deployed with the profile's coprocessor configuration. The engine uses nothing of the e2e suite. The official fhEVM scenarios, `fhe.input-decrypt` and the five ERC20 scenarios (`erc20.*`, ported from the e2e `EncryptedERC20` tests), pass on the local stack ([Running on the local stack](#running-on-the-local-stack)); `fhe.input-decrypt` also passes on DevNet. `smoke.arithmetic` has no dependency on the stack.
 
 ## Quick start
 
@@ -53,7 +53,8 @@ test-engine/
 ├── contracts/                # the engine's Solidity test contracts (see Using the engine contracts)
 ├── scenarios/                # scenarios run by `npm run engine -- run` (default --scenarios-dir)
 │   ├── smoke/                #   engine regression scenario, no dependency on the stack
-│   └── fhe/input-decrypt/    #   end-to-end FHE scenario (local, devnet): encrypt, compute, decrypt
+│   ├── fhe/input-decrypt/    #   end-to-end FHE scenario (local, devnet): encrypt, compute, decrypt
+│   └── erc20/                #   encrypted ERC20 scenarios (local, devnet) and their shared step library
 └── test/                     # tests of the engine itself (node:test), never run by the engine
     ├── unit/                 #   modules called in process, one folder per src/ layer; no external service
     ├── integration/
@@ -143,6 +144,7 @@ When('Alice deposits {int}', function (this: MyWorld, amount: number) {
 - **Gherkin scenarios are independent.** A Gherkin scenario must not rely on state left by another one. Put shared setup in a `Background`.
 - **Never skip at runtime.** Returning `'skipped'` from a step or a hook fails the scenario (see [Execution guarantees](#execution-guarantees)). If a scenario cannot run on an environment, leave that profile out of its `targets`.
 - **`BeforeAll` / `AfterAll` are unsupported.** They have no World and cannot record evidence.
+- **Share steps through an import.** `spec.supportCode` must stay inside the scenario folder, so scenarios of one domain share a step library with a one-line `steps.ts` that imports it (`import '../steps.js';`), as `scenarios/erc20/` does.
 - **Scenario globals are safe.** `setWorldConstructor`, `setDefaultTimeout` and `defineParameterType` only affect the calling scenario, because each scenario has its own process.
 
 ### Using the chain
@@ -237,15 +239,16 @@ const testInput = await chain.deploy(contracts.artifact('TestInput'), [contracts
 - **`this.engine.contracts.coprocessorConfig()`** returns `{ ACLAddress, CoprocessorAddress, KMSVerifierAddress }` from the profile's `contracts.acl`, `contracts.executor` and `contracts.kmsVerifier`. On a profile without `contracts` section, the step fails with a P-002 configuration error. Declare `targets`.
 - `loadArtifact(path)` stays available for contracts a scenario ships itself (no fhEVM dependency, as with the chain fixtures).
 
-| Contract         | Functions                                                                   | Copied from (test-suite/e2e/contracts/)                   |
-| ---------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `TestInput`      | `add42ToInput64`, `requestUint64NonTrivial`, `resUint64`                    | `smoke/TestInput.sol`                                     |
-| `UserDecrypt`    | one encrypted value per type, set in the constructor (`xBool` … `xUint256`) | `UserDecrypt.sol`                                         |
-| `TestMultiInput` | `and_euint64_euint32` (two types in one input), `resEuint64`                | `and_euint64_euint32` of `operations/FHEVMTestSuite4.sol` |
+| Contract         | Functions                                                                                                       | Copied from (test-suite/e2e/contracts/)                   |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `TestInput`      | `add42ToInput64`, `requestUint64NonTrivial`, `resUint64`                                                        | `smoke/TestInput.sol`                                     |
+| `UserDecrypt`    | one encrypted value per type, set in the constructor (`xBool` … `xUint256`)                                     | `UserDecrypt.sol`                                         |
+| `TestMultiInput` | `and_euint64_euint32` (two types in one input), `resEuint64`                                                    | `and_euint64_euint32` of `operations/FHEVMTestSuite4.sol` |
+| `EncryptedERC20` | `mint`, `transfer`, `approve`, `transferFrom`, `balanceOf`, `totalSupply`; constructor `(config, name, symbol)` | `EncryptedERC20.sol`                                      |
 
-**Adding a contract.** Put the `.sol` file in `contracts/`, inherit `EngineCoprocessorConfig` and take the config in the constructor (`constructor(CoprocessorConfig memory config) EngineCoprocessorConfig(config) {}`), then rebuild. When copying an e2e contract, say so in its NatSpec, as the existing ones do: a change to the e2e contract does not reach the engine by itself.
+**Adding a contract.** Put the `.sol` file in `contracts/`, inherit `EngineCoprocessorConfig` and take the config as the first constructor argument (`constructor(CoprocessorConfig memory config) EngineCoprocessorConfig(config) {}`), followed by the contract's own arguments, then rebuild. When copying an e2e contract, say so in its NatSpec, as the existing ones do: a change to the e2e contract does not reach the engine by itself.
 
-**Compiler.** solc 0.8.24 (the `solc` package), optimizer 800 runs, `cancun`, no metadata hash: the e2e suite's settings. The FHE library is the published `@fhevm/solidity` (pinned in `package.json`), the one dApp developers use, rather than the repository's `library-solidity`.
+**Compiler.** solc 0.8.24 (the `solc` package), optimizer 800 runs, `cancun`, no metadata hash: the e2e suite's settings. The FHE library is the published `@fhevm/solidity` (pinned in `package.json`), the one dApp developers use, rather than the repository's `library-solidity`. `@openzeppelin/contracts` is pinned to the e2e suite's version.
 
 ### Running on the local stack
 
@@ -256,7 +259,7 @@ cd test-suite/fhevm && ./fhevm-cli up --target latest-supported   # once
 cd ../test-engine && npm run build && npm run test:e2e:local
 ```
 
-`test:e2e:local` copies the package into the container, runs `run --profile local --tags @e2e` there, and checks the report and evidence. By hand:
+`test:e2e:local` copies the package into the container, runs `run --profile local --tags @e2e` there (`fhe.input-decrypt` and the ERC20 scenarios), and checks the report and evidence. By hand:
 
 ```sh
 docker exec -w /tmp/test-engine-e2e fhevm-test-suite-e2e-debug node dist/src/cli/main.js run fhe.input-decrypt --profile local

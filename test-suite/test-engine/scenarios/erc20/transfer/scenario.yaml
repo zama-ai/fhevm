@@ -1,0 +1,19 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+
+metadata:
+  id: erc20.transfer
+  name: Transfer encrypted tokens
+  owner: qa
+  description: >-
+    Port of the e2e test 'should transfer tokens between two users.': alice transfers an encrypted amount to bob, and
+    each of them decrypts their own balance.
+  tags: [erc20, e2e]
+
+spec:
+  runtime: cucumber
+  entrypoint: ./transfer.feature
+  supportCode:
+    - ./steps.ts
+  targets: [local, devnet]
+  timeoutSeconds: 600
