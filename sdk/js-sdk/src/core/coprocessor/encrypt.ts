@@ -11,7 +11,6 @@ import { createZkProof } from './ZkProofBuilder-p.js';
 import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
 import { recordCacheUsage } from '../caching/cacheUsage-p.js';
 import { fetchVersionedFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
-import { readVersionedCoprocessorSignersContext } from '../host-contracts/readCoprocessorSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -36,17 +35,19 @@ type ReturnType = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function encrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
-  // A rotated key (input proof rejected) or a changed coprocessor signer set
-  // is refreshed and the whole request runs once more: a new key needs a new
-  // proof.
+  // A rotated key (input proof rejected) is refreshed and the whole request
+  // runs once more: a new key needs a new proof. A changed coprocessor signer
+  // set only checks the relayer's response again (see fetchVerifiedInputProof):
+  // its errors, not explained by the key, pass through.
   return retryOnStaleCache(context, parameters.fhevmContext, (cacheUsage) => _encrypt(context, parameters, cacheUsage));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * The request: reads each cached value it uses, records its version and
- * passes the value down.
+ * The request: reads the key, records its version, builds the ZK proof with
+ * it, and fetches the input proof (with its own retry on the coprocessor
+ * signers).
  */
 async function _encrypt(context: Context, parameters: Parameters, cacheUsage: CacheUsage): Promise<ReturnType> {
   const { fhevmContext } = parameters;
@@ -64,18 +65,11 @@ async function _encrypt(context: Context, parameters: Parameters, cacheUsage: Ca
     fheEncryptionKey: fheEncryptionKey.value,
   });
 
-  // 2. The coprocessor signers, then the input proof checked against them
-  const coprocessorSigners = await readVersionedCoprocessorSignersContext(context, {
-    address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
-    fhevmContext,
-  });
-  recordCacheUsage(cacheUsage, 'coprocessorSigners', coprocessorSigners.version);
-
+  // 2. The input proof, checked against the current coprocessor signers
   const inputProof = await fetchVerifiedInputProof(context, {
     zkProof,
     options: parameters.options,
     fhevmContext,
-    coprocessorSigners: coprocessorSigners.value,
   });
 
   return {

@@ -239,6 +239,7 @@ const client = createFhevmClient({
 | User or delegated decryption, or `encryptValuesWithPad`; KMS context switched | Loads the new context, no retry            | `InvalidSignedPermitError` (`cause`: the request's error): sign a new permit            |
 | `autoRefreshOnStale: false`                                              | Reads only the version, cache untouched    | `CachedValueStaleError`; for a user decryption, `forceRefreshCachedValue` then sign a new permit |
 
+- Encryption after a coprocessor signer change checks the relayer's response again against the new set: the ZK proof is not rebuilt or sent again. After a key rotation, the proof is rebuilt with the new key. Each is retried once, so both at once still succeed.
 - Concurrent requests failing on the same stale value share one refresh.
 - An aborted request is never run again: it throws its abort error.
 

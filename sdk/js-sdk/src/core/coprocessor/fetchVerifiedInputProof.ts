@@ -1,40 +1,53 @@
 import type { RelayerInputProofOptions } from '../types/relayer.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
-import type { VerifiedInputProof } from '../types/inputProof.js';
+import type { InputProof, VerifiedInputProof } from '../types/inputProof.js';
 import type { ZkProof } from '../types/zkProof-p.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { FhevmBase } from '../types/coreFhevmClient.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
+import type { ChecksummedAddress } from '../types/primitives.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
-import type { CoprocessorSignersContext } from '../types/coprocessorSignersContext.js';
+import type { CacheUsage } from '../caching/cacheUsage-p.js';
 import { InputProofError } from '../errors/InputProofError.js';
 import { assertHandleArrayEquals } from '../handle/FhevmHandle.js';
 import { createInputProofFromInputHandles } from './InputProof-p.js';
 import { verifyInputProof } from './verifyInputProof.js';
 import { assertIsZkProof } from './ZkProof-p.js';
+import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
+import { recordCacheUsage } from '../caching/cacheUsage-p.js';
+import { readVersionedCoprocessorSignersContext } from '../host-contracts/readCoprocessorSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Context = {
-  readonly chain: FhevmChain;
-  readonly runtime: FhevmRuntime;
-  readonly client: NonNullable<object>;
-  readonly options: { readonly batchRpcCalls: boolean };
-};
+type Context = FhevmBase<FhevmChain>;
 
 type Parameters = {
   readonly zkProof: ZkProof;
   readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerInputProofOptions | undefined;
-  /** The signer set to check the coprocessor signatures against, read by the caller. */
-  readonly coprocessorSigners: CoprocessorSignersContext;
 };
 
 type ReturnType = VerifiedInputProof;
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/**
+ * Sends the ZK proof to the relayer, then checks the coprocessor signatures
+ * against the current signer set. A changed signer set is refreshed and the
+ * same response checked again: the proof is not rebuilt, and not sent again
+ * (the relayer answers the same proof with the same signatures).
+ */
 export async function fetchVerifiedInputProof(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { zkProof, options, fhevmContext, coprocessorSigners } = parameters;
+  const inputProof = await _fetchInputProof(context, parameters);
+  return retryOnStaleCache(context, parameters.fhevmContext, (cacheUsage) =>
+    _verifyInputProofWithCurrentSigners(context, { inputProof, fhevmContext: parameters.fhevmContext }, cacheUsage),
+  );
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/** The input proof the relayer returns for `zkProof`, not checked yet. */
+async function _fetchInputProof(context: Context, parameters: Parameters): Promise<InputProof> {
+  const { zkProof, options, fhevmContext } = parameters;
 
   assertIsZkProof(zkProof, {});
 
@@ -69,8 +82,8 @@ export async function fetchVerifiedInputProof(context: Context, parameters: Para
   // The purpose is to check if the relayer is possibly malicious
   assertHandleArrayEquals(inputHandles, coprocessorSignedHandles);
 
-  // 4. Verify ZK proof and Compute the final Input proof
-  const inputProof = createInputProofFromInputHandles({
+  // 4. The input proof, checked by the caller
+  return createInputProofFromInputHandles({
     coprocessorEip712Signatures: coprocessorSignatures,
     inputHandles,
     extraData: zkProof.getExtraData(),
@@ -79,6 +92,21 @@ export async function fetchVerifiedInputProof(context: Context, parameters: Para
       contractAddress: zkProof.contractAddress,
     },
   });
+}
 
-  return await verifyInputProof(context, { inputProof, coprocessorSigners });
+/**
+ * The request for `retryOnStaleCache`: reads the current coprocessor signers,
+ * records their version, and checks the input proof against them.
+ */
+async function _verifyInputProofWithCurrentSigners(
+  context: Context,
+  parameters: { readonly inputProof: InputProof; readonly fhevmContext: FhevmClientFrozenContext },
+  cacheUsage: CacheUsage,
+): Promise<ReturnType> {
+  const coprocessorSigners = await readVersionedCoprocessorSignersContext(context, {
+    address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
+    fhevmContext: parameters.fhevmContext,
+  });
+  recordCacheUsage(cacheUsage, 'coprocessorSigners', coprocessorSigners.version);
+  return verifyInputProof(context, { inputProof: parameters.inputProof, coprocessorSigners: coprocessorSigners.value });
 }
