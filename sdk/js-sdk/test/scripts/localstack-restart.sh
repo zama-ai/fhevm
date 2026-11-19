@@ -11,7 +11,6 @@ RPC_URL="http://127.0.0.1:$PORT"
 FORCE=false
 DRY_RUN=false
 CHAIN="localstack"
-VALID_CHAINS=(localstack localstack_v14)
 CHAINS_DIR="$SCRIPT_DIR/../chains"
 CHAIN_DEFAULTS_FILE="$CHAINS_DIR/chain-defaults.json"
 
@@ -25,9 +24,6 @@ By default, if anvil is already listening on port ${PORT}, the script assumes
 the local stack is already running and exits without restarting or redeploying.
 
 Options:
-  --chain, -c <name>    Chain to pass to fhetest-deploy.sh. One of:
-                        ${VALID_CHAINS[*]}.
-                        Default: ${CHAIN}.
   --fhevm-dir <path>    Directory containing the fhevm-cli / test-suite/fhevm
                         checkout to use. Default: ${FHEVM_DIR}.
   --force, -f           Force a full down/up restart and redeploy FHETest.
@@ -36,19 +32,8 @@ Options:
   --help, -h            Print this help message and exit.
 
 Example:
-  ./localstack-restart.sh --chain localstack --force
+  ./localstack-restart.sh --force
 EOF
-}
-
-is_valid_chain() {
-    local candidate="$1"
-    local c
-    for c in "${VALID_CHAINS[@]}"; do
-        if [[ "$c" == "$candidate" ]]; then
-            return 0
-        fi
-    done
-    return 1
 }
 
 require_arg_value() {
@@ -60,11 +45,6 @@ require_arg_value() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --chain|-c)
-            require_arg_value "$1" "${2:-}"
-            CHAIN="$2"
-            shift 2
-            ;;
         --fhevm-dir)
             require_arg_value "$1" "${2:-}"
             FHEVM_DIR="$2"
@@ -92,11 +72,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-if ! is_valid_chain "$CHAIN"; then
-    echo "Error: invalid --chain '$CHAIN'. Expected one of: ${VALID_CHAINS[*]}." >&2
-    exit 1
-fi
 
 if [[ ! -d "$FHEVM_DIR" ]]; then
     echo "Error: --fhevm-dir '$FHEVM_DIR' is not a directory." >&2

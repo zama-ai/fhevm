@@ -504,7 +504,7 @@ pub async fn insert_rand_new_kms_epoch(
     let previous_epoch_id = rand_u256();
     let status = options.status.unwrap_or(OperationStatus::Pending);
 
-    let material_block_number = rand_u256();
+    let material_block_number = U256::from(rand::random::<u64>());
 
     sqlx::query!(
         "INSERT INTO new_kms_epoch(

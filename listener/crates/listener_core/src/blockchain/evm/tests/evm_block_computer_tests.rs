@@ -81,6 +81,7 @@ mod evm_block_computer_tests {
     }
 
     #[tokio::test]
+    #[ignore = "Require stable RPC endpoints"]
     async fn report_block_verification() {
         // Initialize tracing
         let subscriber = FmtSubscriber::builder()

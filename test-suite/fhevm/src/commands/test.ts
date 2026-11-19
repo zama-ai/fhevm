@@ -33,6 +33,7 @@ import { dockerInspect } from "../flow/readiness";
 import { assertManagedWriterOwnership, withQuiescedWriters } from "../flow/writer-ownership";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl, readEnvFile } from "../utils/fs";
+import { keyVerificationEnv } from "../utils/key-verification-env";
 import { composeEnv, run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -1403,6 +1404,7 @@ const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
       ["INPUT_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "INPUT_VERIFIER_CONTRACT_ADDRESS", "INPUT_VERIFIER_CONTRACT_ADDRESS")],
       ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", chainEnvValue(index, "FHEVM_EXECUTOR_CONTRACT_ADDRESS", "FHEVM_EXECUTOR_CONTRACT_ADDRESS")],
       ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", chainEnvValue(index, "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "PROTOCOL_CONFIG_CONTRACT_ADDRESS")],
+      ...Object.entries(keyVerificationEnv(testSuiteEnv, index)),
     ].flatMap(([name, value]) => ["-e", `${name}=${value}`]);
   const trafficTargets: TrafficTarget[] = hostChains.map((chain, index) => ({
     label: chain.key,

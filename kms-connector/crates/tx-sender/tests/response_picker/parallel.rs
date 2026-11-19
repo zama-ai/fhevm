@@ -20,6 +20,8 @@ use tx_sender::core::{Config, DbKmsResponsePicker, KmsResponsePicker};
 #[case::crsgen(TestResponseType::Crsgen)]
 #[case::new_kms_context(TestResponseType::NewKmsContext)]
 #[case::epoch_result(TestResponseType::EpochResult)]
+#[case::context_destruction(TestResponseType::ContextDestruction)]
+#[case::epoch_destruction(TestResponseType::EpochDestruction)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_parallel_response_picking(
@@ -129,6 +131,12 @@ async fn check_no_uncompleted_response_in_db(
         }
         TestResponseType::EpochResult => {
             "SELECT COUNT(epoch_id) FROM epoch_result_responses WHERE status = 'pending'"
+        }
+        TestResponseType::ContextDestruction => {
+            "SELECT COUNT(context_id) FROM kms_context_destruction_responses WHERE status = 'pending'"
+        }
+        TestResponseType::EpochDestruction => {
+            "SELECT COUNT(epoch_id) FROM kms_epoch_destruction_responses WHERE status = 'pending'"
         }
     };
     let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;

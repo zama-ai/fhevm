@@ -129,6 +129,19 @@ describe("assertRelayerReadiness", () => {
     expect((thrown as AggregateError).errors).toEqual([expect.any(Error), closeFailure]);
   });
 
+  it("checks relayer-http on GET /healthz", async () => {
+    const relayerHttpEnv = { ...env, relayerBUrl: undefined, useRelayerHttp: true };
+    await assertRelayerReadiness({ env: relayerHttpEnv });
+    expect(mocks.clients).toHaveLength(1);
+    expect(mocks.clients[0]?.isReady).toHaveBeenCalledWith("/healthz");
+
+    mocks.clients.length = 0;
+    mocks.readiness.set("https://legacy.example", false);
+    await expect(assertRelayerReadiness({ env: relayerHttpEnv })).rejects.toThrow(
+      "relayer-http at https://legacy.example failed the readiness check (GET /healthz); pass --no-readiness-check to proceed.",
+    );
+  });
+
   it("does not allocate clients when readiness is explicitly skipped", async () => {
     await assertRelayerReadiness({ env, skipReadiness: true });
     expect(mocks.clients).toEqual([]);

@@ -8,8 +8,9 @@ pub mod kms_response;
 pub use event::{ProtocolEvent, ProtocolEventKind};
 pub use grpc::{KmsGrpcRequest, KmsGrpcResponse, KmsSendResponse};
 pub use kms_response::{
-    CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponse, KmsResponseKind,
-    NewKmsContextResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse,
+    ContextDestructionResponse, CrsgenResponse, EpochDestructionResponse, EpochResultResponse,
+    KeygenResponse, KmsResponse, KmsResponseKind, NewKmsContextResponse, PrepKeygenResponse,
+    PublicDecryptionResponse, UserDecryptionResponse,
 };
 
 use alloy::{

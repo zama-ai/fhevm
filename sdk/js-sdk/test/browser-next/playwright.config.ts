@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 // Single source of truth for slot ids (test/infra/config.ts). Injected into the
 // client bundle as NEXT_PUBLIC_FHEVM_SLOT_* so the browser cells stay version-agnostic.
-import { CURRENT_SLOT, LEGACY_SLOT } from '../infra/config.js';
+import { CURRENT_SLOT } from '../infra/config.js';
 
 // Absolute path to test/keys, passed to the Next server so the bundled gateway
 // route resolves keys without relying on import.meta.url (Turbopack rewrites it).
@@ -29,8 +29,7 @@ export default defineConfig({
       NEXT_PUBLIC_FHEVM_TEST_THREADS: process.env.FHEVM_TEST_THREADS ?? 'st',
       NEXT_PUBLIC_FHEVM_TEST_WASM_LOAD: process.env.FHEVM_TEST_WASM_LOAD ?? 'embedded-base64',
       NEXT_PUBLIC_FHEVM_TEST_MODULE: process.env.FHEVM_TEST_MODULE ?? 'kms',
-      // Slot ids from config.ts → browser bundle (see app/_diag/slots.js).
-      NEXT_PUBLIC_FHEVM_SLOT_LEGACY: LEGACY_SLOT,
+      // Slot id from config.ts → browser bundle (see app/_diag/slots.js).
       NEXT_PUBLIC_FHEVM_SLOT_CURRENT: CURRENT_SLOT,
     },
   },

@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test';
 // the server, not in the browser.
 test.use({ javaScriptEnabled: false });
 
-test('ssr-node: server component runs init + encrypt euint64 against the v13 slot', async ({ page }) => {
+test('ssr-node: server component runs init + encrypt euint64 against the current slot', async ({ page }) => {
   await page.goto('/encrypt-ssr');
 
   const result = page.locator('#result');

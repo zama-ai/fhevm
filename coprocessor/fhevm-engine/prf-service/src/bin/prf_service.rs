@@ -9,7 +9,12 @@ use fhevm_engine_common::{
 };
 use prf_service::{Config, PrfService};
 use sqlx::postgres::PgPoolOptions;
-use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    num::{NonZeroU32, NonZeroUsize},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
@@ -46,6 +51,19 @@ struct Args {
     /// Requests in progress of one connector in this pod.
     #[arg(long, env = "PRF_MAX_IN_FLIGHT_PER_CONNECTOR", default_value = "256")]
     max_in_flight_per_connector: NonZeroUsize,
+
+    /// Bytes of response bodies in memory, in this pod. When full, a request waits 5 s, then `503`.
+    #[arg(long, env = "PRF_MAX_BODY_BYTES", default_value = "67108864")]
+    max_body_bytes: NonZeroU32,
+
+    /// Bytes of response bodies in memory for one connector, in this pod. Above it: `429`. One larger
+    /// body is served alone.
+    #[arg(
+        long,
+        env = "PRF_MAX_BODY_BYTES_PER_CONNECTOR",
+        default_value = "8388608"
+    )]
+    max_body_bytes_per_connector: NonZeroU32,
 
     /// Time to serve after SIGTERM, closing each connection after its response, before the stop.
     #[arg(long, env = "PRF_SHUTDOWN_DELAY", default_value = "0s", value_parser = humantime::parse_duration)]
@@ -136,6 +154,8 @@ async fn main() -> anyhow::Result<()> {
             max_in_flight_per_connector: args.max_in_flight_per_connector,
             max_adds_per_connector: MAX_ADDS_PER_CONNECTOR,
             pad_poll_interval: PAD_POLL_INTERVAL,
+            max_body_bytes: args.max_body_bytes,
+            max_body_bytes_per_connector: args.max_body_bytes_per_connector,
         },
         pool,
         cancel_token.clone(),
@@ -157,4 +177,21 @@ async fn main() -> anyhow::Result<()> {
     };
     telemetry::flush();
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refuses_an_empty_body_budget() {
+        for flag in ["--max-body-bytes=0", "--max-body-bytes-per-connector=0"] {
+            let error = Args::try_parse_from(["prf-service", flag]).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                clap::error::ErrorKind::ValueValidation,
+                "{flag}"
+            );
+        }
+    }
 }

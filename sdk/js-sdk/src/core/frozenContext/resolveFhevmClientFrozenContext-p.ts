@@ -7,6 +7,7 @@ import { addressToChecksummedAddress, asAddress } from '../base/address.js';
 import { executeWithBatching } from '../base/promise.js';
 import { assertIsHostContractVersionOf, getHostContractVersion } from '../host-contracts/HostContractVersion-p.js';
 import { pubKeyCrsVersionForChain } from '../runtime/pubKeyCrsVersionForChain-p.js';
+import { assertFhevmChainContracts } from '../chains/utils.js';
 import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -22,13 +23,16 @@ import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js'
  * to resolve or store here.
  *
  * It also reads `getVersion()` on the configured host contracts (ACL,
- * InputVerifier, KMSVerifier and, if configured, ProtocolConfig), in one batched
+ * InputVerifier, KMSVerifier and ProtocolConfig), in one batched
  * call, to check that each address points at the expected contract. The
  * versions themselves are not stored: the SDK does not branch on them.
  *
  * @internal
  */
 export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChain>): Promise<FhevmClientFrozenContext> {
+  // Chains built from JS/JSON may bypass `defineFhevmChain`: validate here too.
+  assertFhevmChainContracts(fhevm.chain);
+
   const aclAddress: ChecksummedAddress = addressToChecksummedAddress(
     asAddress(fhevm.chain.fhevm.contracts.acl.address),
   );
@@ -38,11 +42,9 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
   const kmsVerifierAddress: ChecksummedAddress = addressToChecksummedAddress(
     asAddress(fhevm.chain.fhevm.contracts.kmsVerifier.address),
   );
-  // ProtocolConfig only exists on v0.14+ deployments — absent on older chains.
-  const protocolConfigAddress: ChecksummedAddress | undefined =
-    fhevm.chain.fhevm.contracts.protocolConfig === undefined
-      ? undefined
-      : addressToChecksummedAddress(asAddress(fhevm.chain.fhevm.contracts.protocolConfig.address));
+  const protocolConfigAddress: ChecksummedAddress = addressToChecksummedAddress(
+    asAddress(fhevm.chain.fhevm.contracts.protocolConfig.address),
+  );
 
   // Identity check only: each `getVersion()` result must name the expected contract.
   const [aclVersion, inputVerifierVersion, kmsVerifierVersion, protocolConfigVersion] =
@@ -51,19 +53,19 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
         () => getHostContractVersion(fhevm, { address: aclAddress }),
         () => getHostContractVersion(fhevm, { address: inputVerifierAddress }),
         () => getHostContractVersion(fhevm, { address: kmsVerifierAddress }),
-        ...(protocolConfigAddress === undefined
-          ? []
-          : [() => getHostContractVersion(fhevm, { address: protocolConfigAddress })]),
+        () => getHostContractVersion(fhevm, { address: protocolConfigAddress }),
       ],
       fhevm.options.batchRpcCalls,
-    )) as [HostContractVersion, HostContractVersion, HostContractVersion, HostContractVersion | undefined];
+    )) as [HostContractVersion, HostContractVersion, HostContractVersion, HostContractVersion];
 
   assertIsHostContractVersionOf(aclVersion, 'ACL');
   assertIsHostContractVersionOf(inputVerifierVersion, 'InputVerifier');
   assertIsHostContractVersionOf(kmsVerifierVersion, 'KMSVerifier');
-  if (protocolConfigVersion !== undefined) {
-    assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig', 'ProtocolConfigReplica');
-  }
+  // TODO: this check is deliberately loose and must become stricter. It accepts
+  // either contract on any chain and ignores the version numbers. It should
+  // instead require `ProtocolConfig` on the canonical host (Ethereum) and
+  // `ProtocolConfigReplica` elsewhere, and enforce the supported versions.
+  assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig', 'ProtocolConfigReplica');
 
   return createFhevmClientFrozenContext({
     pubKeyCrsVersion: pubKeyCrsVersionForChain(fhevm.chain),

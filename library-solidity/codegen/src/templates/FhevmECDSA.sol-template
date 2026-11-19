@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Contracts (last updated v5.5.0) (utils/cryptography/ECDSA.sol)
+// OpenZeppelin Contracts (last updated v5.7.0) (utils/cryptography/ECDSA.sol)
 
 pragma solidity ^0.8.20;
 
@@ -125,8 +125,8 @@ library FhevmECDSA {
      * be too long), and then calling {MessageHashUtils-toEthSignedMessageHash} on it.
      */
     function recover(bytes32 hash, bytes memory signature) internal pure returns (address) {
-        (address recovered, RecoverError error, bytes32 errorArg) = tryRecover(hash, signature);
-        _throwError(error, errorArg);
+        (address recovered, RecoverError err, bytes32 errorArg) = tryRecover(hash, signature);
+        _throwError(err, errorArg);
         return recovered;
     }
 
@@ -134,8 +134,8 @@ library FhevmECDSA {
      * @dev Variant of {recover} that takes a signature in calldata
      */
     function recoverCalldata(bytes32 hash, bytes calldata signature) internal pure returns (address) {
-        (address recovered, RecoverError error, bytes32 errorArg) = tryRecoverCalldata(hash, signature);
-        _throwError(error, errorArg);
+        (address recovered, RecoverError err, bytes32 errorArg) = tryRecoverCalldata(hash, signature);
+        _throwError(err, errorArg);
         return recovered;
     }
 
@@ -161,8 +161,8 @@ library FhevmECDSA {
      * @dev Overload of {ECDSA-recover} that receives the `r` and `vs` short-signature fields separately.
      */
     function recover(bytes32 hash, bytes32 r, bytes32 vs) internal pure returns (address) {
-        (address recovered, RecoverError error, bytes32 errorArg) = tryRecover(hash, r, vs);
-        _throwError(error, errorArg);
+        (address recovered, RecoverError err, bytes32 errorArg) = tryRecover(hash, r, vs);
+        _throwError(err, errorArg);
         return recovered;
     }
 
@@ -203,8 +203,8 @@ library FhevmECDSA {
      * `r` and `s` signature fields separately.
      */
     function recover(bytes32 hash, uint8 v, bytes32 r, bytes32 s) internal pure returns (address) {
-        (address recovered, RecoverError error, bytes32 errorArg) = tryRecover(hash, v, r, s);
-        _throwError(error, errorArg);
+        (address recovered, RecoverError err, bytes32 errorArg) = tryRecover(hash, v, r, s);
+        _throwError(err, errorArg);
         return recovered;
     }
 
@@ -273,14 +273,14 @@ library FhevmECDSA {
     /**
      * @dev Optionally reverts with the corresponding custom error according to the `error` argument provided.
      */
-    function _throwError(RecoverError error, bytes32 errorArg) private pure {
-        if (error == RecoverError.NoError) {
+    function _throwError(RecoverError err, bytes32 errorArg) private pure {
+        if (err == RecoverError.NoError) {
             return; // no error: do nothing
-        } else if (error == RecoverError.InvalidSignature) {
+        } else if (err == RecoverError.InvalidSignature) {
             revert ECDSAInvalidSignature();
-        } else if (error == RecoverError.InvalidSignatureLength) {
+        } else if (err == RecoverError.InvalidSignatureLength) {
             revert ECDSAInvalidSignatureLength(uint256(errorArg));
-        } else if (error == RecoverError.InvalidSignatureS) {
+        } else if (err == RecoverError.InvalidSignatureS) {
             revert ECDSAInvalidSignatureS(errorArg);
         }
     }

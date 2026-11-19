@@ -75,6 +75,18 @@ ENV CI=true
 
 RUN npm install -g pnpm@11.9.0
 
+# cli-js-sdk consumes @fhevm/sdk from source (file:../js-sdk/src), so build
+# sdk/js-sdk first, at the path its lockfile resolves from /cli. Only the
+# emit steps: lint/format checks run in js-sdk CI and need bash.
+WORKDIR /js-sdk
+COPY sdk/js-sdk ./
+RUN npm ci && \
+    npm run clean && \
+    npm run codegen:loaders && \
+    npm run build:cjs && \
+    npm run build:esm && \
+    npm run build:types
+
 WORKDIR /cli
 COPY sdk/cli-js-sdk ./
 

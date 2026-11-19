@@ -1,0 +1,36 @@
+{{- if and .Values.coprocessorProxy.enabled (dig "certManager" "enabled" false (default dict .Values.coprocessorProxy.tls)) -}}
+{{- $name := include "coprocessorProxyName" . -}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ $name }}
+  name: {{ $name }}-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ $name }}
+  name: {{ $name }}
+spec:
+  secretName: {{ .Values.coprocessorProxy.tls.secretName | quote }}
+  dnsNames:
+    - {{ $name }}
+    - {{ $name }}.{{ .Release.Namespace }}.svc
+    - {{ $name }}.{{ .Release.Namespace }}.svc.cluster.local
+  # The proxy reads its certificate at startup only: a long lifetime avoids renewals, and a
+  # re-issue keeps the key the running proxy still serves
+  duration: 87600h  # 10 years
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Never
+  issuerRef:
+    kind: Issuer
+    name: {{ $name }}-selfsigned
+{{- end -}}

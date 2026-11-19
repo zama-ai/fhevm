@@ -2,7 +2,7 @@ use crate::core::{
     config::Config,
     event_processor::{
         AclCheck, CiphertextManager, HostRpcClient, ProcessingError, RequestCheckError,
-        RequestCheckKind, ciphertext::VerifiedCiphertexts,
+        RequestCheckKind, SIGNING_SCHEMES, ciphertext::VerifiedCiphertexts,
     },
 };
 use alloy::{
@@ -25,9 +25,7 @@ use fhevm_host_bindings::acl::ACL::{
 };
 use futures::future::try_join_all;
 use kms_connector_api::ErrorCode;
-use kms_grpc::kms::v1::{
-    Eip712DomainMsg, PublicDecryptionRequest, SigningSchemeType, UserDecryptionRequest,
-};
+use kms_grpc::kms::v1::{Eip712DomainMsg, PublicDecryptionRequest, UserDecryptionRequest};
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
@@ -433,8 +431,7 @@ where
                 extra_data: extra_data.to_vec(),
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
-                // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
-                signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
+                signing_schemes: SIGNING_SCHEMES.to_vec(),
             };
 
             Ok(user_decryption_request.into())
@@ -447,8 +444,7 @@ where
                 extra_data: extra_data.to_vec(),
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
-                // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
-                signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
+                signing_schemes: SIGNING_SCHEMES.to_vec(),
             };
             Ok(public_decryption_request.into())
         }

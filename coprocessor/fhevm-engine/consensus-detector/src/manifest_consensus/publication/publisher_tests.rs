@@ -2182,7 +2182,13 @@ async fn published_manifest_contains_replay_that_would_add_a_producer() -> anyho
     let a = computed_handle(1);
     sqlx::query("INSERT INTO keys (key_id_gw,key_id,pks_key,sks_key,chain_id,block_hash) VALUES ($1,$2,''::bytea,''::bytea,42,$3)")
         .bind(computed_handle(0xa1).as_slice()).bind(computed_handle(0xa2).as_slice()).bind(b.hash.as_slice()).execute(&pool).await?;
-    sqlx::query("INSERT INTO ciphertext_digest (host_chain_id,key_id_gw,handle,ciphertext,ciphertext128,ciphertext128_format) VALUES (42,$1,$2,$3,$4,11)")
+    // partial_block() already seeds a minimal squash row for `a`; override it
+    // with the full digest row this manifest consumes.
+    sqlx::query("INSERT INTO ciphertext_digest (host_chain_id,key_id_gw,handle,ciphertext,ciphertext128,ciphertext128_format) VALUES (42,$1,$2,$3,$4,11)
+                 ON CONFLICT (handle) DO UPDATE
+                 SET host_chain_id=EXCLUDED.host_chain_id, key_id_gw=EXCLUDED.key_id_gw,
+                     ciphertext=EXCLUDED.ciphertext, ciphertext128=EXCLUDED.ciphertext128,
+                     ciphertext128_format=EXCLUDED.ciphertext128_format")
         .bind(computed_handle(0xa1).as_slice()).bind(a.as_slice()).bind(computed_handle(0xa3).as_slice()).bind(computed_handle(0xa4).as_slice()).execute(&pool).await?;
     discover_blocks_for_consensus_epoch(
         &pool,

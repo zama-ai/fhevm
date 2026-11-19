@@ -33,7 +33,7 @@ use fhevm_host_bindings::{
     },
 };
 use sqlx::{Pool, Postgres};
-use std::{collections::HashSet, time::Instant};
+use std::time::Instant;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, info_span, warn};
@@ -124,13 +124,8 @@ where
 
     /// Re-validates the cached-valid KMS contexts and epochs against `ProtocolConfig`.
     ///
-    /// Used in case of:
-    /// * a missed event and a failing catchup mechanism
-    /// * if KMS Core is unable to return the full list of destroyed epochs tied to a given
-    ///   context. This can happen if a context destruction is retried multiple times, and KMS
-    ///   Core is restarted in the middle of the process as full list of epochs lives in RAM
+    /// Used in case of a missed event and a failing catchup mechanism.
     pub async fn revalidate_context_cache(&self) -> anyhow::Result<()> {
-        let mut destroyed_contexts = HashSet::new();
         let context_ids =
             sqlx::query_scalar!("SELECT id FROM kms_context WHERE is_valid = TRUE ORDER BY id")
                 .fetch_all(&self.db_pool)
@@ -146,7 +141,6 @@ where
             if !is_valid_context {
                 warn!("KMS context #{context_id:#066x} is no longer valid. Invalidating...");
                 invalidate_kms_context(&self.db_pool, context_id).await?;
-                destroyed_contexts.insert(context_id);
             }
         }
 
@@ -169,14 +163,12 @@ where
                 continue;
             };
 
-            // Epochs of a destroyed context are destroyed with it: no need to check on-chain
-            let epoch_valid = !destroyed_contexts.contains(&context_id)
-                && self
-                    .protocol_config_contract
-                    .isValidEpochForContext(context_id, epoch_id)
-                    .block(BlockId::finalized())
-                    .call()
-                    .await?;
+            let epoch_valid = self
+                .protocol_config_contract
+                .isValidEpochForContext(context_id, epoch_id)
+                .block(BlockId::finalized())
+                .call()
+                .await?;
             if !epoch_valid {
                 warn!(
                     "KMS epoch #{epoch_id:#066x} (context #{context_id:#066x}) is no longer valid. Invalidating..."

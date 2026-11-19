@@ -13,6 +13,7 @@ mod sem_evm_rpc_provider_tests {
     }
 
     #[tokio::test]
+    #[ignore = "Require stable RPC endpoints"]
     async fn report_provider_workability() {
         // 1. Force initialize tracing to stay informed during async calls
         let subscriber = FmtSubscriber::builder()
@@ -271,6 +272,7 @@ mod sem_evm_rpc_provider_tests {
     }
 
     #[tokio::test]
+    #[ignore = "Require stable RPC endpoints"]
     async fn finality_from_tag_returns_block_behind_head() {
         let provider =
             SemEvmRpcProvider::new(FINALITY_TEST_URL.to_string(), 5, true, FINALITY_TEST_DEPTH)
@@ -290,6 +292,7 @@ mod sem_evm_rpc_provider_tests {
     }
 
     #[tokio::test]
+    #[ignore = "Require stable RPC endpoints"]
     async fn finality_from_depth_subtracts_depth() {
         let provider =
             SemEvmRpcProvider::new(FINALITY_TEST_URL.to_string(), 5, false, FINALITY_TEST_DEPTH)
@@ -314,6 +317,7 @@ mod sem_evm_rpc_provider_tests {
     }
 
     #[tokio::test]
+    #[ignore = "Require stable RPC endpoints"]
     async fn get_final_block_number_switches_strategy() {
         // Head moves between calls: allow a few blocks of drift when comparing
         // the switcher's result against the strategy called directly.

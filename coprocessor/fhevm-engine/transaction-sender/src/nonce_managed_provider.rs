@@ -157,4 +157,8 @@ where
     pub fn inner(&self) -> &P {
         &self.provider
     }
+
+    pub fn signer_address(&self) -> Option<Address> {
+        self.signer_address
+    }
 }

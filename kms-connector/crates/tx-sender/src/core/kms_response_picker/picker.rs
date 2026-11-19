@@ -153,6 +153,12 @@ impl DbKmsResponsePicker {
             KmsResponseNotification::Crsgen => self.pick_crsgen_responses().await,
             KmsResponseNotification::NewKmsContext => self.pick_new_kms_context_responses().await,
             KmsResponseNotification::EpochResult => self.pick_epoch_result_responses().await,
+            KmsResponseNotification::ContextDestruction => {
+                self.pick_context_destruction_responses().await
+            }
+            KmsResponseNotification::EpochDestruction => {
+                self.pick_epoch_destruction_responses().await
+            }
         }
     }
 
@@ -285,7 +291,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE new_kms_context_responses.context_id = resp.context_id
-                RETURNING resp.context_id, created_at, otlp_context
+                RETURNING resp.context_id, signature, extra_data, created_at, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -308,7 +314,8 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE epoch_result_responses.epoch_id = resp.epoch_id
-                RETURNING resp.context_id, resp.epoch_id, keys, crs_list, created_at, otlp_context
+                RETURNING resp.context_id, resp.epoch_id, keys, crs_list, signature, extra_data,
+                    created_at, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -316,6 +323,52 @@ impl DbKmsResponsePicker {
         .await?
         .iter()
         .map(kms_response::from_epoch_result_row)
+        .collect()
+    }
+
+    async fn pick_context_destruction_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE kms_context_destruction_responses
+                SET status = 'under_process'
+                FROM (
+                    SELECT context_id
+                    FROM kms_context_destruction_responses
+                    WHERE status = 'pending'
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE kms_context_destruction_responses.context_id = resp.context_id
+                RETURNING resp.context_id, signature, extra_data, created_at, otlp_context
+            ",
+        )
+        .bind(self.responses_batch_size as i16)
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(kms_response::from_context_destruction_response_row)
+        .collect()
+    }
+
+    async fn pick_epoch_destruction_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE kms_epoch_destruction_responses
+                SET status = 'under_process'
+                FROM (
+                    SELECT epoch_id
+                    FROM kms_epoch_destruction_responses
+                    WHERE status = 'pending'
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE kms_epoch_destruction_responses.epoch_id = resp.epoch_id
+                RETURNING resp.epoch_id, signature, extra_data, created_at, otlp_context
+            ",
+        )
+        .bind(self.responses_batch_size as i16)
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(kms_response::from_epoch_destruction_response_row)
         .collect()
     }
 }

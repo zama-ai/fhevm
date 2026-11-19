@@ -48,7 +48,8 @@ endpoint_addresses = ["kms-connector-endpoint-1:8080", "kms-connector-endpoint-2
 # ENV: KMS_CONNECTOR_MAX_BODY_BYTES
 # max_body_bytes = 1048576
 
-# How long the proxy waits for the client to send request bytes (optional, defaults to "30s")
+# How long the client has to send its whole request body, once the proxy has received the request
+# head (optional, defaults to "30s")
 # ENV: KMS_CONNECTOR_REQUEST_READ_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # request_read_timeout = "30s"
 

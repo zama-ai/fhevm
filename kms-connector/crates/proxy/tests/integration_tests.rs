@@ -256,6 +256,43 @@ async fn test_rejects_oversized_bodies() {
 }
 
 #[tokio::test]
+async fn test_drops_bodies_sent_too_slowly() {
+    let endpoint = StubEndpoint::start().await;
+    let t = TestProxy::start_with_config(
+        vec![endpoint.addr.to_string().parse().unwrap()],
+        vec![endpoint],
+        |config| config.request_read_timeout = Duration::from_secs(1),
+    )
+    .await;
+
+    // Each byte comes well within the timeout, but the whole body takes more than twice as long.
+    let status = send_dripped(&t, b"{    }", Duration::from_millis(400)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(t.endpoints[0].hits(), 0, "the endpoint must not handle it");
+}
+
+#[tokio::test]
+async fn test_request_read_timeout_does_not_bound_the_answer() {
+    let endpoint = StubEndpoint::start().await;
+    let t = TestProxy::start_with_config(
+        vec![endpoint.addr.to_string().parse().unwrap()],
+        vec![endpoint],
+        |config| config.request_read_timeout = Duration::from_millis(500),
+    )
+    .await;
+
+    // The body is sent at once: the endpoint can then take longer than the timeout to answer.
+    let response = t
+        .post(PUBLIC_DECRYPTION_ROUTE, "{}")
+        .await
+        .header("x-stub-delay-ms", "1000")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn test_passes_endpoint_errors_through() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
 
@@ -426,13 +463,9 @@ async fn send_chunked_signed_for(
     chunk_sizes: &[usize],
     signed_body: &[u8],
 ) -> StatusCode {
-    let addr = t.addr;
-    let auth = auth_header(&sender(), PUBLIC_DECRYPTION_ROUTE, signed_body).await;
-    let mut request = format!(
-        "POST {PUBLIC_DECRYPTION_ROUTE} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
-         Content-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
-    )
-    .into_bytes();
+    let mut request = signed_head(t, signed_body, "Transfer-Encoding: chunked")
+        .await
+        .into_bytes();
     for size in chunk_sizes {
         request.extend_from_slice(format!("{size:x}\r\n").as_bytes());
         request.extend(std::iter::repeat_n(b' ', *size));
@@ -440,6 +473,42 @@ async fn send_chunked_signed_for(
     }
     request.extend_from_slice(b"0\r\n\r\n");
     send_raw(t, &request).await
+}
+
+/// Sends a request to the public decryption route with its `body` written one byte every
+/// `interval`, and returns the response status.
+async fn send_dripped(t: &TestProxy, body: &'static [u8], interval: Duration) -> StatusCode {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let head = signed_head(t, body, &format!("Content-Length: {}", body.len())).await;
+    let (mut reader, mut writer) = tokio::io::split(t.tls.connect(t.addr).await);
+    writer.write_all(head.as_bytes()).await.unwrap();
+    // Reads the answer while the body is written, as the proxy may answer before its end: the
+    // writes then fail.
+    let drip = tokio::spawn(async move {
+        for byte in body {
+            tokio::time::sleep(interval).await;
+            if writer.write_all(&[*byte]).await.is_err() || writer.flush().await.is_err() {
+                break;
+            }
+        }
+    });
+    let mut response = Vec::new();
+    // The server may close without a TLS `close_notify`, which surfaces as an EOF error.
+    let _ = reader.read_to_end(&mut response).await;
+    drip.abort();
+    response_status(&response)
+}
+
+/// The head of a request to the public decryption route, signed for `signed_body`. `framing` is
+/// the header that tells how the body is sent (`Content-Length` or `Transfer-Encoding`).
+async fn signed_head(t: &TestProxy, signed_body: &[u8], framing: &str) -> String {
+    let addr = t.addr;
+    let auth = auth_header(&sender(), PUBLIC_DECRYPTION_ROUTE, signed_body).await;
+    format!(
+        "POST {PUBLIC_DECRYPTION_ROUTE} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
+         Content-Type: application/json\r\n{framing}\r\nConnection: close\r\n\r\n"
+    )
 }
 
 /// Sends raw request bytes over TLS and returns the response status.
@@ -452,7 +521,12 @@ async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
     let mut response = Vec::new();
     // The server may close without a TLS `close_notify`, which surfaces as an EOF error.
     let _ = stream.read_to_end(&mut response).await;
-    let response = String::from_utf8_lossy(&response);
+    response_status(&response)
+}
+
+/// The status of a raw HTTP/1.1 response.
+fn response_status(response: &[u8]) -> StatusCode {
+    let response = String::from_utf8_lossy(response);
     response
         .split_whitespace()
         .nth(1)

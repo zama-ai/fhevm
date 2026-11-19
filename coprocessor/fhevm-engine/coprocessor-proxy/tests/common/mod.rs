@@ -22,8 +22,8 @@ use coprocessor_proxy::{
     monitoring::health,
 };
 use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
-    IProtocolConfigBaseCalls, KmsNode, getCurrentKmsContextIdCounterCall,
-    getKmsNodesForContextCall, isValidKmsContextCall,
+    IProtocolConfigBaseCalls, KmsNode, getCurrentKmsContextIdCall, getKmsNodesForContextCall,
+    isValidKmsContextCall,
 };
 use http::uri::{Authority, PathAndQuery};
 use serde_json::{Value, json};
@@ -46,6 +46,9 @@ pub const SENDER_KEY: &str = "0x010101010101010101010101010101010101010101010101
 pub const ACCEPTED: &str = "auth_body_mismatch";
 /// [`TestProxy::answer_code`] for a signer still unknown after one read of the KMS tx-senders.
 pub const UNKNOWN_SIGNER: &str = "auth_unknown_signer";
+
+/// The body of `x-stub-large-body`: more than the socket buffers between the proxy and a client.
+pub const LARGE_BODY_BYTES: usize = 64 << 20;
 
 /// The test proxy's own coprocessor signer address, the audience of the headers it accepts.
 pub const AUDIENCE: Address = Address::repeat_byte(0xa1);
@@ -225,6 +228,9 @@ async fn prf(
         )
             .into_response();
     }
+    if headers.contains_key("x-stub-large-body") {
+        return vec![7u8; LARGE_BODY_BYTES].into_response();
+    }
     let output = stub_output(&path);
     if headers.contains_key("x-stub-fail-mid-body") {
         // The header and the first 32 bytes, then, once the proxy has passed them on, the stream
@@ -379,13 +385,13 @@ fn answer(state: &mut RpcState, call: &Value) -> Response {
             .map(|index| &state.contexts[index])
     };
     let result = match IProtocolConfigBaseCalls::abi_decode(&hex::decode(data).unwrap()).unwrap() {
-        IProtocolConfigBaseCalls::getCurrentKmsContextIdCounter(_) => {
-            let counter = match state.contexts.len() {
-                0 => U256::ZERO,
-                n => context_id(n - 1),
-            };
-            Some(getCurrentKmsContextIdCounterCall::abi_encode_returns(
-                &counter,
+        IProtocolConfigBaseCalls::getCurrentKmsContextId(_) => {
+            let latest_active = (0..state.contexts.len())
+                .rev()
+                .find(|&index| state.contexts[index].active)
+                .map_or(U256::ZERO, context_id);
+            Some(getCurrentKmsContextIdCall::abi_encode_returns(
+                &latest_active,
             ))
         }
         IProtocolConfigBaseCalls::isValidKmsContext(call) => {

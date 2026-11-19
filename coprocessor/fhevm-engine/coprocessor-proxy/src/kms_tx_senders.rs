@@ -215,18 +215,20 @@ impl<P: Provider> Reader<P> {
     async fn read(&mut self, finalized: u64) -> anyhow::Result<HashSet<Address>> {
         // Every call reads the same block, so the set is one state of `ProtocolConfig`.
         let block = BlockId::number(finalized);
-        let counter = self
+        // No Active context has a later id. During a switch the outgoing context stays Active
+        // until it is destroyed, so every id up to this one is checked.
+        let latest_active = self
             .protocol_config
-            .getCurrentKmsContextIdCounter()
+            .getCurrentKmsContextId()
             .block(block)
             .call()
             .await
-            .context("getCurrentKmsContextIdCounter")?;
+            .context("getCurrentKmsContextId")?;
         let mut senders = HashSet::new();
-        let Some(mut context_id) = first_context_id(counter) else {
+        let Some(mut context_id) = first_context_id(latest_active) else {
             return Ok(senders);
         };
-        while context_id <= counter {
+        while context_id <= latest_active {
             let active = self
                 .protocol_config
                 .isValidKmsContext(context_id)
@@ -287,12 +289,13 @@ fn describe_transport_error(error: &TransportError) -> String {
     }
 }
 
-/// The first KMS context id under `counter`, the last id `ProtocolConfig` allocated. Ids are
-/// `KMS_CONTEXT_COUNTER_BASE` (host-contracts `shared/Constants.sol`: a type tag in the top byte)
-/// plus a counter from 1, so the first id keeps the counter's top byte. `None` before any context.
-fn first_context_id(counter: U256) -> Option<U256> {
+/// The first KMS context id, given the latest Active one. Ids are `KMS_CONTEXT_COUNTER_BASE`
+/// (host-contracts `shared/Constants.sol`: a type tag in the top byte) plus a counter from 1, so
+/// the first id keeps its top byte. `None` for 0: no context is Active yet.
+fn first_context_id(latest_active: U256) -> Option<U256> {
     const TYPE_TAG_SHIFT: usize = 248;
-    (!counter.is_zero()).then(|| ((counter >> TYPE_TAG_SHIFT) << TYPE_TAG_SHIFT) + U256::ONE)
+    (!latest_active.is_zero())
+        .then(|| ((latest_active >> TYPE_TAG_SHIFT) << TYPE_TAG_SHIFT) + U256::ONE)
 }
 
 #[cfg(test)]
@@ -313,8 +316,7 @@ mod tests {
         },
     };
     use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
-        KmsNode, getCurrentKmsContextIdCounterCall, getKmsNodesForContextCall,
-        isValidKmsContextCall,
+        KmsNode, getCurrentKmsContextIdCall, getKmsNodesForContextCall, isValidKmsContextCall,
     };
     use fhevm_sig_auth::SignerAllowlist;
     use std::{
@@ -336,8 +338,8 @@ mod tests {
         finalized_at(100)
     }
 
-    fn counter(n: u64) -> Bytes {
-        getCurrentKmsContextIdCounterCall::abi_encode_returns(&context_id(n)).into()
+    fn latest_active(n: u64) -> Bytes {
+        getCurrentKmsContextIdCall::abi_encode_returns(&context_id(n)).into()
     }
 
     fn valid(active: bool) -> Bytes {
@@ -383,15 +385,15 @@ mod tests {
             Address::repeat_byte(2),
             Address::repeat_byte(3),
         );
-        // Context 1 destroyed, 2 and 3 Active (a switch in progress), 4 Created.
+        // Context 1 destroyed, 2 and 3 Active (a switch in progress), 4 Created: past the latest
+        // Active context, it is not read.
         let (mut reader, asserter) = reader(&[
-            counter(4),
+            latest_active(3),
             valid(false),
             valid(true),
             nodes(&[a, b]),
             valid(true),
             nodes(&[b, c]),
-            valid(false),
         ]);
         assert_eq!(
             reader.poll().await.unwrap().unwrap().0,
@@ -401,8 +403,8 @@ mod tests {
 
         // Context 2 destroyed since: its nodes leave the set, and no node list is read again.
         asserter.push_success(&finalized_at(101));
-        asserter.push_success(&counter(4));
-        for active in [false, false, true, false] {
+        asserter.push_success(&latest_active(3));
+        for active in [false, false, true] {
             asserter.push_success(&valid(active));
         }
         assert_eq!(
@@ -415,14 +417,14 @@ mod tests {
     #[tokio::test]
     async fn no_context_is_no_tx_sender() {
         let (mut reader, asserter) =
-            reader(&[getCurrentKmsContextIdCounterCall::abi_encode_returns(&U256::ZERO).into()]);
+            reader(&[getCurrentKmsContextIdCall::abi_encode_returns(&U256::ZERO).into()]);
         assert!(reader.poll().await.unwrap().unwrap().0.is_empty());
         assert!(asserter.read_q().is_empty());
     }
 
     #[tokio::test]
     async fn a_failed_call_fails_the_whole_read() {
-        let (mut reader, asserter) = reader(&[counter(1)]);
+        let (mut reader, asserter) = reader(&[latest_active(1)]);
         asserter.push_failure_msg("execution reverted");
         assert!(reader.poll().await.is_err());
     }
@@ -478,7 +480,7 @@ mod tests {
     fn first_read(a: Address) -> Asserter {
         let asserter = Asserter::new();
         asserter.push_success(&finalized());
-        for answer in [counter(1), valid(true), nodes(&[a])] {
+        for answer in [latest_active(1), valid(true), nodes(&[a])] {
             asserter.push_success(&answer);
         }
         asserter
@@ -521,7 +523,7 @@ mod tests {
         let asserter = first_read(a);
         // Context 2 is Active at block 101; context 1 still is, its nodes already known.
         asserter.push_success(&finalized_at(101));
-        for answer in [counter(2), valid(true), valid(true), nodes(&[b])] {
+        for answer in [latest_active(2), valid(true), valid(true), nodes(&[b])] {
             asserter.push_success(&answer);
         }
         let provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
@@ -555,11 +557,11 @@ mod tests {
     async fn an_older_finalized_block_reads_no_contract_state() {
         let a = Address::repeat_byte(1);
         let asserter = first_read(a);
-        // A lagging RPC node, at a block before the context's activation.
+        // A lagging RPC node, at a block before the context's activation: none is Active there.
         asserter.push_success(&finalized_at(99));
-        for answer in [counter(1), valid(false)] {
-            asserter.push_success(&answer);
-        }
+        asserter.push_success(&Bytes::from(
+            getCurrentKmsContextIdCall::abi_encode_returns(&U256::ZERO),
+        ));
         let (provider, recorded) = recorded_provider(asserter);
         let signers = RefreshableSigners::default();
 
@@ -577,7 +579,7 @@ mod tests {
         asserter.push_success(&finalized_at(101));
         asserter.push_failure_msg("connection refused");
         asserter.push_success(&finalized_at(101));
-        for answer in [counter(2), valid(true), valid(true), nodes(&[b])] {
+        for answer in [latest_active(2), valid(true), valid(true), nodes(&[b])] {
             asserter.push_success(&answer);
         }
         let provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
@@ -592,7 +594,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_failed_read_keeps_the_last_set() {
         let a = Address::repeat_byte(1);
-        let (provider, asserter) = provider(&[counter(1), valid(true), nodes(&[a])]);
+        let (provider, asserter) = provider(&[latest_active(1), valid(true), nodes(&[a])]);
         asserter.push_failure_msg("connection refused");
         let signers = RefreshableSigners::default();
         let follower = follower(provider, &signers);
@@ -732,7 +734,7 @@ mod tests {
         // The hung poll consumes no answer: the mock answers a call once it is awaited. The next
         // poll finds context 2 Active at block 101.
         asserter.push_success(&finalized_at(101));
-        for answer in [counter(2), valid(true), valid(true), nodes(&[b])] {
+        for answer in [latest_active(2), valid(true), valid(true), nodes(&[b])] {
             asserter.push_success(&answer);
         }
         let (provider, recorded) = recorded_provider(asserter.clone());
@@ -770,13 +772,13 @@ mod tests {
         );
 
         // A contract call wraps the transport error in `alloy::contract::Error`.
-        let (mut counter_fails, asserter) = reader(&[]);
+        let (mut context_fails, asserter) = reader(&[]);
         asserter.push_success(&finalized());
         asserter.push_failure_msg(echo);
-        let err = counter_fails.poll().await.unwrap_err();
+        let err = context_fails.poll().await.unwrap_err();
         assert_eq!(
             describe_read_error(&err),
-            "getCurrentKmsContextIdCounter: JSON-RPC error -32603"
+            "getCurrentKmsContextId: JSON-RPC error -32603"
         );
 
         // No contract at the address: the call returns no data.
@@ -784,7 +786,7 @@ mod tests {
         let err = no_contract.poll().await.unwrap_err();
         assert_eq!(
             describe_read_error(&err),
-            "getCurrentKmsContextIdCounter: no contract at the address"
+            "getCurrentKmsContextId: no contract at the address"
         );
 
         for (error, described) in [
@@ -803,9 +805,9 @@ mod tests {
     }
 
     #[test]
-    fn the_first_context_id_follows_the_counters_type_tag() {
-        // `getCurrentKmsContextIdCounter` after the bootstrap context and one switch.
-        let counter = U256::from_be_bytes({
+    fn the_first_context_id_follows_the_type_tag() {
+        // `getCurrentKmsContextId` after the bootstrap context and one switch.
+        let latest = U256::from_be_bytes({
             let mut id = [0u8; 32];
             id[0] = 0x07;
             id[31] = 2;
@@ -814,7 +816,7 @@ mod tests {
         let mut first = [0u8; 32];
         first[0] = 0x07;
         first[31] = 1;
-        assert_eq!(first_context_id(counter), Some(U256::from_be_bytes(first)));
+        assert_eq!(first_context_id(latest), Some(U256::from_be_bytes(first)));
         assert_eq!(first_context_id(U256::ZERO), None);
     }
 }

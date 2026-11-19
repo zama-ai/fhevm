@@ -206,6 +206,7 @@ export const reportSchema = z.object({
     relayerApiPrefix: z.string().optional(),
     relayerBUrl: z.url().optional(),
     relayerBApiPrefix: z.string().optional(),
+    decryptTransport: z.enum(["gateway", "relayer-http"]).optional(),
     startedAt: z.iso.datetime(),
     endedAt: z.iso.datetime(),
     plannedRequests: integer,

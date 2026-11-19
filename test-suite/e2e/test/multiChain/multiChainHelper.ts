@@ -49,7 +49,7 @@ function parseHostChains(): ChainConfig[] {
     aclAddress: requireEnv('ACL_CONTRACT_ADDRESS'),
     kmsVerifierAddress: requireEnv('KMS_VERIFIER_CONTRACT_ADDRESS'),
     inputVerifierAddress: requireEnv('INPUT_VERIFIER_CONTRACT_ADDRESS'),
-    protocolConfigAddress: optionalEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
+    protocolConfigAddress: requireEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
     kmsGenerationAddress: requireKmsGenerationAddress(),
   };
   const chains: ChainConfig[] = [primary];
@@ -127,6 +127,7 @@ function primaryKeyVerification(): KeyVerification {
           acl: { address: primary.aclAddress as `0x${string}` },
           inputVerifier: { address: primary.inputVerifierAddress as `0x${string}` },
           kmsVerifier: { address: primary.kmsVerifierAddress as `0x${string}` },
+          protocolConfig: { address: primary.protocolConfigAddress as `0x${string}` },
           kmsGeneration: { address: primary.kmsGenerationAddress as `0x${string}` },
         },
         relayerUrl,
