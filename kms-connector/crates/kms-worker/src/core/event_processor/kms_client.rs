@@ -782,6 +782,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::event_processor::ProcessingErrorKind;
+    use std::future::ready;
 
     #[rstest::rstest]
     #[case(Code::Cancelled)]
@@ -836,5 +838,68 @@ mod tests {
         assert_eq!(result.unwrap_err().code(), code);
         assert_eq!(attempts, 1);
         assert_eq!(errors, 1);
+    }
+
+    #[rstest::rstest]
+    #[case(Code::InvalidArgument)]
+    #[case(Code::NotFound)]
+    #[case(Code::PermissionDenied)]
+    #[case(Code::FailedPrecondition)]
+    #[case(Code::OutOfRange)]
+    #[case(Code::Unimplemented)]
+    #[case(Code::Internal)]
+    #[case(Code::DataLoss)]
+    #[case(Code::Unauthenticated)]
+    #[tokio::test]
+    async fn sending_does_not_retry_non_retryable(#[case] code: Code) {
+        let mut attempts = 0;
+        let (errors, result) = send_request_with_retries(
+            3,
+            || {
+                attempts += 1;
+                ready(Err::<Response<u8>, _>(Status::new(code, "fatal")))
+            },
+            EventType::KeygenRequest,
+            |_| Ok(KmsSendResponse::Ack),
+        )
+        .await;
+        let error = result.unwrap_err();
+        assert_eq!(error.kind, ProcessingErrorKind::Irrecoverable);
+        assert_eq!(attempts, 1);
+        assert_eq!(errors, 1);
+    }
+
+    #[rstest::rstest]
+    #[case(Code::Cancelled, 2, 1)]
+    #[case(Code::DeadlineExceeded, 2, 1)]
+    #[case(Code::ResourceExhausted, 2, 1)]
+    #[case(Code::Unavailable, 2, 1)]
+    #[case(Code::Unknown, 2, 1)]
+    #[case(Code::AlreadyExists, 1, 0)]
+    #[tokio::test]
+    async fn sending_returns_ack(
+        #[case] code: Code,
+        #[case] expected_attempts: usize,
+        #[case] expected_errors: i16,
+    ) {
+        let mut attempts = 0;
+        let (errors, result) = send_request_with_retries(
+            3,
+            || {
+                attempts += 1;
+                let result = if attempts == 1 {
+                    Err(Status::new(code, "retry"))
+                } else {
+                    Ok(Response::new(42))
+                };
+                ready(result)
+            },
+            EventType::KeygenRequest,
+            |_| Ok(KmsSendResponse::Ack),
+        )
+        .await;
+        assert!(matches!(result, Ok(KmsSendResponse::Ack)));
+        assert_eq!(attempts, expected_attempts);
+        assert_eq!(errors, expected_errors);
     }
 }
