@@ -45,7 +45,6 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 const DEFAULT_BATCH_SIZE: usize = 10;
 pub(crate) const COPROCESSOR_CONTEXT_ID_1: U256 = U256::ONE;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
-const UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT: &str = "savepoint_upload_ciphertexts_task";
 
 pub(crate) async fn spawn_resubmit_task(
     pool_mngr: &PostgresPoolManager,
@@ -177,7 +176,6 @@ async fn run_uploader_loop(
                 let (item, needs_enqueue) = match job {
                     UploadJob::Normal(item) => (item, true),
                     UploadJob::DatabaseLock(mut item) => {
-                        create_upload_task_savepoint(&mut trx).await?;
                         let row = match sqlx::query!(
                             "
                             SELECT d.ciphertext128_format,
@@ -281,11 +279,8 @@ async fn run_uploader_loop(
                     // dead witness means reorg cleanup cancelled the
                     // publication while this job was queued: drop it.
                     let prep: anyhow::Result<bool> = async {
-                        if needs_enqueue {
-                            if !item.enqueue_upload_task(&mut trx).await? {
-                                return Ok(false);
-                            }
-                            create_upload_task_savepoint(&mut trx).await?;
+                        if needs_enqueue && !item.enqueue_upload_task(&mut trx).await? {
+                            return Ok(false);
                         }
                         Ok(true)
                     }
@@ -338,7 +333,15 @@ async fn run_uploader_loop(
                                 });
                             let is_fatal_db_error = is_fatal_upload_db_error(&err);
 
-                            preserve_upload_task_for_retry(trx, &err).await;
+                            // The SNS batch commits the pending upload independently.
+                            // Roll back this attempt; the resubmit loop can retry it.
+                            if let Err(rollback_err) = trx.rollback().await {
+                                error!(
+                                    error = %rollback_err,
+                                    upload_error = %err,
+                                    "Failed to roll back failed upload",
+                                );
+                            }
 
                             if is_s3_transient_error {
                                 ready_flag.store(false, Ordering::Release);
@@ -411,47 +414,6 @@ fn upload_task_error_into_execution_error(err: anyhow::Error) -> ExecutionError 
             Ok(err) => ExecutionError::DbError(err),
             Err(err) => ExecutionError::InternalError(err.to_string()),
         },
-    }
-}
-
-async fn create_upload_task_savepoint(
-    trx: &mut Transaction<'_, Postgres>,
-) -> Result<(), ExecutionError> {
-    sqlx::query(&format!("SAVEPOINT {UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT}"))
-        .execute(trx.as_mut())
-        .await?;
-
-    Ok(())
-}
-
-async fn rollback_to_upload_task_savepoint(
-    trx: &mut Transaction<'_, Postgres>,
-) -> Result<(), ExecutionError> {
-    sqlx::query(&format!(
-        "ROLLBACK TO SAVEPOINT {UPLOAD_CIPHERTEXTS_TASK_SAVEPOINT}"
-    ))
-    .execute(trx.as_mut())
-    .await?;
-
-    Ok(())
-}
-
-async fn preserve_upload_task_for_retry(
-    mut trx: Transaction<'_, Postgres>,
-    upload_error: &anyhow::Error,
-) {
-    if let Err(preserve_err) = async {
-        rollback_to_upload_task_savepoint(&mut trx).await?;
-        trx.commit().await?;
-        anyhow::Ok(())
-    }
-    .await
-    {
-        error!(
-            error = %preserve_err,
-            upload_error = %upload_error,
-            "Failed to preserve incomplete upload state",
-        );
     }
 }
 
@@ -1467,6 +1429,178 @@ mod tests {
             span: Span::none(),
             transaction_id: None,
         }
+    }
+
+    #[tokio::test]
+    #[serial(s3)]
+    #[cfg(not(feature = "gpu"))]
+    async fn failed_uploads_remain_pending_after_uploader_restart() -> anyhow::Result<()> {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("setup test db: {err}"))?;
+        let pool = PgPool::connect(db.db_url()).await?;
+        let localstack = localstack::start_localstack().await?;
+        let client = Arc::new(localstack::create_localstack_s3_client(localstack.host_port).await);
+        let task = sample_handle_item();
+        test_harness::db_utils::insert_ciphertext64(
+            &pool,
+            &task.handle,
+            task.ct64_compressed.as_ref(),
+        )
+        .await?;
+        test_harness::db_utils::insert_into_pbs_computations(
+            &pool,
+            task.host_chain_id.as_i64(),
+            &task.handle,
+        )
+        .await?;
+
+        // Match the SNS batch's atomic commit: completed work, CT128 bytes,
+        // and the pending upload must survive a later uploader rollback.
+        let mut batch = pool.begin().await?;
+        sqlx::query("INSERT INTO ciphertexts128 (handle, ciphertext) VALUES ($1, $2)")
+            .bind(&task.handle)
+            .bind(task.ct128.bytes())
+            .execute(batch.as_mut())
+            .await?;
+        sqlx::query("UPDATE pbs_computations SET is_completed = TRUE WHERE handle = $1")
+            .bind(&task.handle)
+            .execute(batch.as_mut())
+            .await?;
+        assert!(task.enqueue_upload_task(&mut batch).await?);
+        batch.commit().await?;
+
+        let conf = S3Config {
+            bucket: "upload-rollback-restart".to_owned(),
+            max_concurrent_uploads: 1,
+            retry_policy: S3RetryPolicy {
+                max_retries_per_upload: 1,
+                max_backoff: Duration::from_millis(1),
+                max_retries_timeout: Duration::from_secs(1),
+                recheck_duration: Duration::from_secs(1),
+                regular_recheck_duration: Duration::from_secs(1),
+            },
+            verify_sha256_checksum: false,
+        };
+        let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+
+        // The bucket intentionally does not exist. Exercise full rollback for
+        // both the direct job and a DB-resubmitted job on a fresh uploader.
+        for normal_job in [true, false] {
+            let (tx, rx) = mpsc::channel(1);
+            let token = CancellationToken::new();
+            let ready = Arc::new(AtomicBool::new(true));
+            let uploader = tokio::spawn(run_uploader_loop(
+                Arc::new(RwLock::new(rx)),
+                token.clone(),
+                client.clone(),
+                ready.clone(),
+                pool.clone(),
+                conf.clone(),
+                signer.clone(),
+            ));
+            if normal_job {
+                tx.send(UploadJob::Normal(task.clone())).await?;
+            } else {
+                try_resubmit(
+                    &pool,
+                    ready.clone(),
+                    tx.clone(),
+                    token.clone(),
+                    DEFAULT_BATCH_SIZE,
+                )
+                .await?;
+            }
+            tokio::time::timeout(Duration::from_secs(15), async {
+                while ready.load(Ordering::Acquire) {
+                    assert!(
+                        !uploader.is_finished(),
+                        "uploader exited before handling the failure"
+                    );
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await?;
+            token.cancel();
+            tokio::time::timeout(Duration::from_secs(5), uploader).await???;
+
+            let pending = fetch_pending_uploads(&pool, DEFAULT_BATCH_SIZE as i64).await?;
+            assert_eq!(pending.len(), 1, "rollback must retain the durable upload");
+            let UploadJob::DatabaseLock(pending) = &pending[0] else {
+                panic!("resubmission must lock the persisted upload");
+            };
+            assert_eq!(pending.handle, task.handle);
+            assert_eq!(pending.ct64_compressed, task.ct64_compressed);
+            assert_eq!(pending.ct128.bytes(), task.ct128.bytes());
+        }
+
+        pool.close().await;
+        client.create_bucket().bucket(&conf.bucket).send().await?;
+
+        // Recreate the uploader and DB pool. Only the production resubmit path
+        // supplies work now; no in-memory job is carried over from the failures.
+        let pool = PgPool::connect(db.db_url()).await?;
+        let (tx, rx) = mpsc::channel(1);
+        let token = CancellationToken::new();
+        let ready = Arc::new(AtomicBool::new(true));
+        let uploader = tokio::spawn(run_uploader_loop(
+            Arc::new(RwLock::new(rx)),
+            token.clone(),
+            client.clone(),
+            ready.clone(),
+            pool.clone(),
+            conf.clone(),
+            signer,
+        ));
+        try_resubmit(&pool, ready, tx.clone(), token.clone(), DEFAULT_BATCH_SIZE).await?;
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                let verified: bool = sqlx::query_scalar(
+                    "SELECT s3_publication_verified_at IS NOT NULL
+                        AND s3_publication_verified_digest = ciphertext
+                        AND s3_format_version = $2
+                     FROM ciphertext_digest WHERE handle = $1",
+                )
+                .bind(&task.handle)
+                .bind(CURRENT_S3_FORMAT_VERSION)
+                .fetch_one(&pool)
+                .await?;
+                if verified {
+                    break;
+                }
+                assert!(
+                    !uploader.is_finished(),
+                    "restarted uploader exited before publication"
+                );
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            Ok::<_, sqlx::Error>(())
+        })
+        .await??;
+        token.cancel();
+        tokio::time::timeout(Duration::from_secs(5), uploader).await???;
+        assert!(fetch_pending_uploads(&pool, DEFAULT_BATCH_SIZE as i64)
+            .await?
+            .is_empty());
+        for (key, expected) in [
+            (
+                s3_ct64_key(&task.handle, COPROCESSOR_CONTEXT_ID_1),
+                task.ct64_compressed.as_slice(),
+            ),
+            (
+                s3_ct128_key(&task.handle, COPROCESSOR_CONTEXT_ID_1),
+                task.ct128.bytes(),
+            ),
+        ] {
+            let object = client
+                .get_object()
+                .bucket(&conf.bucket)
+                .key(key)
+                .send()
+                .await?;
+            assert_eq!(object.body.collect().await?.into_bytes().as_ref(), expected);
+        }
+        Ok(())
     }
 
     async fn sample_attestation() -> (CiphertextAttestationPayload, Address, CiphertextAttestation)
