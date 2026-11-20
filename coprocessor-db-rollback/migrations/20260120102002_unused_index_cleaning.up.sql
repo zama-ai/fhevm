@@ -1,0 +1,110 @@
+-- Clearing 3 useless index taking around 6GB on testnet database:
+--  idx_ciphertexts_handle_not_null and idx_ciphertexts_ciphertext_null, idx_computations_pk
+--
+-- Stat of index used on testnet database 'coprocessor' to identify unused indexes
+
+-- coprocessor=> SELECT
+--     schemaname,
+--     relname AS table_name,
+--     indexrelname AS index_name,
+--     pg_size_pretty(pg_relation_size(indexrelid)) AS index_size,
+--     idx_scan,
+--     idx_tup_read,
+--     idx_tup_fetch,
+--     last_idx_scan
+-- FROM pg_stat_user_indexes
+-- WHERE last_idx_scan IS NULL                  -- Never scanned
+--    OR last_idx_scan < (NOW() - INTERVAL '1 hour')  -- Or scanned more than 1 hour ago
+-- ORDER BY
+--     last_idx_scan IS NULL DESC,              -- Never-scanned first
+--     last_idx_scan ASC NULLS FIRST,           -- Then oldest scans
+--     pg_relation_size(indexrelid) DESC,       -- Largest indexes first (for impact assessment)
+--     idx_scan ASC,
+--     indexrelname ASC;
+--  schemaname |      table_name       |                           index_name                            | index_size | idx_scan | idx_tup_read | idx_tup_fetch |         last_idx_scan         
+-- ------------+-----------------------+-----------------------------------------------------------------+------------+----------+--------------+---------------+-------------------------------
+--  public     | ciphertexts           | idx_ciphertexts_handle_not_null                                 | 1492 MB    |        0 |            0 |             0 | 
+--  public     | computations          | computations_errors_index                                       | 424 MB     |        0 |            0 |             0 | 
+--  public     | pbs_computations      | idx_pbs_computations_pending_created_at                         | 273 MB     |        0 |            0 |             0 | 
+--  public     | computations          | idx_computations_is_allowed                                     | 51 MB      |        0 |            0 |             0 | 
+--  public     | verify_proofs         | idx_verify_proofs_transactions                                  | 160 kB     |        0 |            0 |             0 | 
+--  public     | _sqlx_migrations      | _sqlx_migrations_pkey                                           | 16 kB      |        0 |            0 |             0 | 
+--  public     | delegate_user_decrypt | idx_delegate_user_decrypt_block_hash                            | 16 kB      |        0 |            0 |             0 | 
+--  public     | delegate_user_decrypt | idx_delegate_user_decrypt_on_gateway_reorg_out                  | 16 kB      |        0 |            0 |             0 | 
+--  public     | ciphertexts           | idx_ciphertexts_ciphertext_null                                 | 8192 bytes |        0 |            0 |             0 | 
+--  public     | dependence_chain      | idx_dependence_chain_processing_by_worker                       | 808 kB     |        2 |          449 |             2 | 2025-12-30 20:05:13.493114+00
+--  public     | dependence_chain      | idx_dependence_chain_worker_id                                  | 3056 kB    |  4080743 |    886000474 |       4080716 | 2025-12-31 12:57:15.207206+00
+--  public     | input_blobs           | input_blobs_pkey                                                | 8192 bytes |        1 |            0 |             0 | 2025-12-31 14:36:14.026587+00
+--  public     | ciphertexts           | idx_ciphertexts_ciphertext128_null                              | 128 MB     |        1 |      8604467 |       1311439 | 2026-01-06 11:23:56.187617+00
+--  public     | computations          | idx_computations_pk                                             | 4521 MB    |  3577647 |      5509663 |       3577647 | 2026-01-08 20:17:26.877748+00
+--  public     | computations          | idx_computations_dependence_chain                               | 105 MB     |  3135753 |   7155134577 |    7025082442 | 2026-01-08 20:17:27.586493+00
+--  public     | dependence_chain      | idx_pending_dependence_chain                                    | 816 kB     |   255220 |     23385243 |             0 | 2026-01-10 15:28:01.301323+00
+--  public     | delegate_user_decrypt | delegate_user_decrypt_delegator_delegate_contract_address_d_key | 40 kB      |      409 |          409 |           361 | 2026-01-13 23:53:18.702157+00
+--  public     | delegate_user_decrypt | delegate_user_decrypt_pkey                                      | 16 kB      |      435 |           26 |            26 | 2026-01-13 23:53:18.702157+00
+--  public     | computations          | idx_computations_created_at                                     | 40 MB      |    39783 |    246356585 |     140456265 | 2026-01-15 16:29:30.086643+00
+--  public     | verify_proofs         | idx_verify_proofs_verified_retry                                | 184 kB     |    34911 |      8948564 |         13991 | 2026-01-15 21:26:40.375146+00
+--  public     | ciphertexts           | idx_ciphertexts_created_at                                      | 83 MB      |    47827 |     11448129 |       4619012 | 2026-01-16 03:41:46.042194+00
+--  public     | tenants               | tenants_by_api_key                                              | 16 kB      |      194 |          194 |           194 | 2026-01-16 03:41:46.042194+00
+--  public     | dependence_chain      | idx_dependence_chain_last_updated_at                            | 144 kB     |       13 |        13162 |            16 | 2026-01-19 09:53:07.083768+00
+
+--  idx_ciphertexts_handle_not_null and idx_ciphertexts_ciphertext_null cannot be used, since ciphertext can't be null
+
+DROP INDEX IF EXISTS idx_ciphertexts_handle_not_null;
+DROP INDEX IF EXISTS idx_ciphertexts_ciphertext_null;
+
+-- coprocessor=> \d ciphertexts
+--                                 Table « public.ciphertexts »
+--       Colonne       |            Type             | Collationnement | NULL-able | Par défaut 
+-- --------------------+-----------------------------+-----------------+-----------+------------
+--  tenant_id          | integer                     |                 | not null  | 
+--  handle             | bytea                       |                 | not null  | 
+--  ciphertext         | bytea                       |                 | not null  | 
+--  ciphertext_version | smallint                    |                 | not null  | 
+--  ciphertext_type    | smallint                    |                 | not null  | 
+--  input_blob_hash    | bytea                       |                 |           | 
+--  input_blob_index   | integer                     |                 | not null  | 0
+--  created_at         | timestamp without time zone |                 |           | now()
+--  ciphertext128      | bytea                       |                 |           | 
+-- Index :
+--     "ciphertexts_pkey" PRIMARY KEY, btree (tenant_id, handle, ciphertext_version)
+--     "ciphertexts_handle_hash_idx" hash (handle)
+--     "idx_ciphertexts_ciphertext128_null" btree (ciphertext128) WHERE ciphertext128 IS NULL
+--     "idx_ciphertexts_ciphertext_null" btree (ciphertext) WHERE ciphertext IS NULL
+--     "idx_ciphertexts_created_at" btree (created_at) WHERE ciphertext128 IS NOT NULL
+--     "idx_ciphertexts_handle_not_null" btree (handle) WHERE ciphertext IS NOT NULL
+
+-- idx_computations_pk duplicate the primary key so it can be removed
+
+-- \d computations
+--                                   Table « public.computations »
+--        Colonne        |            Type             | Collationnement | NULL-able |  Par défaut   
+-- ----------------------+-----------------------------+-----------------+-----------+---------------
+--  tenant_id            | integer                     |                 | not null  | 
+--  output_handle        | bytea                       |                 | not null  | 
+--  dependencies         | bytea[]                     |                 | not null  | 
+--  fhe_operation        | smallint                    |                 | not null  | 
+--  created_at           | timestamp without time zone |                 | not null  | now()
+--  completed_at         | timestamp without time zone |                 |           | 
+--  is_scalar            | boolean                     |                 | not null  | 
+--  is_completed         | boolean                     |                 | not null  | false
+--  is_error             | boolean                     |                 | not null  | false
+--  error_message        | text                        |                 |           | 
+--  transaction_id       | bytea                       |                 | not null  | '\x00'::bytea
+--  dependence_chain_id  | bytea                       |                 |           | 
+--  is_allowed           | boolean                     |                 | not null  | false
+--  schedule_order       | timestamp without time zone |                 | not null  | now()
+--  uncomputable_counter | smallint                    |                 | not null  | 1
+-- Index :
+--     "computations_pkey" PRIMARY KEY, btree (tenant_id, output_handle, transaction_id)
+--     "computations_completed_index" btree (is_completed)
+--     "computations_errors_index" btree (is_error)
+--     "idx_computations_created_at" btree (created_at) WHERE is_completed = false
+--     "idx_computations_dependence_chain" btree (dependence_chain_id) WHERE is_completed = false AND is_error = false
+--     "idx_computations_is_allowed" btree (is_allowed) WHERE is_completed = false
+--     "idx_computations_pk" btree (tenant_id, output_handle, transaction_id)
+--     "idx_computations_schedule_order" btree (schedule_order) WHERE is_completed = false
+--     "idx_computations_transaction_id" btree (transaction_id)
+-- Triggers :
+--     work_updated_trigger_from_computations_insertions AFTER INSERT ON computations FOR EACH STATEMENT EXECUTE FUNCTION notify_work_available()
+
+DROP INDEX IF EXISTS idx_computations_pk;
