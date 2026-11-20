@@ -61,6 +61,13 @@ scDeploy:
         configMapKeyRef:
           name: host-sc-addresses
           key: protocol_config.address
+    # Canonical ETH CoprocessorConfig to mirror the coprocessor context from, also
+    # written by the ETH host-contracts deploy.
+    - name: CANONICAL_COPROCESSOR_CONFIG_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: host-sc-addresses
+          key: coprocessor_config.address
     # Placeholders. wire-contracts-values.sh overwrites both from KMS_CORE_TAG
     # and the enclave PCR0/PCR1/PCR2 before this file is installed.
     - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
@@ -99,9 +106,18 @@ scDeploy:
         --canonical-protocol-config-address "${CANONICAL_PROTOCOL_CONFIG_ADDRESS}" \
         --block-number "${canonical_head}" \
         --out /tmp/canonical-protocol-config-snapshot.json
-      while IFS=$'\t' read -r canonical_key canonical_b64; do
-        export "${canonical_key}=$(printf '%s' "${canonical_b64}" | base64 -d)"
-      done < <(node -e "const e=require('/tmp/canonical-protocol-config-snapshot.json').export; for (const kv of Object.entries(e)) process.stdout.write(kv[0]+'\t'+Buffer.from(String(kv[1])).toString('base64')+'\n')")
+      # Export the ETH CoprocessorConfig coprocessor context, pinned to the same block, then load
+      # both snapshots into the environment.
+      npx hardhat task:exportCanonicalCoprocessorConfig \
+        --canonical-rpc-url http://anvil-host-anvil-node:8545 \
+        --canonical-coprocessor-config-address "${CANONICAL_COPROCESSOR_CONFIG_ADDRESS}" \
+        --block-number "${canonical_head}" \
+        --out /tmp/canonical-coprocessor-config-snapshot.json
+      for snapshot in /tmp/canonical-protocol-config-snapshot.json /tmp/canonical-coprocessor-config-snapshot.json; do
+        while IFS=$'\t' read -r canonical_key canonical_b64; do
+          export "${canonical_key}=$(printf '%s' "${canonical_b64}" | base64 -d)"
+        done < <(SNAPSHOT="${snapshot}" node -e "const e=require(process.env.SNAPSHOT).export; for (const kv of Object.entries(e)) process.stdout.write(kv[0]+'\t'+Buffer.from(String(kv[1])).toString('base64')+'\n')")
+      done
       npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical
   verifyContracts: false
 persistence:

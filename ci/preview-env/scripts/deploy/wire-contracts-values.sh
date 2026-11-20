@@ -5,8 +5,8 @@
 # One script for both targets, but the emitted env-var names stay
 # target-specific ON PURPOSE - the gateway and host charts read different names
 # (KMS_NODE_IP_ADDRESS vs KMS_NODE_IP, KMS_GENERATION_THRESHOLD vs
-# KMS_GEN_THRESHOLD) and host takes extra node fields + only the coprocessor
-# SIGNER (no tx-sender/S3 URL). Do NOT unify them.
+# KMS_GEN_THRESHOLD, COPROCESSOR_S3_BUCKET_URL vs COPROCESSOR_STORAGE_URL) and
+# host takes extra node fields. Do NOT unify them.
 #
 # Env: TARGET (gateway|host|host-polygon), NB_KMS_CORE, NB_COPROCESSOR, NAMESPACE,
 # SIGNERS_JSON, WALLETS_JSON, COPROC_WALLETS_JSON, S3_ENDPOINT.
@@ -54,7 +54,9 @@ cp "${src}" "${generated}"
 # Register the coprocessors on-chain. Gateway needs each party's tx-sender,
 # signer and S3 bucket URL (bucket name from ConfigMap coprocessor-<i>; bare
 # root, region eu-west-1, since sns-worker keys ct128 by bare hex digest); host
-# needs only the signer (its InputVerifier checks input-proof signatures).
+# needs the signer for InputVerifier, plus the tx-sender and storage URL for the
+# initial coprocessor context of Ethereum's CoprocessorConfig (host-polygon copies
+# that context from Ethereum and ignores them).
 nc="${NB_COPROCESSOR}"
 coproc_thr=$(coproc_threshold "${nc}")
 yq -i "
@@ -65,15 +67,15 @@ yq -i "
 " "${generated}"
 for i in $(seq 1 "${nc}"); do
   idx=$((i - 1))
+  bucket=$(kubectl get configmap "coprocessor-${i}" -n "${NAMESPACE}" -o jsonpath='{.data.S3_BUCKET_NAME}')
+  if [[ -z "${bucket}" ]]; then
+    echo "::error::coprocessor-${i} ConfigMap has no S3_BUCKET_NAME key - is coprocessor-infra-${i} reconciled? (kubectl get configmap coprocessor-${i} -n ${NAMESPACE})"
+    exit 1
+  fi
+  coproc_addr=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}")
+  require_nonempty "${coproc_addr}" "no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"
+  coproc_s3_url="https://${bucket}.s3.eu-west-1.amazonaws.com"
   if [[ "${TARGET}" == gateway ]]; then
-    bucket=$(kubectl get configmap "coprocessor-${i}" -n "${NAMESPACE}" -o jsonpath='{.data.S3_BUCKET_NAME}')
-    if [[ -z "${bucket}" ]]; then
-      echo "::error::coprocessor-${i} ConfigMap has no S3_BUCKET_NAME key - is coprocessor-infra-${i} reconciled? (kubectl get configmap coprocessor-${i} -n ${NAMESPACE})"
-      exit 1
-    fi
-    coproc_addr=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}")
-    require_nonempty "${coproc_addr}" "no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"
-    coproc_s3_url="https://${bucket}.s3.eu-west-1.amazonaws.com"
     # tx-sender and signer are the same address per party.
     yq -i "
       .scDeploy.env += [
@@ -84,14 +86,15 @@ for i in $(seq 1 "${nc}"); do
     " "${generated}"
     echo "Registered coprocessor party ${i}: tx-sender/signer=${coproc_addr}, S3=${coproc_s3_url}"
   else
-    coproc_addr=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}")
-    require_nonempty "${coproc_addr}" "no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"
+    # Initial coprocessor context of CoprocessorConfig: the same wallet sends the party's host-chain transactions.
     yq -i "
       .scDeploy.env += [
-        {\"name\": \"COPROCESSOR_SIGNER_ADDRESS_${idx}\", \"value\": \"${coproc_addr}\"}
+        {\"name\": \"COPROCESSOR_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${coproc_addr}\"},
+        {\"name\": \"COPROCESSOR_SIGNER_ADDRESS_${idx}\", \"value\": \"${coproc_addr}\"},
+        {\"name\": \"COPROCESSOR_STORAGE_URL_${idx}\", \"value\": \"${coproc_s3_url}\"}
       ]
     " "${generated}"
-    echo "Registered host-side coprocessor party ${i} signer=${coproc_addr}"
+    echo "Registered host-side coprocessor party ${i}: tx-sender/signer=${coproc_addr}, storage=${coproc_s3_url}"
   fi
 done
 

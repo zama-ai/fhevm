@@ -506,6 +506,10 @@ const buildInstanceEnvs = async (
     envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] =
       `${objectStoreOperatorUrl(index)}/${opBucket}`;
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
+    // CoprocessorConfig coprocessor context: the same wallet sends this coprocessor's host-chain transactions.
+    envs["host-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
+    envs["host-sc"][`COPROCESSOR_STORAGE_URL_${index}`] =
+      envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`];
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
@@ -705,8 +709,10 @@ export const renderEnvMaps = async (
     hostSc.NUM_COPROCESSORS = String(plan.topology.count);
     hostSc.COPROCESSOR_THRESHOLD = String(plan.topology.threshold);
     for (let i = 0; i < plan.topology.count; i += 1) {
-      const signer = envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${i}`];
-      if (signer) hostSc[`COPROCESSOR_SIGNER_ADDRESS_${i}`] = signer;
+      for (const key of ["SIGNER_ADDRESS", "TX_SENDER_ADDRESS", "STORAGE_URL"]) {
+        const value = envs["host-sc"][`COPROCESSOR_${key}_${i}`];
+        if (value) hostSc[`COPROCESSOR_${key}_${i}`] = value;
+      }
     }
     instanceEnvs[chain.sc] = hostSc;
 

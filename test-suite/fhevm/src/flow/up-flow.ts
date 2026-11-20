@@ -713,10 +713,13 @@ const registerExtraChainInCoprocessor = async (state: State, chain: { key: strin
 
 /** Name of the export snapshot written into the canonical chain's mounted addresses directory. */
 const CANONICAL_SNAPSHOT_FILE = "canonical-protocol-config-snapshot.json";
+/** Name of the CoprocessorConfig export snapshot, written next to the ProtocolConfig one. */
+const CANONICAL_COPROCESSOR_CONFIG_SNAPSHOT_FILE = "canonical-coprocessor-config-snapshot.json";
 
 /**
  * Builds the `task:deployAllHostContracts` args and env that seed a non-canonical chain's
- * ProtocolConfig from the canonical chain, mirroring production. Returns undefined when there is no
+ * ProtocolConfig, and its CoprocessorConfig when the host image deploys one, from the canonical
+ * chain, mirroring production. Returns undefined when there is no
  * non-canonical chain, or when the host image predates `task:deployProtocolConfigFromCanonical`, so
  * older bundles keep the "fresh" seeding.
  * Must run after the canonical host deploy: it reads the canonical ProtocolConfig address from the
@@ -765,11 +768,29 @@ const canonicalProtocolConfigSeeding = async (
   const exported = await readJson<{ export: Record<string, string> }>(
     path.join(path.dirname(hostChainAddressesPath(canonicalChain.key)), CANONICAL_SNAPSHOT_FILE),
   );
+  // Host images that deploy CoprocessorConfig also seed its replica from the canonical chain. Older
+  // images write no CoprocessorConfig address and need no CoprocessorConfig snapshot.
+  const canonicalCoprocessorConfigAddress = canonicalAddresses.COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
+  let exportedCoprocessor: Record<string, string> = {};
+  if (canonicalCoprocessorConfigAddress) {
+    await timed("[multi-chain] export canonical CoprocessorConfig", () =>
+      runContractTask(
+        "host-sc",
+        "host-sc-deploy",
+        `npx hardhat task:exportCanonicalCoprocessorConfig --canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort} --canonical-coprocessor-config-address ${canonicalCoprocessorConfigAddress} --block-number ${blockNumber} --out /app/addresses/${CANONICAL_COPROCESSOR_CONFIG_SNAPSHOT_FILE}`,
+      ),
+    );
+    exportedCoprocessor = (
+      await readJson<{ export: Record<string, string> }>(
+        path.join(path.dirname(hostChainAddressesPath(canonicalChain.key)), CANONICAL_COPROCESSOR_CONFIG_SNAPSHOT_FILE),
+      )
+    ).export;
+  }
   return {
     args: "--protocol-config-source canonical",
-    // The deploy task reads the reviewed snapshot from the environment, not from flags, so that
+    // The deploy task reads the reviewed snapshots from the environment, not from flags, so that
     // deployment platforms can inject the exported values as container environment variables.
-    env: exported.export,
+    env: { ...exported.export, ...exportedCoprocessor },
   };
 };
 

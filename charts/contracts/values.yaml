@@ -122,17 +122,26 @@ scDeploy:
       value: ""
 
     # -------------------------------------------------------------------------
-    # InputVerifier (coprocessor signer set)
+    # CoprocessorConfig (Coprocessor identity, context, threshold)
     # -------------------------------------------------------------------------
     - name: NUM_COPROCESSORS
       value: 5
 
-    - name: COPROCESSOR_THRESHOLD
-      value: 3
+    # Coprocessor fields, indexed from 0 up to NUM_COPROCESSORS - 1
+    - name: COPROCESSOR_TX_SENDER_ADDRESS_x
+      value: ""
 
-    # Coprocessor signer addresses, indexed from 0 up to NUM_COPROCESSORS - 1
     - name: COPROCESSOR_SIGNER_ADDRESS_x
       value: ""
+
+    - name: COPROCESSOR_STORAGE_URL_x
+      value: ""
+
+    - name: COPROCESSOR_PRF_ENDPOINT_URL_x
+      value: ""
+
+    - name: COPROCESSOR_THRESHOLD
+      value: 3
 
   resources:
     requests:

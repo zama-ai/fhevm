@@ -3,9 +3,20 @@ import { Wallet } from 'ethers';
 import fs from 'fs';
 import hre, { ethers, run, upgrades } from 'hardhat';
 
+import { readCanonicalCoprocessorConfigSnapshot } from '../../tasks/coprocessorConfigMirror';
 import { readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
+import {
+  applyCoprocessorConfigCanonicalEnv,
+  buildCanonicalCoprocessorConfigSnapshotEnv,
+  restoreCoprocessorConfigCanonicalEnv,
+  snapshotCoprocessorConfigCanonicalEnv,
+} from '../../tasks/utils/coprocessorConfigCanonicalEnv';
 import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
-import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import {
+  COPROCESSOR_CONTEXT_COUNTER_BASE,
+  EPOCH_COUNTER_BASE,
+  KMS_CONTEXT_COUNTER_BASE,
+} from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import {
   applyProtocolConfigCanonicalEnv,
@@ -14,11 +25,15 @@ import {
   snapshotProtocolConfigCanonicalEnv,
 } from '../../tasks/utils/protocolConfigCanonicalEnv';
 import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/upgradeProposal';
+import type { CoprocessorConfig, CoprocessorConfigReplica } from '../../types';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import {
+  COPROCESSOR_MAJORITY_THRESHOLD,
   HOST_ENV_FILE,
+  buildCoprocessors,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
+  deployFreshCoprocessorConfigProxy,
   deployFreshProtocolConfigProxy,
   deployFreshProtocolConfigReplicaProxy,
   deployFreshUninitializedProtocolConfigProxy,
@@ -50,6 +65,20 @@ const { snapshot: snapshotHostAddressEnv, restore: restoreHostAddressEnv } = mak
 type HostAddressEnvSnapshot = ReturnType<typeof snapshotHostAddressEnv>;
 
 type CanonicalConfigEnvSnapshot = ReturnType<typeof snapshotProtocolConfigCanonicalEnv>;
+type CanonicalCoprocessorConfigEnvSnapshot = ReturnType<typeof snapshotCoprocessorConfigCanonicalEnv>;
+
+const FIRST_COPROCESSOR_CONTEXT_ID = COPROCESSOR_CONTEXT_COUNTER_BASE + 1n;
+
+function expectCoprocessors(actual: unknown[][], expected: ReturnType<typeof buildCoprocessors>): void {
+  expect(actual.map((coprocessor) => [...coprocessor])).to.deep.equal(
+    expected.map((coprocessor) => [
+      ethers.getAddress(coprocessor.txSenderAddress),
+      ethers.getAddress(coprocessor.signerAddress),
+      coprocessor.storageUrl,
+      coprocessor.prfEndpointUrl,
+    ]),
+  );
+}
 
 async function readImplementationSlot(proxyAddress: string): Promise<string> {
   return upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -61,6 +90,7 @@ describe('Canonical prepare tasks', function () {
   let originalEnvHost: string;
   let originalHostAddressEnv: HostAddressEnvSnapshot;
   let originalCanonicalConfigEnv: CanonicalConfigEnvSnapshot;
+  let originalCanonicalCoprocessorConfigEnv: CanonicalCoprocessorConfigEnvSnapshot;
 
   before(function () {
     originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
@@ -72,6 +102,8 @@ describe('Canonical prepare tasks', function () {
     // Start every test from an unconfigured environment, so a value inherited from the shell or
     // from another test file cannot change which branch the tasks take.
     restoreProtocolConfigCanonicalEnv({});
+    originalCanonicalCoprocessorConfigEnv = snapshotCoprocessorConfigCanonicalEnv();
+    restoreCoprocessorConfigCanonicalEnv({});
   });
 
   afterEach(async function () {
@@ -79,6 +111,7 @@ describe('Canonical prepare tasks', function () {
     fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
     restoreHostAddressEnv(originalHostAddressEnv);
     restoreProtocolConfigCanonicalEnv(originalCanonicalConfigEnv);
+    restoreCoprocessorConfigCanonicalEnv(originalCanonicalCoprocessorConfigEnv);
   });
 
   describe('ProtocolConfig from canonical artifact', function () {
@@ -169,6 +202,104 @@ describe('Canonical prepare tasks', function () {
         expect(await readImplementationSlot(proxyAddress)).to.equal(implementationSlotBefore);
       });
     }
+  });
+
+  describe('CoprocessorConfig from canonical artifact', function () {
+    async function deployCanonical(): Promise<CoprocessorConfig> {
+      const address = await deployFreshCoprocessorConfigProxy(
+        deployer,
+        buildCoprocessors(),
+        COPROCESSOR_MAJORITY_THRESHOLD,
+      );
+      return (await ethers.getContractAt('CoprocessorConfig', address, deployer)) as unknown as CoprocessorConfig;
+    }
+
+    // Reads the canonical coprocessor context and puts it in the CANONICAL_COPROCESSOR_* env
+    // variables, as a deployment platform injects the export task's `export` map.
+    async function applyCanonicalCoprocessorConfigSnapshotEnv(canonical: CoprocessorConfig): Promise<void> {
+      const snapshot = await readCanonicalCoprocessorConfigSnapshot(hre, {
+        canonicalProvider: ethers.provider,
+        canonicalCoprocessorConfigAddress: await canonical.getAddress(),
+      });
+      applyCoprocessorConfigCanonicalEnv(buildCanonicalCoprocessorConfigSnapshotEnv(snapshot));
+    }
+
+    it('prepares DAO calldata from a reviewed artifact without mutating the proxy', async function () {
+      const canonical = await deployCanonical();
+      await applyCanonicalCoprocessorConfigSnapshotEnv(canonical);
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
+      patchHostEnv('COPROCESSOR_CONFIG_CONTRACT_ADDRESS', proxyAddress);
+
+      const implementationSlotBefore = await readImplementationSlot(proxyAddress);
+      const prepared = await run('task:prepareDeployCoprocessorConfigFromCanonical', { verifyContract: false });
+      expect(await readImplementationSlot(proxyAddress)).to.equal(implementationSlotBefore);
+
+      expect(prepared.proxyAddress).to.equal(proxyAddress);
+      const iface = new ethers.Interface([`function ${prepared.innerFunctionSignature}`]);
+      const decoded = iface.decodeFunctionData('initializeFromCanonical', prepared.innerCalldata);
+      expect(decoded[0]).to.equal(await canonical.getCurrentCoprocessorContextId());
+      expectCoprocessors(decoded[1], buildCoprocessors());
+      expect(decoded[2]).to.equal(BigInt(COPROCESSOR_MAJORITY_THRESHOLD));
+      expect(prepared.outerCalldata).to.equal(
+        UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [
+          prepared.newImplementationAddress,
+          prepared.innerCalldata,
+        ]),
+      );
+    });
+
+    it('applies the snapshot env variables to the replica with the devnet deploy task', async function () {
+      const canonical = await deployCanonical();
+      await (await canonical.defineNewCoprocessorContext(buildCoprocessors().slice(0, 1), 1)).wait();
+      await applyCanonicalCoprocessorConfigSnapshotEnv(canonical);
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
+      patchHostEnv('COPROCESSOR_CONFIG_CONTRACT_ADDRESS', proxyAddress);
+
+      await run('task:deployCoprocessorConfigFromCanonical');
+
+      const replica = (await ethers.getContractAt(
+        'CoprocessorConfigReplica',
+        proxyAddress,
+      )) as unknown as CoprocessorConfigReplica;
+      expect(await replica.getVersion()).to.match(/^CoprocessorConfigReplica v/);
+      const contextId = FIRST_COPROCESSOR_CONTEXT_ID + 1n;
+      expect(await replica.getCurrentCoprocessorContextId()).to.equal(contextId);
+      expectCoprocessors(
+        (await replica.getCoprocessorsForContext(contextId)) as unknown as unknown[][],
+        buildCoprocessors().slice(0, 1),
+      );
+      expect(await replica.getCoprocessorMajorityThresholdForContext(contextId)).to.equal(1n);
+      // The canonical context the replica started after was never mirrored.
+      expect(await replica.isValidCoprocessorContext(FIRST_COPROCESSOR_CONTEXT_ID)).to.equal(false);
+    });
+  });
+
+  describe('CoprocessorConfig deployment', function () {
+    it('initializes the empty proxy with the COPROCESSOR_* env set as the first context', async function () {
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
+      patchHostEnv('COPROCESSOR_CONFIG_CONTRACT_ADDRESS', proxyAddress);
+
+      await run('task:deployCoprocessorConfig');
+
+      const coprocessorConfig = (await ethers.getContractAt(
+        'CoprocessorConfig',
+        proxyAddress,
+      )) as unknown as CoprocessorConfig;
+      expect(await coprocessorConfig.getVersion()).to.match(/^CoprocessorConfig v/);
+      expect(await coprocessorConfig.getCurrentCoprocessorContextId()).to.equal(FIRST_COPROCESSOR_CONTEXT_ID);
+      const stored = await coprocessorConfig.getCoprocessorsForContext(FIRST_COPROCESSOR_CONTEXT_ID);
+      expect(stored.length).to.equal(Number(getRequiredEnvVar('NUM_COPROCESSORS')));
+      expect(stored[0].txSenderAddress).to.equal(getRequiredEnvVar('COPROCESSOR_TX_SENDER_ADDRESS_0'));
+      expect(stored[0].storageUrl).to.equal(getRequiredEnvVar('COPROCESSOR_STORAGE_URL_0'));
+      expect(await coprocessorConfig.getCoprocessorMajorityThresholdForContext(FIRST_COPROCESSOR_CONTEXT_ID)).to.equal(
+        BigInt(getRequiredEnvVar('COPROCESSOR_THRESHOLD')),
+      );
+    });
+
+    it('rejects the standalone readiness check when CoprocessorConfig is not initialized', async function () {
+      patchHostEnv('COPROCESSOR_CONFIG_CONTRACT_ADDRESS', await deployEmptyUUPSProxy(deployer));
+      await expect(run('task:assertCoprocessorConfigReady')).to.be.rejectedWith(/does not expose getVersion/);
+    });
   });
 
   describe('KMSVerifier deployment', function () {

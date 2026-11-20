@@ -2,12 +2,21 @@ import { expect } from 'chai';
 import fs from 'fs';
 import hre, { ethers, run } from 'hardhat';
 
+import { readCanonicalCoprocessorConfigSnapshot } from '../../tasks/coprocessorConfigMirror';
 import {
   type CanonicalSnapshot,
   buildCanonicalUpgradeProposal,
   readCanonicalSnapshot,
 } from '../../tasks/protocolConfigMirror';
 import {
+  applyCoprocessorConfigCanonicalEnv,
+  buildCanonicalCoprocessorConfigSnapshotEnv,
+  readCanonicalCoprocessorConfigSnapshotFromEnv,
+  restoreCoprocessorConfigCanonicalEnv,
+  snapshotCoprocessorConfigCanonicalEnv,
+} from '../../tasks/utils/coprocessorConfigCanonicalEnv';
+import {
+  COPROCESSOR_CONTEXT_COUNTER_BASE,
   CRS_COUNTER_BASE,
   KEY_COUNTER_BASE,
   KMS_CONTEXT_COUNTER_BASE,
@@ -24,11 +33,14 @@ import {
 import { executeUpgradeProposal } from '../../tasks/utils/upgradeProposal';
 import type { KMSGeneration, ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import {
+  COPROCESSOR_MAJORITY_THRESHOLD,
   HOST_ADDRESSES_SOL_FILE,
   HOST_ENV_FILE,
   buildControllableKmsCommittee,
+  buildCoprocessors,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
+  deployFreshCoprocessorConfigProxy,
   deployFreshEmptyUUPSProxy,
   deployFreshKMSGenerationProxy,
   deployFreshProtocolConfigProxy,
@@ -477,5 +489,84 @@ describe('canonical snapshot env (buildCanonicalSnapshotEnv / readCanonicalSnaps
     expect(() => readCanonicalSnapshotFromEnv()).to.throw(
       /"CANONICAL_KMS_THRESHOLDS" env variable field "publicDecryption" must be a decimal string/,
     );
+  });
+});
+
+describe('canonical CoprocessorConfig snapshot (readCanonicalCoprocessorConfigSnapshot and its env)', function () {
+  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+  let originalEnv: ReturnType<typeof snapshotCoprocessorConfigCanonicalEnv>;
+
+  beforeEach(function () {
+    originalEnv = snapshotCoprocessorConfigCanonicalEnv();
+    restoreCoprocessorConfigCanonicalEnv({});
+  });
+
+  afterEach(function () {
+    restoreCoprocessorConfigCanonicalEnv(originalEnv);
+  });
+
+  async function deployCanonical(): Promise<string> {
+    return deployFreshCoprocessorConfigProxy(deployer, buildCoprocessors(), COPROCESSOR_MAJORITY_THRESHOLD);
+  }
+
+  it('reads the current context of the canonical contract and round-trips through the env', async function () {
+    const canonicalAddress = await deployCanonical();
+    const snapshot = await readCanonicalCoprocessorConfigSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalCoprocessorConfigAddress: canonicalAddress,
+    });
+
+    expect(snapshot.coprocessorConfigAddress).to.equal(canonicalAddress);
+    expect(snapshot.currentCoprocessorContextId).to.equal(COPROCESSOR_CONTEXT_COUNTER_BASE + 1n);
+    expect(snapshot.majorityThreshold).to.equal(BigInt(COPROCESSOR_MAJORITY_THRESHOLD));
+    expect(snapshot.coprocessors).to.deep.equal(
+      buildCoprocessors().map((coprocessor) => ({
+        ...coprocessor,
+        txSenderAddress: ethers.getAddress(coprocessor.txSenderAddress),
+        signerAddress: ethers.getAddress(coprocessor.signerAddress),
+      })),
+    );
+
+    applyCoprocessorConfigCanonicalEnv(buildCanonicalCoprocessorConfigSnapshotEnv(snapshot));
+    expect(readCanonicalCoprocessorConfigSnapshotFromEnv()).to.deep.equal(snapshot);
+  });
+
+  it('rejects when the canonical address is not a CoprocessorConfig', async function () {
+    await expect(
+      readCanonicalCoprocessorConfigSnapshot(hre, {
+        canonicalProvider: ethers.provider,
+        canonicalCoprocessorConfigAddress: await deployFreshEmptyUUPSProxy(deployer),
+      }),
+    ).to.be.rejectedWith(/is not a CoprocessorConfig proxy/);
+  });
+
+  it('rejects a malformed coprocessor entry, naming the variable', async function () {
+    const snapshot = await readCanonicalCoprocessorConfigSnapshot(hre, {
+      canonicalProvider: ethers.provider,
+      canonicalCoprocessorConfigAddress: await deployCanonical(),
+    });
+    applyCoprocessorConfigCanonicalEnv(buildCanonicalCoprocessorConfigSnapshotEnv(snapshot));
+    const coprocessors = JSON.parse(process.env.CANONICAL_COPROCESSORS!);
+    coprocessors[0].txSenderAddress = 'not-an-address';
+    process.env.CANONICAL_COPROCESSORS = JSON.stringify(coprocessors);
+    expect(() => readCanonicalCoprocessorConfigSnapshotFromEnv()).to.throw(
+      /"CANONICAL_COPROCESSORS" env variable entry 0 field "txSenderAddress" must be a valid address/,
+    );
+
+    delete coprocessors[0].prfEndpointUrl;
+    coprocessors[0].txSenderAddress = coprocessors[0].signerAddress;
+    process.env.CANONICAL_COPROCESSORS = JSON.stringify(coprocessors);
+    expect(() => readCanonicalCoprocessorConfigSnapshotFromEnv()).to.throw(
+      /"CANONICAL_COPROCESSORS" env variable entry 0 field "prfEndpointUrl" is missing/,
+    );
+
+    process.env.CANONICAL_COPROCESSORS = '[]';
+    expect(() => readCanonicalCoprocessorConfigSnapshotFromEnv()).to.throw(
+      /"CANONICAL_COPROCESSORS" env variable must hold a non-empty JSON array/,
+    );
+  });
+
+  it('names the first missing env variable', function () {
+    expect(() => readCanonicalCoprocessorConfigSnapshotFromEnv()).to.throw(/CANONICAL_COPROCESSOR_CONFIG_CHAIN_ID/);
   });
 });
