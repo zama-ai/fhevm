@@ -2347,6 +2347,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fhevm-sig-auth"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "http 1.4.2",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "fhevm_gateway_bindings"
 version = "0.15.0"
 dependencies = [
@@ -2547,6 +2556,7 @@ dependencies = [
  "clap",
  "config",
  "csv",
+ "fhevm-sig-auth",
  "fhevm_gateway_bindings",
  "futures",
  "humantime",
