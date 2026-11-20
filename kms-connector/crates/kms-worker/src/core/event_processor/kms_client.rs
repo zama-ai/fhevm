@@ -782,6 +782,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::event_processor::ProcessingErrorKind;
+    use std::future::ready;
 
     #[rstest::rstest]
     #[case(Code::Cancelled)]
@@ -836,5 +838,54 @@ mod tests {
         assert_eq!(result.unwrap_err().code(), code);
         assert_eq!(attempts, 1);
         assert_eq!(errors, 1);
+    }
+
+    #[rstest::rstest]
+    #[case(Code::InvalidArgument)]
+    #[case(Code::NotFound)]
+    #[case(Code::PermissionDenied)]
+    #[case(Code::FailedPrecondition)]
+    #[case(Code::OutOfRange)]
+    #[case(Code::Unimplemented)]
+    #[case(Code::Internal)]
+    #[case(Code::DataLoss)]
+    #[case(Code::Unauthenticated)]
+    #[tokio::test]
+    async fn sending_does_not_retry_non_retryable(#[case] code: Code) {
+        let mut attempts = 0;
+        let (errors, result) = send_request_with_retries(
+            3,
+            || {
+                attempts += 1;
+                ready(Err::<Response<u8>, _>(Status::new(code, "fatal")))
+            },
+            EventType::KeygenRequest,
+            |_| Ok(KmsSendResponse::Ack),
+        )
+        .await;
+        let error = result.unwrap_err();
+        assert_eq!(error.kind, ProcessingErrorKind::Irrecoverable);
+        assert_eq!(attempts, 1);
+        assert_eq!(errors, 1);
+    }
+
+    #[tokio::test]
+    async fn send_already_exists_is_ack() {
+        let mut attempts = 0;
+        let (errors, result) = send_request_with_retries(
+            3,
+            || {
+                attempts += 1;
+                ready(Err::<Response<u8>, _>(Status::already_exists(
+                    "request in progress",
+                )))
+            },
+            EventType::KeygenRequest,
+            |_| Ok(KmsSendResponse::Ack),
+        )
+        .await;
+        assert!(matches!(result, Ok(KmsSendResponse::Ack)));
+        assert_eq!(attempts, 1);
+        assert_eq!(errors, 0);
     }
 }
