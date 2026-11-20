@@ -1,4 +1,5 @@
-//! Pad decryption processing. Authorization only: the KMS Core request is not built yet.
+//! Pad decryption processing. Authorization and PRF output retrieval only: the KMS Core request
+//! is not built yet.
 
 use crate::core::event_processor::{
     AclCheck, DecryptionProcessor, ProcessingError, RequestCheckError, RequestCheckKind,
@@ -6,14 +7,14 @@ use crate::core::event_processor::{
 };
 use alloy::{primitives::U256, providers::Provider, sol_types::SolStruct};
 use anyhow::anyhow;
-use connector_utils::types::event::PadDecryptionEvent;
+use connector_utils::types::{KmsGrpcRequest, event::PadDecryptionEvent};
 use kms_connector_api::ErrorCode;
 use sqlx::types::chrono::Utc;
 use std::iter;
 use user_decryption_signature::UserDecryptRequestVerification;
 
 /// The rejection of authorized pad decryptions, until they can be processed.
-pub fn unsupported() -> ProcessingError {
+fn unsupported() -> ProcessingError {
     ProcessingError::irrecoverable(
         ErrorCode::Unprocessable,
         anyhow!("pad decryption is not supported yet"),
@@ -121,6 +122,27 @@ where
             },
         )?;
         Ok(())
+    }
+}
+
+impl<GP, HP> DecryptionProcessor<GP, HP>
+where
+    GP: Provider + Clone + 'static,
+    HP: Provider,
+{
+    /// Retrieves the PRF outputs of an authorized pad decryption request.
+    #[tracing::instrument(skip_all)]
+    pub async fn prepare_pad_decryption_request(
+        &self,
+        request: &PadDecryptionEvent,
+    ) -> Result<KmsGrpcRequest, ProcessingError> {
+        let payload = &request.payload;
+        let _prf_outputs = self
+            .ciphertext_manager
+            .retrieve_prf_outputs(payload.prfId, &payload.pads)
+            .await?;
+        // TODO: send the PRF outputs to the KMS Core, once it serves pad decryption.
+        Err(unsupported())
     }
 }
 

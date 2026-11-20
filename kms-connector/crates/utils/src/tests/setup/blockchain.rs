@@ -8,6 +8,7 @@ use alloy::{
     node_bindings::{Anvil, AnvilInstance},
     primitives::{Address, ChainId},
     providers::{Provider, ProviderBuilder},
+    signers::Signer,
     transports::http::reqwest::Url,
 };
 use anyhow::anyhow;

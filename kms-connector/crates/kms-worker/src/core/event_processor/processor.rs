@@ -1,8 +1,6 @@
 use crate::core::event_processor::{
-    KmsClient, KmsPollTarget, ProcessingError, RequestCheckError,
-    context::ContextManager,
-    decryption::{DecryptionProcessor, pad},
-    kms::KMSGenerationProcessor,
+    KmsClient, KmsPollTarget, ProcessingError, RequestCheckError, context::ContextManager,
+    decryption::DecryptionProcessor, kms::KMSGenerationProcessor,
     protocol_config::ProtocolConfigProcessor,
 };
 use alloy::{primitives::B256, providers::Provider};
@@ -301,7 +299,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     )
                     .await
             }
-            ProtocolEventKind::PadDecryption(_) => Err(pad::unsupported()),
+            ProtocolEventKind::PadDecryption(req) => {
+                self.decryption_processor
+                    .prepare_pad_decryption_request(req)
+                    .await
+            }
             ProtocolEventKind::PrepKeygen(req) => {
                 self.kms_generation_processor
                     .prepare_prep_keygen_request(req)

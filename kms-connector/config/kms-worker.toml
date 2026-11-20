@@ -125,6 +125,16 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_COPRO_REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
 # copro_registry_refresh = "60s"
 
+# Time budget to retrieve the PRF output of a pad from the Coprocessors (optional, defaults to 20s, at most 5min)
+# ENV: KMS_CONNECTOR_PRF_RETRIEVAL_DEADLINE (format: https://docs.rs/humantime/latest/humantime/)
+# prf_retrieval_deadline = "20s"
+
+# Private key of the wallet signing the PRF output requests, as a hex string (optional if `aws_kms_config` is configured)
+# WARNING: Using a raw private key is intended for TESTING PURPOSES ONLY.
+#          Production deployments MUST use `aws_kms_config` instead (see below).
+# ENV: KMS_CONNECTOR_PRIVATE_KEY
+# private_key = "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+
 # Maximum number of calls in flight on a host chain endpoint, across all requests (optional, defaults to 128)
 # ENV: KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS
 # host_rpc_max_concurrent_calls = 128
@@ -208,3 +218,13 @@ chain_id = 12345
 # Address of the ACL contract (required)
 # Format: hex string with 0x prefix
 acl_address = "0x0000000000000000000000000000000000000000"
+
+# AWS KMS configuration of the wallet signing the PRF output requests, the TransactionSender's
+# (optional if `private_key` is configured)
+# [aws_kms_config]
+# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
+# key_id = "12345678-1234-1234-1234-123456789012"
+# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__REGION
+# region = "us-east-1"
+# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT
+# endpoint = "https://kms.us-east-1.amazonaws.com"

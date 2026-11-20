@@ -3,6 +3,7 @@ use alloy::{
     primitives::{Address, FixedBytes, U256},
     providers::{Provider, mock::Asserter},
     rpc::types::{Block, Transaction},
+    signers::local::PrivateKeySigner,
     sol_types::{SolCall, SolValue},
 };
 use connector_utils::{
@@ -66,6 +67,7 @@ where
     // Enough buffers for one request, instead of the much larger default.
     let config = Config {
         ciphertext_pool_slots: config.max_handles_per_decryption,
+        private_key: Some(PrivateKeySigner::random().to_bytes().to_string().into()),
         ..config
     };
     let ciphertext_manager =

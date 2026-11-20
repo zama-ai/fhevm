@@ -174,6 +174,7 @@ mod tests {
     use alloy::{
         providers::ProviderBuilder,
         rpc::{client::RpcClient, json_rpc::RequestPacket, types::TransactionRequest},
+        signers::Signer,
         transports::mock::{Asserter, MockTransport},
     };
     use std::sync::Mutex as StdMutex;

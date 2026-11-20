@@ -48,6 +48,7 @@ jobs:
           # Shared crates are tested on their own (`shared-crates-tests`): only check that the connector still
           # compiles against them.
           shared-deps:
+            - coprocessor/fhevm-engine/coprocessor-api/**
             - shared/ciphertext-attestation/**
             - shared/fhevm-sig-auth/**
             - shared/user-decryption-signature/**
