@@ -14,6 +14,8 @@ const gatewayPort = process.env.FHEVM_TEST_GATEWAY_PORT ?? '8590';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Don't let `next dev` write an AGENTS.md here when an AI agent starts the server.
+  agentRules: false,
   turbopack: {
     root: __dirname,
   },
