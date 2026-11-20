@@ -100,6 +100,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     ///      depth carried across transactions and bits 0-127 the depth within this transaction.
     uint256 private constant DEPTH_KNOWN = 1 << 255;
 
+    /// @dev Transient slot of this transaction's critical path: the deepest result within it so far.
+    ///      keccak256("fhevm.HCULimit.txCriticalPath"); handles are hashes too, so none lands here.
+    bytes32 private constant TX_CRITICAL_PATH_SLOT = 0xd3cccfaf015cd7b3835804dbbf9260d97c03617a2d391419d2b2622df59e9492;
+
     /// @dev Limit, meter, pause flag, tier and stored-depth limit of one quota, in one slot. All contracts assigned to
     ///      the quota share it. Usage decays by decayPerBlock every block, as carried depth does, and an operation fits
     ///      while usage stays at most maxHCU. maxStoredDepth caps the carried depth its contracts can grant; 0 leaves
@@ -316,8 +320,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         address caller,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(result, _latency(opCost), 0);
+        _chargeOperation(opCost, caller, result, 0);
     }
 
     /**
@@ -329,8 +332,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 op1,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(result, _latency(opCost), _cacheDepths(op1, caller));
+        _chargeOperation(opCost, caller, result, _cacheDepths(op1, caller));
     }
 
     /**
@@ -343,8 +345,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 op2,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(result, _latency(opCost), _maxDepths(_cacheDepths(op1, caller), _cacheDepths(op2, caller)));
+        _chargeOperation(opCost, caller, result, _maxDepths(_cacheDepths(op1, caller), _cacheDepths(op2, caller)));
     }
 
     /**
@@ -358,12 +359,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 op3,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(
-            result,
-            _latency(opCost),
-            _maxDepths(_cacheDepths(op1, caller), _maxDepths(_cacheDepths(op2, caller), _cacheDepths(op3, caller)))
+        uint256 inputDepths = _maxDepths(
+            _cacheDepths(op1, caller),
+            _maxDepths(_cacheDepths(op2, caller), _cacheDepths(op3, caller))
         );
+        _chargeOperation(opCost, caller, result, inputDepths);
     }
 
     /**
@@ -375,14 +375,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32[] calldata values,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-
         uint256 inputDepths = 0;
         for (uint256 i = 0; i < values.length; i++) {
             inputDepths = _maxDepths(inputDepths, _cacheDepths(values[i], caller));
         }
 
-        _setResultDepths(result, _latency(opCost), inputDepths);
+        _chargeOperation(opCost, caller, result, inputDepths);
     }
 
     /**
@@ -395,20 +393,40 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32[] calldata values,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-
         uint256 inputDepths = _cacheDepths(value, caller);
         for (uint256 i = 0; i < values.length; i++) {
             inputDepths = _maxDepths(inputDepths, _cacheDepths(values[i], caller));
         }
 
-        _setResultDepths(result, _latency(opCost), inputDepths);
+        _chargeOperation(opCost, caller, result, inputDepths);
     }
 
-    /// @dev Records `result`'s depths: the operation's latency added to both depths of its deepest input, checked
-    ///      against both limits.
-    function _setResultDepths(bytes32 result, uint256 opLatency, uint256 inputDepths) private {
+    /// @dev Meters one operation. Its result's depths are the operation's latency added to both depths of its deepest
+    ///      input. The caller's quota pays the part of the result's depth within this transaction that lengthens the
+    ///      transaction's critical path, so an operation off that path costs the quota nothing. The tiers and the
+    ///      transaction limit take the operation's work.
+    function _chargeOperation(uint256 opCost, address caller, bytes32 result, uint256 inputDepths) private {
+        uint256 opLatency = _latency(opCost);
         uint256 depths = (opLatency | (opLatency << 128)) + inputDepths;
+        _setResultDepths(result, depths);
+        _updateAndVerifyHCUTransactionLimit(_work(opCost), _extendCriticalPath(uint128(depths)), caller);
+    }
+
+    /// @dev Raises this transaction's critical path, its deepest result so far, to `txDepth`. Returns by how much.
+    function _extendCriticalPath(uint256 txDepth) private returns (uint256 extension) {
+        uint256 path;
+        assembly {
+            path := tload(TX_CRITICAL_PATH_SLOT)
+        }
+        if (txDepth <= path) return 0;
+        assembly {
+            tstore(TX_CRITICAL_PATH_SLOT, txDepth)
+        }
+        return txDepth - path;
+    }
+
+    /// @dev Records `result`'s depths, checked against both depth limits.
+    function _setResultDepths(bytes32 result, uint256 depths) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (uint128(depths) > $.maxHCUDepthPerTx) revert HCUTransactionDepthLimitExceeded();
         uint256 maxDepth = $.maxCrossTxDepth;
@@ -484,11 +502,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
 
     /**
      * @notice Updates and verifies the HCU transaction limit.
-     * @param opWork The operation's work, charged to the quota, the tiers and the transaction.
+     * @param opWork The operation's work, charged to the tiers and the transaction.
+     * @param pathExtension How much the operation lengthens the transaction's critical path, charged to the quota.
      * @param caller Contract that runs the operation, charged to its quota.
      */
-    function _updateAndVerifyHCUTransactionLimit(uint256 opWork, address caller) internal virtual {
-        _updateAndVerifyHCUQuota(opWork, caller);
+    function _updateAndVerifyHCUTransactionLimit(
+        uint256 opWork,
+        uint256 pathExtension,
+        address caller
+    ) internal virtual {
+        _updateAndVerifyHCUQuota(opWork, pathExtension, caller);
 
         uint256 transactionHCU = opWork + _getHCUForTransaction();
         if (transactionHCU > uint256(_getHCULimitStorage().maxHCUPerTx)) {
@@ -498,13 +521,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Charges one operation to the quota of the contract that runs it and to the meters of Reserved through its
-     *         quota's tier. The operation must fit the quota's maximum and each of those meters' thresholds.
+     * @notice Charges one operation's critical-path extension to the quota of the contract that runs it, and its work to
+     *         the meters of Reserved through its quota's tier. It must fit the quota's maximum and each of those meters'
+     *         thresholds.
      * @dev Checks every meter before writing any, so a refused operation spends none.
      * @param opWork Work of the current operation.
+     * @param pathExtension How much the operation lengthens the transaction's critical path.
      * @param caller Contract that calls FHEVMExecutor.
      */
-    function _updateAndVerifyHCUQuota(uint256 opWork, address caller) internal virtual {
+    function _updateAndVerifyHCUQuota(uint256 opWork, uint256 pathExtension, address caller) internal virtual {
         HCULimitStorage storage $ = _getHCULimitStorage();
         uint16 quotaId = _quotaOf(caller);
         Quota storage quota = $.quotas[quotaId];
@@ -513,28 +538,29 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         if (maxHCU == 0) revert HCUQuotaStopped(caller, quotaId);
         uint8 tier = quota.tier;
         Capacity memory capacity = $.capacity;
-        bool capacityMetered = capacity.maxHCU != NO_CAP;
         // Thresholds never increase with the tier number, so the quota's own tier is the first to reach 0.
-        if (capacityMetered && _threshold(capacity, $.tiers[tier].maxLoadBps) == 0) {
+        if (capacity.maxHCU != NO_CAP && _threshold(capacity, $.tiers[tier].maxLoadBps) == 0) {
             revert HCUTierStopped(caller, quotaId);
         }
+        // An unmetered quota, or an operation off the critical path, leaves the quota's meter untouched.
+        if (maxHCU == NO_CAP) pathExtension = 0;
         uint256 used;
         uint256 quotaWait;
-        if (maxHCU != NO_CAP) {
-            (used, quotaWait) = _meter(quota.usedHCU, quota.lastBlock, quota.decayPerBlock, maxHCU, opWork);
+        if (pathExtension != 0) {
+            (used, quotaWait) = _meter(quota.usedHCU, quota.lastBlock, quota.decayPerBlock, maxHCU, pathExtension);
         }
         // An unmetered quota still charges the tiers' meters, so Reserved's meter sees all load.
         uint256[MAX_TIER + 1] memory loads;
         uint256 loadWait;
-        if (capacityMetered) (loads, loadWait) = _tierLoads(tier, capacity, opWork);
+        if (capacity.maxHCU != NO_CAP) (loads, loadWait) = _tierLoads(tier, capacity, opWork);
         // The longer wait names the error, so waiting that long clears every meter.
         if (loadWait > quotaWait) revert HCUChainLoadTooHigh(caller, quotaId, loadWait);
         if (quotaWait != 0) revert HCUQuotaExceeded(caller, quotaId, quotaWait);
-        if (maxHCU != NO_CAP) {
+        if (pathExtension != 0) {
             quota.usedHCU = uint48(used);
             quota.lastBlock = uint48(block.number);
         }
-        if (capacityMetered) {
+        if (capacity.maxHCU != NO_CAP) {
             for (uint8 k = 0; k <= tier; ++k) {
                 Tier storage meter = $.tiers[k];
                 meter.usedHCU = uint48(loads[k]);

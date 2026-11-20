@@ -254,6 +254,8 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         // Stopping it again routes the contracts nobody assigned back to the quotas that replaced the allowlist.
         vm.prank(OWNER);
         hcuConfigurator.setQuota(DEFAULT_QUOTA, 0, 0);
+        // The next cast is another transaction, with its own critical path.
+        hcuLimit.resetCriticalPath();
         assertEq(hcuLimit.getContractQuota(ALLOWED), ALLOWLIST_QUOTA);
         assertEq(hcuLimit.getContractQuota(ALLOWED_BLOCK_WHITELISTED), BLOCK_WHITELIST_QUOTA);
         _compute(ALLOWED);

@@ -37,6 +37,13 @@ contract MockHCULimit is HCULimit {
         _storeDepths(handle, depth);
     }
 
+    /// Clears the critical path, as at the start of a transaction (HCULimit's TX_CRITICAL_PATH_SLOT).
+    function resetCriticalPath() external {
+        assembly {
+            tstore(0xd3cccfaf015cd7b3835804dbbf9260d97c03617a2d391419d2b2622df59e9492, 0)
+        }
+    }
+
     /// Calls metering function `hook` (0 ZeroOp, 1 OneOp, 2 TwoOps, 3 ThreeOps, 4 Array, 5 ValueAndArray).
     function meterForTest(
         uint256 hook,
@@ -82,6 +89,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         0xc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad6500;
 
     bytes32 mockLHS = bytes32(uint256(int256(-1)));
+    /// @dev Result of the last `_add`; the `_expect*` helpers chain on it too.
+    bytes32 internal previousResult;
     bytes32 mockRHS = bytes32(uint256(int256(-2)));
     bytes32 mockMiddle = bytes32(uint256(int256(-3)));
     bytes32 mockResult = bytes32(uint256(int256(-4)));
@@ -887,7 +896,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
 
     /// Every metering function charges work and adds latency to the depth. The depth limit sits between the two,
     /// so a function that swapped them would revert or record the wrong values.
-    function test_meteringChargesWorkAndAddsLatencyToDepth() public {
+    function test_meteringChargesWorkToTheTransactionAndThePathToTheQuota() public {
         uint256 work = 300_000;
         uint256 latency = 100_000;
         vm.startPrank(owner);
@@ -905,8 +914,9 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
             assertEq(hcuLimit.getHCUForTransaction(), work);
             assertEq(hcuLimit.getHCUForHandle(result), latency);
         }
+        // The six results sit side by side at the same depth: the critical path is one latency long.
         (, , uint48 used) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        assertEq(used, 6 * work);
+        assertEq(used, latency);
     }
 
     function test_checkHCUForFheAddRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
@@ -1646,11 +1656,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
 
         vm.startPrank(fhevmExecutor);
         hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, bytes32(uint256(0x2001)), address(0x1234));
-        hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, bytes32(uint256(0x2002)), address(0x1234));
+        hcuLimit.checkHCUForCast(FheType.Uint8, bytes32(uint256(0x2001)), bytes32(uint256(0x2002)), address(0x1234));
         vm.expectRevert(
             abi.encodeWithSelector(HCULimit.HCUQuotaExceeded.selector, address(0x1234), DEFAULT_QUOTA, uint256(1))
         );
-        hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, bytes32(uint256(0x2003)), address(0x1234));
+        hcuLimit.checkHCUForCast(FheType.Uint8, bytes32(uint256(0x2002)), bytes32(uint256(0x2003)), address(0x1234));
         vm.stopPrank();
     }
 
@@ -2245,6 +2255,64 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.stopPrank();
     }
 
+    /// Ten additions side by side: the transaction and the tiers take all the work, the quota one addition's latency.
+    function test_parallelOperationsChargeTheQuotaOnce() public {
+        _setQuotaPerBlock(DEFAULT_QUOTA, 10_000_000);
+        _setCapacity(100_000_000, 1);
+        for (uint256 i = 0; i < 10; ++i) _addInParallel(address(0x1234), 0x1001 + i);
+
+        (, , uint48 used) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        assertEq(used, 84_000);
+        assertEq(hcuLimit.getHCUForTransaction(), 10 * 84_000);
+        (, , uint48 load) = hcuLimit.getCapacity();
+        assertEq(load, 10 * 84_000);
+    }
+
+    function test_chainedOperationsChargeEveryStep() public {
+        _setQuotaPerBlock(DEFAULT_QUOTA, 10_000_000);
+        for (uint256 i = 0; i < 10; ++i) _add(address(0x1234), 0x1001 + i);
+
+        (, , uint48 used) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        assertEq(used, 10 * 84_000);
+    }
+
+    /// A dapp builds a deep value and hands it to a token in the same transaction: each pays only what it adds.
+    function test_eachContractPaysWhatItAddsToTheCriticalPath() public {
+        _setUpTwoMeteredQuotas();
+        for (uint256 i = 0; i < 5; ++i) _add(LOW, 0x1001 + i);
+        _add(HIGH, 0x1101);
+
+        (, , uint48 dappUsed) = hcuLimit.getQuota(LOW_QUOTA);
+        (, , uint48 tokenUsed) = hcuLimit.getQuota(HIGH_QUOTA);
+        assertEq(dappUsed, 5 * 84_000);
+        assertEq(tokenUsed, 84_000);
+    }
+
+    /// Alternating with another contract does not hide a chain: every step that lengthens the path is billed to the
+    /// contract that ran it.
+    function test_interleavingAnotherContractDoesNotHideAChain() public {
+        _setUpTwoMeteredQuotas();
+        for (uint256 i = 0; i < 3; ++i) {
+            _add(LOW, 0x1001 + 2 * i);
+            _add(HIGH, 0x1002 + 2 * i);
+        }
+
+        (, , uint48 dappUsed) = hcuLimit.getQuota(LOW_QUOTA);
+        (, , uint48 otherUsed) = hcuLimit.getQuota(HIGH_QUOTA);
+        assertEq(dappUsed, 3 * 84_000);
+        assertEq(otherUsed, 3 * 84_000);
+    }
+
+    /// An operation beside a deeper chain runs in parallel with it, so it does not lengthen the path and costs nothing.
+    function test_anOperationBesideADeeperChainCostsTheQuotaNothing() public {
+        _setUpTwoMeteredQuotas();
+        for (uint256 i = 0; i < 3; ++i) _add(HIGH, 0x1001 + i);
+        _addInParallel(LOW, 0x1101);
+
+        (, , uint48 dappUsed) = hcuLimit.getQuota(LOW_QUOTA);
+        assertEq(dappUsed, 0);
+    }
+
     /// RFC 040 relies on a quota's limits, usage, pause flag, tier and stored-depth limit sharing one slot.
     function test_aQuotaFitsInOneSlot() public {
         vm.startPrank(owner);
@@ -2268,6 +2336,14 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         assertEq(vm.load(proxy, bytes32(uint256(quotaSlot) + 1)), bytes32(0));
     }
 
+    /// @dev LOW and HIGH in metered quotas of 10,000,000 HCU per block each.
+    function _setUpTwoMeteredQuotas() internal {
+        _setQuotaPerBlock(LOW_QUOTA, 10_000_000);
+        _setQuotaPerBlock(HIGH_QUOTA, 10_000_000);
+        _assign(LOW_QUOTA, LOW);
+        _assign(HIGH_QUOTA, HIGH);
+    }
+
     /// @dev A quota that allows `hcuPerBlock` HCU per block: maximum and decay per block both `hcuPerBlock`.
     function _setQuotaPerBlock(uint16 quotaId, uint48 hcuPerBlock) internal {
         _setQuota(quotaId, hcuPerBlock, hcuPerBlock);
@@ -2284,7 +2360,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     function _expectQuotaExceeded(address caller, uint16 quotaId, uint256 retryAfterBlocks, uint256 resultId) internal {
         vm.prank(fhevmExecutor);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaExceeded.selector, caller, quotaId, retryAfterBlocks));
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(resultId), caller);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, _previousResult(), mockRHS, bytes32(resultId), caller);
     }
 
     function _assign(uint16 quotaId, address account) internal {
@@ -2328,20 +2404,32 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     function _expectQuotaStopped(address caller, uint16 quotaId) internal {
         vm.prank(fhevmExecutor);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaStopped.selector, caller, quotaId));
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x9002)), caller);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, _previousResult(), mockRHS, bytes32(uint256(0x9002)), caller);
     }
 
     /// @dev Expects one 84,000 HCU addition by `caller` to revert because its quota is paused.
     function _expectQuotaPaused(address caller, uint16 quotaId) internal {
         vm.prank(fhevmExecutor);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaPaused.selector, caller, quotaId));
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x9001)), caller);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, _previousResult(), mockRHS, bytes32(uint256(0x9001)), caller);
     }
 
-    /// @dev One 84,000 HCU addition by `caller`, written to `resultId`.
+    /// @dev One 84,000 HCU addition by `caller` on the previous one's result, written to `resultId`: each lengthens
+    ///      the critical path by 84,000.
     function _add(address caller, uint256 resultId) internal {
         vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, _previousResult(), mockRHS, bytes32(resultId), caller);
+        previousResult = bytes32(resultId);
+    }
+
+    /// @dev One 84,000 HCU addition by `caller` beside the previous one, off the critical path.
+    function _addInParallel(address caller, uint256 resultId) internal {
+        vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(resultId), caller);
+    }
+
+    function _previousResult() internal view returns (bytes32) {
+        return previousResult == bytes32(0) ? mockLHS : previousResult;
     }
 
     function _mockPauser(address pauser) internal returns (address) {
@@ -2402,7 +2490,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     function _expectTierStopped(address caller, uint16 quotaId) internal {
         vm.prank(fhevmExecutor);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUTierStopped.selector, caller, quotaId));
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x9002)), caller);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, _previousResult(), mockRHS, bytes32(uint256(0x9002)), caller);
     }
 
     /// @dev Expects one 84,000 HCU addition by `caller` to be refused by the chain's load with `retryAfterBlocks`.
@@ -2416,6 +2504,6 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.expectRevert(
             abi.encodeWithSelector(HCULimit.HCUChainLoadTooHigh.selector, caller, quotaId, retryAfterBlocks)
         );
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(resultId), caller);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, _previousResult(), mockRHS, bytes32(resultId), caller);
     }
 }

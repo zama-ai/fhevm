@@ -25,6 +25,7 @@ contract HCULimitInvariantHandler is Test {
     address internal constant UNCAPPED_CALLER = address(0xCAFE);
     address internal constant PARTNER_ADMIN = address(0xAD);
     bytes32 internal constant INPUT_HANDLE = bytes32(uint256(0xA11CE));
+    bytes32 internal lastResult;
     uint48 internal constant NO_CAP = type(uint48).max;
     uint256 internal constant MAX_BPS = 10_000;
     uint256 internal constant CAST_HCU = 32;
@@ -204,10 +205,14 @@ contract HCULimitInvariantHandler is Test {
     ) internal returns (uint256 successes) {
         vm.startPrank(fhevmExecutor);
         for (uint256 i; i < ops; ++i) {
-            try hcuLimit.checkHCUForCast(FheType.Uint8, INPUT_HANDLE, _nextResultHandle(), caller) {} catch {
+            // Each cast chains on the last one, so each success lengthens the critical path by its 32 HCU.
+            bytes32 input = lastResult == bytes32(0) ? INPUT_HANDLE : lastResult;
+            bytes32 result = _nextResultHandle();
+            try hcuLimit.checkHCUForCast(FheType.Uint8, input, result, caller) {} catch {
                 if (neverRefused) uncappedViolation = true;
                 continue;
             }
+            lastResult = result;
             successes++;
             if (_aMeterPassesItsThreshold(tier, capacityMax)) tierViolation = true;
         }

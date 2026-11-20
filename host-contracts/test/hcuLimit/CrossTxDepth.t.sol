@@ -256,6 +256,18 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         hcu.cacheDepth(keccak256("handle"), address(this));
     }
 
+    /// Each transaction starts a new critical path from its inputs, so a chain split across transactions pays every
+    /// segment: the quota is charged one addition per transaction.
+    function test_AChainSplitAcrossTransactionsPaysEverySegment() public {
+        (, uint48 step) = _startAndMeasure(alice);
+        vm.prank(owner);
+        hcuConfigurator.setQuota(DEFAULT_QUOTA, 10_000_000, 1);
+        for (uint256 i = 0; i < 3; ++i) alice.addOne(alice.value());
+
+        (, , uint48 used) = hcu.getQuota(DEFAULT_QUOTA);
+        assertEq(used, 3 * step);
+    }
+
     function test_LimitAndDecayMustBeBothSetOrBothZero() public {
         vm.startPrank(owner);
         vm.expectRevert(HCUConfigurator.InvalidCrossTxDepthLimit.selector);
