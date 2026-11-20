@@ -269,7 +269,11 @@ mod tests {
         let result = CiphertextManager::for_test(provider)
             .verify_and_retrieve(&[])
             .await;
-        assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Irrecoverable));
+        assert!(matches!(
+            result,
+            Err(ref e) if e.kind == ProcessingErrorKind::Irrecoverable
+                && e.code == ErrorCode::Unprocessable
+        ));
     }
 
     #[tokio::test]

@@ -32,7 +32,7 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
     ciphertext_manager: CiphertextManager<GP>,
 
     /// Gas cap for the `IERC1271.isValidSignature` static call (RFC-012).
-    pub(super) erc1271_gas_limit: u64,
+    erc1271_gas_limit: u64,
 
     /// The maximum number of handles a single decryption request can contain.
     max_handles_per_decryption: usize,
@@ -85,10 +85,7 @@ where
     }
 
     /// Returns the client of the host chain `chain_id`.
-    pub(super) fn host_client(
-        &self,
-        chain_id: u64,
-    ) -> Result<&HostRpcClient<HP>, RequestCheckError> {
+    fn host_client(&self, chain_id: u64) -> Result<&HostRpcClient<HP>, RequestCheckError> {
         self.host_clients.get(&chain_id).ok_or_else(|| {
             RequestCheckError::recoverable(
                 RequestCheckKind::Acl,
@@ -99,7 +96,7 @@ where
     }
 
     /// The EIP-712 domain of user decryption signatures for the host chain `chain_id`.
-    pub(super) fn user_decrypt_domain(&self, chain_id: u64) -> Eip712Domain {
+    fn user_decrypt_domain(&self, chain_id: u64) -> Eip712Domain {
         Eip712Domain {
             name: Some(self.domain.name.clone().into()),
             version: Some(self.domain.version.clone().into()),
@@ -111,7 +108,7 @@ where
 }
 
 /// Checks the current time is within the user-signed validity window `[start, start + duration]`.
-pub(super) fn check_validity_window(start: U256, duration: U256) -> Result<(), RequestCheckError> {
+fn check_validity_window(start: U256, duration: U256) -> Result<(), RequestCheckError> {
     let now = U256::from(Utc::now().timestamp() as u64);
     let end = start.saturating_add(duration);
     if now < start {
