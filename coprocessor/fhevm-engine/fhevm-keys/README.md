@@ -16,7 +16,8 @@ FHE keys for the coprocessor tests that run without a KMS. Git LFS stores them.
   keygen (`BC_PARAMS_SNS`). The pad-worker needs it.
 - `CompressedXofKeySet::generate` arguments: seed of 32 zero bytes, 128 bits of security, Hamming
   weight bound 0.8, tag `fhevm-keys-xof-fixture`.
-- tfhe-rs: commit `3127a4b` (zama-ai/tfhe-rs#4143, tfhe 1.9.0).
+- tfhe-rs: made with commit `3127a4b` (zama-ai/tfhe-rs#4143, tfhe 1.9.0). They load with the
+  workspace pin (`12218eb`, zama-ai/tfhe-rs#4199). "Regenerate" uses the pinned tfhe-rs.
 
 The secret keys are random: each run gives other keys.
 
