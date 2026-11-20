@@ -13,7 +13,7 @@
 
 DO $$
 DECLARE
-    force_enabled BOOLEAN := current_setting('coprocessor_db_rollback.force', true) = 'on';
+    force_enabled BOOLEAN := coalesce(current_setting('coprocessor_db_rollback.force', true), '') = 'on';
     duplicated TEXT;
 BEGIN
     SELECT string_agg(stack_role || ':' || n, ', ')

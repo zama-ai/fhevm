@@ -227,20 +227,29 @@ fi
 
 echo "== Forced rollback across 20260725120000"
 expect_failure "anything other than --force is refused" "usage:" "$MIGRATE" rollback "$BASELINE" --yes
-if output=$("$MIGRATE" rollback "$BASELINE" --force 2>&1); then
-    [[ $output == *"force=true"* ]] && pass "forced rollback to $BASELINE" || fail "forced rollback did not report force=true: $output"
+# Stop right below 20260725120000 first: host_chain_id still exists there, so the
+# rows the forced down kept can be checked. 20260708120000 drops the column.
+if output=$("$MIGRATE" rollback 20260721120000 --force 2>&1); then
+    [[ $output == *"force=true"* ]] && pass "forced rollback to 20260721120000" || fail "forced rollback did not report force=true: $output"
 else
-    fail "forced rollback to $BASELINE: $output"
+    fail "forced rollback to 20260721120000: $output"
 fi
 snapshot "$WORK/forced"
-if diff -u "$WORK/up_$BASELINE" "$WORK/forced" >"$WORK/diff_forced"; then
-    pass "schema matches $BASELINE"
+if diff -u "$WORK/up_20260721120000" "$WORK/forced" >"$WORK/diff_forced"; then
+    pass "schema matches 20260721120000"
 else
-    fail "schema differs from $BASELINE"
+    fail "schema differs from 20260721120000"
     sed 's/^/        /' "$WORK/diff_forced"
 fi
 [[ $(psql_do -c "SELECT string_agg(stack_role || ':' || host_chain_id, ',' ORDER BY stack_role) FROM upgrade_state") == BCS:80002,GCS:11155111 ]] \
     && pass "only the row with the lowest host_chain_id survived per stack role" || fail "unexpected upgrade_state rows: $(psql_do -c 'SELECT stack_role, host_chain_id FROM upgrade_state')"
+if output=$("$MIGRATE" rollback "$BASELINE" 2>&1); then
+    pass "the rest of the rollback to $BASELINE needs no --force"
+else
+    fail "rollback 20260721120000 -> $BASELINE: $output"
+fi
+[[ $(psql_do -c "SELECT string_agg(stack_role, ',' ORDER BY stack_role) FROM upgrade_state") == BCS,GCS ]] \
+    && pass "one upgrade_state row per stack role at the baseline" || fail "unexpected upgrade_state rows at the baseline"
 
 # -------------------------------------------------------------------------
 # 4. Guards
