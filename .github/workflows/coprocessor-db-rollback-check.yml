@@ -1,8 +1,11 @@
 name: coprocessor-db-rollback-check
 
-# Fails a pull request that leaves the rollback tool incomplete: a migration
-# without a down file, a down file without a migration, or a stray file. The
-# image build runs the same check, but only after the merge.
+# Fails a pull request that leaves the rollback tool incomplete or wrong:
+#   - migration-files: a migration without a down file, a down file without a
+#     migration, or a stray file (the image build runs the same check);
+#   - roundtrip: tests/roundtrip.sh against a throwaway Postgres, which applies
+#     the coprocessor's migrations, reverts them one by one with the tool and
+#     compares the schema after each revert with the one before the migration.
 
 on:
   pull_request:
@@ -30,3 +33,35 @@ jobs:
 
       - name: Every migration has a down file
         run: coprocessor-db-rollback/scripts/migrate.sh check
+
+  roundtrip:
+    name: coprocessor-db-rollback-check/roundtrip
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: 'read' # Required to checkout repository code
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup_rust
+        with:
+          toolchain-dir: coprocessor/fhevm-engine
+
+      # Same version and features as the db-migration image, so the test runs
+      # the sqlx the migrations are applied with.
+      - name: Cache sqlx-cli
+        id: sqlx-cli-cache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.cargo/bin/sqlx
+          key: sqlx-cli-0.7.2-postgres-rustls-${{ runner.os }}-${{ hashFiles('coprocessor/fhevm-engine/rust-toolchain.toml') }}
+
+      - name: Install sqlx-cli
+        if: steps.sqlx-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres,rustls --locked
+
+      - name: Round trip against a throwaway Postgres
+        run: coprocessor-db-rollback/tests/roundtrip.sh

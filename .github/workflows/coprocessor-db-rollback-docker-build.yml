@@ -44,7 +44,6 @@ jobs:
       image-name: "fhevm/coprocessor-db-rollback"
       docker-file: "coprocessor-db-rollback/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-db-rollback"
-      # sqlx-cli is compiled from source; 16 vCPUs keep a cache-miss build short.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
-      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      # Nothing is compiled: the image adds files on top of the db-migration
+      # image (DB_MIGRATION_TAG in the Dockerfile).
       image-tag: ${{ inputs.image-tag }}

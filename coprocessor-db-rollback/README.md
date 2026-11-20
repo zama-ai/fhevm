@@ -4,11 +4,12 @@ Rolls the coprocessor database schema back to an earlier migration, so that an
 older coprocessor version can be deployed again.
 
 It is a separate tool from the coprocessor. The db-migration image applies the
-migrations with `sqlx migrate run` and has no way to undo them; this image
-carries `sqlx-cli`, a copy of those migrations, a down file for each one, and
+migrations with `sqlx migrate run` and has no way to undo them; this image is
+that image plus a copy of those migrations, a down file for each one, and
 `scripts/migrate.sh`. It never applies a migration and contains no coprocessor
 code. It has the same shape as `relayer-db-rollback` and
-`kms-connector-db-rollback`.
+`kms-connector-db-rollback`, and connects to the database the way the
+migration Job does (RDS IAM token or password).
 
 It is meant to be used a few times a year, by an operator, following the
 procedure below.
@@ -64,6 +65,7 @@ migrate.sh rollback <target-version> --force
 | `DATABASE_URL` | for `info` and `rollback` | | Postgres connection string of the coprocessor database |
 | `MAX_ATTEMPTS` | no | `20` | Connection attempts, 2 seconds apart |
 | `BASELINE_VERSION` | no | `20260704130000` | Lowest target accepted |
+| `DATABASE_IAM_AUTH_ENABLED` | no | | When true, `/prepare_database_url.sh` from the db-migration base image mints an RDS IAM token into `PGPASSWORD` and sets `PGSSLMODE`, as the migration Job does. Needs `DATABASE_IAM_REGION` and the pod's AWS identity. |
 
 The image runs `migrate.sh info` by default. A rollback has to be requested
 explicitly:
@@ -228,7 +230,9 @@ incident.
 ## Testing
 
 `tests/roundtrip.sh` needs Docker and `sqlx-cli` 0.7.2, the version the
-db-migration image pins. Against a throwaway Postgres it:
+db-migration image pins. The pull-request workflow
+`coprocessor-db-rollback-check` runs it on every change to this directory.
+Against a throwaway Postgres it:
 
 - checks the copies are identical to the coprocessor's migrations;
 - applies the coprocessor's migrations one by one, reverts the ones above the
@@ -245,6 +249,12 @@ coprocessor-db-rollback/tests/roundtrip.sh
 ```
 
 ## Image and deployment
+
+The image is `ghcr.io/zama-ai/fhevm/coprocessor/db-migration:<DB_MIGRATION_TAG>`
+plus this directory. `DB_MIGRATION_TAG` is set in the Dockerfile and must be a
+db-migration image of the same release branch as the migrations copied here:
+the base image is the one that applied them, so the tool runs the same
+`sqlx` build, and it brings `psql`, the AWS CLI and `/prepare_database_url.sh`.
 
 The image is not built automatically. It is built on demand, when a rollback is
 being prepared, by running
@@ -269,9 +279,11 @@ the environment:
 | testnet, mainnet | `hub.zama.org/internal/zama-ai/fhevm/coprocessor-db-rollback:<tag>` | The tag has to be imported first, in the gitops repository: `image-promotion/scripts/zpromo import ghcr zama-ai/fhevm/coprocessor-db-rollback <tag>`. Mainnet accepts no other source. |
 
 Run it as a one-off Kubernetes Job in the `coproc` namespace of the operator,
-one Job per coprocessor database, with the service account of that operator's
-db-migration Job (the RDS instances accept IAM authentication only, so
-`DATABASE_URL` is built from a `rds generate-db-auth-token` call at start, the
-way `coprocessor/fhevm-engine/db-migration/prepare_database_url.sh` does it)
-and `args: ["rollback", "<target-version>"]`. Add the Job for the rollback and
-remove it afterwards: it must not run again on a later sync.
+one Job per coprocessor database. In gitops the simplest form is the
+coprocessor chart's db-migration Job with `dbMigration.image` pointing at this
+image and `dbMigration.command` set to `["/app/scripts/migrate.sh", "info"]`
+or `["/app/scripts/migrate.sh", "rollback", "<target-version>"]`: the chart
+then gives the Job the same `DATABASE_URL`, IAM settings, SSL root certificate
+and service account as the migration Job of that operator. Keep the Job in
+`info` mode between rollbacks, or disabled: a rollback Job must not run again
+on a later sync.

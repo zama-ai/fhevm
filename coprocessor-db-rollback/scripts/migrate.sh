@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Rolls the coprocessor database back to an earlier migration version.
 #
@@ -25,6 +25,11 @@
 #
 # Environment:
 #   DATABASE_URL    postgres connection string (required for info and rollback)
+#   DATABASE_IAM_AUTH_ENABLED
+#                   when true, /prepare_database_url.sh (from the db-migration
+#                   base image) mints an RDS IAM token into PGPASSWORD and sets
+#                   PGSSLMODE, exactly as the migration Job does; it needs
+#                   DATABASE_IAM_REGION and the pod's AWS identity
 #   MAX_ATTEMPTS    connection attempts, 2 seconds apart (default: 20)
 #   MIGRATIONS_DIR  migration files (default: ../migrations next to this script)
 #   BASELINE_VERSION
@@ -288,6 +293,19 @@ if [ -z "$DATABASE_URL" ]; then
     fail "$ACTION" "DATABASE_URL is required"
 fi
 export DATABASE_URL
+
+# Same connection setup as the migration Job: the base image's helper turns an
+# IAM-authenticated DATABASE_URL into PGPASSWORD/PGSSLMODE for sqlx.
+case "${DATABASE_IAM_AUTH_ENABLED:-}" in
+    1 | [Tt][Rr][Uu][Ee] | [Yy][Ee][Ss] | [Oo][Nn])
+        if [ ! -f /prepare_database_url.sh ]; then
+            fail "$ACTION" "DATABASE_IAM_AUTH_ENABLED is set but /prepare_database_url.sh is not in this image"
+        fi
+        if ! . /prepare_database_url.sh; then
+            fail "$ACTION" "could not prepare the IAM database connection"
+        fi
+        ;;
+esac
 
 case "$MAX_ATTEMPTS" in
     '' | *[!0-9]* | 0)
