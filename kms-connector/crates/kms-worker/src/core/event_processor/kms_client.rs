@@ -869,23 +869,37 @@ mod tests {
         assert_eq!(errors, 1);
     }
 
+    #[rstest::rstest]
+    #[case(Code::Cancelled, 2, 1)]
+    #[case(Code::DeadlineExceeded, 2, 1)]
+    #[case(Code::ResourceExhausted, 2, 1)]
+    #[case(Code::Unavailable, 2, 1)]
+    #[case(Code::Unknown, 2, 1)]
+    #[case(Code::AlreadyExists, 1, 0)]
     #[tokio::test]
-    async fn send_already_exists_is_ack() {
+    async fn sending_returns_ack(
+        #[case] code: Code,
+        #[case] expected_attempts: usize,
+        #[case] expected_errors: i16,
+    ) {
         let mut attempts = 0;
         let (errors, result) = send_request_with_retries(
             3,
             || {
                 attempts += 1;
-                ready(Err::<Response<u8>, _>(Status::already_exists(
-                    "request in progress",
-                )))
+                let result = if attempts == 1 {
+                    Err(Status::new(code, "retry"))
+                } else {
+                    Ok(Response::new(42))
+                };
+                ready(result)
             },
             EventType::KeygenRequest,
             |_| Ok(KmsSendResponse::Ack),
         )
         .await;
         assert!(matches!(result, Ok(KmsSendResponse::Ack)));
-        assert_eq!(attempts, 1);
-        assert_eq!(errors, 0);
+        assert_eq!(attempts, expected_attempts);
+        assert_eq!(errors, expected_errors);
     }
 }
