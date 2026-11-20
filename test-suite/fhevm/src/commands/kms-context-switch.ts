@@ -669,13 +669,10 @@ const destroyContextAndEpoch = async (
   await runSmoke(`kms-context-switch: input-proof after destroying retired context ${oldContextId} and epoch ${oldEpochId}`);
 };
 
-/** Destroys pre-swap contexts and checks refusal after every proxy applies the finalized state.
- * Returns the IDs of the destroyed contexts. */
-const proxyRefusesDroppedNodes = async (
-  state: State,
+/** Destroys every pre-swap context that is still valid. Returns the destroyed IDs. */
+const destroyPreSwapContexts = async (
   target: DestroyTarget,
   ids: { first: ContextAndEpoch; current: ContextAndEpoch },
-  runProxyCheck: ProxyCheckRunner,
 ): Promise<bigint[]> => {
   const { rpcUrl, protocolConfig, owner } = target;
   const contextDestroyedTopic = await keccakTopic("KmsContextDestroyed(uint256)");
@@ -692,7 +689,6 @@ const proxyRefusesDroppedNodes = async (
     }
   }
   await assertCurrentUnchanged(rpcUrl, protocolConfig, ids.current, "destroying the pre-swap contexts");
-  await proxiesRefuseNodes(rpcUrl, "dropped", committeePlan(state.scenario.kms).dropped, runProxyCheck);
   return destroyed;
 };
 
@@ -951,11 +947,13 @@ export const runKmsContextSwitchProfile = async (
   // 5b) Prove the promoted spare actually holds a working reshared key.
   await proveSpareInQuorum(state, runDecryption);
 
-  // 6b) Every coprocessor-proxy refuses the dropped node once no Active context has it.
+  // 6b) Every coprocessor-proxy refuses the dropped node once no Active context has it. Every
+  //     replica then drops the same contexts.
   if (runProxyCheck) {
-    const destroyed = await proxyRefusesDroppedNodes(
-      state, { rpcUrl, protocolConfig: configAddress, owner }, { first: baseline, current: afterSwap }, runProxyCheck,
+    const destroyed = await destroyPreSwapContexts(
+      { rpcUrl, protocolConfig: configAddress, owner }, { first: baseline, current: afterSwap },
     );
+    await proxiesRefuseNodes(rpcUrl, "dropped", committeePlan(state.scenario.kms).dropped, runProxyCheck);
     for (const contextId of destroyed) {
       await waitForDestructionQuorum(canonical, "KmsContextDestructionQuorumReached(uint256,bytes)", contextId);
     }
@@ -979,7 +977,7 @@ export const runKmsContextSwitchProfile = async (
       "and the promoted spare serves the 2t+1 quorum; user-decryption works under each transition; the " +
       "input-proof app flow held at every checkpoint; every replica matched the canonical context, epoch and signers after the replay of each step, and dropped the destroyed context and epoch" +
       (runProxyCheck
-        ? "; and every coprocessor-proxy refused the spare while the swap was held at Created, accepted it once promoted, accepted the dropped node until its context was destroyed, then refused it; every replica dropped the destroyed pre-swap contexts after the replay"
+        ? "; every coprocessor-proxy refused the spare while the swap was held at Created, accepted it once promoted, accepted the dropped node until its context was destroyed, then refused it; and every replica dropped the destroyed pre-swap contexts after the replay"
         : ""),
   );
 };
