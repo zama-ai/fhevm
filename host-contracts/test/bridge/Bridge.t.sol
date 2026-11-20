@@ -881,12 +881,12 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         assertEq(lc.dstHandleList[1], dstH1);
     }
 
-    /// @dev A bridged handle has no stored depth on this chain, so with the cross-transaction depth limit on
+    /// @dev A bridged handle has no stored depth on this chain, so with the carried-depth limit on
     ///      it starts a new chain. Uses the canonical bridge address, which the ACL lets grant transiently.
     function test_LzCompose_BridgedHandleStartsNewChain() public {
         ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
         vm.prank(owner);
-        HCUConfigurator(hcuConfiguratorAdd).setCrossTxDepthLimit(5_000_000, 1);
+        HCUConfigurator(hcuConfiguratorAdd).setCarriedDepthLimit(5_000_000, 1);
 
         bytes32 dstHandle = _makeHandle(100);
         bytes32[] memory srcHandleList = new bytes32[](1);

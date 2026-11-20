@@ -118,8 +118,8 @@ contract ACLTest is HostContractsDeployerTestUtils {
         for (uint256 previous = 6; previous <= 7; previous++) {
             vm.store(proxy, initializableStorage, bytes32(previous));
 
-            // HCULimit before this upgrade has no getCrossTxDepthLimit.
-            vm.mockCallRevert(hcuLimitAdd, abi.encodeCall(HCULimit.getCrossTxDepthLimit, ()), "");
+            // HCULimit before this upgrade has no getCarriedDepthLimit.
+            vm.mockCallRevert(hcuLimitAdd, abi.encodeCall(HCULimit.getCarriedDepthLimit, ()), "");
             vm.expectRevert();
             acl.reinitializeV7();
 

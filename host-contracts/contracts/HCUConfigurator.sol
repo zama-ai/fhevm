@@ -7,7 +7,7 @@ import {aclAdd, hcuLimitAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "./ACL.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {HCULimit} from "./HCULimit.sol";
-import {ALLOWLIST_QUOTA, BLOCK_WHITELIST_QUOTA, DEFAULT_QUOTA, MAX_TIER, RESERVED_TIER} from "./shared/Constants.sol";
+import {BLOCK_WHITELIST_QUOTA, DEFAULT_QUOTA, MAX_TIER, RESERVED_TIER} from "./shared/Constants.sol";
 
 /**
  * @title HCUConfigurator
@@ -46,18 +46,14 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ///         or when a quota is moved to a tier whose threshold is 0.
     error InvalidTier(uint8 tier);
 
-    /// @notice Returned when only one of the cross-transaction depth limit and its decay is zero.
-    error InvalidCrossTxDepthLimit();
+    /// @notice Returned when only one of the carried-depth limit and its decay is zero.
+    error InvalidCarriedDepthLimit();
 
-    /// @notice Returned when a stored-depth limit is set on quota 1 or 2, above maxDepth, or, for a quota other than
-    ///         the default, below the default quota's limit or while the default quota has none.
-    error InvalidMaxStoredDepth(uint16 quotaId);
+    /// @notice Emitted when the carried-depth limit is updated.
+    event CarriedDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
 
-    /// @notice Emitted when the cross-transaction depth limit is updated.
-    event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
-
-    /// @notice Emitted when a quota's stored-depth limit is set.
-    event QuotaMaxStoredDepthSet(uint16 indexed quotaId, uint48 maxStoredDepth, address indexed setBy);
+    /// @notice Emitted when a quota's carried-depth limit is set.
+    event QuotaMaxCarriedDepthSet(uint16 indexed quotaId, uint48 maxCarriedDepth, address indexed setBy);
 
     /// @notice Emitted when a quota's maximum and decay are set.
     event QuotaSet(uint16 indexed quotaId, uint48 maxHCU, uint48 decayPerBlock, address indexed setBy);
@@ -148,7 +144,7 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Sets a quota's maximum usage and how much usage decays per block, like setCrossTxDepthLimit.
+     * @notice Sets a quota's maximum usage and how much usage decays per block, like setCarriedDepthLimit.
      *         A maximum of type(uint48).max leaves the quota unmetered; (0, 0) stops it.
      */
     function setQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) external onlyACLOwner {
@@ -255,7 +251,7 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the per-transaction HCU depth limit.
      * @param maxHCUDepthPerTx New depth limit; type(uint48).max for no limit.
-     * @dev Not compared with the other limits. Once cross-transaction depth is enabled, it bounds every result,
+     * @dev Not compared with the other limits. Once the carried-depth limit is on, it bounds every result,
      *      including those of a transaction on fresh inputs, so governance sets this one to no limit.
      */
     function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external onlyACLOwner {
@@ -275,43 +271,33 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Sets the cross-transaction depth limit and how much carried depth decays per block.
-     * @dev (0, 0) disables it. Decay must be nonzero when enabled, or a chain that reaches the limit stays
-     *      blocked forever. Permissions granted while disabled carry no depth. A new decay rate also applies to depths
-     *      already stored. Once the per-transaction limits are lifted, this limit alone bounds depth: restore them
-     *      before disabling it.
+     * @notice Sets the chain's carried-depth limit and how much carried depth decays per block. The limit applies to
+     *         every quota without a limit of its own (see setQuotaMaxCarriedDepth).
+     * @dev (0, 0) disables it, quotas' limits included. Decay must be nonzero when enabled, or a chain that reaches
+     *      the limit stays blocked forever. Permissions granted while disabled carry no depth. A new decay rate also
+     *      applies to depths already stored. Once the per-transaction limits are lifted, this limit alone bounds
+     *      depth: restore them before disabling it.
      */
-    function setCrossTxDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external onlyACLOwner {
-        if ((maxDepth == 0) != (decayPerBlock == 0)) revert InvalidCrossTxDepthLimit();
+    function setCarriedDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external onlyACLOwner {
+        if ((maxDepth == 0) != (decayPerBlock == 0)) revert InvalidCarriedDepthLimit();
         if (maxDepth != 0) {
             // Every operation on a stored handle reads ACL.getStoredDepth: refuse to enable before ACL has it.
             ACL(aclAdd).getStoredDepth(bytes32(0), address(0));
         }
-        HCU_LIMIT.setCrossTxDepthLimit(maxDepth, decayPerBlock);
-        emit CrossTxDepthLimitSet(maxDepth, decayPerBlock);
+        HCU_LIMIT.setCarriedDepthLimit(maxDepth, decayPerBlock);
+        emit CarriedDepthLimitSet(maxDepth, decayPerBlock);
     }
 
     /**
-     * @notice Sets the carried depth above which a quota's contracts cannot grant a handle, with allow or allowTransient.
-     *         0 leaves only the cross-transaction depth limit; otherwise the limit is at most maxDepth.
-     * @dev The default quota keeps the strictest limit: a quota admin can move its contract to the default quota, grant
-     *      a deep handle there and move it back. So the default quota's limit is set first, and another quota's limit
-     *      is refused below it; another quota's 0 counts as maxDepth. Raising the default quota's limit later is not
-     *      checked against the others. Quotas 1 and 2 take no limit: they only hold allowlisted contracts until the
-     *      owner assigns them.
+     * @notice Sets the carried depth above which a quota's contracts cannot compute a result. It replaces the chain's
+     *         limit for this quota, stricter or looser; 0 applies the chain's limit. It applies only while the chain's
+     *         limit is on.
+     * @dev A quota's limit is also the deepest chain one of its transactions can build on fresh inputs, once the
+     *      per-transaction limits are lifted.
      */
-    function setQuotaMaxStoredDepth(uint16 quotaId, uint48 maxStoredDepth) external onlyACLOwner {
-        if (quotaId == ALLOWLIST_QUOTA || quotaId == BLOCK_WHITELIST_QUOTA) revert InvalidMaxStoredDepth(quotaId);
-        if (maxStoredDepth != 0) {
-            (uint48 maxDepth, ) = HCU_LIMIT.getCrossTxDepthLimit();
-            if (maxStoredDepth > maxDepth) revert InvalidMaxStoredDepth(quotaId);
-            if (quotaId != DEFAULT_QUOTA) {
-                uint48 defaultLimit = HCU_LIMIT.getQuotaMaxStoredDepth(DEFAULT_QUOTA);
-                if (defaultLimit == 0 || maxStoredDepth < defaultLimit) revert InvalidMaxStoredDepth(quotaId);
-            }
-        }
-        HCU_LIMIT.setQuotaMaxStoredDepth(quotaId, maxStoredDepth);
-        emit QuotaMaxStoredDepthSet(quotaId, maxStoredDepth, msg.sender);
+    function setQuotaMaxCarriedDepth(uint16 quotaId, uint48 maxCarriedDepth) external onlyACLOwner {
+        HCU_LIMIT.setQuotaMaxCarriedDepth(quotaId, maxCarriedDepth);
+        emit QuotaMaxCarriedDepthSet(quotaId, maxCarriedDepth, msg.sender);
     }
 
     /**

@@ -72,7 +72,15 @@ async function getHCULimit(hre: HardhatRuntimeEnvironment, options: CommonArgs):
 async function runQuotaTask(
   hre: HardhatRuntimeEnvironment,
   options: CommonArgs,
-  method: 'setQuota' | 'assignQuota' | 'setQuotaAdmin' | 'grantQuota' | 'revokeQuota' | 'pauseQuota' | 'unpauseQuota',
+  method:
+    | 'setQuota'
+    | 'assignQuota'
+    | 'setQuotaAdmin'
+    | 'grantQuota'
+    | 'revokeQuota'
+    | 'pauseQuota'
+    | 'unpauseQuota'
+    | 'setQuotaMaxCarriedDepth',
   args: unknown[],
   sender: Sender,
 ): Promise<void> {
@@ -137,6 +145,26 @@ quotaTask(
       }
     }
     await runQuotaTask(hre, options, 'setQuota', [id, max, decay], 'owner');
+  });
+
+quotaTask(
+  'task:setQuotaMaxCarriedDepth',
+  "Set a quota's carried-depth limit, which replaces the chain's for its contracts, stricter or looser; 0 applies " +
+    "the chain's. A looser limit lets that quota's values get deeper, so the value must not exceed --ceiling.",
+)
+  .addParam('maxCarriedDepth', 'Carried-depth limit in HCU, or 0 for the chain limit', undefined, types.string)
+  .addParam(
+    'ceiling',
+    "The deepest limit any quota may get on this chain, from the chain's sizing",
+    undefined,
+    types.string,
+  )
+  .setAction(async function ({ quotaId, maxCarriedDepth, ceiling, ...options }, hre) {
+    const id = parseUint(quotaId, 'Quota id', 0xffffn);
+    const limit = parseUint(maxCarriedDepth, 'Carried-depth limit', MAX_UINT48);
+    const bound = parseUint(ceiling, 'Ceiling', MAX_UINT48);
+    if (limit > bound) throw new Error(`Carried-depth limit ${limit} is above the ceiling ${bound}.`);
+    await runQuotaTask(hre, options, 'setQuotaMaxCarriedDepth', [id, limit], 'owner');
   });
 
 quotaTask('task:assignQuota', 'Move a dApp contract to a quota; the owner can move it from any quota')
