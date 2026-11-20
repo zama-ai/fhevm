@@ -273,7 +273,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
         emit KmsContextCreationConfirmation(kmsContextId, signer, signature, extraData);
 
-        // Context creation quorum: all new nodes and (n - t) previous nodes confirmed the same digest.
+        // The context creation quorum needs the same digest from all new nodes and (n - t) previous nodes.
         bool quorumReached = canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest] ==
             _kmsCommitteeSize(kmsContextId) &&
             canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest] >=
@@ -283,7 +283,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
 
         $.contextState[kmsContextId] = ContextState.Created;
-        // Create the confirmed context's first epoch here, pairing it with the context by construction.
+        // Create the first epoch of the confirmed context here, so this epoch always pairs with this context.
         uint256 epochId = _createPendingEpoch(kmsContextId);
         // Connectors must read previous key/CRS material from the last block before this epoch request.
         emit NewKmsEpoch(kmsContextId, epochId, previousContextId, $.latestActiveEpochId, block.number - 1);
@@ -312,7 +312,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             }
         }
 
-        // All signers agreed on `epochId`, so promote `contextId` and `epochId` to Active.
+        // All signers agreed. Promote the context and the epoch to Active.
         _activateKmsContextAndEpoch(contextId, epochId);
 
         string[] memory urls;
@@ -635,8 +635,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @dev Reverts when a context switch or epoch rotation is still settling. In flight means the
-     *      latest-issued context is Pending/Created or the latest-issued epoch is Pending. Destroyed
-     *      entries are None and do not count, so the destroy paths reopen the gate.
+     *      latest-issued context is Pending/Created or the latest-issued epoch is Pending. A destroy
+     *      resets the entry to None, so this check passes again.
      */
     function _checkNoKmsLifecycleOperationInFlight() internal view virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();

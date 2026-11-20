@@ -377,7 +377,7 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /**
      * @notice Destroy a superseded (non-current) KMS epoch, preventing it from being used.
-     *         Also used to abort a stuck Pending epoch of an Active context — a same-set rotation whose
+     *         Also aborts a stuck Pending epoch of an Active context. This is a same-set rotation whose
      *         one-shot activation confirmations diverged and can no longer reach unanimity.
      * @param epochId The epoch ID to destroy.
      */
@@ -385,7 +385,7 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /**
      * @notice Propose a coprocessor upgrade. Emits `CoprocessorUpgradeProposed` and does not
-     *         change any on-chain state — the lifecycle of the proposal (dry-run, consensus,
+     *         change any on-chain state. The lifecycle of the proposal (dry-run, consensus,
      *         cutover, failure) is driven entirely off-chain.
      * @param proposalId Caller-supplied identifier for this upgrade attempt. Must be non-zero.
      *        Uniqueness across calls is the caller's responsibility; the contract does not enforce it.

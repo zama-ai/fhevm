@@ -10,7 +10,8 @@ import {KmsContextAnchor, KmsNode, KmsThresholds} from "./shared/Structs.sol";
  */
 abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @notice Lifecycle state of a KMS context: created Pending, promoted to Created once the
-    ///         creation quorum confirms, then Active when its first epoch activates.
+    ///         creation quorum confirms, then Active when its first epoch activates. A destruction
+    ///         resets it to None.
     enum ContextState {
         None,
         Pending,
@@ -19,7 +20,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /// @notice Lifecycle state of an epoch: opened Pending for resharing, then Active once the
-    ///         activation quorum confirms.
+    ///         activation quorum confirms. A destruction resets it to None.
     enum EpochState {
         None,
         Pending,
@@ -222,9 +223,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         uint256 kmsContextId,
         address txSender
     ) external view virtual returns (KmsNode memory) {
-        // Existence-based, not liveness: a context's nodes stay readable for its whole lifecycle —
-        // Pending/Created during resharing, and even once it is destroyed — so key/CRS material
-        // generated under it can still resolve its storage nodes. Only a never-created context reverts.
+        // Checks existence, not liveness, so key and CRS material can still resolve its nodes after
+        // destruction. Only a never-created context reverts.
         if (!_kmsContextExists(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
@@ -282,9 +282,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Returns true if the context is Pending, Created or Active. Destruction resets a context
-     * to None. The v0.14 upgrade gave a state only to the context that was active at that upgrade,
-     * so older contexts also read as None and are not live.
+     * @dev Returns true if the context is Pending, Created or Active. Contexts older than the
+     * v0.14 upgrade read as None.
      */
     function _isLiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
         return _getProtocolConfigStorage().contextState[kmsContextId] != ContextState.None;
