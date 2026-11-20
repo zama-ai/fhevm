@@ -118,6 +118,39 @@ describe("env", () => {
     expect(rendered.instanceEnvs["kms-connector.3"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-3-endpoint:8080");
   });
 
+  test("registers each party's connectorUrl on the port of the configured proxy bind address", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    templateEnvs["kms-connector"].KMS_CONNECTOR_PROXY_BIND_ADDRESS = "0.0.0.0:9443";
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario(),
+      completedSteps: [],
+      updatedAt: "2026-03-30T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
+
+    const urls = [
+      "https://kms-connector-proxy:9443",
+      "https://kms-connector-2-proxy:9443",
+      "https://kms-connector-3-proxy:9443",
+      "https://kms-connector-4-proxy:9443",
+    ];
+    expect(urls.map((_, idx) => rendered.componentEnvs["host-sc"][`KMS_NODE_CONNECTOR_URL_${idx}`])).toEqual(urls);
+    expect(rendered.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe(urls.join(","));
+  });
+
   test("points each coprocessor's proxy at its own prf-service, for requests signed for that coprocessor", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(

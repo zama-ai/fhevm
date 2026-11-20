@@ -51,6 +51,7 @@ pub mod i_pauser_set;
 pub mod i_protocol_config;
 pub mod i_protocol_config_base;
 pub mod i_protocol_config_replica;
+pub mod i_protocol_config_v014;
 pub mod initializable;
 pub mod input_verifier;
 pub mod kms_generation;

@@ -1,4 +1,5 @@
-import { Interface, Wallet } from 'ethers';
+import { StorageUpgradeErrors } from '@openzeppelin/upgrades-core';
+import { ContractFactory, Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
@@ -54,6 +55,39 @@ function parseCsvIntegers(raw: string | undefined): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+// Throws unless the upgrade keeps the storage layout or only appends `connectorUrl` to the element of
+// `kmsNodesForContext`, which `reinitializeV3` migrates.
+export async function assertOnlyKmsNodesLayoutChange(
+  proxyAddress: string,
+  newImplementationFactory: ContractFactory,
+  hre: HardhatRuntimeEnvironment,
+): Promise<void> {
+  try {
+    await hre.upgrades.validateUpgrade(proxyAddress, newImplementationFactory, { kind: 'uups' });
+  } catch (error) {
+    if (!(error instanceof StorageUpgradeErrors) || !isKmsNodesConnectorUrlAppend(error.report.ops)) {
+      throw error;
+    }
+  }
+}
+
+function isKmsNodesConnectorUrlAppend(ops: StorageUpgradeErrors['report']['ops']): boolean {
+  const [op] = ops;
+  if (ops.length !== 1 || op.kind !== 'typechange' || op.updated.label !== 'kmsNodesForContext') {
+    return false;
+  }
+  const mapping = op.change;
+  if (mapping.kind !== 'mapping value' || mapping.inner.kind !== 'array value') {
+    return false;
+  }
+  const struct = mapping.inner.inner;
+  if (struct.kind !== 'struct members' || struct.ops.length !== 1) {
+    return false;
+  }
+  const [member] = struct.ops;
+  return member.kind === 'append' && member.updated.label === 'connectorUrl';
+}
+
 async function upgradeCurrentToNew(
   proxyAddress: string,
   currentImplementation: string,
@@ -61,6 +95,7 @@ async function upgradeCurrentToNew(
   verifyContract: boolean,
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
+  skipStorageCheck = false,
 ) {
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
@@ -84,12 +119,16 @@ async function upgradeCurrentToNew(
 
   // Prepare the new implementation factory and execute the upgrade by calling the reinitialize function
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
+  if (skipStorageCheck) {
+    await assertOnlyKmsNodesLayoutChange(proxyAddress, newImplementationFactory, hre);
+  }
 
   await hre.upgrades.upgradeProxy(currentProxyContract, newImplementationFactory, {
     call: {
       fn: reinitializeFunction.name,
       args: reinitializeArgs,
     },
+    unsafeSkipStorageCheck: skipStorageCheck,
   });
   console.log('Proxy contract successfully upgraded!');
 
@@ -116,6 +155,7 @@ async function deployImplementationForPreparedUpgrade(
   verifyContract: boolean,
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
+  skipStorageCheck = false,
 ): Promise<void> {
   await compileImplementations(currentImplementation, newImplementation, hre);
 
@@ -132,11 +172,15 @@ async function deployImplementationForPreparedUpgrade(
     throw new Error(`No reinitialize function found in ${newImplementation}`);
   }
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
+  if (skipStorageCheck) {
+    await assertOnlyKmsNodesLayoutChange(proxyAddress, newImplementationFactory, hre);
+  }
 
   console.log(`Deploying "${newImplementation}" for prepared upgrade on proxy ${proxyAddress}...`);
   const implementationAddress = String(
     await hre.upgrades.prepareUpgrade(proxyAddress, newImplementationFactory, {
       kind: 'uups',
+      unsafeSkipStorageCheck: skipStorageCheck,
     }),
   );
   console.log('New implementation deployed at:', implementationAddress);
@@ -218,6 +262,7 @@ async function upgradeContract(
   taskArgs: TaskArguments,
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
+  skipStorageCheck = false,
 ) {
   await compileImplementations(taskArgs.currentImplementation, taskArgs.newImplementation, hre);
   await checkImplementationArtifacts(contractName, taskArgs.currentImplementation, taskArgs.newImplementation, hre);
@@ -234,6 +279,7 @@ async function upgradeContract(
     taskArgs.verifyContract,
     hre,
     reinitializeArgs,
+    skipStorageCheck,
   );
 }
 
@@ -243,6 +289,7 @@ async function prepareUpgradeContract(
   taskArgs: TaskArguments,
   hre: HardhatRuntimeEnvironment,
   reinitializeArgs: unknown[] = [],
+  skipStorageCheck = false,
 ) {
   if (taskArgs.useInternalProxyAddress) {
     loadHostAddresses();
@@ -257,6 +304,7 @@ async function prepareUpgradeContract(
     taskArgs.verifyContract,
     hre,
     reinitializeArgs,
+    skipStorageCheck,
   );
 }
 
@@ -481,6 +529,9 @@ task('task:prepareUpgradeKMSVerifier')
     await prepareUpgradeContract('KMSVerifier', 'KMS_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
+// The v0.14 upgrade grows the element of `kmsNodesForContext`, and `reinitializeV3` migrates it. The plugin
+// ignores `@custom:oz-retyped-from` in namespaced storage, so the ProtocolConfig tasks skip its storage
+// check after `assertOnlyKmsNodesLayoutChange`. Remove the skip together with `KmsNodeV014`.
 task('task:upgradeProtocolConfig')
   .addParam(
     'currentImplementation',
@@ -503,7 +554,7 @@ task('task:upgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, [], true);
   });
 
 task('task:prepareUpgradeProtocolConfig')
@@ -528,7 +579,7 @@ task('task:prepareUpgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre, [], true);
   });
 
 task('task:upgradeKMSGeneration')

@@ -102,6 +102,17 @@ abstract contract ProtocolConfigReplicaTestBase is ProtocolConfigTestBase {
         return _nodes(seed, N);
     }
 
+    /// @dev Asserts that both node getters return `nodes`, each `connectorUrl` included.
+    function _assertStoredNodes(uint256 contextId, KmsNode[] memory nodes) internal view {
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodesForContext(contextId)), abi.encode(nodes));
+        for (uint256 i = 0; i < nodes.length; i++) {
+            assertEq(
+                abi.encode(protocolConfigReplica.getKmsNodeForContext(contextId, nodes[i].txSenderAddress)),
+                abi.encode(nodes[i])
+            );
+        }
+    }
+
     function _signers(uint256 seed) internal pure returns (address[] memory signers) {
         uint256[] memory keys = _keys(seed, N);
         signers = new address[](N);

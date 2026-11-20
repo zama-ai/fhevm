@@ -140,6 +140,7 @@ for i in $(seq 1 "${n}"); do
         {\"name\": \"KMS_SIGNER_ADDRESS_${idx}\", \"value\": \"${signer}\"},
         {\"name\": \"KMS_NODE_IP_${idx}\", \"value\": \"${node_url}\"},
         {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}\"},
+        {\"name\": \"KMS_NODE_CONNECTOR_URL_${idx}\", \"value\": \"https://kms-connector-${i}-kms-connector-proxy:8443\"},
         {\"name\": \"KMS_NODE_PARTY_ID_${idx}\", \"value\": \"${i}\"},
         {\"name\": \"KMS_NODE_MPC_IDENTITY_${idx}\", \"value\": \"${node_host}\"},
         {\"name\": \"KMS_NODE_CA_CERT_${idx}\", \"value\": \"${ca_cert}\"},

@@ -13,6 +13,7 @@ use alloy::{
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use fhevm_host_bindings::{
+    i_protocol_config_v014::IProtocolConfigV014,
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
     protocol_config::ProtocolConfig::ProtocolConfigInstance,
 };
@@ -132,7 +133,7 @@ impl BlockchainInstance {
         info!("ProtocolConfigMock deployed at: {}", protocol_config_addr);
 
         // Connector's view calls target finalized block, so we wait to avoid reverts in tests
-        wait_for_deployments_finalized(&provider).await?;
+        wait_for_finalized(&provider, provider.get_block_number().await?).await?;
 
         Ok(BlockchainInstance::new(
             anvil,
@@ -163,20 +164,49 @@ impl BlockchainInstance {
     }
 }
 
-/// Waits until the deployed mock contracts are visible to `finalized`-pinned view calls.
-async fn wait_for_deployments_finalized(provider: &WalletProvider) -> anyhow::Result<()> {
-    let contracts_deployed_at = provider.get_block_number().await?;
+/// Waits until `block` is visible to `finalized`-pinned view calls.
+pub async fn wait_for_finalized(provider: &WalletProvider, block: u64) -> anyhow::Result<()> {
     loop {
         let finalized = provider
             .get_block_by_number(BlockNumberOrTag::Finalized)
             .await?
             .map(|block| block.header.number)
             .unwrap_or_default();
-        if finalized >= contracts_deployed_at {
+        if finalized >= block {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+}
+
+alloy::sol! {
+    /// The mock-only functions of `tests/contracts/ProtocolConfigMock.sol`.
+    #[sol(rpc)]
+    interface ProtocolConfigMockExt {
+        function defineKmsContextV014() external;
+    }
+}
+
+/// Defines a context on `ProtocolConfigMock` as `ProtocolConfig` v0.2.0 did.
+///
+/// Returns the emitted v0.14 `NewKmsContext` and its block number.
+pub async fn define_kms_context_v014(
+    protocol_config: &ProtocolConfigInstance<WalletProvider>,
+) -> anyhow::Result<(IProtocolConfigV014::NewKmsContext, u64)> {
+    let receipt =
+        ProtocolConfigMockExt::new(*protocol_config.address(), protocol_config.provider())
+            .defineKmsContextV014()
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+    let block = receipt
+        .block_number
+        .ok_or_else(|| anyhow!("receipt has no block number"))?;
+    let log = receipt
+        .decoded_log::<IProtocolConfigV014::NewKmsContext>()
+        .ok_or_else(|| anyhow!("no v0.14 NewKmsContext in receipt"))?;
+    Ok((log.data, block))
 }
 
 /// How long to wait for Anvil to start listening. The default of 10s in `alloy_node_bindings` is

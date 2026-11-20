@@ -37,6 +37,19 @@ contract ProtocolConfigMock {
         string mpcIdentity;
         bytes caCert;
         string storagePrefix;
+        string connectorUrl;
+    }
+
+    /// The `KmsNodeParams` of `ProtocolConfig` v0.2.0 (fhevm v0.14), before `connectorUrl`.
+    struct KmsNodeParamsV014 {
+        address txSenderAddress;
+        address signerAddress;
+        string ipAddress;
+        string storageUrl;
+        int32 partyId;
+        string mpcIdentity;
+        bytes caCert;
+        string storagePrefix;
     }
 
     struct PcrValues {
@@ -57,10 +70,27 @@ contract ProtocolConfigMock {
         bytes crsDigest;
     }
 
+    struct KmsContextAnchor {
+        uint256 emissionBlockNumber;
+        bytes32 contextInfoHash;
+    }
+
+    mapping(uint256 => KmsContextAnchor) kmsContextAnchors;
+
     event NewKmsContext(
         uint256 indexed contextId,
         uint256 indexed previousContextId,
         KmsNodeParams[] kmsNodeParams,
+        KmsThresholds thresholds,
+        string softwareVersion,
+        PcrValues[] pcrValues
+    );
+
+    /// The `NewKmsContext` event of `ProtocolConfig` v0.2.0 (fhevm v0.14).
+    event NewKmsContext(
+        uint256 indexed contextId,
+        uint256 indexed previousContextId,
+        KmsNodeParamsV014[] kmsNodeParams,
         KmsThresholds thresholds,
         string softwareVersion,
         PcrValues[] pcrValues
@@ -159,6 +189,40 @@ contract ProtocolConfigMock {
         uint256 previousContextId = contextCounter;
         contextCounter++;
         emit NewKmsContext(contextCounter, previousContextId, kmsNodeParams, thresholds, softwareVersion, pcrValues);
+    }
+
+    /// Defines a context as `ProtocolConfig` v0.2.0 did: v0.14 event and anchor over v0.14 nodes.
+    function defineKmsContextV014() external {
+        KmsNodeParamsV014[] memory kmsNodeParams = new KmsNodeParamsV014[](1);
+        kmsNodeParams[0] = KmsNodeParamsV014({
+            txSenderAddress: address(uint160(0xA1)),
+            signerAddress: address(uint160(0xB1)),
+            ipAddress: "http://kms-0.example.com:50001",
+            storageUrl: "https://s0.example.com",
+            partyId: 1,
+            mpcIdentity: "kms-0",
+            caCert: hex"ca",
+            storagePrefix: "PUB-p1"
+        });
+        KmsThresholds memory thresholds = KmsThresholds(1, 2, 2, 1);
+        string memory softwareVersion = "v0.14.0";
+        PcrValues[] memory pcrValues = new PcrValues[](1);
+        pcrValues[0] = PcrValues(hex"01", hex"02", hex"03");
+
+        uint256 previousContextId = contextCounter;
+        contextCounter++;
+        kmsContextAnchors[contextCounter] = KmsContextAnchor(
+            block.number,
+            keccak256(abi.encode(kmsNodeParams, thresholds, softwareVersion, pcrValues))
+        );
+        emit NewKmsContext(contextCounter, previousContextId, kmsNodeParams, thresholds, softwareVersion, pcrValues);
+    }
+
+    function getKmsContextAnchor(
+        uint256 contextId
+    ) external view returns (uint256 emissionBlockNumber, bytes32 contextInfoHash) {
+        KmsContextAnchor memory anchor = kmsContextAnchors[contextId];
+        return (anchor.emissionBlockNumber, anchor.contextInfoHash);
     }
 
     function defineNewEpochForCurrentKmsContext() external {

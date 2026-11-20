@@ -2,13 +2,14 @@
 
 pragma solidity ^0.8.24;
 
-import {KmsContextAnchor, KmsNode} from "../contracts/shared/Structs.sol";
+import {KmsContextAnchor} from "../contracts/shared/Structs.sol";
 import {UUPSUpgradeableEmptyProxy} from "../contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "../contracts/shared/ACLOwnable.sol";
 
 /// @notice Copy of the ProtocolConfig storage layout and initialized version at tag v0.14.5.
 /// @dev Deployed by upgrades.ts as the v0.14 baseline, so the OpenZeppelin upgrades plugin checks that
 ///      ProtocolConfig and ProtocolConfigReplica keep a compatible storage layout when upgraded in place.
+///      The only accepted change is the `kmsNodesForContext` element, which `reinitializeV3` migrates.
 contract ProtocolConfigV014LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnable {
     enum ContextState {
         None,
@@ -21,6 +22,14 @@ contract ProtocolConfigV014LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnabl
         None,
         Pending,
         Active
+    }
+
+    /// @dev The v0.14 `KmsNode`, before it gained `connectorUrl`.
+    struct KmsNode {
+        address txSenderAddress;
+        address signerAddress;
+        string ipAddress;
+        string storageUrl;
     }
 
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfig

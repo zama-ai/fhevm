@@ -6,7 +6,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {DeployableERC1967Proxy} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {IProtocolConfigReplica, KmsContextSubmission, KmsEpochSubmission} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
-import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsThresholds, KmsNode, KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
@@ -16,6 +16,8 @@ import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUU
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 import {ProtocolConfigReplicaTestBase} from "./ProtocolConfigReplicaTestBase.sol";
+import {ProtocolConfigV014StateWriter} from "../ProtocolConfigV014StateWriter.sol";
+import {ProtocolConfigV014LayoutExample} from "@fhevm-host-contracts/examples/ProtocolConfigV014LayoutExample.sol";
 
 contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
     uint64 internal constant REPLICA_CHAIN_ID = 8453;
@@ -46,6 +48,11 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         );
     }
 
+    function test_initializeFromCanonicalStoresNodes() public {
+        _setupReplica();
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodesForContext(CTX1)), abi.encode(_nodes(SEED0)));
+    }
+
     function test_revertInitializeFromCanonicalInvalidEpochId() public {
         _assertInitializeFromCanonicalReverts(
             CTX1,
@@ -74,8 +81,16 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         replicaImplementation = address(new ProtocolConfigReplica());
     }
 
+    /// @dev Deploys a v0.14 ProtocolConfig proxy whose active pair is CTX1 and EPOCH1, with the 2 nodes of
+    ///      committee SEED0, and the replica implementation.
+    function _setupV014() internal returns (ProtocolConfigV014StateWriter writer) {
+        _deployACL(owner);
+        writer = _deployV014ProtocolConfig(owner);
+        writer.storeActiveContext(CTX1, EPOCH1, _toV014Nodes(_nodes(SEED0, 2)), _defaultThresholds());
+        replicaImplementation = address(new ProtocolConfigReplica());
+    }
+
     function _upgradeToReplica() internal {
-        _pinToV014InitializedVersion();
         vm.prank(owner);
         ProtocolConfig(protocolConfigAdd).upgradeToAndCall(
             replicaImplementation,
@@ -103,21 +118,21 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_reinitializeV3OnUpgradeFromProtocolConfigKeepsStateAndMirrors() public {
-        ProtocolConfig pc = _setupCanonical();
-
-        (uint256 contextId, uint256 epochId) = pc.getCurrentKmsContextAndEpoch();
-        address[] memory signers = pc.getKmsSignersForContext(contextId);
-        KmsThresholds memory thresholds = _thresholdsOf(pc, contextId);
+        _setupV014();
+        uint256 contextId = CTX1;
+        address[] memory signers = new address[](2);
+        signers[0] = _signers(SEED0)[0];
+        signers[1] = _signers(SEED0)[1];
 
         _upgradeToReplica();
 
         _assertCanonicalDomain();
         assertEq(protocolConfigReplica.getVersion(), "ProtocolConfigReplica v0.3.0");
-        _assertActive(contextId, epochId);
+        _assertActive(contextId, EPOCH1);
         assertEq(protocolConfigReplica.getKmsSignersForContext(contextId), signers);
         assertEq(
             keccak256(abi.encode(_thresholdsOf(protocolConfigReplica, contextId))),
-            keccak256(abi.encode(thresholds))
+            keccak256(abi.encode(_defaultThresholds()))
         );
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
@@ -134,16 +149,19 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
 
     /// @dev A pending context leaves the canonical counter above the active ID. The replica reports the active ID.
     function test_reinitializeV3ReportsActiveContextId() public {
-        ProtocolConfig pc = _setupCanonical();
-        vm.prank(owner);
-        pc.defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds(), "", new PcrValues[](0));
-        assertEq(pc.getCurrentKmsContextIdCounter(), CTX2);
+        ProtocolConfigV014StateWriter writer = _setupV014();
+        writer.storeContext(
+            CTX2,
+            _toV014Nodes(_nodes(SEED0, 2)),
+            _defaultThresholds(),
+            ProtocolConfigV014LayoutExample.ContextState.Pending
+        );
 
         _upgradeToReplica();
 
         assertEq(protocolConfigReplica.getCurrentKmsContextId(), CTX1);
 
-        // The canonical stored the pending 2-node SEED0 committee under `CTX2`. Mirroring that ID replaces it.
+        // v0.14 stored the pending 2-node SEED0 committee under `CTX2`. Mirroring that ID replaces it.
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsContextAndEpoch(CTX2, EPOCH2, _nodes(SEED1), _thresholds());
         assertEq(protocolConfigReplica.getCurrentKmsContextId(), CTX2);
@@ -155,12 +173,14 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
     /// @dev The v0.14 state holds a destroyed C2 and a pending E2 above the active pair. The upgrade
     ///      keeps the active pair, and the next canonical activations apply.
     function test_reinitializeV3WithDestroyedContextAndPendingEpoch() public {
-        ProtocolConfig pc = _setupCanonical();
-        vm.startPrank(owner);
-        pc.defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds(), "", new PcrValues[](0));
-        pc.destroyKmsContext(CTX2);
-        pc.defineNewEpochForCurrentKmsContext();
-        vm.stopPrank();
+        ProtocolConfigV014StateWriter writer = _setupV014();
+        writer.storeContext(
+            CTX2,
+            _toV014Nodes(_nodes(SEED0, 2)),
+            _defaultThresholds(),
+            ProtocolConfigV014LayoutExample.ContextState.None
+        );
+        writer.storeEpoch(EPOCH2, CTX1, ProtocolConfigV014LayoutExample.EpochState.Pending);
 
         _upgradeToReplica();
         _assertActive(CTX1, EPOCH1);
@@ -172,6 +192,67 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
             _epochSubmission(CTX3, EPOCH2, EPOCH3, SEED1, N)
         );
         _assertActive(CTX3, EPOCH3);
+    }
+
+    /// @dev A v0.14 non-canonical host initialized from the canonical at CTX2, so CTX1 holds no committee,
+    ///      then mirrored CTX3. It also holds the destroyed CTX4. The committees are stored in reverse address order, with long and short
+    ///      strings. After the upgrade, the getters return the v0.14 fields in definition order with an empty
+    ///      `connectorUrl`, and the CTX3 committee verifies an epoch submission. A mirror over CTX2 with one
+    ///      node fewer then clears the slots of the last element, the data of its long `ipAddress` included.
+    function test_reinitializeV3MigratesV014CommitteesThenMirrorsOverOne() public {
+        _deployACL(owner);
+        replicaImplementation = address(new ProtocolConfigReplica());
+        KmsNode[] memory sortedNodes = _nodes(SEED0);
+        KmsNode[] memory nodes2 = _v014Fixture(sortedNodes);
+        KmsNode[] memory nodes3 = _v014Fixture(_nodes(SEED1));
+        ProtocolConfigV014StateWriter writer = _deployV014ProtocolConfig(owner);
+        writer.storeActiveContext(CTX2, EPOCH1, _toV014Nodes(nodes2), _thresholds());
+        writer.storeActiveContext(CTX3, EPOCH2, _toV014Nodes(nodes3), _thresholds());
+        KmsNode[] memory nodes4 = _v014Fixture(_nodes(SEED2));
+        writer.storeContext(
+            CTX4,
+            _toV014Nodes(nodes4),
+            _thresholds(),
+            ProtocolConfigV014LayoutExample.ContextState.None
+        );
+        _upgradeToReplica();
+
+        assertEq(uint256(vm.load(protocolConfigAdd, _kmsNodesSlot(CTX1))), 0);
+        _assertActive(CTX3, EPOCH2);
+        _assertStoredNodes(CTX2, nodes2);
+        _assertStoredNodes(CTX3, nodes3);
+        bytes32 destroyedSecondNode = bytes32(uint256(keccak256(abi.encode(_kmsNodesSlot(CTX4)))) + 5);
+        assertEq(vm.load(protocolConfigAdd, destroyedSecondNode), bytes32(uint256(uint160(nodes4[1].txSenderAddress))));
+        for (uint256 i = 0; i < N; i++) {
+            assertEq(
+                abi.encode(protocolConfigReplica.getKmsNodeForContext(CTX4, nodes4[i].txSenderAddress)),
+                abi.encode(nodes4[i])
+            );
+        }
+        address[] memory signers = protocolConfigReplica.getKmsSignersForContext(CTX3);
+        for (uint256 i = 0; i < N; i++) {
+            assertEq(signers[i], nodes3[i].signerAddress);
+        }
+        protocolConfigReplica.submitKmsEpoch(_epochSubmission(CTX3, EPOCH2, EPOCH3, SEED1, N));
+        _assertActive(CTX3, EPOCH3);
+
+        uint256 lastElement = uint256(keccak256(abi.encode(_kmsNodesSlot(CTX2)))) + 5 * (N - 1);
+        bytes32 lastIpAddressData = keccak256(abi.encode(lastElement + 2));
+        assertNotEq(vm.load(protocolConfigAdd, lastIpAddressData), bytes32(0));
+        KmsNode[] memory newNodes = _nodes(SEED0, N - 1);
+        vm.prank(owner);
+        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX2, EPOCH4, newNodes, _thresholds());
+
+        _assertStoredNodes(CTX2, newNodes);
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(vm.load(protocolConfigAdd, bytes32(lastElement + i)), bytes32(0));
+        }
+        assertEq(vm.load(protocolConfigAdd, lastIpAddressData), bytes32(0));
+        address droppedTxSender = sortedNodes[N - 1].txSenderAddress;
+        KmsNode memory emptyNode;
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodeForContext(CTX2, droppedTxSender)), abi.encode(emptyNode));
+        assertFalse(protocolConfigReplica.isKmsTxSenderForContext(CTX2, droppedTxSender));
+        assertFalse(protocolConfigReplica.isKmsSignerForContext(CTX2, sortedNodes[N - 1].signerAddress));
     }
 
     // -----------------------------------------------------------------------
@@ -589,6 +670,7 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         assertEq(protocolConfigReplica.getCurrentKmsContextId(), contextId);
         assertTrue(protocolConfigReplica.isValidEpochForContext(contextId, epochId));
         _assertMembers(contextId, SEED1);
+        _assertStoredNodes(contextId, _nodes(SEED1));
         assertEq(protocolConfigReplica.getKmsGenThresholdForContext(contextId), _thresholds().kmsGen);
         // The previous context stays valid, like on the canonical.
         assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1));
@@ -773,6 +855,12 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
     function test_revertSwitchTamperedNodes() public {
         (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         context.nodes[0].ipAddress = "10.0.0.1";
+        _assertSwitchContextRejected(context, epoch);
+    }
+
+    function test_revertSwitchTamperedConnectorUrl() public {
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
+        context.nodes[1].connectorUrl = "https://attacker.example.com";
         _assertSwitchContextRejected(context, epoch);
     }
 
@@ -1287,6 +1375,18 @@ contract ProtocolConfigReplicaBootstrappedTest is ProtocolConfigReplicaTestBase 
         assertTrue(protocolConfigReplica.isValidKmsContext(contextId));
         assertTrue(protocolConfigReplica.isValidEpochForContext(contextId, epochId));
         _assertMembers(contextId, SEED1);
+        _assertStoredNodes(contextId, nodes);
+    }
+
+    function test_mirrorOverExistingIdKeepsTxSenderWithNewUrl() public {
+        KmsNode[] memory nodes = _nodes(SEED0);
+        nodes[0].connectorUrl = "https://kms-connector-0.new.example.com";
+        nodes[1].connectorUrl = "";
+
+        vm.prank(owner);
+        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1, EPOCH1 + 1, nodes, _thresholds());
+
+        _assertStoredNodes(CTX1, nodes);
     }
 
     function test_mirrorKmsContextAndEpochMovesBack() public {

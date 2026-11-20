@@ -31,6 +31,7 @@ export function buildProtocolConfigNodes(): Array<{
   mpcIdentity: string;
   caCert: string;
   storagePrefix: string;
+  connectorUrl: string;
 }> {
   return [
     {
@@ -42,6 +43,7 @@ export function buildProtocolConfigNodes(): Array<{
       mpcIdentity: '127.0.0.1',
       caCert: '0x',
       storagePrefix: '',
+      connectorUrl: 'https://kms-connector-0.example.com',
     },
     {
       txSenderAddress: '0x0000000000000000000000000000000000003333',
@@ -52,6 +54,7 @@ export function buildProtocolConfigNodes(): Array<{
       mpcIdentity: '127.0.0.2',
       caCert: '0x',
       storagePrefix: '',
+      connectorUrl: 'https://kms-connector-1.example.com',
     },
     {
       txSenderAddress: '0x0000000000000000000000000000000000005555',
@@ -62,6 +65,7 @@ export function buildProtocolConfigNodes(): Array<{
       mpcIdentity: '127.0.0.3',
       caCert: '0x',
       storagePrefix: '',
+      connectorUrl: 'https://kms-connector-2.example.com',
     },
     {
       txSenderAddress: '0x0000000000000000000000000000000000007777',
@@ -72,6 +76,7 @@ export function buildProtocolConfigNodes(): Array<{
       mpcIdentity: '127.0.0.4',
       caCert: '0x',
       storagePrefix: '',
+      connectorUrl: 'https://kms-connector-3.example.com',
     },
   ];
 }
@@ -195,6 +200,7 @@ export async function buildControllableKmsCommittee(): Promise<ControllableKmsCo
     mpcIdentity: `127.0.0.${index + 1}`,
     caCert: '0x',
     storagePrefix: '',
+    connectorUrl: `https://committee-connector-${index}.example.com`,
   });
   return {
     nodes: [node(txSender0, signer0, 0), node(txSender1, signer1, 1)],

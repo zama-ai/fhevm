@@ -1566,6 +1566,7 @@ fn register_default_keyurl_poller_responses(
             mpcIdentity: String::new(),
             caCert: Bytes::new(),
             storagePrefix: TEST_KEYURL_STORAGE_PREFIX.to_string(),
+            connectorUrl: String::new(),
         }],
         thresholds: IProtocolConfig::KmsThresholds {
             publicDecryption: U256::from(1u64),

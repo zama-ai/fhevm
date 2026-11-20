@@ -156,6 +156,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @notice Re-initializes a proxy upgraded from v0.14, which initialized at version 3.
+     *         Rewrites each committee that v0.14 stored to the five-field `KmsNode`, with an empty `connectorUrl`.
      * @dev Reverts with `KmsLifecycleOperationInFlight` while a context switch or epoch rotation is
      *      in flight.
      */
@@ -163,6 +164,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
         _checkNoKmsLifecycleOperationInFlight();
+        _migrateKmsNodesFromV014();
     }
 
     // -----------------------------------------------------------------------------------------
@@ -659,7 +661,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
                 txSenderAddress: params.txSenderAddress,
                 signerAddress: params.signerAddress,
                 ipAddress: params.ipAddress,
-                storageUrl: params.storageUrl
+                storageUrl: params.storageUrl,
+                connectorUrl: params.connectorUrl
             });
         }
     }

@@ -191,6 +191,7 @@ type KmsNodeParams = {
   mpcIdentity: string;
   caCert: string;
   storagePrefix: string;
+  connectorUrl: string;
 };
 
 function buildKmsNodeParams(): KmsNodeParams[] {
@@ -205,6 +206,7 @@ function buildKmsNodeParams(): KmsNodeParams[] {
       mpcIdentity: getRequiredEnvVar(`KMS_NODE_MPC_IDENTITY_${idx}`),
       caCert: getRequiredEnvVar(`KMS_NODE_CA_CERT_${idx}`),
       storagePrefix: getRequiredEnvVar(`KMS_NODE_STORAGE_PREFIX_${idx}`),
+      connectorUrl: getRequiredEnvVar(`KMS_NODE_CONNECTOR_URL_${idx}`),
     });
   }
   return nodes;

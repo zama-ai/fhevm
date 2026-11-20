@@ -13,6 +13,8 @@ struct KmsNode {
     string ipAddress;
     /// @notice URL address of the KMS node's storage where ciphertexts are stored
     string storageUrl;
+    /// @notice URL of the KMS node's connector endpoint. Empty for contexts defined before ProtocolConfig v0.3.0.
+    string connectorUrl;
 }
 
 /**
@@ -38,6 +40,8 @@ struct KmsNodeParams {
     bytes caCert;
     /// @notice Prefix used by KMS Core when storing public data, matches proto MpcNode.public_storage_prefix.
     string storagePrefix;
+    /// @notice URL of the KMS node's connector endpoint.
+    string connectorUrl;
 }
 
 /**

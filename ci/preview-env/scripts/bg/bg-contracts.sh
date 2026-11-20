@@ -64,7 +64,7 @@ contract_info() { # <dir> <Contract>
     *) return 1 ;;
   esac
 }
-contracts_of() { case "$1" in host-contracts) echo "ACL FHEVMExecutor HCULimit InputVerifier KMSGeneration KMSVerifier ProtocolConfig" ;; gateway-contracts) echo "CiphertextCommits Decryption GatewayConfig InputVerification" ;; esac; }
+contracts_of() { case "$1" in host-contracts) echo "ACL FHEVMExecutor HCULimit InputVerifier ProtocolConfig KMSGeneration KMSVerifier" ;; gateway-contracts) echo "CiphertextCommits Decryption GatewayConfig InputVerification" ;; esac; }
 
 releases=()
 for rel in host-contracts host-contracts-polygon gateway-contracts; do

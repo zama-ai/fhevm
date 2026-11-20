@@ -8,6 +8,7 @@ interface ProtocolConfigBase {
         address signerAddress;
         string ipAddress;
         string storageUrl;
+        string connectorUrl;
     }
 
     error EmptyKmsNodes();
@@ -156,6 +157,11 @@ interface ProtocolConfigBase {
             "name": "storageUrl",
             "type": "string",
             "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       }
@@ -195,6 +201,11 @@ interface ProtocolConfigBase {
           },
           {
             "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -663,7 +674,7 @@ pub mod ProtocolConfigBase {
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; }
+struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; string connectorUrl; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -676,6 +687,8 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
         pub ipAddress: alloy::sol_types::private::String,
         #[allow(missing_docs)]
         pub storageUrl: alloy::sol_types::private::String,
+        #[allow(missing_docs)]
+        pub connectorUrl: alloy::sol_types::private::String,
     }
     #[allow(
         non_camel_case_types,
@@ -692,11 +705,13 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             alloy::sol_types::sol_data::Address,
             alloy::sol_types::sol_data::String,
             alloy::sol_types::sol_data::String,
+            alloy::sol_types::sol_data::String,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::Address,
             alloy::sol_types::private::Address,
+            alloy::sol_types::private::String,
             alloy::sol_types::private::String,
             alloy::sol_types::private::String,
         );
@@ -720,6 +735,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     value.signerAddress,
                     value.ipAddress,
                     value.storageUrl,
+                    value.connectorUrl,
                 )
             }
         }
@@ -732,6 +748,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     signerAddress: tuple.1,
                     ipAddress: tuple.2,
                     storageUrl: tuple.3,
+                    connectorUrl: tuple.4,
                 }
             }
         }
@@ -755,6 +772,9 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     ),
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
                         &self.storageUrl,
+                    ),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.connectorUrl,
                     ),
                 )
             }
@@ -830,7 +850,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl)",
+                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl,string connectorUrl)",
                 )
             }
             #[inline]
@@ -862,6 +882,10 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                             &self.storageUrl,
                         )
                         .0,
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.connectorUrl,
+                        )
+                        .0,
                 ]
                     .concat()
             }
@@ -882,6 +906,9 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     )
                     + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.storageUrl,
+                    )
+                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.connectorUrl,
                     )
             }
             #[inline]
@@ -906,6 +933,10 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                 );
                 <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.storageUrl,
+                    out,
+                );
+                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.connectorUrl,
                     out,
                 );
             }

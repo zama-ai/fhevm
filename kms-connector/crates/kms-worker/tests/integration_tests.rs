@@ -6,7 +6,7 @@ use crate::common::{
 };
 use alloy::{
     hex::FromHex,
-    primitives::{Address, FixedBytes, Log, U256},
+    primitives::{Address, FixedBytes, Log, U256, keccak256},
     providers::{ProviderBuilder, mock::Asserter},
     rpc::types::Log as RpcLog,
     sol_types::{SolEvent, SolValue},
@@ -39,7 +39,7 @@ use kms_grpc::kms::v1::{
     NewMpcEpochPayload, PublicDecryptionResponse, PublicDecryptionResponsePayload,
     SigningSchemeType, TypedSignature, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
-use kms_worker::core::{Config, event_processor::compute_anchor_event_hash};
+use kms_worker::core::Config;
 use mocktail::{MockSet, StatusCode, server::MockServer};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
@@ -104,18 +104,18 @@ async fn test_processing_request(
         }
         // The `NewKmsContext` flow makes two RPC calls before going to the Core: an `eth_call`
         // on `getKmsContextAnchor(previousContextId)` and an `eth_getLogs` to fetch the
-        // previous-context event. We fabricate a default previous event, hash it the same way
-        // the production code does, and queue both responses on the FIFO asserter. The request
-        // is answered synchronously by the Core, so it is prepared and re-sent even on
-        // `already_sent` retries.
+        // previous-context event. We fabricate a default previous event, hash its log data as
+        // `ProtocolConfig` does for the anchor, and queue both responses on the FIFO asserter.
+        // The request is answered synchronously by the Core, so it is prepared and re-sent even
+        // on `already_sent` retries.
         TestEventType::NewKmsContext => {
-            let previous_event = NewKmsContext::default();
-            let anchor_hash = compute_anchor_event_hash(&previous_event);
+            let log_data = NewKmsContext::default().encode_log_data();
+            let anchor_hash = keccak256(&log_data.data);
             asserter.push_success(&(U256::ZERO, anchor_hash).abi_encode_sequence());
             let rpc_log = RpcLog {
                 inner: Log {
                     address: Address::ZERO,
-                    data: previous_event.encode_log_data(),
+                    data: log_data,
                 },
                 ..Default::default()
             };

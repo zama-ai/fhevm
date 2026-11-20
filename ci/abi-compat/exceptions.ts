@@ -62,6 +62,13 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "function getContextCreationPreviousTxSenderThreshold(uint256) returns (uint256)",
       // The key and CRS results carry no signature now, so the error names results, not attestations.
       "error EmptyEpochActivationAttestation(uint256)",
+      // KmsNode gains connectorUrl (RFC 033, amended by RFC 038). The node getters keep their selectors
+      // and return the five-field tuple.
+      "function getKmsNodeForContext(uint256,address) returns ((address,address,string,string))",
+      "function getKmsNodesForContext(uint256) returns ((address,address,string,string)[])",
+      // KmsNodeParams gains connectorUrl, so NewKmsContext has a new topic. Consumers decode the v0.14
+      // topic with IProtocolConfigV014.
+      "event NewKmsContext(uint256 indexed,uint256 indexed,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])",
     ],
   },
   "gateway-contracts": {
