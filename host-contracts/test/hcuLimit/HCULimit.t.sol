@@ -2313,6 +2313,26 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         assertEq(dappUsed, 0);
     }
 
+    /// An operation beside a deeper chain costs its quota nothing, yet a stopped or paused quota, or a stopped tier,
+    /// still refuses it.
+    function test_anOperationOffTheCriticalPathStillNeedsAnOpenQuotaAndTier() public {
+        _setUpTiers();
+        for (uint256 i = 0; i < 3; ++i) _add(HIGH, 0x1001 + i);
+
+        address unassigned = address(0xBEEF);
+        _stopDefaultQuota();
+        _expectRefusedBesideTheChain(
+            unassigned,
+            abi.encodeWithSelector(HCULimit.HCUQuotaStopped.selector, unassigned, DEFAULT_QUOTA)
+        );
+
+        _setTier(1, 0);
+        _expectRefusedBesideTheChain(LOW, abi.encodeWithSelector(HCULimit.HCUTierStopped.selector, LOW, LOW_QUOTA));
+
+        _pause(_mockPauser(address(0x9A)), HIGH_QUOTA);
+        _expectRefusedBesideTheChain(HIGH, abi.encodeWithSelector(HCULimit.HCUQuotaPaused.selector, HIGH, HIGH_QUOTA));
+    }
+
     /// RFC 040 relies on a quota's limits, usage, pause flag, tier and stored-depth limit sharing one slot.
     function test_aQuotaFitsInOneSlot() public {
         vm.startPrank(owner);
@@ -2420,6 +2440,13 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, _previousResult(), mockRHS, bytes32(resultId), caller);
         previousResult = bytes32(resultId);
+    }
+
+    /// @dev Expects one 84,000 HCU addition by `caller`, off the critical path, to revert with `err`.
+    function _expectRefusedBesideTheChain(address caller, bytes memory err) internal {
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(err);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x9003)), caller);
     }
 
     /// @dev One 84,000 HCU addition by `caller` beside the previous one, off the critical path.
