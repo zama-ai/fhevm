@@ -112,6 +112,23 @@ task('task:verifyHCULimit')
     await verifyContract(run, proxyAddress);
   });
 
+task('task:verifyHCUConfigurator')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('HCU_CONFIGURATOR_CONTRACT_ADDRESS');
+    const implementationHCUConfiguratorAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await verifyContract(run, implementationHCUConfiguratorAddress);
+    await verifyContract(run, proxyAddress);
+  });
+
 task('task:verifyPauserSet')
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -227,6 +244,14 @@ task('task:verifyAllHostContracts')
       // to not panic if Etherscan throws an error due to already verified implementation
       console.log('Verify HCULimit contract:');
       await hre.run('task:verifyHCULimit', { useInternalProxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
+
+    try {
+      // to not panic if Etherscan throws an error due to already verified implementation
+      console.log('Verify HCUConfigurator contract:');
+      await hre.run('task:verifyHCUConfigurator', { useInternalProxyAddress });
     } catch (error) {
       console.error('An error occurred:', error);
     }

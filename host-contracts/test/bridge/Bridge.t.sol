@@ -9,7 +9,7 @@ import {Vm} from "forge-std/Vm.sol";
 
 import {DeployableERC1967Proxy, HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
-import {HCULimit} from "../../contracts/HCULimit.sol";
+import {HCUConfigurator} from "../../contracts/HCUConfigurator.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
@@ -17,7 +17,7 @@ import {ConfidentialBridge} from "../../contracts/bridge/ConfidentialBridge.sol"
 import {HandlesSender} from "../../contracts/bridge/HandlesSender.sol";
 import {HandlesReceiver} from "../../contracts/bridge/HandlesReceiver.sol";
 import {BridgeEvents} from "../../contracts/bridge/BridgeEvents.sol";
-import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd, hcuLimitAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd, hcuConfiguratorAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 import {MockDstApp} from "./mocks/MockDstApp.sol";
 
@@ -60,6 +60,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         _deployACL(owner);
         _deployFHEVMExecutor(owner);
         _deployHCULimit(owner);
+        _deployHCUConfigurator(owner);
         acl = ACL(aclAdd);
         fhevmExecutor = fhevmExecutorAdd;
 
@@ -885,7 +886,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     function test_LzCompose_BridgedHandleStartsNewChain() public {
         ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
         vm.prank(owner);
-        HCULimit(hcuLimitAdd).setCrossTxDepthLimit(5_000_000, 1);
+        HCUConfigurator(hcuConfiguratorAdd).setCrossTxDepthLimit(5_000_000, 1);
 
         bytes32 dstHandle = _makeHandle(100);
         bytes32[] memory srcHandleList = new bytes32[](1);

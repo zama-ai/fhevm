@@ -14,12 +14,17 @@ describe('HCULimit quota tasks', function () {
   const otherDapp = '0x0000000000000000000000000000000000002222';
   const quotaId = '7';
   let hcuLimit: Contract;
+  let hcuConfigurator: Contract;
   let snapshot: string;
 
   before(async function () {
     hcuLimit = (await ethers.getContractAt(
       'HCULimit',
       readHostAddress('HCU_LIMIT_CONTRACT_ADDRESS'),
+    )) as unknown as Contract;
+    hcuConfigurator = (await ethers.getContractAt(
+      'HCUConfigurator',
+      readHostAddress('HCU_CONFIGURATOR_CONTRACT_ADDRESS'),
     )) as unknown as Contract;
   });
 
@@ -66,7 +71,7 @@ describe('HCULimit quota tasks', function () {
     expect(await hcuLimit.getFunction('getContractQuota').staticCall(dapp)).to.equal(7n);
 
     await runQuotaTask('task:setQuotaAdmin', { quotaId, admin: otherDapp, broadcast: true });
-    expect(await hcuLimit.getFunction('getQuotaAdmin').staticCall(quotaId)).to.equal(otherDapp);
+    expect(await hcuConfigurator.getFunction('getQuotaAdmin').staticCall(quotaId)).to.equal(otherDapp);
 
     await runQuotaTask('task:pauseQuota', { quotaId, broadcast: true });
     expect(await hcuLimit.getFunction('isQuotaPaused').staticCall(quotaId)).to.equal(true);

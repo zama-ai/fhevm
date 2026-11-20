@@ -2,7 +2,7 @@ import { type Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import type { HCULimit } from '../types';
+import type { HCUConfigurator, HCULimit } from '../types';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 type CommonArgs = {
@@ -58,18 +58,15 @@ function parseAccount(raw: string, ethers: HardhatRuntimeEnvironment['ethers']):
   return parseAddresses(raw, ethers)[0];
 }
 
-async function getHCULimit(
-  hre: HardhatRuntimeEnvironment,
-  options: CommonArgs,
-): Promise<{ target: string; contract: HCULimit }> {
+async function getHCULimit(hre: HardhatRuntimeEnvironment, options: CommonArgs): Promise<HCULimit> {
   if (options.useInternalProxyAddress) loadHostAddresses();
-  const target = hre.ethers.getAddress(getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS'));
-  const contract = (await hre.ethers.getContractAt('HCULimit', target)) as unknown as HCULimit;
-  const version = await contract.getVersion();
+  const address = hre.ethers.getAddress(getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS'));
+  const hcuLimit = (await hre.ethers.getContractAt('HCULimit', address)) as unknown as HCULimit;
+  const version = await hcuLimit.getVersion();
   if (!version.startsWith('HCULimit v')) {
-    throw new Error(`Contract at ${target} reports version "${version}"; expected HCULimit.`);
+    throw new Error(`Contract at ${address} reports version "${version}"; expected HCULimit.`);
   }
-  return { target, contract };
+  return hcuLimit;
 }
 
 async function runQuotaTask(
@@ -79,11 +76,13 @@ async function runQuotaTask(
   args: unknown[],
   sender: Sender,
 ): Promise<void> {
-  const { target, contract } = await getHCULimit(hre, options);
+  // HCULimit takes its settings from this address only.
+  const target = await (await getHCULimit(hre, options)).getHCUConfiguratorAddress();
+  const contract = (await hre.ethers.getContractAt('HCUConfigurator', target)) as unknown as HCUConfigurator;
 
   const calldata = (contract.interface as Interface).encodeFunctionData(method, args);
   console.log(`Chain ID: ${(await hre.ethers.provider.getNetwork()).chainId}`);
-  console.log(`HCULimit proxy: ${target}`);
+  console.log(`HCUConfigurator proxy: ${target}`);
   console.log(`Call: ${method}`);
   console.log(`Calldata: ${calldata}`);
   if (!options.broadcast) return;
@@ -130,8 +129,8 @@ quotaTask(
     const decay = parseUint(decayPerBlock, 'Decay per block', MAX_UINT48);
     if (id <= LAST_UNASSIGNED_QUOTA && max === 0n) {
       const required = parseAddresses(requiredAccounts, hre.ethers);
-      const { contract } = await getHCULimit(hre, options);
-      const quotas = await Promise.all(required.map((account) => contract.getContractQuota(account)));
+      const hcuLimit = await getHCULimit(hre, options);
+      const quotas = await Promise.all(required.map((account) => hcuLimit.getContractQuota(account)));
       const missing = required.filter((_, index) => quotas[index] === id);
       if (missing.length > 0) {
         throw new Error(`Cannot stop quota ${id}: these required dApps compute in it: ${missing.join(', ')}`);

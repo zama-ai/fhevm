@@ -73,6 +73,8 @@ for rel in host-contracts host-contracts-polygon gateway-contracts; do
 done
 [[ ${#releases[@]} -gt 0 ]] || fail "no contracts release found in ${NAMESPACE}"
 
+# Whether <dir>/contracts/<Contract>.sol exists at a git ref of this repo.
+has_source() { git -C "${root}" cat-file -e "$1:$2/contracts/$3.sol" 2>/dev/null; }
 # REINITIALIZER_VERSION of <dir>/contracts/<Contract>.sol at a git ref of this repo (image tags are short SHAs or release tags).
 source_version() { # <ref> <dir> <Contract>
   git -C "${root}" show "$1:$2/contracts/$3.sol" 2>/dev/null | grep -oE 'REINITIALIZER_VERSION = [0-9]+' | head -1 | grep -oE '[0-9]+' || true
@@ -117,7 +119,14 @@ plan_release() {
   read -r dir cm chain <<<"$(release_info "${rel}")"
   current="${FROM_TAG:-$(cm_value "${cm}" contracts.version)}"; [[ -n "${current}" ]] || fail "${rel}: ${cm} has no contracts.version"
   current_ref=$(resolve_ref "${current}"); target_ref=$(resolve_ref "${TARGET_TAG}")
-  PLAN=(); SKIPPED=()
+  PLAN=(); SKIPPED=(); BOOTSTRAP=()
+  # HCULimit.reinitializeV6 reverts until HCUConfigurator runs, and every host task compiles HCULimit, which needs
+  # HCUConfigurator's address: deploy it first when the deployed release predates it.
+  if [[ "${dir}" == host-contracts ]] && has_source "${target_ref}" "${dir}" HCUConfigurator \
+    && ! has_source "${current_ref}" "${dir}" HCUConfigurator; then
+    BOOTSTRAP=("npx hardhat task:deployEmptyProxyForHCUConfigurator" "npx hardhat compile:specific --contract contracts"
+      "npx hardhat task:deployHCUConfigurator")
+  fi
   for c in $(contracts_of "${dir}"); do
     read -r key env <<<"$(contract_info "${dir}" "${c}")"
     proxy=$(cm_value "${cm}" "${key}")
@@ -127,6 +136,7 @@ plan_release() {
     if [[ "${to}" -gt "${from}" ]]; then PLAN+=("${c} ${key} ${env} ${from} ${to} ${proxy}"); else SKIPPED+=("${c}: reinitializer ${from} unchanged, no upgrade"); fi
   done
   echo "== ${rel} (${chain}): deployed ${current} -> target ${TARGET_TAG}"
+  [[ ${#BOOTSTRAP[@]} -eq 0 ]] || echo "   deploy  HCUConfigurator (new in the target) behind a new proxy, before the upgrades"
   for line in "${PLAN[@]+"${PLAN[@]}"}"; do read -r c _ _ from to proxy <<<"${line}"; echo "   upgrade ${c} ${proxy} (reinitializer ${from} -> ${to}) impl=$(impl_of "$(rpc_for "${rel}")" "${proxy}")"; done
   for line in "${SKIPPED[@]+"${SKIPPED[@]}"}"; do echo "   skip    ${line}"; done
   local claim; claim=$(helm get values "${rel}" -n "${NAMESPACE}" -o json | jq -r '.persistence.volumeClaim.name // ""')
@@ -146,7 +156,7 @@ upgrade_release() {
   local name="${rel}-upgrade-${TARGET_TAG}" base="${work}/${rel}.yaml" cmds="${work}/${rel}-cmds.json" env_json="${work}/${rel}-env.json"
   helm get values "${rel}" -n "${NAMESPACE}" -o yaml > "${base}"
   # Upgrade commands: old sources are copied to /app/oldContracts by the chart's init container.
-  jq -n '[]' > "${cmds}"; jq -n '[]' > "${env_json}"
+  jq -n '$ARGS.positional' --args "${BOOTSTRAP[@]+"${BOOTSTRAP[@]}"}" > "${cmds}"; jq -n '[]' > "${env_json}"
   for line in "${PLAN[@]}"; do
     read -r c key env _ _ _ <<<"${line}"
     jq --arg c "${c}" '. + ["npx hardhat task:upgrade\($c) --current-implementation oldContracts/\($c).sol:\($c) --new-implementation contracts/\($c).sol:\($c) --use-internal-proxy-address false --verify-contract false"]' "${cmds}" > "${cmds}.tmp" && mv "${cmds}.tmp" "${cmds}"

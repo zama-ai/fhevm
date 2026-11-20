@@ -141,7 +141,22 @@ jobs:
 
       - name: Bootstrap host contracts missing from UPGRADE_FROM_TAG
         working-directory: current-fhevm/host-contracts
-        run: npx hardhat task:deployEmptyProxyForConfidentialBridge
+        run: |
+          set -euo pipefail
+          npx hardhat task:deployEmptyProxyForConfidentialBridge
+
+          # HCULimit.reinitializeV6 reverts until HCUConfigurator runs: upgrade its empty proxy first.
+          if [ ! -f previous-contracts/HCUConfigurator.sol ]; then
+            npx hardhat task:deployEmptyProxyForHCUConfigurator
+            source addresses/.env.host
+            before_impl=$(cast implementation "$HCU_CONFIGURATOR_CONTRACT_ADDRESS" --rpc-url "$RPC_URL")
+            npx hardhat task:prepareUpgradeHCUConfigurator --use-internal-proxy-address true --verify-contract false
+            after_impl=$(cast implementation "$HCU_CONFIGURATOR_CONTRACT_ADDRESS" --rpc-url "$RPC_URL")
+            test "$before_impl" = "$after_impl"
+            npx hardhat task:deployHCUConfigurator
+            # OZ upgradeProxy does not wait for the upgradeToAndCall tx to be mined.
+            cast rpc evm_mine --rpc-url "$RPC_URL" > /dev/null
+          fi
 
       - name: Run prepare-only upgrades
         working-directory: current-fhevm/host-contracts

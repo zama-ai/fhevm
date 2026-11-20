@@ -19,7 +19,7 @@ If any of these limits is exceeded, the transaction will revert.
 
 ## HCU limit
 
-The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. Quotas are set on-chain by governance (via `HCULimit.setQuota`); you can read a contract's quota with `getContractQuota(contract)`, and that quota's maximum, decay per block and current usage with `getQuota(quotaId)`. If any HCU limit is exceeded, the transaction will revert.
+The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. Quotas are set on-chain by governance (via `HCUConfigurator.setQuota`); you can read a contract's quota on `HCULimit` with `getContractQuota(contract)`, and that quota's maximum, decay per block and current usage with `getQuota(quotaId)`. If any HCU limit is exceeded, the transaction will revert.
 
 To resolve a per-transaction revert, you must do one of the following:
 
@@ -57,7 +57,7 @@ A stopped or paused quota does not gate input verification (`FHEVMExecutor.verif
 
 ### Quota roles
 
-Three roles manage quotas on `HCULimit`. Governance is the ACL owner, and pausers are the ACL's pausers.
+Three roles manage quotas. They call `HCUConfigurator`, which checks each change and passes it to `HCULimit`. Governance is the ACL owner, and pausers are the ACL's pausers.
 
 | Role        | Functions                                                                                          | What it does                                                                                                                                                           |
 | ----------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -65,7 +65,7 @@ Three roles manage quotas on `HCULimit`. Governance is the ACL owner, and pauser
 | Quota admin | `grantQuota(quotaId, contract)`, `revokeQuota(quotaId, contract)`                                  | A partner's address: moves contracts from the default quota into its quota, and any contract of its quota back to the default quota, without a governance proposal.    |
 | Pauser      | `pauseQuota(quotaId)`                                                                              | Stops every contract in a quota. The quota keeps its size and contracts, and its admin cannot move them until governance unpauses it.                                  |
 
-A quota admin can add contracts only while the default quota is stopped (`DefaultQuotaNotStopped` otherwise), so joining a quota never leaves a contract with less room than it had. If governance later reopens the default quota, granted contracts stay in the admin's quota until the admin revokes them or governance moves them. It can send any contract of its quota back to the default quota, including one governance assigned. It cannot resize its quota or take a contract from another quota. Quotas `1` and `2` take no admin. You can read a quota's admin with `getQuotaAdmin(quotaId)` and whether it is paused with `isQuotaPaused(quotaId)`.
+A quota admin can add contracts only while the default quota is stopped (`DefaultQuotaNotStopped` otherwise), so joining a quota never leaves a contract with less room than it had. If governance later reopens the default quota, granted contracts stay in the admin's quota until the admin revokes them or governance moves them. It can send any contract of its quota back to the default quota, including one governance assigned. It cannot resize its quota or take a contract from another quota. Quotas `1` and `2` take no admin. You can read a quota's admin with `HCUConfigurator.getQuotaAdmin(quotaId)` and whether it is paused with `HCULimit.isQuotaPaused(quotaId)`.
 
 ### Stopping the default quota
 
@@ -88,7 +88,7 @@ The per-transaction depth limit restarts at every transaction. A chain of depend
 
 `retryAfterBlocks` is the wait for the operation that failed. Later operations of the same transaction can need more, so wait at least that many blocks, simulate again, and repeat until the simulation passes. A transaction that simulates successfully can still revert if another transaction extends the same chain first.
 
-Governance can also give a quota a stored-depth limit with `setQuotaMaxStoredDepth(quotaId, maxStoredDepth)`, from `maxHCUDepthPerTx` to `maxDepth`. A contract in that quota cannot grant a handle deeper than the limit, with `FHE.allow` or `FHE.allowTransient`, to itself or to anyone else: the grant reverts with `HCUStoredDepthExceeded(account, quotaId, retryAfterBlocks)`, and succeeds once the handle has decayed for `retryAfterBlocks`. This limit does not refuse computing a deeper result, only granting it. So a quota can be generous in HCU but keep each value shallow. 0 means no limit beyond `maxDepth`. The default quota should keep the strictest limit: `HCULimit` refuses another quota's limit while the default quota has none or below the default quota's, but does not check a later raise of the default quota's limit against the others. It also refuses a `maxHCUDepthPerTx` above the default quota's limit, so a transaction on fresh inputs can always grant its results. You can read a quota's limit with `getQuotaMaxStoredDepth(quotaId)`.
+Governance can also give a quota a stored-depth limit with `setQuotaMaxStoredDepth(quotaId, maxStoredDepth)`, from `maxHCUDepthPerTx` to `maxDepth`. A contract in that quota cannot grant a handle deeper than the limit, with `FHE.allow` or `FHE.allowTransient`, to itself or to anyone else: the grant reverts with `HCUStoredDepthExceeded(account, quotaId, retryAfterBlocks)`, and succeeds once the handle has decayed for `retryAfterBlocks`. This limit does not refuse computing a deeper result, only granting it. So a quota can be generous in HCU but keep each value shallow. 0 means no limit beyond `maxDepth`. The default quota should keep the strictest limit: `HCUConfigurator` refuses another quota's limit while the default quota has none or below the default quota's, but does not check a later raise of the default quota's limit against the others. It also refuses a `maxHCUDepthPerTx` above the default quota's limit, so a transaction on fresh inputs can always grant its results. You can read a quota's limit with `getQuotaMaxStoredDepth(quotaId)`.
 
 Depth spreads through every value computed from a deep handle, not only through one user's chain. In a token, a transfer computes the recipient's new balance from the sender's, so the recipient's balance inherits the sender's depth. A value that many transactions update, such as a total supply or a pool balance, can therefore keep a whole dApp waiting on `decayPerBlock`.
 
