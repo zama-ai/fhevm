@@ -1,0 +1,46 @@
+# anvil-node overlay for the BNB (BSC testnet) host chain, deployed only when
+# deploy_bnb=true (see preview-env-deploy.yml). Fresh local anvil, NOT a
+# fork of live BSC testnet: nothing in this stack depends on BNB consensus, only
+# on a standard EVM JSON-RPC/WS endpoint, so a plain anvil with chainId 97
+# is indistinguishable to every fhevm component. Same tuning as the ETH host
+# (../host-chain/values-anvil-host-e2e.yaml) - see its resources note for the
+# OOM rationale.
+nameOverride: anvil-host-bnb
+image:
+  name: ghcr.io/foundry-rs/foundry
+  tag: v1.3.5
+network:
+  blockTime: "1"
+  host: "0.0.0.0"
+  # BSC testnet chain id. Mimics BSC testnet without forking its state.
+  chainId: "97"
+  accounts: "120"
+  # Match the ETH host (values-anvil-host-e2e.yaml): a 1-slot epoch keeps anvil's
+  # `finalized` tag right behind head instead of ~32 slots back, so components
+  # that gate on finality don't stall on the BNB chain.
+  slotsInAnEpoch: "1"
+  mnemonic: "test test test test test test test test test test test junk"
+port: 8545
+storage:
+  size: 1Gi
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+# In-memory chain: see ./values-anvil-host-e2e.yaml's note.
+podAnnotations:
+  karpenter.sh/do-not-disrupt: "true"
+
+# Pins onto the zws-pool Karpenter node pool - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

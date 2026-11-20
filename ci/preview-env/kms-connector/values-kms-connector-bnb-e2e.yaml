@@ -1,0 +1,14 @@
+# ADDITIVE overlay for each kms-connector-<i> release, passed as an EXTRA `-f`
+# AFTER values-kms-connector-e2e.yaml (and the Polygon overlay, if any) ONLY when
+# deploy_bnb=true (see deploy-kms-connector.sh). Adds the BNB host chain so the
+# KMS can verify ACL permissions for BNB ciphertexts.
+#
+# Chart 2.x only: hostChains is a map, so Helm deep-merges bnb with the base
+# ethereum (and polygon) entries. Chart 1.5.3 has no slot for a third chain;
+# check-labels refuses deploy_bnb with a 1.x chart pin.
+commonConfig:
+  hostChains:
+    bnb:
+      url: "http://anvil-host-bnb-anvil-node:8545"
+      chainId: "97"
+      aclAddress: ""

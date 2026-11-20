@@ -8,7 +8,7 @@
 # KMS_GEN_THRESHOLD) and host takes extra node fields + only the coprocessor
 # SIGNER (no tx-sender/S3 URL). Do NOT unify them.
 #
-# Env: TARGET (gateway|host|host-polygon), NB_KMS_CORE, NB_COPROCESSOR, NAMESPACE,
+# Env: TARGET (gateway|host|host-polygon|host-bnb), NB_KMS_CORE, NB_COPROCESSOR, NAMESPACE,
 # SIGNERS_JSON, WALLETS_JSON, COPROC_WALLETS_JSON, S3_ENDPOINT.
 # Host targets also need KMS_CORE_TAG and PCR0/PCR1/PCR2 (set by the deploy job
 # from the enclave image). Those replace the placeholder software version and
@@ -22,7 +22,7 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../lib.sh
 source "${script_dir}/../lib.sh"
 
-: "${TARGET:?TARGET is required (gateway|host|host-polygon)}"
+: "${TARGET:?TARGET is required (gateway|host|host-polygon|host-bnb)}"
 case "${TARGET}" in
   gateway)
     src=ci/preview-env/gateway-chain/values-gateway-contracts-e2e.yaml
@@ -34,15 +34,16 @@ case "${TARGET}" in
     generated=/tmp/values-host-contracts-e2e.generated.yaml
     kms_gen_threshold_key=KMS_GEN_THRESHOLD
     ;;
-  host-polygon)
-    # Second (Polygon) host chain: identical wiring to host (its InputVerifier
-    # checks the SAME coprocessor's proofs), just a different source file.
-    src=ci/preview-env/host-chain/values-host-contracts-polygon-e2e.yaml
-    generated=/tmp/values-host-contracts-polygon-e2e.generated.yaml
+  host-polygon|host-bnb)
+    # Extra (Polygon / BNB) host chain: identical wiring to host (its
+    # InputVerifier checks the SAME coprocessor's proofs), just a different
+    # source file.
+    src="ci/preview-env/host-chain/values-host-contracts-${TARGET#host-}-e2e.yaml"
+    generated="/tmp/values-host-contracts-${TARGET#host-}-e2e.generated.yaml"
     kms_gen_threshold_key=KMS_GEN_THRESHOLD
     ;;
   *)
-    echo "::error::unknown TARGET '${TARGET}' (expected gateway|host|host-polygon)"; exit 1;;
+    echo "::error::unknown TARGET '${TARGET}' (expected gateway|host|host-polygon|host-bnb)"; exit 1;;
 esac
 
 n="${NB_KMS_CORE}"

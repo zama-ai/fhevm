@@ -1,0 +1,51 @@
+# ADDITIVE seed for the coprocessor-<i> release, merged by deploy-coprocessor.sh
+# into the values it passes AFTER values-coprocessor-e2e.yaml ONLY when
+# deploy_bnb=true. Its SOLE purpose is to add BNB (97) to this
+# release's chains[] so coprocessor-<i>'s dbMigration seeds the BNB
+# host_chains row (initialize_db.sh -> seed_host_chains reads HOST_CHAIN_<i>_*
+# for EVERY chains[] entry, regardless of `enabled`). Every BNB role is
+# DISABLED here: the actual BNB host-listener-consumer runs in its OWN
+# release (coprocessor-bnb-<i>, values-coprocessor-bnb-consumer-e2e.yaml).
+#
+# WHY BNB is NOT a second enabled consumer in this release: the coprocessor
+# chart emits one YAML document per (chain, role) but the `---` separator between
+# range iterations has no leading newline, so it glues onto the previous chain's
+# last rendered line. Two ENABLED consumers in a single render therefore collapse
+# into ONE YAML document and the second (BNB) silently overwrites the first
+# (ETH) - the ETH consumer disappears. Keeping BNB seed-only here renders
+# exactly one consumer (ETH); the BNB consumer/poller get their own
+# single-chain releases where that collision cannot happen.
+#
+# Helm REPLACES list-typed values wholesale when a later -f redefines them, so
+# this file carries only the BNB entry and is never passed to helm as-is:
+# deploy-coprocessor.sh builds chains[] = values-coprocessor-e2e.yaml's `host`
+# entry + each enabled extra chain's entry. It cannot live in the base file:
+# dbMigration renders HOST_CHAIN_<i>_ACL via valueFrom for every chains[] entry,
+# so a BNB entry pointing at bnb-sc-addresses would crash the migration
+# Job whenever BNB isn't deployed.
+commonConfig:
+  # BNB is a NON-CANONICAL host that mirrors ETH's ProtocolConfig/KMS context
+  # (see values-host-contracts-bnb-e2e.yaml). Point at the canonical chain
+  # (ETH, 12345) so BNB reuses the ETH-activated key. Harmless for ETH (it IS
+  # the canonical chain).
+  canonicalProtocolConfigChainId: "12345"
+
+chains:
+  # --- BNB host chain (97): SEED-ONLY (all roles disabled) ---
+  # Present solely so coprocessor-<i>'s dbMigration seeds its host_chains row. The
+  # BNB consumer and poller run in their own releases (coprocessor-bnb-<i>
+  # / coprocessor-poller-bnb-<i>).
+  - name: bnb
+    chainId: "97"
+    wsUrl: "ws://anvil-host-bnb-anvil-node:8545"
+    httpUrl: "http://anvil-host-bnb-anvil-node:8545"
+    aclContractAddressValueFrom: {configMapKeyRef: {name: bnb-sc-addresses, key: acl.address}}
+    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: bnb-sc-addresses, key: fhevm_executor.address}}
+    # BNB has NO KMSGeneration (mirrors ETH's); point at the canonical ETH
+    # contract for seeding consistency.
+    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: bnb-sc-addresses, key: protocol_config.address}}
+    hostListener: {enabled: false, useLegacyName: false}
+    hostListenerPoller: {enabled: false, useLegacyName: false}
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: false}
+    hostListenerConsumer: {enabled: false, useLegacyName: false}

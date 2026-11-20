@@ -2,8 +2,8 @@
 # Relayer migrate, relayer, relayer-http, and idle test-suite (common chart).
 # Usage: deploy-relayer.sh <migrate|relayer|relayer-http|test-suite>
 # Env: NAMESPACE, COMMON_CHART, COMMON_CHART_VERSION, TAGS_JSON,
-# NB_KMS_CORE, DEPLOY_POLYGON, POLYGON_HTTP, POLYGON_CHAIN_ID, RPC_SECRET_NAME (relayer only),
-# HOST_CHAIN_ID (relayer-http only).
+# NB_KMS_CORE, DEPLOY_POLYGON, POLYGON_HTTP, POLYGON_CHAIN_ID, DEPLOY_BNB, BNB_HTTP, BNB_CHAIN_ID,
+# RPC_SECRET_NAME (relayer only), HOST_CHAIN_ID (relayer-http only).
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -29,18 +29,29 @@ case "${kind}" in
       '.env += [{"name": "APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD", "value": strenv(UDST)}]' \
       "${relayer_values}"
     echo "Relayer user_decrypt_shares_threshold=${reconstruct} (KMS parties: ${NB_KMS_CORE})"
-    if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-      # Second host chain: the Polygon anvil URL, or the `rpc` Secret on testnets (RPC_SECRET_NAME set).
+    # Extra host chains take the next APP_HOST_CHAINS index (the list must stay
+    # dense): the slot's anvil URL, or the `rpc` Secret on testnets (RPC_SECRET_NAME set).
+    # add_host_chain <slot> <chain-id> <anvil-url>
+    next_host_chain=1
+    add_host_chain() {
+      local idx="${next_host_chain}" url_entry
       if [[ -n "${RPC_SECRET_NAME:-}" ]]; then
-        url_entry='{"name": "APP_HOST_CHAINS__1__URL", "valueFrom": {"secretKeyRef": {"name": "'"${RPC_SECRET_NAME}"'", "key": "polygon-rpc-url"}}}'
+        url_entry='{"name": "APP_HOST_CHAINS__'"${idx}"'__URL", "valueFrom": {"secretKeyRef": {"name": "'"${RPC_SECRET_NAME}"'", "key": "'"${1}"'-rpc-url"}}}'
       else
-        url_entry='{"name": "APP_HOST_CHAINS__1__URL", "value": "'"${POLYGON_HTTP:-http://anvil-host-polygon-anvil-node:8545}"'"}'
+        url_entry='{"name": "APP_HOST_CHAINS__'"${idx}"'__URL", "value": "'"${3}"'"}'
       fi
-      POLYGON_ID="${POLYGON_CHAIN_ID:-80002}" URL_ENTRY="${url_entry}" yq -i '.env += [
-        {"name": "APP_HOST_CHAINS__1__CHAIN_ID", "value": strenv(POLYGON_ID)},
+      IDX="${idx}" CHAIN_ID="${2}" SLOT="${1}" URL_ENTRY="${url_entry}" yq -i '.env += [
+        {"name": "APP_HOST_CHAINS__" + strenv(IDX) + "__CHAIN_ID", "value": strenv(CHAIN_ID)},
         (strenv(URL_ENTRY) | fromjson),
-        {"name": "APP_HOST_CHAINS__1__ACL_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "polygon-sc-addresses", "key": "acl.address"}}}
+        {"name": "APP_HOST_CHAINS__" + strenv(IDX) + "__ACL_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": strenv(SLOT) + "-sc-addresses", "key": "acl.address"}}}
       ] | (.env[] | select(has("value")) | .value) style="double"' "${relayer_values}"
+      next_host_chain=$((idx + 1))
+    }
+    if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
+      add_host_chain polygon "${POLYGON_CHAIN_ID:-80002}" "${POLYGON_HTTP:-http://anvil-host-polygon-anvil-node:8545}"
+    fi
+    if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
+      add_host_chain bnb "${BNB_CHAIN_ID:-97}" "${BNB_HTTP:-http://anvil-host-bnb-anvil-node:8545}"
     fi
     helm upgrade --install relayer "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
       -n "${NAMESPACE}" -f "${relayer_values}" \
@@ -84,10 +95,14 @@ case "${kind}" in
     protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
     require_nonempty "${protocol_config}" "host-sc-addresses[protocol_config.address] is empty"
     require_nonempty "${HOST_CHAIN_ID:-}" "HOST_CHAIN_ID is not set"
-    chains="[${HOST_CHAIN_ID}]"
+    chains="${HOST_CHAIN_ID}"
     if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-      chains="[${HOST_CHAIN_ID}, ${POLYGON_CHAIN_ID:-80002}]"
+      chains+=", ${POLYGON_CHAIN_ID:-80002}"
     fi
+    if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
+      chains+=", ${BNB_CHAIN_ID:-97}"
+    fi
+    chains="[${chains}]"
     # Same thresholds as the relayer and the contracts (wire-contracts-values.sh):
     # n-t for public and user decrypt, so a public decrypt never returns fewer
     # signatures than PUBLIC_DECRYPTION_THRESHOLD. FhevmSig is signed for the

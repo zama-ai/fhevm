@@ -1,0 +1,16 @@
+# BSC testnet additions to values-rpc.yaml (same AWS keys as zama-zws/gitops
+# bnb-blockchain on zws-dev). deploy-rpc-secret.sh merges them into the
+# preview-rpc release only when DEPLOY_BNB=true, so other testnets runs don't
+# depend on zws-dev/external-bnb-rpcs.
+externalSecret:
+  data:
+    - keyReference: "zws-dev/external-bnb-rpcs"
+      propertyReference: bnb-testnet-rpc-coprocessor-http-url
+      secretKeyName: bnb_testnet_rpc_url
+    - keyReference: "zws-dev/external-bnb-rpcs"
+      propertyReference: bnb-testnet-rpc-coprocessor-ws-url
+      secretKeyName: bnb_testnet_rpc_ws_url
+  template:
+    data:
+      bnb-rpc-url: '{{ .bnb_testnet_rpc_url }}'
+      bnb-rpc-ws-url: '{{ .bnb_testnet_rpc_ws_url }}'

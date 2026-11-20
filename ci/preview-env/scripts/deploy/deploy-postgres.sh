@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fan-out in-cluster Postgres via the common chart.
-# Usage: deploy-postgres.sh <coprocessor|connector|listener|listener-polygon|relayer>
+# Usage: deploy-postgres.sh <coprocessor|connector|listener|listener-polygon|listener-bnb|relayer>
 # Env: NAMESPACE, COMMON_CHART, COMMON_CHART_VERSION, NB_COPROCESSOR, NB_KMS_CORE.
 set -euo pipefail
 
@@ -30,11 +30,11 @@ case "${kind}" in
     done
     wait
     ;;
-  listener-polygon)
+  listener-polygon|listener-bnb)
     for i in $(seq 1 "${NB_COPROCESSOR}"); do
-      helm upgrade --install "postgres-listener-polygon-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+      helm upgrade --install "postgres-${kind}-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
         -n "${NAMESPACE}" -f ci/preview-env/listener/values-postgres-listener-e2e.yaml \
-        --set-string "fullnameOverride=postgres-listener-polygon-${i}" --wait &
+        --set-string "fullnameOverride=postgres-${kind}-${i}" --wait &
     done
     wait
     ;;

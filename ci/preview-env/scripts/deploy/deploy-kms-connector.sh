@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install one kms-connector release per KMS party.
-# Env: NAMESPACE, NB_KMS_CORE, DEPLOY_POLYGON, OBSERVABILITY, OTLP_ENDPOINT,
+# Env: NAMESPACE, NB_KMS_CORE, DEPLOY_POLYGON, DEPLOY_BNB, OBSERVABILITY, OTLP_ENDPOINT,
 # KMS_CONNECTOR_CHART, TAGS_JSON, WALLETS_JSON (the KMS tx-sender wallets), KEYGEN,
 # COMMON_CHART, COMMON_CHART_VERSION.
 set -euo pipefail
@@ -45,7 +45,7 @@ kms_values=$(mktemp --suffix=.yaml)
 cp ci/preview-env/kms-connector/values-kms-connector-e2e.yaml "${kms_values}"
 set_host_chain_acl "${kms_values}" ethereum "${acl}"
 
-polygon_args=()
+extra_host_args=()
 if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
   polygon_acl=$(kubectl get configmap polygon-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
   require_nonempty "${polygon_acl}" "polygon-sc-addresses[acl.address] is empty"
@@ -53,10 +53,19 @@ if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
   cp ci/preview-env/kms-connector/values-kms-connector-polygon-e2e.yaml "${polygon_values}"
   set_host_chain_acl "${polygon_values}" ethereum "${acl}"
   set_host_chain_acl "${polygon_values}" polygon "${polygon_acl}"
-  polygon_args=(
+  extra_host_args+=(
     -f "${polygon_values}"
     --set-string "commonConfig.polygonContractAddresses.acl=${polygon_acl}"
   )
+fi
+# BNB: chart 2.x hostChains map entry only (check-labels rejects 1.x pins).
+if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
+  bnb_acl=$(kubectl get configmap bnb-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
+  require_nonempty "${bnb_acl}" "bnb-sc-addresses[acl.address] is empty"
+  bnb_values=$(mktemp --suffix=.yaml)
+  cp ci/preview-env/kms-connector/values-kms-connector-bnb-e2e.yaml "${bnb_values}"
+  set_host_chain_acl "${bnb_values}" bnb "${bnb_acl}"
+  extra_host_args+=(-f "${bnb_values}")
 fi
 
 tracing=()
@@ -99,7 +108,7 @@ fi
 for i in $(seq 1 "${NB_KMS_CORE}"); do
   helm upgrade --install "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" \
     -n "${NAMESPACE}" -f "${kms_values}" \
-    "${polygon_args[@]}" \
+    ${extra_host_args[@]+"${extra_host_args[@]}"} \
     --set-string "commonConfig.gatewayContractAddresses.decryption=${decryption}" \
     --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
     --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \

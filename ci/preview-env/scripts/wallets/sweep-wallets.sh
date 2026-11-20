@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reclaim leftover Sepolia/Amoy funds from a preview namespace before it is deleted.
+# Reclaim leftover Sepolia/Amoy (and BSC testnet) funds from a preview namespace before it is deleted.
 # generate-mnemonic.cjs makes a FRESH mnemonic per run, so anything still sitting in
 # these wallets when the namespace goes is lost for good - and the floors have to be
 # sized for the worst gas we might hit, so most runs over-fund on purpose.
@@ -33,7 +33,8 @@ echo "::add-mask::${mnemonic}"
 
 eth_url=$(secret_value rpc ethereum-rpc-url || true)
 polygon_url=$(secret_value rpc polygon-rpc-url || true)
-for url in "${eth_url}" "${polygon_url}"; do
+bnb_url=$(secret_value rpc bnb-rpc-url || true)
+for url in "${eth_url}" "${polygon_url}" "${bnb_url}"; do
   if [[ -n "${url}" ]]; then echo "::add-mask::${url}"; fi
 done
 if [[ -z "${eth_url}" && -z "${polygon_url}" ]]; then
@@ -43,7 +44,9 @@ fi
 
 eth_key=$(secret_value eth-faucet private-key || true)
 polygon_key=$(secret_value polygon-faucet private-key || true)
-for key in "${eth_key}" "${polygon_key}"; do
+# bnb-rpc-url and bnb-faucet exist only on deploy_bnb runs; the BSC sweep needs both.
+bnb_key=$(secret_value bnb-faucet private-key || true)
+for key in "${eth_key}" "${polygon_key}" "${bnb_key}"; do
   if [[ -n "${key}" ]]; then echo "::add-mask::${key}"; fi
 done
 
@@ -71,6 +74,13 @@ if [[ -n "${polygon_url}" && -n "${polygon_key}" ]]; then
   if [[ -n "${polygon_treasury}" ]]; then
     chains=$(jq -c --argjson c "${chains}" --arg u "${polygon_url}" --arg t "${polygon_treasury}" \
       -n '$c + [{label:"amoy",rpcUrl:$u,chainId:"80002",treasury:$t}]')
+  fi
+fi
+if [[ -n "${bnb_url}" && -n "${bnb_key}" ]]; then
+  bnb_treasury=$(treasury_of "${bnb_key}")
+  if [[ -n "${bnb_treasury}" ]]; then
+    chains=$(jq -c --argjson c "${chains}" --arg u "${bnb_url}" --arg t "${bnb_treasury}" \
+      -n '$c + [{label:"bsc-testnet",rpcUrl:$u,chainId:"97",treasury:$t}]')
   fi
 fi
 

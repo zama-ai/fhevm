@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install BCS (and optional GCS) coprocessor releases.
-# Env: NAMESPACE, NB_COPROCESSOR, BLUE_GREEN, GPU, DEPLOY_POLYGON, OBSERVABILITY,
+# Env: NAMESPACE, NB_COPROCESSOR, BLUE_GREEN, GPU, DEPLOY_POLYGON, DEPLOY_BNB, OBSERVABILITY,
 # AUTOMATED_TESTS, COPROCESSOR_CHART, TAGS_JSON, BCS_IMAGE_TAG, GPU_IMAGE_TAG,
 # OTLP_ENDPOINT, COPROC_WALLETS_JSON, GCS_STACK_VERSION (pod label for the GCS
 # fleet; optional), COMMON_CHART, COMMON_CHART_VERSION, COPROCESSOR_VERSION_PIN (optional).
@@ -101,9 +101,30 @@ if [[ "${with_proxy}" == "true" ]] && ! kubectl get secret "${proxy_tls_secret}"
   echo "Created ${proxy_tls_secret} (SANs: ${sans})"
 fi
 
-polygon_args=()
-if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-  polygon_args=(-f ci/preview-env/coprocessor/values-coprocessor-polygon-e2e.yaml)
+# Helm replaces lists, so each extra host chain's seed overlay carries only its
+# own chains[] entry. Pass one file: chains[] = the base `host` entry + each
+# enabled extra chain's entry, plus the overlays' commonConfig.
+extra_slots=()
+if [[ "${DEPLOY_POLYGON}" == "true" ]]; then extra_slots+=(polygon); fi
+if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then extra_slots+=(bnb); fi
+extra_host_args=()
+if (( ${#extra_slots[@]} > 0 )); then
+  extra_seed="${RUNNER_TEMP:-/tmp}/values-coprocessor-extra-hosts-e2e.yaml"
+  BASE=ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
+    yq -n '.chains = load(strenv(BASE)).chains' > "${extra_seed}"
+  for slot in "${extra_slots[@]}"; do
+    SEED="ci/preview-env/coprocessor/values-coprocessor-${slot}-e2e.yaml" yq -i '
+      .commonConfig *= load(strenv(SEED)).commonConfig |
+      .chains += load(strenv(SEED)).chains
+    ' "${extra_seed}"
+  done
+  want="host$(printf ',%s' "${extra_slots[@]}")"
+  got=$(yq '[.chains[].name] | join(",")' "${extra_seed}")
+  if [[ "${got}" != "${want}" ]]; then
+    echo "::error::coprocessor chains[] seed is [${got}], expected [${want}]" >&2
+    exit 1
+  fi
+  extra_host_args=(-f "${extra_seed}")
 fi
 bcs_overlay=()
 if [[ "${BLUE_GREEN}" == "true" ]]; then
@@ -251,7 +272,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
   fi
   helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \
     -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
-    "${polygon_args[@]}" \
+    "${extra_host_args[@]}" \
     "${bcs_overlay[@]}" \
     ${coproc_gpu_overlay[@]+"${coproc_gpu_overlay[@]}"} \
     ${proxy_args[@]+"${proxy_args[@]}"} \

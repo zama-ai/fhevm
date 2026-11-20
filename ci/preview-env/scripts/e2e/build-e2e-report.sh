@@ -15,10 +15,14 @@ wfs=(e2e-test-suite-fhevm-sdk)
 if [[ -n "${RELAYER_SDK_VERSION:-}" ]]; then
   wfs+=(e2e-test-suite-relayer-sdk)
 fi
-# The Polygon suite is only deployed when deploy_polygon is on; skip it here too
-# so wait-workflow.sh doesn't block on a workflow that never existed.
+# The Polygon / BNB suites are only deployed when deploy_polygon / deploy_bnb is
+# on; skip them here too so wait-workflow.sh doesn't block on a workflow that
+# never existed.
 if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
   wfs+=(e2e-test-suite-polygon)
+fi
+if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
+  wfs+=(e2e-test-suite-bnb)
 fi
 max_wait=7200
 sdk_label() {
@@ -26,6 +30,7 @@ sdk_label() {
     e2e-test-suite-fhevm-sdk) echo "@fhevm/sdk (RELAYER_SDK_VERSION=\"\")" ;;
     e2e-test-suite-relayer-sdk) echo "@zama-fhe/relayer-sdk" ;;
     e2e-test-suite-polygon) echo "@fhevm/sdk (Polygon host chain)" ;;
+    e2e-test-suite-bnb) echo "@fhevm/sdk (BNB host chain)" ;;
     *) echo "$1" ;;
   esac
 }
