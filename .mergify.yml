@@ -68,6 +68,9 @@ queue_rules:
         - check-skipped = js-sdk-tests/test
       # Always runs, so no hang; if it fails, dequeue instead of skipping tests.
       - check-success = js-sdk-tests/check-changes
+      # Host ingestion by listener-core and host-consumers only, on both host chains. It is
+      # shorter than the shards, so gating on it does not lengthen the queue.
+      - check-success = run-e2e-tests-consumer-stack / fhevm-e2e-test
     queue_conditions:
       - base = main
       - label!=do-not-merge
