@@ -15,6 +15,7 @@ use alloy::{
     transports::{http::reqwest::Url, RpcError},
 };
 use anyhow::Result;
+use nonce_manager::NonceManagerNonOptimistic;
 use std::{fmt::Debug, sync::Arc, time::Instant};
 use thiserror::Error;
 use tokio::sync::Semaphore;
@@ -26,8 +27,7 @@ use crate::{
     gateway::arbitrum::{
         parse_private_key,
         transaction::{
-            nonce_manager::NonceManagerNonOptimistic, provider::NonceManagedProvider,
-            selectors::SELECTOR_CIPHERTEXT_MATERIAL_NOT_READY,
+            provider::NonceManagedProvider, selectors::SELECTOR_CIPHERTEXT_MATERIAL_NOT_READY,
         },
     },
     logging::TxEngineStep,

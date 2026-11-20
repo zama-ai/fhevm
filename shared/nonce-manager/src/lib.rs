@@ -6,7 +6,7 @@ use alloy::{
 };
 use async_trait::async_trait;
 use dashmap::DashMap;
-use futures::lock::Mutex;
+use futures_util::lock::Mutex;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
@@ -94,7 +94,11 @@ impl NonceManagerNonOptimistic {
             address = address.to_string(),
             "Releasing nonce"
         );
-        if let Some(account_mutex) = self.accounts.get(&address) {
+        let account = self
+            .accounts
+            .get(&address)
+            .map(|entry| Arc::clone(entry.value()));
+        if let Some(account_mutex) = account {
             let mut state = account_mutex.lock().await;
             if state.locked_nonces.remove(&nonce) {
                 state.available_nonces.insert(nonce);
@@ -102,22 +106,31 @@ impl NonceManagerNonOptimistic {
         }
     }
 
-    /// Confirms a nonce has been used on-chain, removing it permanently.
+    /// Retires a reserved nonce so it will not be allocated again.
+    /// The caller decides what evidence is sufficient to retire it.
     pub async fn confirm_nonce(&self, address: Address, nonce: u64) {
         debug!(
             nonce = nonce.to_string(),
             address = address.to_string(),
             "Confirming nonce"
         );
-        if let Some(account_mutex) = self.accounts.get(&address) {
+        let account = self
+            .accounts
+            .get(&address)
+            .map(|entry| Arc::clone(entry.value()));
+        if let Some(account_mutex) = account {
             account_mutex.lock().await.locked_nonces.remove(&nonce);
         }
     }
 
     /// Returns a snapshot of the current nonce state for a given address.
     pub async fn get_account_details(&self, address: Address) -> Option<AccountState> {
-        if let Some(entry) = self.accounts.get(&address) {
-            Some(entry.value().lock().await.clone())
+        let account = self
+            .accounts
+            .get(&address)
+            .map(|entry| Arc::clone(entry.value()));
+        if let Some(account_mutex) = account {
+            Some(account_mutex.lock().await.clone())
         } else {
             None
         }
@@ -127,8 +140,8 @@ impl NonceManagerNonOptimistic {
     /// This implementation is ATOMIC and solves the concurrency race condition.
     ///
     /// Within one process. The counter is seeded once from the confirmed transaction count and
-    /// then advanced in memory, so two pods dispatching at once draw the same numbers - see the
-    /// nonce TODO in `startup`.
+    /// then advanced in memory, so two pods dispatching at once draw the same numbers.
+    /// The caller must coordinate writers sharing the address.
     async fn get_or_init_account_state<P, N>(
         &self,
         provider: &P,
@@ -145,7 +158,7 @@ impl NonceManagerNonOptimistic {
 
         // Confirmed, not pending: seeding past an unmined transaction leaves a gap nothing
         // here refills, and every later nonce waits behind it. The cost is a walk through
-        // whatever a predecessor still holds - see `engine`'s underpriced branch.
+        // whatever pending transactions a predecessor still holds; callers must reconcile these.
         let initial_nonce = provider.get_transaction_count(address).await?;
 
         // Use `entry` again, which provides an atomic way to get or insert.
@@ -193,7 +206,7 @@ mod tests {
 
     /// The provider only seeds an unknown account, so a pre-seeded state never touches it.
     fn offline_provider() -> impl Provider {
-        ProviderBuilder::new().connect_http("http://127.0.0.1:9".parse().unwrap())
+        ProviderBuilder::new().connect_mocked_client(alloy::transports::mock::Asserter::new())
     }
 
     fn manager_seeded_at(address: Address, next_nonce: u64) -> NonceManagerNonOptimistic {
@@ -236,6 +249,105 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(after_release, after_confirm);
+    }
+
+    #[tokio::test]
+    async fn releasing_one_nonce_preserves_other_in_flight_reservations() {
+        let address = Address::ZERO;
+        let manager = manager_seeded_at(address, 10);
+        let provider = offline_provider();
+        let first = manager.get_next_nonce(&provider, address).await.unwrap();
+        let second = manager.get_next_nonce(&provider, address).await.unwrap();
+
+        manager.release_nonce(address, first).await;
+        assert_eq!(
+            manager.get_next_nonce(&provider, address).await.unwrap(),
+            first
+        );
+        assert_eq!(
+            manager.get_next_nonce(&provider, address).await.unwrap(),
+            12
+        );
+        let state = manager.get_account_details(address).await.unwrap();
+        assert_eq!(state.locked_nonces, BTreeSet::from([first, second, 12]));
+        assert!(state.available_nonces.is_empty());
+    }
+
+    #[tokio::test]
+    async fn released_gaps_are_filled_in_nonce_order() {
+        let address = Address::ZERO;
+        let manager = manager_seeded_at(address, 10);
+        let provider = offline_provider();
+        for expected in 10..14 {
+            assert_eq!(
+                manager.get_next_nonce(&provider, address).await.unwrap(),
+                expected
+            );
+        }
+        manager.release_nonce(address, 12).await;
+        manager.release_nonce(address, 10).await;
+        for expected in [10, 12, 14] {
+            assert_eq!(
+                manager.get_next_nonce(&provider, address).await.unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn releasing_a_retired_nonce_does_not_make_it_reusable() {
+        let address = Address::ZERO;
+        let manager = manager_seeded_at(address, 10);
+        let provider = offline_provider();
+        let first = manager.get_next_nonce(&provider, address).await.unwrap();
+        manager.confirm_nonce(address, first).await;
+        manager.release_nonce(address, first).await;
+        assert_eq!(
+            manager.get_next_nonce(&provider, address).await.unwrap(),
+            11
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn arc_clones_share_accounts_initialized_after_cloning() {
+        use alloy::transports::mock::Asserter;
+        use tokio::sync::Barrier;
+
+        let manager = Arc::new(NonceManagerNonOptimistic::new());
+        let asserter = Asserter::new();
+        // Concurrent first use may perform multiple seed reads. They must all
+        // converge on one shared account, including across pre-existing Arc clones.
+        for _ in 0..16 {
+            asserter.push_success(&"0xa");
+        }
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter);
+        let barrier = Arc::new(Barrier::new(16));
+        let mut tasks = Vec::new();
+        for _ in 0..16 {
+            let manager = manager.clone();
+            let provider = provider.clone();
+            let barrier = barrier.clone();
+            tasks.push(tokio::spawn(async move {
+                barrier.wait().await;
+                manager
+                    .get_next_nonce(&provider, Address::ZERO)
+                    .await
+                    .unwrap()
+            }));
+        }
+        let mut nonces = BTreeSet::new();
+        for task in tasks {
+            assert!(nonces.insert(task.await.unwrap()), "nonce allocated twice");
+        }
+        assert_eq!(nonces, (10..26).collect());
+        assert_eq!(
+            manager
+                .get_account_details(Address::ZERO)
+                .await
+                .unwrap()
+                .locked_nonces,
+            nonces
+        );
     }
 }
 

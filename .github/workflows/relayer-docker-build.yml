@@ -102,6 +102,7 @@ jobs:
           # Path dependency bind-mounted into the build, so a change here produces a different
           # image.
           - shared/ciphertext-attestation/**
+          - shared/nonce-manager/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #
