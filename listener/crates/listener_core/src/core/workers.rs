@@ -1679,14 +1679,17 @@ mod tests {
     }
 }
 
-/// The reorg-abandon recovery path end to end: the walk gives up on a block the
-/// RPC no longer serves by hash, and `ReorgHandler` must still re-arm the cursor
-/// (publish `FETCH_NEW_BLOCKS` and Ack). This is the only path out of the
-/// bnb-testnet stall of 2026-11-12, so it is pinned here.
+/// Re-arm recovery paths end to end, through the real handlers: when a block can
+/// no longer be fetched consistently, the handler must still Ack and publish
+/// exactly one `FETCH_NEW_BLOCKS`, with the DB untouched.
+/// - Reorg walk: the reorged block is no longer served by hash (the bnb-testnet
+///   stall of 2026-11-12).
+/// - Live cursor: a tx of the block was dropped by a reorg, so its receipt stays
+///   null forever (per-tx receipt strategies).
 #[cfg(test)]
-mod reorg_abandon_tests {
+mod rearm_tests {
     use super::*;
-    use crate::blockchain::evm::evm_block_fetcher::mock_rpc;
+    use crate::blockchain::evm::evm_block_fetcher::mock_rpc::{self, MockNode};
     use crate::blockchain::evm::sem_evm_rpc_provider::SemEvmRpcProvider;
     use crate::config::BlockchainConfig;
     use crate::store::repositories::Repositories;
@@ -1695,105 +1698,173 @@ mod reorg_abandon_tests {
     use broker::{Broker, MessageMetadata, Topic};
     use primitives::utils::chain_id_to_namespace;
     use sqlx::ConnectOptions;
+    use std::sync::atomic::Ordering;
 
-    const CHAIN_ID: u64 = 97;
+    struct Harness {
+        chain_id: u64,
+        listener: Arc<EvmListener>,
+        client: Arc<PgClient>,
+        repositories: Repositories,
+        broker: Broker,
+        publisher: Publisher,
+        fetch_topic: Topic,
+        /// The canonical DB tip below the mock block.
+        tip: NewDatabaseBlock,
+    }
+
+    impl Harness {
+        /// DB tip at `node.block_number - 1` (hash = the mock block's parent, so
+        /// the chain links), shared Redis (logical DB 14), listener on `strategy`.
+        /// Each test uses its own `chain_id` so the Redis streams do not overlap.
+        async fn new(pool: sqlx::PgPool, node: &MockNode, strategy: &str, chain_id: u64) -> Self {
+            let db_config = serde_json::from_value(serde_json::json!({
+                "db_url": pool.connect_options().to_url_lossy().to_string()
+            }))
+            .unwrap();
+            let client = Arc::new(PgClient::new(&db_config).await.unwrap());
+            let repositories = Repositories::new(Arc::clone(&client), chain_id as i64);
+            let tip = NewDatabaseBlock {
+                block_number: node.block_number - 1,
+                block_hash: node.parent_hash,
+                parent_hash: B256::repeat_byte(0xbb),
+                status: BlockStatus::Canonical,
+            };
+            repositories.blocks.insert_block(&tip).await.unwrap();
+
+            let redis_url = format!(
+                "{}/14",
+                test_support::shared_redis_url().await.trim_end_matches('/')
+            );
+            let broker = Broker::redis(&redis_url).await.unwrap();
+            let namespace = chain_id_to_namespace(chain_id);
+            let publisher = broker.publisher(&namespace).await.unwrap();
+            let fetch_topic = Topic::new(routing::FETCH_NEW_BLOCKS).with_namespace(&namespace);
+
+            let settings: BlockchainConfig = serde_json::from_value(serde_json::json!({
+                "chain_id": chain_id,
+                "rpc_url": node.url,
+                "network": "mock",
+                "strategy": {
+                    "block_fetcher": strategy,
+                    "loop_delay_ms": 10,
+                    "reorg_not_found_max_retries": 2
+                }
+            }))
+            .unwrap();
+            let provider = SemEvmRpcProvider::new(node.url.clone(), 5, false, 64).unwrap();
+            let listener = Arc::new(EvmListener::new(
+                provider,
+                repositories.clone(),
+                broker.clone(),
+                broker.publisher_unscoped().await.unwrap(),
+                &settings,
+            ));
+            Self {
+                chain_id,
+                listener,
+                client,
+                repositories,
+                broker,
+                publisher,
+                fetch_topic,
+                tip,
+            }
+        }
+
+        fn flow_lock(&self) -> FlowLock {
+            FlowLock::new(Arc::clone(&self.client), self.chain_id as i64)
+        }
+
+        async fn fetch_len(&self) -> u64 {
+            self.broker
+                .queue_depths(&self.fetch_topic, None)
+                .await
+                .unwrap()
+                .principal
+        }
+
+        /// Ack, one more `FETCH_NEW_BLOCKS`, DB tip unchanged.
+        async fn assert_rearmed(&self, decision: AckDecision, fetch_before: u64) {
+            assert!(
+                matches!(decision, AckDecision::Ack),
+                "message must be Acked"
+            );
+            assert_eq!(
+                self.fetch_len().await,
+                fetch_before + 1,
+                "cursor must be re-armed with one FETCH_NEW_BLOCKS"
+            );
+            let db_tip = self
+                .repositories
+                .blocks
+                .get_latest_canonical_block()
+                .await
+                .unwrap()
+                .expect("tip");
+            assert_eq!(db_tip.block_number, self.tip.block_number, "DB untouched");
+            assert_eq!(db_tip.block_hash, self.tip.block_hash, "DB untouched");
+        }
+    }
+
+    fn message(payload: Vec<u8>, topic: &str) -> Message {
+        Message {
+            payload,
+            metadata: MessageMetadata::new("1-0", topic, 1),
+        }
+    }
 
     #[sqlx::test(migrations = "./migrations")]
     #[ignore = "needs Docker (Redis testcontainer); run via `make test-e2e-listener`"]
     async fn reorg_abandon_rearms_cursor(pool: sqlx::PgPool) {
         // RPC: eth_getBlockByHash always returns null (block replaced by a newer reorg).
         let node = mock_rpc::start(None, true).await;
-
-        // DB: one canonical block below the reorged height.
-        let db_config = serde_json::from_value(serde_json::json!({
-            "db_url": pool.connect_options().to_url_lossy().to_string()
-        }))
-        .unwrap();
-        let client = Arc::new(PgClient::new(&db_config).await.unwrap());
-        let repositories = Repositories::new(Arc::clone(&client), CHAIN_ID as i64);
-        let below = NewDatabaseBlock {
-            block_number: node.block_number - 1,
-            block_hash: B256::repeat_byte(0xaa),
-            parent_hash: B256::repeat_byte(0xbb),
-            status: BlockStatus::Canonical,
-        };
-        repositories.blocks.insert_block(&below).await.unwrap();
-
-        // Broker: shared Redis container, logical DB 14.
-        let redis_url = format!(
-            "{}/14",
-            test_support::shared_redis_url().await.trim_end_matches('/')
-        );
-        let broker = Broker::redis(&redis_url).await.unwrap();
-        let namespace = chain_id_to_namespace(CHAIN_ID);
-        let publisher = broker.publisher(&namespace).await.unwrap();
-        let fetch_topic = Topic::new(routing::FETCH_NEW_BLOCKS).with_namespace(&namespace);
-        let fetch_len = || async {
-            broker
-                .queue_depths(&fetch_topic, None)
-                .await
-                .unwrap()
-                .principal
-        };
-        let fetch_before = fetch_len().await;
-
-        let settings: BlockchainConfig = serde_json::from_value(serde_json::json!({
-            "chain_id": CHAIN_ID,
-            "rpc_url": node.url,
-            "network": "mock",
-            "strategy": { "loop_delay_ms": 10, "reorg_not_found_max_retries": 2 }
-        }))
-        .unwrap();
-        let provider = SemEvmRpcProvider::new(node.url.clone(), 5, false, 64).unwrap();
-        let listener = EvmListener::new(
-            provider,
-            repositories.clone(),
-            broker.clone(),
-            broker.publisher_unscoped().await.unwrap(),
-            &settings,
-        );
-        let handler = ReorgHandler::new(
-            Arc::new(listener),
-            FlowLock::new(Arc::clone(&client), CHAIN_ID as i64),
-            publisher,
-        );
+        let h = Harness::new(pool, &node, "block_receipts", 970_001).await;
+        let handler =
+            ReorgHandler::new(Arc::clone(&h.listener), h.flow_lock(), h.publisher.clone());
+        let fetch_before = h.fetch_len().await;
 
         let event = ReorgBacktrackEvent {
             block_number: node.block_number,
             block_hash: node.block_hash,
             parent_hash: B256::repeat_byte(0xcc),
         };
-        let msg = Message {
-            payload: serde_json::to_vec(&event).unwrap(),
-            metadata: MessageMetadata::new("1-0", "backtrack-reorg", 1),
-        };
-
+        let msg = message(serde_json::to_vec(&event).unwrap(), "backtrack-reorg");
         let decision = handler.call(&msg).await.expect("abandon must not error");
 
-        assert!(
-            matches!(decision, AckDecision::Ack),
-            "message must be Acked"
-        );
-        assert_eq!(
-            fetch_len().await,
-            fetch_before + 1,
-            "cursor must be re-armed with one FETCH_NEW_BLOCKS"
-        );
+        h.assert_rearmed(decision, fetch_before).await;
         // 3 attempts (1 + 2 NotFound retries) per by-hash call; both tasks of the
         // block_receipts strategy may hit eth_getBlockByHash, hence up to 6.
-        let calls = node.by_hash_calls.load(std::sync::atomic::Ordering::SeqCst);
+        let calls = node.by_hash_calls.load(Ordering::SeqCst);
         assert!(
             (3..=6).contains(&calls),
             "walk must give up after the cap, got {calls} by-hash calls"
         );
-        // DB untouched: the pre-existing block is still the tip, nothing added.
-        let tip = repositories
-            .blocks
-            .get_latest_canonical_block()
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
+    #[ignore = "needs Docker (Redis testcontainer); run via `make test-e2e-listener`"]
+    async fn live_null_tx_receipt_rearms_cursor(pool: sqlx::PgPool) {
+        // RPC: the block is served by number, but its txs' receipts stay null
+        // (tx dropped by a reorg).
+        let node = mock_rpc::start_with_null_tx_receipts().await;
+        let h = Harness::new(pool, &node, "transaction_receipts_parallel", 970_002).await;
+        let handler =
+            FetchHandler::new(Arc::clone(&h.listener), h.flow_lock(), h.publisher.clone());
+        let fetch_before = h.fetch_len().await;
+
+        let msg = message(b"null".to_vec(), "fetch-new-blocks");
+        let decision = tokio::time::timeout(std::time::Duration::from_secs(30), handler.call(&msg))
             .await
-            .unwrap()
-            .expect("tip");
-        assert_eq!(tip.block_number, below.block_number);
-        assert_eq!(tip.block_hash, below.block_hash);
+            .expect("live cursor must not stall on a null receipt")
+            .expect("re-arm must not error");
+
+        h.assert_rearmed(decision, fetch_before).await;
+        // 2 txs, each tried up to 3 times (1 + 2 NotFound retries); the first task
+        // to hit the cap cancels the other.
+        let calls = node.tx_receipt_calls.load(Ordering::SeqCst);
+        assert!(
+            (3..=6).contains(&calls),
+            "receipts must give up after the cap, got {calls} calls"
+        );
     }
 }
