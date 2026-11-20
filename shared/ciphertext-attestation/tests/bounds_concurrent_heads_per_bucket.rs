@@ -31,6 +31,7 @@ use tokio::{
     net::TcpListener,
     task::JoinHandle,
 };
+use url::Url;
 
 const HANDLE: B256 = B256::repeat_byte(0xAA);
 const CONTEXT_ID: U256 = U256::ONE;
@@ -48,9 +49,9 @@ const ENTRIES: u8 = 6;
 /// here: with a `threshold` of 1 (see the test below), the consensus round only reaches
 /// `NotReachedThisRound` once every slot is filled, so every entry's `HEAD` actually gets issued instead
 /// of the round exiting early and aborting whichever ones have not started yet.
-async fn concurrency_tracking_bucket(hold: Duration) -> (String, Arc<AtomicUsize>, JoinHandle<()>) {
+async fn concurrency_tracking_bucket(hold: Duration) -> (Url, Arc<AtomicUsize>, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
+    let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
     let peak = Arc::new(AtomicUsize::new(0));
     let in_flight = Arc::new(AtomicUsize::new(0));
 
@@ -91,7 +92,8 @@ async fn per_bucket_head_ceiling_is_never_exceeded() {
         .map(|i| CoprocessorEntry {
             tx_sender: Address::repeat_byte(0x70 + i),
             signer: Address::repeat_byte(0x80 + i),
-            bucket: bucket.clone(),
+            storage_url: bucket.clone(),
+            prf_endpoint_url: None,
         })
         .collect();
     // Threshold 1: every entry fails (404), so the round only turns `NotReachedThisRound` once every

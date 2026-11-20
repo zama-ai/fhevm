@@ -21,7 +21,7 @@ pub async fn fetch_attestations_and_check_consensus(
     let mut fetch_attestation_tasks = JoinSet::new();
     for entry in &registry.coprocessors {
         let client = client.clone();
-        let (bucket, signer) = (entry.bucket.clone(), entry.signer);
+        let (bucket, signer) = (entry.storage_url.clone(), entry.signer);
         fetch_attestation_tasks.spawn(async move {
             let result = client.fetch_single_attestation(&bucket, handle).await;
             (signer, result)

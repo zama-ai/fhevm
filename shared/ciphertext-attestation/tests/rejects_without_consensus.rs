@@ -24,6 +24,7 @@ use ciphertext_attestation::{
     S3_METADATA_ATTESTATION_HEADER, ciphertext::Version, fetch_attestations_and_check_consensus,
 };
 use std::{num::NonZeroUsize, time::Duration};
+use url::Url;
 use wiremock::{
     Mock, MockServer, ResponseTemplate,
     matchers::{method, path_regex},
@@ -60,8 +61,8 @@ impl Bucket {
         }
     }
 
-    fn url(&self) -> String {
-        self.server.uri()
+    fn url(&self) -> Url {
+        self.server.uri().parse().unwrap()
     }
 
     /// Serves `attestation` in the S3 metadata header, as a real bucket would.
@@ -117,7 +118,8 @@ fn snapshot(
         .map(|(bucket, &signer)| CoprocessorEntry {
             tx_sender: bucket.tx_sender,
             signer,
-            bucket: bucket.url(),
+            storage_url: bucket.url(),
+            prf_endpoint_url: None,
         })
         .collect();
     CoprocessorRegistrySnapshot::new(
@@ -347,7 +349,11 @@ async fn agreeing_buckets_reach_consensus_and_name_their_buckets() {
 
     assert_eq!(resolved.material.ciphertext_digest, CT_DIGEST);
     assert_eq!(resolved.material.sns_ciphertext_digest, SNS_DIGEST);
-    let mut winning: Vec<String> = resolved.winners.into_iter().map(|w| w.bucket).collect();
+    let mut winning: Vec<Url> = resolved
+        .winners
+        .into_iter()
+        .map(|w| w.storage_url)
+        .collect();
     winning.sort();
     let mut expected = vec![buckets[0].url(), buckets[1].url()];
     expected.sort();

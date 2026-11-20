@@ -21,6 +21,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::Semaphore;
+use url::Url;
 
 /// An HTTP client with a ceiling on the requests it may have in flight.
 ///
@@ -28,7 +29,7 @@ use tokio::sync::Semaphore;
 #[derive(Clone)]
 pub struct BoundedClient {
     client: Client,
-    head_semaphores: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
+    head_semaphores: Arc<Mutex<HashMap<Url, Arc<Semaphore>>>>,
     max_concurrent_heads_per_bucket: NonZeroUsize,
     /// Deadline of a single attestation `HEAD`.
     head_timeout: Duration,
@@ -87,7 +88,7 @@ impl BoundedClient {
     /// Fetches the attestation for a `handle` from the specified bucket, using a `HEAD` request.
     pub async fn fetch_single_attestation(
         &self,
-        bucket: &str,
+        bucket: &Url,
         handle: B256,
     ) -> Result<CiphertextAttestation, FetchAttestationError> {
         let bucket_semaphore = self.bucket_semaphore(bucket);
@@ -99,7 +100,7 @@ impl BoundedClient {
         let url = rfc023_ciphertext_url(bucket, handle, self.context_id);
         let response = self
             .client
-            .head(&url)
+            .head(url)
             .timeout(self.head_timeout)
             .send()
             .await?;
@@ -119,7 +120,7 @@ impl BoundedClient {
     /// the content of `buf` is unspecified.
     pub async fn fetch_ciphertext(
         &self,
-        bucket: &str,
+        bucket: &Url,
         handle: B256,
         expected_digest: B256,
         buf: &mut [u8],
@@ -137,7 +138,7 @@ impl BoundedClient {
         let url = rfc023_ciphertext_url(bucket, handle, self.context_id);
         let mut response = self
             .client
-            .get(&url)
+            .get(url)
             .timeout(get_timeout)
             .send()
             .await
@@ -182,7 +183,7 @@ impl BoundedClient {
     }
 
     /// The `HEAD` ceiling of `bucket`, created on first use.
-    fn bucket_semaphore(&self, bucket: &str) -> Arc<Semaphore> {
+    fn bucket_semaphore(&self, bucket: &Url) -> Arc<Semaphore> {
         let mut semaphores = self
             .head_semaphores
             .lock()
@@ -192,18 +193,20 @@ impl BoundedClient {
             Arc::clone(semaphore)
         } else {
             let semaphore = Arc::new(Semaphore::new(self.max_concurrent_heads_per_bucket.get()));
-            semaphores.insert(bucket.to_string(), Arc::clone(&semaphore));
+            semaphores.insert(bucket.clone(), Arc::clone(&semaphore));
             semaphore
         }
     }
 }
 
 /// URL of a ciphertext object in a Coprocessor bucket (RFC 023 layout).
-fn rfc023_ciphertext_url(bucket_url: &str, handle: B256, context_id: U256) -> String {
-    format!(
-        "{bucket_url}/{}",
-        s3_ct128_key(handle.as_slice(), context_id)
-    )
+fn rfc023_ciphertext_url(bucket_url: &Url, handle: B256, context_id: U256) -> Url {
+    let mut url = bucket_url.clone();
+    url.path_segments_mut()
+        .expect("an http(s) URL always has a path")
+        .pop_if_empty()
+        .extend(s3_ct128_key(handle.as_slice(), context_id).split('/'));
+    url
 }
 
 /// Why a single bucket's HEAD attempt did not yield an attestation.
@@ -259,7 +262,7 @@ impl BoundedClient {
     /// Takes a permit out of `bucket`'s ceiling, to check that its `HEAD`s wait for one.
     pub(super) async fn acquire_head_for_test(
         &self,
-        bucket: &str,
+        bucket: &Url,
     ) -> tokio::sync::OwnedSemaphorePermit {
         self.bucket_semaphore(bucket).acquire_owned().await.unwrap()
     }
@@ -278,9 +281,13 @@ mod tests {
     use super::*;
     use tokio::{io::AsyncWriteExt, net::TcpListener, task::JoinHandle};
 
-    /// Two addresses nothing can be listening on: a request to either fails at connection, fast.
-    const UNREACHABLE_BUCKET: &str = "http://127.0.0.1:1";
-    const OTHER_UNREACHABLE_BUCKET: &str = "http://127.0.0.1:2";
+    // Two addresses nothing can be listening on: a request to either fails at connection, fast.
+    fn unreachable_bucket() -> Url {
+        Url::parse("http://127.0.0.1:1").unwrap()
+    }
+    fn other_unreachable_bucket() -> Url {
+        Url::parse("http://127.0.0.1:2").unwrap()
+    }
 
     const CONTEXT_ID: U256 = U256::ONE;
 
@@ -311,13 +318,13 @@ mod tests {
     #[tokio::test]
     async fn head_ceilings_are_per_bucket() {
         let client = single_permit_client();
-        let _saturating = client.acquire_head_for_test(UNREACHABLE_BUCKET).await;
+        let _saturating = client.acquire_head_for_test(&unreachable_bucket()).await;
 
         // The other bucket draws from its own ceiling: its `HEAD` is issued — and fails on the
         // unreachable address — instead of waiting for the saturated bucket's permit.
         let issued = tokio::time::timeout(
             Duration::from_secs(5),
-            client.fetch_single_attestation(OTHER_UNREACHABLE_BUCKET, B256::ZERO),
+            client.fetch_single_attestation(&other_unreachable_bucket(), B256::ZERO),
         )
         .await
         .expect("a HEAD on another bucket should not wait for the saturated one");
@@ -326,7 +333,7 @@ mod tests {
         // While the saturated bucket does gate its own `HEAD`s.
         let gated = tokio::time::timeout(
             Duration::from_millis(200),
-            client.fetch_single_attestation(UNREACHABLE_BUCKET, B256::ZERO),
+            client.fetch_single_attestation(&unreachable_bucket(), B256::ZERO),
         )
         .await;
         assert!(gated.is_err(), "the saturated bucket should gate its HEADs");
@@ -335,9 +342,9 @@ mod tests {
     /// A bucket that accepts connections and never answers. The accepted streams are held open so
     /// the client waits on a live connection rather than seeing it closed. Returns its URL, and
     /// its accept loop to abort.
-    async fn black_hole_server() -> (String, JoinHandle<()>) {
+    async fn black_hole_server() -> (Url, JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
+        let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
         let accept_loop = tokio::spawn(async move {
             let mut accepted = Vec::new();
             while let Ok((stream, _)) = listener.accept().await {
@@ -402,7 +409,7 @@ mod tests {
         for handle in [B256::ZERO, B256::repeat_byte(0x02)] {
             let gated = tokio::time::timeout(
                 Duration::from_millis(200),
-                client.fetch_ciphertext(UNREACHABLE_BUCKET, handle, B256::ZERO, &mut [0; 1024]),
+                client.fetch_ciphertext(&unreachable_bucket(), handle, B256::ZERO, &mut [0; 1024]),
             )
             .await;
             assert!(
@@ -417,7 +424,12 @@ mod tests {
         // the `GET` was issued once the permit freed.
         let result = tokio::time::timeout(
             Duration::from_secs(5),
-            client.fetch_ciphertext(UNREACHABLE_BUCKET, B256::ZERO, B256::ZERO, &mut [0; 1024]),
+            client.fetch_ciphertext(
+                &unreachable_bucket(),
+                B256::ZERO,
+                B256::ZERO,
+                &mut [0; 1024],
+            ),
         )
         .await
         .expect("retrieval should have resumed");
@@ -426,9 +438,9 @@ mod tests {
 
     /// A bucket serving `body` on any path, its length announced in a `Content-Length` header or
     /// left for the connection close to frame. Returns its URL, and its accept loop to abort.
-    async fn ciphertext_bucket(body: Vec<u8>, announce_length: bool) -> (String, JoinHandle<()>) {
+    async fn ciphertext_bucket(body: Vec<u8>, announce_length: bool) -> (Url, JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
+        let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
         let accept_loop = tokio::spawn(async move {
             while let Ok((mut stream, _)) = listener.accept().await {
                 let framing = if announce_length {
@@ -515,9 +527,28 @@ mod tests {
     #[tokio::test]
     async fn a_head_only_client_cannot_fetch_ciphertexts() {
         let result = single_permit_client()
-            .fetch_ciphertext(UNREACHABLE_BUCKET, B256::ZERO, B256::ZERO, &mut [0; 1024])
+            .fetch_ciphertext(
+                &unreachable_bucket(),
+                B256::ZERO,
+                B256::ZERO,
+                &mut [0; 1024],
+            )
             .await;
         assert!(matches!(result, Err(FetchCiphertextError::NotConfigured)));
+    }
+
+    /// The object key is appended to the bucket URL's path, with or without a trailing slash.
+    #[test]
+    fn ciphertext_url_appends_the_key_to_the_bucket_path() {
+        let key = s3_ct128_key(B256::ZERO.as_slice(), U256::ONE);
+        for (bucket, expected) in [
+            ("http://host", format!("http://host/{key}")),
+            ("http://host/bucket", format!("http://host/bucket/{key}")),
+            ("http://host/bucket/", format!("http://host/bucket/{key}")),
+        ] {
+            let url = rfc023_ciphertext_url(&Url::parse(bucket).unwrap(), B256::ZERO, U256::ONE);
+            assert_eq!(url.as_str(), expected, "{bucket}");
+        }
     }
 
     #[test]
