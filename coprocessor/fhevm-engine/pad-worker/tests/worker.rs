@@ -1057,6 +1057,37 @@ async fn a_long_evaluation_keeps_its_claim() {
 }
 
 #[tokio::test]
+async fn a_stuck_evaluation_frees_its_claim_after_the_pending_age() {
+    let (_instance, pool) = db().await;
+    // The evaluation lasts longer than the pending age and the claim timeout together.
+    let slow = Slow {
+        delay: Duration::from_secs(12),
+        row_1: common::evaluator()
+            .evaluate(INSTANCE, B256::repeat_byte(1), 64)
+            .unwrap(),
+    };
+    let config = Config {
+        claim_timeout: Duration::from_secs(3),
+        pending_max_age: Duration::from_secs(2),
+        drain_timeout: Duration::from_millis(100),
+        ..config()
+    };
+    let (_signer, cancel, run) = start(&pool, config, Arc::new(slow));
+    add_row(&pool, INSTANCE, 1, 1, 0.0).await;
+    until(&pool, "SELECT claimed_at IS NOT NULL FROM pads").await;
+
+    // The renewal stops after 2 s, so the claim goes stale 3 s later, before the evaluation ends.
+    until(
+        &pool,
+        "SELECT claimed_at < NOW() - INTERVAL '3 seconds' AND signature IS NULL FROM pads",
+    )
+    .await;
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn a_stop_lets_the_claimed_rows_complete() {
     let (_instance, pool) = db().await;
     // A fixed drain time: a real evaluation is slower on a loaded machine.

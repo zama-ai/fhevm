@@ -1859,7 +1859,8 @@ padWorkerShared:
   config:
     # The bucket of the operator. Accepts `value` or `valueFrom`. Required.
     s3BucketName: {}
-    # Use `prfService.limits.padPendingMaxAgeSeconds`: older pending rows are not computed.
+    # Use `prfService.limits.padPendingMaxAgeSeconds`: older pending rows are not computed. It is
+    # also the longest time of one evaluation, so set it above the time of the slowest evaluation.
     pendingMaxAgeSeconds: 600
     # The GC deletes uploaded or failed rows (the ct128) older than this. `0` keeps all rows. Expire
     # the `pads/ct128/` objects with an S3 lifecycle rule on the bucket. S3 counts whole days: use

@@ -21,13 +21,13 @@ use fhevm_engine_common::{
 use rows::{Claim, Output};
 use sqlx::{postgres::PgListener, PgPool};
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     num::NonZeroUsize,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{
     sync::{Notify, OwnedSemaphorePermit, Semaphore},
@@ -117,17 +117,35 @@ pub struct PadWorker {
     /// Set once the pad-worker listens for rows: until then, a rollout keeps the old pod.
     ready: Arc<AtomicBool>,
     /// The claims that a task of this pod holds.
-    running: Mutex<HashSet<Claim>>,
+    running: Mutex<HashMap<Claim, RunningClaim>>,
     /// Wakes the claim loop when an evaluation slot is free, before the upload ends.
     slot_free: Notify,
 }
 
+/// A claim that a task of this pod holds.
+struct RunningClaim {
+    /// True for an evaluation, false for an upload. Only an evaluation renews its claim.
+    evaluation: bool,
+    started: Instant,
+    /// Set when the renewal stops, because the evaluation is older than `pending_max_age`.
+    renewal_stopped: bool,
+}
+
 /// Adds a claim to `running` until its task ends.
-struct Running<'a>(&'a Mutex<HashSet<Claim>>, Claim);
+struct Running<'a>(&'a Mutex<HashMap<Claim, RunningClaim>>, Claim);
 
 impl<'a> Running<'a> {
-    fn new(running: &'a Mutex<HashSet<Claim>>, claim: Claim) -> Self {
-        running.lock().expect("running claims").insert(claim);
+    fn new(
+        running: &'a Mutex<HashMap<Claim, RunningClaim>>,
+        claim: Claim,
+        evaluation: bool,
+    ) -> Self {
+        let task = RunningClaim {
+            evaluation,
+            started: Instant::now(),
+            renewal_stopped: false,
+        };
+        running.lock().expect("running claims").insert(claim, task);
         Self(running, claim)
     }
 }
@@ -241,7 +259,7 @@ impl PadWorker {
             .running
             .lock()
             .expect("running claims")
-            .iter()
+            .keys()
             .copied()
             .collect();
         tasks.shutdown().await;
@@ -308,7 +326,7 @@ impl PadWorker {
                 .or_else(non_fatal);
         }
         metrics::count_evaluation(claim.prf_instance);
-        let _running = Running::new(&self.running, claim);
+        let _running = Running::new(&self.running, claim, true);
         let output = match self.compute(claim).await {
             Ok(computed) => computed,
             Err(OutputError::Evaluation(message)) => {
@@ -354,20 +372,27 @@ impl PadWorker {
             .or_else(non_fatal)
     }
 
-    /// Renews the running claims 3 times in each `claim_timeout`, so no pod computes a row again.
+    /// Renews the claims of the running evaluations 3 times in each `claim_timeout`, so no pod
+    /// computes a row again. Stops the renewal of an evaluation older than `pending_max_age`: a
+    /// stuck evaluation then frees its row for another pod and for the GC.
     async fn renew_claims(self: Arc<Self>) -> anyhow::Result<()> {
         loop {
             tokio::select! {
                 () = self.cancel_token.cancelled() => return Ok(()),
                 () = sleep(self.config.claim_timeout / 3) => {}
             }
-            let running: Vec<Claim> = self
-                .running
-                .lock()
-                .expect("running claims")
-                .iter()
-                .copied()
-                .collect();
+            let mut running = Vec::new();
+            for (claim, task) in self.running.lock().expect("running claims").iter_mut() {
+                if !task.evaluation {
+                    continue;
+                }
+                if task.started.elapsed() < self.config.pending_max_age {
+                    running.push(*claim);
+                } else if !task.renewal_stopped {
+                    task.renewal_stopped = true;
+                    warn!(?claim, "The evaluation runs longer than the pending age: its claim is no longer renewed");
+                }
+            }
             if !running.is_empty() {
                 rows::renew(&self.pool, self.config.prf_instance, &running)
                     .await
@@ -426,7 +451,7 @@ impl PadWorker {
                 Ok(outputs) => {
                     let worker = &*self;
                     futures_util::future::try_join_all(outputs.into_iter().map(|output| {
-                        let running = Running::new(&worker.running, output.claim);
+                        let running = Running::new(&worker.running, output.claim, false);
                         async move {
                             let _running = running;
                             worker.upload(output, true).await

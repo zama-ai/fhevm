@@ -59,7 +59,8 @@ struct Args {
     #[arg(long, env = "PAD_POLL_INTERVAL", default_value = "1s", value_parser = humantime::parse_duration)]
     poll_interval: Duration,
 
-    /// Pending rows older than this are not claimed. Use the prf-service value.
+    /// Pending rows older than this are not claimed. Use the prf-service value. It is also the
+    /// longest time of one evaluation, so set it above the time of the slowest evaluation.
     #[arg(long, env = "PAD_PENDING_MAX_AGE", default_value = "10m", value_parser = humantime::parse_duration)]
     pending_max_age: Duration,
 
