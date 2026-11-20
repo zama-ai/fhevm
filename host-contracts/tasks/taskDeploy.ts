@@ -537,6 +537,7 @@ export function buildKmsNodeParams(): {
   mpcIdentity: string;
   caCert: string;
   storagePrefix: string;
+  connectorUrl: string;
 }[] {
   const numNodes = getRequiredCountEnvVar('NUM_KMS_NODES');
   const nodes: {
@@ -548,6 +549,7 @@ export function buildKmsNodeParams(): {
     mpcIdentity: string;
     caCert: string;
     storagePrefix: string;
+    connectorUrl: string;
   }[] = [];
   for (let idx = 0; idx < numNodes; idx++) {
     const txSenderAddress = getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`);
@@ -558,6 +560,7 @@ export function buildKmsNodeParams(): {
     const mpcIdentity = getRequiredEnvVar(`KMS_NODE_MPC_IDENTITY_${idx}`);
     const caCert = getRequiredEnvVar(`KMS_NODE_CA_CERT_${idx}`);
     const storagePrefix = getRequiredEnvVar(`KMS_NODE_STORAGE_PREFIX_${idx}`);
+    const connectorUrl = getRequiredEnvVar(`KMS_NODE_CONNECTOR_URL_${idx}`);
     nodes.push({
       txSenderAddress,
       signerAddress,
@@ -567,6 +570,7 @@ export function buildKmsNodeParams(): {
       mpcIdentity,
       caCert,
       storagePrefix,
+      connectorUrl,
     });
   }
   return nodes;

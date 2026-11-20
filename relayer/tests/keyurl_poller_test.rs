@@ -2,7 +2,8 @@
 //!
 //! These drive a real `KeyUrlPoller` against the `ethereum_rpc_mock` HTTP mock (no database),
 //! exercising the binding calls and ABI decoding end-to-end:
-//! - the initial fetch maps the on-chain ids/context into the served response, and
+//! - the initial fetch maps the on-chain ids/context into the served response, for a context
+//!   anchored by the current or the v0.14 `NewKmsContext` event, and
 //! - a simulated id change is detected by the poll loop and pushed to the watch channel.
 
 #![cfg(feature = "integration-tests")]
@@ -16,6 +17,7 @@ use alloy::primitives::{hex, Address, Bytes, Log, B256, U256};
 use alloy::sol_types::{SolCall, SolEvent, SolValue};
 use ethereum_rpc_mock::{MockConfig, MockServer, Response, UsageLimit};
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
+use fhevm_host_bindings::i_protocol_config_v014::IProtocolConfigV014;
 use fhevm_host_bindings::ikms_generation::IKMSGeneration;
 use fhevm_relayer::config::settings::{ProtocolConfigSettings, RetrySettings};
 use fhevm_relayer::host::KeyUrlPoller;
@@ -72,6 +74,7 @@ fn kms_node(party: i32, storage_prefix: &str) -> IProtocolConfig::KmsNodeParams 
         mpcIdentity: String::new(),
         caCert: Bytes::new(),
         storagePrefix: storage_prefix.to_string(),
+        connectorUrl: String::new(),
     }
 }
 
@@ -99,9 +102,42 @@ fn new_kms_context_log() -> Log {
     }
 }
 
-/// Register the static getters (CRS id, context/epoch, materials). The active key id is
-/// registered separately so individual tests can make it static or dynamic.
-fn register_static_getters(server: &MockServer) {
+/// Build the v0.14 `NewKmsContext` log that a context created before the `connectorUrl` upgrade
+/// still carries at its anchor block. The event has six parameters, and its `KmsNodeParams` has
+/// eight fields (no `connectorUrl`).
+fn v014_new_kms_context_log() -> Log {
+    let event = IProtocolConfigV014::NewKmsContext {
+        contextId: U256::from(1u64),
+        previousContextId: U256::ZERO,
+        kmsNodeParams: vec![IProtocolConfigV014::KmsNodeParams {
+            txSenderAddress: Address::ZERO,
+            signerAddress: Address::ZERO,
+            ipAddress: String::new(),
+            storageUrl: STORAGE_URL.to_string(),
+            partyId: 1,
+            mpcIdentity: String::new(),
+            caCert: Bytes::new(),
+            storagePrefix: STORAGE_PREFIX.to_string(),
+        }],
+        thresholds: IProtocolConfigV014::KmsThresholds {
+            publicDecryption: U256::from(1u64),
+            userDecryption: U256::from(1u64),
+            kmsGen: U256::from(1u64),
+            mpc: U256::from(1u64),
+        },
+        softwareVersion: String::new(),
+        pcrValues: Vec::new(),
+    };
+    Log {
+        address: addr(),
+        data: event.encode_log_data(),
+    }
+}
+
+/// Register the static getters (CRS id, context/epoch, materials) and seed `context_log` at the
+/// anchor block. The active key id is registered separately so individual tests can make it
+/// static or dynamic.
+fn register_static_getters(server: &MockServer, context_log: Log) {
     let contract = addr();
 
     server.on_call(
@@ -155,56 +191,60 @@ fn register_static_getters(server: &MockServer) {
         UsageLimit::Unlimited,
     );
     // Seed the NewKmsContext log the poller fetches (via eth_getLogs) at the anchor block.
-    server.blockchain_state().add_log(new_kms_context_log());
+    server.blockchain_state().add_log(context_log);
 }
 
 #[tokio::test]
 async fn initialize_maps_chain_state_to_response() {
-    let mock = MockServer::new(MockConfig {
-        port: 0,
-        ..MockConfig::new()
-    });
+    for (event, context_log) in [
+        ("current", new_kms_context_log()),
+        ("v0.14", v014_new_kms_context_log()),
+    ] {
+        let mock = MockServer::new(MockConfig {
+            port: 0,
+            ..MockConfig::new()
+        });
 
-    let contract = addr();
-    mock.on_call(
-        move |p| {
-            p.to == contract
-                && p.input.len() >= 4
-                && p.input[0..4] == IKMSGeneration::getActiveKeyIdCall::SELECTOR
-        },
-        Response::call_success(Bytes::from(U256::from(3u64).abi_encode())),
-        UsageLimit::Unlimited,
-    );
-    register_static_getters(&mock);
-    let handle = mock.start().await.unwrap();
-    let port = handle.port();
+        let contract = addr();
+        mock.on_call(
+            move |p| {
+                p.to == contract
+                    && p.input.len() >= 4
+                    && p.input[0..4] == IKMSGeneration::getActiveKeyIdCall::SELECTOR
+            },
+            Response::call_success(Bytes::from(U256::from(3u64).abi_encode())),
+            UsageLimit::Unlimited,
+        );
+        register_static_getters(&mock, context_log);
+        let handle = mock.start().await.unwrap();
+        let port = handle.port();
 
-    let protocol_config = make_config(port);
-    let mut poller = KeyUrlPoller::new(&protocol_config, CONTRACT_ADDR, 12_000).unwrap();
-    let response = poller
-        .initialize()
-        .await
-        .expect("initialize should succeed");
+        let protocol_config = make_config(port);
+        let mut poller = KeyUrlPoller::new(&protocol_config, CONTRACT_ADDR, 12_000).unwrap();
+        let response = poller.initialize().await.unwrap_or_else(|e| {
+            panic!("initialize should succeed with the {event} NewKmsContext event: {e:#}")
+        });
 
-    // dataId carries the real on-chain getActiveKeyId / getActiveCrsId, as 0x-prefixed hex.
-    assert_eq!(
-        response.response.fhe_key_info[0].fhe_public_key.data_id,
-        format!("0x{}", hex::encode(U256::from(3u64).to_be_bytes::<32>()))
-    );
-    assert_eq!(
-        response.response.crs["2048"].data_id,
-        format!("0x{}", hex::encode(U256::from(4u64).to_be_bytes::<32>()))
-    );
-    // urls are reconstructed as {storageUrl}/{storagePrefix}/{PublicKey|CRS}/{id_hex} from the
-    // NewKmsContext node config and the hex-encoded id.
-    assert_eq!(
-        response.response.fhe_key_info[0].fhe_public_key.urls,
-        vec![expected_url("PublicKey", 3)]
-    );
-    assert_eq!(
-        response.response.crs["2048"].urls,
-        vec![expected_url("CRS", 4)]
-    );
+        // dataId carries the real on-chain getActiveKeyId / getActiveCrsId, as 0x-prefixed hex.
+        assert_eq!(
+            response.response.fhe_key_info[0].fhe_public_key.data_id,
+            format!("0x{}", hex::encode(U256::from(3u64).to_be_bytes::<32>()))
+        );
+        assert_eq!(
+            response.response.crs["2048"].data_id,
+            format!("0x{}", hex::encode(U256::from(4u64).to_be_bytes::<32>()))
+        );
+        // urls are reconstructed as {storageUrl}/{storagePrefix}/{PublicKey|CRS}/{id_hex} from the
+        // NewKmsContext node config and the hex-encoded id.
+        assert_eq!(
+            response.response.fhe_key_info[0].fhe_public_key.urls,
+            vec![expected_url("PublicKey", 3)]
+        );
+        assert_eq!(
+            response.response.crs["2048"].urls,
+            vec![expected_url("CRS", 4)]
+        );
+    }
 }
 
 #[tokio::test]
@@ -230,7 +270,7 @@ async fn run_pushes_updated_value_on_id_change() {
         },
         UsageLimit::Unlimited,
     );
-    register_static_getters(&mock);
+    register_static_getters(&mock, new_kms_context_log());
     let handle = mock.start().await.unwrap();
     let port = handle.port();
 

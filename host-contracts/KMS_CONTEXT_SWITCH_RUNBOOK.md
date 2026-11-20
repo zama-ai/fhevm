@@ -30,6 +30,23 @@ This runbook uses the signed confirmations flow (RFC 037).
 | KMS core (all parties)                      | A release that signs the four confirmations | `ghcr.io/zama-ai/kms/core-service`                                              | Confirm running parties image                       |
 | Relayer                                     | relayer `v1.0.0`                            | `ghcr.io/zama-ai/fhevm/relayer:v1.0.0`                                          | Confirm running image tag                           |
 
+**Upgrade order for `connectorUrl` (fhevm#4602).** `KmsNode` and `KmsNodeParams` gain `connectorUrl`
+as their last field. `NewKmsContext` carries it, so the event has a new topic. An event emitted
+before the upgrade keeps the v0.14 shape (`IProtocolConfigV014` in the host bindings). The
+`ProtocolConfig` upgrade calls `reinitializeV3`, which rewrites each committee that v0.14 stored from
+the four-field to the five-field `KmsNode`. A context defined before ProtocolConfig v0.3.0 holds an
+empty `connectorUrl`. Upgrade in this order:
+
+1. `ProtocolConfig` on every host chain.
+2. `KMSGeneration`.
+3. The kms-connector, coprocessor-proxy and relayer releases.
+
+The new `KMSGeneration` decodes the five-field `KmsNode`, so it reverts against an old
+`ProtocolConfig`. The old `KMSGeneration` keeps working against the new `ProtocolConfig`. The new
+coprocessor-proxy cannot decode the four-field `KmsNode` that an old `ProtocolConfig` returns. An
+old kms-connector or relayer filters `NewKmsContext` by the v0.14 topic. Upgrade both before the
+first context switch after the `ProtocolConfig` upgrade.
+
 ## 2. Preparing the KMS node party metadata
 
 A context switch registers the new committee on-chain as one `KmsNodeParams` entry
@@ -42,9 +59,9 @@ cores reach it, and where it publishes its public key material:
   **KMS core's** signing key. It signs key-material attestations and the lifecycle
   confirmations. It also signs the core's responses to gRPC commands, such as keygens and
   decryptions. A common mistake is swapping them.
-- **network endpoints**: the core's MPC endpoint (peer-to-peer between parties) and
-  the public vault (S3 bucket) where the core publishes its verification address and
-  TLS CA cert;
+- **network endpoints**: the core's MPC endpoint (peer-to-peer between parties), the
+  KMS connector endpoint, and the public vault (S3 bucket) where the core publishes
+  its verification address and TLS CA cert;
 - **MPC metadata**: the positional `partyId` (assigned by the coordinator) and the
   `mpcIdentity` string, which must byte-match the party's own core configuration.
 
@@ -58,6 +75,7 @@ assemble and validate the env file (Annex B.3).
 | `signerAddress`   | 20-byte EVM address of the **core's** signing key                                                                                                                                                                                                | **KMS party** (verifiable by us) | Signs the lifecycle confirmations (epoch activation is unanimous per signer) and EIP-712 decryption responses (verified per pinned context on the gateway). The core publishes it at `<storageUrl>/<storagePrefix>/VerfAddress/<handle>` | Fetch from their public storage and compare (Annex B.2)                                                   |
 | `ipAddress`       | URL `scheme://host:port` — host may be a **DNS name** or IP; the **port is mandatory and must be non-default** (`:443`/`:80` are normalized away by the core's URL parser and rejected as "missing port"). E.g. `http://kms.party.example:50001` | **KMS party**                    | The core's MPC endpoint. Consumed **only by the other parties' cores**: each peer parses host+port and dials it for MPC traffic (reshares, decryption sessions).                                                                         | Reachable from every _other_ party's core (peer-to-peer, not from us)                                     |
 | `storageUrl`      | Base URL of the party's public vault (S3-compatible bucket)                                                                                                                                                                                      | **KMS party**                    | Where the core publishes its public material. Emitted in `ActivateEpoch` and served per key/CRS result by `KMSGeneration` → the relayer's `/v2/keyurl`, so clients know where to download public keys and CRS                            | `curl` returns objects (Annex B.2)                                                                        |
+| `connectorUrl`    | URL of the party's KMS connector endpoint                                                                                                                                                                                                        | **KMS party**                    | Stored per node in `ProtocolConfig` and emitted in `NewKmsContext`. Contexts defined before ProtocolConfig v0.3.0 hold an empty value                                                                                                    | Party confirms it.                                                                                        |
 | `partyId`         | `int32`, contiguous `1..n`, **positional**                                                                                                                                                                                                       | **Coordinator (us)**             | The party's MPC role index (the core builds its role map from it and rejects out-of-range or duplicate ids). A swap keeps the dropped node's id                                                                                          | Annex B.3 validator checks contiguity + duplicates                                                        |
 | `mpcIdentity`     | Free-form string; must **byte-match** the `mpc_identity` in the party's core config                                                                                                                                                              | **KMS party**                    | The party's logical identity in the MPC layer: self-recognition (which roster slot is "me" — a mismatch aborts the reshare), TLS trust-root lookup (peer cert verification is keyed by it), and message routing                          | Must byte-match their config — ask them to paste it, do not derive it                                     |
 | `caCert`          | `bytes` = the party's TLS CA as a regular PEM file, verbatim (`-----BEGIN CERTIFICATE-----` … `-----END CERTIFICATE-----`, usually newline-terminated); carried as `0x` + hex of those exact bytes in the env                                    | **KMS party** (verifiable)       | The party's **long-lived** CA: peers verify mutual-TLS MPC connections against it (looked up by `mpcIdentity`). Published at `<storagePrefix>/CACert/<handle>`; **not** regenerated by reshares or context switches                      | Fetch + `openssl x509` parse (Annex B.2); the hex must be byte-exact — it feeds the context anchor        |
@@ -86,6 +104,7 @@ For the upcoming KMS committee update on <ENV>, please provide:
 6. mpc_identity — the EXACT `mpc_identity` string from your kms-core config:
 7. TLS CA certificate (PEM, the one your core publishes under CACert/):
 8. KMS core version you are running / will run at the switch window:
+9. KMS connector URL (the HTTPS endpoint of your kms-connector proxy):
 
 Notes:
 - (1) and (2) are different keys: (1) is your kms-connector's wallet and pays gas.
@@ -170,12 +189,13 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
 1. **Collect and validate the new committee's metadata**: questionnaire (§2.1),
    per-party verification (Annex B.2), env file assembly + validation (Annex B.3).
    For continuing members, reuse their registered values verbatim — but note the
-   contract stores only four fields: `getKmsNodesForContext(<currentContextId>)`
-   returns tx-sender, signer, `ipAddress` and `storageUrl`. The MPC-metadata
+   contract stores only five fields: `getKmsNodesForContext(<currentContextId>)`
+   returns tx-sender, signer, `ipAddress`, `storageUrl` and `connectorUrl`. The MPC-metadata
    fields (`partyId`, `mpcIdentity`, `caCert`, `storagePrefix`) are recovered from
    the current context's `NewKmsContext` event, which carries the full
    `KmsNodeParams` and is integrity-checked by the anchor
-   (`getKmsContextAnchor`).
+   (`getKmsContextAnchor`). For a context defined before ProtocolConfig v0.3.0,
+   `connectorUrl` is empty, so ask each continuing party for its `connectorUrl`.
 2. **Broadcast on the host** — via a DAO proposal where governance owns the
    contract (production), or directly with `DEPLOYER_PRIVATE_KEY` where it does
    not (devnet/test stacks):
@@ -367,7 +387,7 @@ npx hardhat task:mirrorKmsContextAndEpoch --network <replica-network> \
   --canonical-protocol-config-address <canonical ProtocolConfig>
 ```
 
-There is no committee to re-type. `mirrorKmsContextAndEpoch` takes the four stored `KmsNode`
+There is no committee to re-type. `mirrorKmsContextAndEpoch` takes the five stored `KmsNode`
 fields and the thresholds. The task reads both from canonical storage at one finalized block.
 
 The task can fail with these errors:
@@ -415,13 +435,17 @@ cast call $CANON_PC "getCurrentKmsContextAndEpoch()(uint256,uint256)" --rpc-url 
 cast call $REPL_PC  "getCurrentKmsContextAndEpoch()(uint256,uint256)" --rpc-url $REPL_RPC
 
 # And so must the stored node set and thresholds for that context id.
-cast call $REPL_PC "getKmsNodesForContext(uint256)((address,address,string,string)[])" <contextId> --rpc-url $REPL_RPC
+cast call $REPL_PC "getKmsNodesForContext(uint256)((address,address,string,string,string)[])" <contextId> --rpc-url $REPL_RPC
 cast call $REPL_PC "getMpcThresholdForContext(uint256)(uint256)" <contextId> --rpc-url $REPL_RPC
 ```
 
 The MPC metadata (`partyId`, `mpcIdentity`, `caCert`, `storagePrefix`), software version and
 PCR values are not stored on-chain. The replica's `MirrorKmsContextAndEpoch` event does not
 carry them. Read them from canonical's `NewKmsContext` event.
+
+Upgrade the canonical `ProtocolConfig` before you run the mirror or bootstrap tasks with this
+tooling. They decode the five-field `KmsNode`. `getKmsNodesForContext` returns it since
+ProtocolConfig v0.3.0.
 
 `task:kmsContextSwitchStatus` reads canonical only. On a replica it reverts, because the replica
 has no `getCurrentKmsContextIdCounter()`.
@@ -671,7 +695,7 @@ RPC=<host-chain-rpc-url>
 cast call $PC "getCurrentKmsContextAndEpoch()(uint256,uint256)" --rpc-url $RPC
 
 # Current committee full node records for a context id
-cast call $PC "getKmsNodesForContext(uint256)((address,address,string,string)[])" <contextId> --rpc-url $RPC
+cast call $PC "getKmsNodesForContext(uint256)((address,address,string,string,string)[])" <contextId> --rpc-url $RPC
 
 # Anchor hash for a context (used to cross-check reinitialize inputs)
 cast call $PC "getKmsContextAnchor(uint256)(uint256,bytes32)" <contextId> --rpc-url $RPC
@@ -775,6 +799,7 @@ KMS_SIGNER_ADDRESS_0=0x…
 KMS_NODE_IP_0=http://…:50001            # host task name
 KMS_NODE_IP_ADDRESS_0=http://…:50001    # gateway task name (same value!)
 KMS_NODE_STORAGE_URL_0=https://…
+KMS_NODE_CONNECTOR_URL_0=https://…      # host only
 KMS_NODE_PARTY_ID_0=1
 KMS_NODE_MPC_IDENTITY_0=…
 KMS_NODE_CA_CERT_0=0x…
@@ -835,8 +860,8 @@ done
 ids=(); txs=(); signers=(); mpcs=()
 for i in $(seq 0 $((n - 1))); do
   for v in KMS_TX_SENDER_ADDRESS_$i KMS_SIGNER_ADDRESS_$i KMS_NODE_IP_$i \
-           KMS_NODE_STORAGE_URL_$i KMS_NODE_PARTY_ID_$i KMS_NODE_MPC_IDENTITY_$i \
-           KMS_NODE_CA_CERT_$i KMS_NODE_STORAGE_PREFIX_$i; do
+           KMS_NODE_STORAGE_URL_$i KMS_NODE_CONNECTOR_URL_$i KMS_NODE_PARTY_ID_$i \
+           KMS_NODE_MPC_IDENTITY_$i KMS_NODE_CA_CERT_$i KMS_NODE_STORAGE_PREFIX_$i; do
     [ -n "${!v:-}" ] || fail "$v is unset"
   done
   # Gateway spelling must be present and equal to its host twin.

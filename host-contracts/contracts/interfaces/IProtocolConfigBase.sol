@@ -151,7 +151,8 @@ interface IProtocolConfigBase {
     /**
      * @notice Returns the KMS nodes for a given context.
      * @param kmsContextId The context ID.
-     * @return The list of KMS nodes.
+     * @return The list of KMS nodes, in definition order. `connectorUrl` is empty for a context
+     *         defined before ProtocolConfig v0.3.0.
      */
     function getKmsNodesForContext(uint256 kmsContextId) external view returns (KmsNode[] memory);
 
@@ -167,7 +168,7 @@ interface IProtocolConfigBase {
      * @notice Returns the KmsNode metadata for a tx sender in the given context.
      * @param kmsContextId The context ID.
      * @param txSender The tx sender address.
-     * @return The KmsNode struct.
+     * @return The KmsNode struct. `connectorUrl` is empty for a context defined before ProtocolConfig v0.3.0.
      */
     function getKmsNodeForContext(uint256 kmsContextId, address txSender) external view returns (KmsNode memory);
 

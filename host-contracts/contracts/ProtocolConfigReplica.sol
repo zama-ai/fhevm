@@ -58,7 +58,7 @@ contract ProtocolConfigReplica is
      *      Later canonical updates use the submit path or the mirror path.
      * @param canonicalContextId The active Ethereum KMS context ID to preserve.
      * @param canonicalEpochId The active Ethereum epoch ID to preserve.
-     * @param canonicalNodes The active Ethereum KMS node set.
+     * @param canonicalNodes The active Ethereum KMS node set, including each `connectorUrl`.
      * @param canonicalThresholds The active Ethereum thresholds.
      * @param canonicalProtocolConfig The canonical ProtocolConfig address, in its EIP-712 domain.
      * @param canonicalChainId The chain ID of the canonical ProtocolConfig, in its EIP-712 domain.
@@ -88,6 +88,7 @@ contract ProtocolConfigReplica is
 
     /**
      * @notice Re-initializes a replica proxy upgraded from a v0.14 `ProtocolConfig`, which initialized at version 3.
+     *         Rewrites each committee that v0.14 stored to the five-field `KmsNode`, with an empty `connectorUrl`.
      * @param canonicalProtocolConfig The canonical ProtocolConfig address, in its EIP-712 domain.
      * @param canonicalChainId The chain ID of the canonical ProtocolConfig, in its EIP-712 domain.
      */
@@ -98,6 +99,7 @@ contract ProtocolConfigReplica is
         uint64 canonicalChainId
     ) public virtual reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(EIP712_NAME, EIP712_VERSION, canonicalProtocolConfig, canonicalChainId);
+        _migrateKmsNodesFromV014();
     }
 
     // -----------------------------------------------------------------------------------------

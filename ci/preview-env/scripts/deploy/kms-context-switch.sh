@@ -8,6 +8,8 @@
 # Each party id keeps its committee slot. The live core is the Running pod
 # kms-core-<name>-core-<party id>. When <name> differs from the party id, that
 # core is a replacement: its CA, signer, and storage prefix are PUB-p<name>.
+# A replacement keeps its party's kms-connector deployment and tx-sender, so
+# KMS_TX_SENDER_ADDRESS_<i> and KMS_NODE_CONNECTOR_URL_<i> stay.
 # KMS_CORE_NAMES=1=5,4=6 picks those names. A party omitted from that list uses
 # the single Running pod for its id, or fails when several are Running.
 # Broadcasts defineNewKmsContextAndEpoch, then updateKmsContext with the printed

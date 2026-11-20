@@ -37,6 +37,7 @@ interface NodeConfig {
   mpcIdentity: string;
   caCert: string;
   storagePrefix: string;
+  connectorUrl: string;
 }
 
 interface Thresholds {
@@ -56,6 +57,7 @@ function makeNode(txSenderAddress: string, signerAddress: string, idx: number): 
     mpcIdentity: `node-${idx}`,
     caCert: '0x',
     storagePrefix: `kms-node-${idx}`,
+    connectorUrl: `https://kms-connector-${idx}.example.com`,
   };
 }
 
@@ -88,6 +90,7 @@ function setKmsEnv(
     process.env[`KMS_NODE_MPC_IDENTITY_${i}`] = node.mpcIdentity;
     process.env[`KMS_NODE_CA_CERT_${i}`] = node.caCert;
     process.env[`KMS_NODE_STORAGE_PREFIX_${i}`] = node.storagePrefix;
+    process.env[`KMS_NODE_CONNECTOR_URL_${i}`] = node.connectorUrl;
   });
   process.env.PUBLIC_DECRYPTION_THRESHOLD = String(thresholds.publicDecryption);
   process.env.USER_DECRYPTION_THRESHOLD = String(thresholds.userDecryption);
@@ -140,6 +143,7 @@ describe('KMS context tasks', function () {
         expect(decodedNodes[i][5]).to.equal(node.mpcIdentity);
         expect(decodedNodes[i][6]).to.equal(node.caCert);
         expect(decodedNodes[i][7]).to.equal(node.storagePrefix);
+        expect(decodedNodes[i][8]).to.equal(node.connectorUrl);
       });
       expect(decoded[1][0]).to.equal(BigInt(DEFAULT_THRESHOLDS.publicDecryption));
       expect(decoded[1][3]).to.equal(BigInt(DEFAULT_THRESHOLDS.mpc));
@@ -154,6 +158,7 @@ describe('KMS context tasks', function () {
       expect(labeledNodes[0]).to.include({
         txSenderAddress: nodes[0].txSenderAddress,
         signerAddress: nodes[0].signerAddress,
+        connectorUrl: nodes[0].connectorUrl,
       });
       expect(labeledThresholds).to.include({ publicDecryption: BigInt(DEFAULT_THRESHOLDS.publicDecryption) });
     });
@@ -209,6 +214,11 @@ describe('KMS context tasks', function () {
       expect(status.flow).to.equal('context-switch');
       expect(status.contextState).to.equal('PENDING');
       expect(status.newSigners).to.deep.equal(newNodes.map((n) => n.signerAddress));
+      const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
+      for (const node of newNodes) {
+        const stored = await protocolConfig.getKmsNodeForContext(status.pendingContextId!, node.txSenderAddress);
+        expect(stored.connectorUrl).to.equal(node.connectorUrl);
+      }
     });
   });
 

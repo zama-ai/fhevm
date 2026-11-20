@@ -338,6 +338,7 @@ const applyKmsThresholdGatewayEnv = async (
     hostSc[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
     hostSc[`KMS_NODE_IP_${idx}`] = gw[`KMS_NODE_IP_ADDRESS_${idx}`];
     hostSc[`KMS_NODE_STORAGE_URL_${idx}`] = gw[`KMS_NODE_STORAGE_URL_${idx}`];
+    hostSc[`KMS_NODE_CONNECTOR_URL_${idx}`] = connectorProxyUrl(envs, party);
     // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
     const endpoint = plan.kms.insecureTestKeygen
       ? `http://${kmsTestKeygenProxyName(party)}:3000`
@@ -384,6 +385,7 @@ export const buildHostScSwapEnv = (
     swap[`KMS_SIGNER_ADDRESS_${slot}`] = hostSc[`KMS_SIGNER_ADDRESS_${src}`];
     swap[`KMS_NODE_IP_${slot}`] = hostSc[`KMS_NODE_IP_${src}`];
     swap[`KMS_NODE_STORAGE_URL_${slot}`] = hostSc[`KMS_NODE_STORAGE_URL_${src}`];
+    swap[`KMS_NODE_CONNECTOR_URL_${slot}`] = hostSc[`KMS_NODE_CONNECTOR_URL_${src}`];
     swap[`KMS_NODE_MPC_IDENTITY_${slot}`] = hostSc[`KMS_NODE_MPC_IDENTITY_${src}`];
     swap[`KMS_NODE_CA_CERT_${slot}`] = hostSc[`KMS_NODE_CA_CERT_${src}`];
     swap[`KMS_NODE_STORAGE_PREFIX_${slot}`] = hostSc[`KMS_NODE_STORAGE_PREFIX_${src}`];
@@ -436,6 +438,12 @@ const connectorEndpointPort = (envs: Record<string, Record<string, string>>) =>
 /** `host:port` of party i's HTTP endpoint: what that party's TLS proxy forwards to. */
 const connectorEndpointAddress = (envs: Record<string, Record<string, string>>, party: number) =>
   `${kmsConnectorPrefix(party)}-endpoint:${connectorEndpointPort(envs)}`;
+
+/** URL of the TLS proxy of `party`, on the port of the proxy bind address. */
+const connectorProxyUrl = (envs: Record<string, Record<string, string>>, party: number) => {
+  const port = (envs["kms-connector"].KMS_CONNECTOR_PROXY_BIND_ADDRESS ?? "").split(":").pop() || "8443";
+  return `https://${kmsConnectorPrefix(party)}-proxy:${port}`;
+};
 
 /** The PRF port of prf-service (`--http-endpoint` in the compose file). */
 const PRF_SERVICE_PORT = 8090;
@@ -615,11 +623,8 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
   // parties 2..n get their own address in buildKmsConnectorInstanceEnvs.
   envs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES = connectorEndpointAddress(envs, 1);
   const supported = supportsConnectorHttp(plan);
-  const proxyPort = (envs["kms-connector"].KMS_CONNECTOR_PROXY_BIND_ADDRESS ?? "").split(":").pop() || "8443";
   const parties = supported ? kmsPartyIds(plan.kms.committeeSize) : [];
-  envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS = parties
-    .map((party) => `https://${kmsConnectorPrefix(party)}-proxy:${proxyPort}`)
-    .join(",");
+  envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS = parties.map((party) => connectorProxyUrl(envs, party)).join(",");
   // The `audience` each party's proxy accepts, aligned with the URLs.
   envs["test-suite"].KMS_CONNECTOR_TX_SENDER_ADDRESSES = parties
     .map((party) => envs["gateway-sc"][`KMS_TX_SENDER_ADDRESS_${party - 1}`])

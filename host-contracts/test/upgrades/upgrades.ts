@@ -1,7 +1,8 @@
 import { expect } from 'chai';
 import type { ContractFactory, Signer } from 'ethers';
-import { ethers, upgrades } from 'hardhat';
+import hre, { ethers, upgrades } from 'hardhat';
 
+import { assertOnlyKmsNodesLayoutChange } from '../../tasks/upgradeContracts';
 import {
   CRS_COUNTER_BASE,
   EPOCH_COUNTER_BASE,
@@ -83,6 +84,9 @@ describe('Upgrades', function () {
   });
 
   // These tests run the plugin storage layout check against v0.14. State after reinitializeV3 is covered in Foundry.
+  // The upgrade grows the element of `kmsNodesForContext`, and reinitializeV3 migrates it. The plugin ignores
+  // `@custom:oz-retyped-from` in namespaced storage, so the upgrade skips the storage check after
+  // `assertOnlyKmsNodesLayoutChange`. Remove the skip together with `KmsNodeV014`.
   async function upgradeV014ProtocolConfig(
     deployer: Signer,
     emptyUUPSFactory: ContractFactory,
@@ -95,7 +99,11 @@ describe('Upgrades', function () {
     });
     await pc.waitForDeployment();
     const factory = await ethers.getContractFactory(contractName, deployer);
-    const upgraded = await upgrades.upgradeProxy(pc, factory, { call: { fn: 'reinitializeV3', args } });
+    await assertOnlyKmsNodesLayoutChange(await pc.getAddress(), factory, hre);
+    const upgraded = await upgrades.upgradeProxy(pc, factory, {
+      call: { fn: 'reinitializeV3', args },
+      unsafeSkipStorageCheck: true,
+    });
     await upgraded.waitForDeployment();
     return upgraded;
   }

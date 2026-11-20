@@ -17,6 +17,7 @@ use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
 use alloy::sol_types::SolEvent;
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig::IProtocolConfigInstance;
+use fhevm_host_bindings::i_protocol_config_v014::IProtocolConfigV014;
 use fhevm_host_bindings::ikms_generation::IKMSGeneration;
 use fhevm_host_bindings::ikms_generation::IKMSGeneration::IKMSGenerationInstance;
 use tokio::sync::watch;
@@ -231,6 +232,9 @@ impl KeyUrlPoller {
     /// Read the KMS nodes for `context_id` from its `NewKmsContext` event. The contract anchors
     /// the exact emission block (`getKmsContextAnchor`), so we fetch that single event by the
     /// `contextId` topic and decode `KmsNodeParams` — no block-range scan.
+    ///
+    /// A context created before the `connectorUrl` upgrade keeps its v0.14 event, whose
+    /// `KmsNodeParams` has no `connectorUrl` and so has a different topic.
     async fn fetch_context_nodes(&self, context_id: U256) -> anyhow::Result<Vec<KmsStorageNode>> {
         let anchor = retry_view!(
             self.retry,
@@ -249,7 +253,10 @@ impl KeyUrlPoller {
 
         let filter = Filter::new()
             .address(*self.protocol_config.address())
-            .event_signature(IProtocolConfig::NewKmsContext::SIGNATURE_HASH)
+            .event_signature(vec![
+                IProtocolConfig::NewKmsContext::SIGNATURE_HASH,
+                IProtocolConfigV014::NewKmsContext::SIGNATURE_HASH,
+            ])
             .topic1(B256::from(context_id.to_be_bytes::<32>()))
             .from_block(BlockNumberOrTag::Number(block_number))
             .to_block(BlockNumberOrTag::Number(block_number));
@@ -261,17 +268,27 @@ impl KeyUrlPoller {
             )
         })?;
 
-        let event = IProtocolConfig::NewKmsContext::decode_log_data(log.data())
-            .map_err(|e| anyhow::anyhow!("failed to decode NewKmsContext event: {e}"))?;
-
-        let nodes: Vec<KmsStorageNode> = event
-            .kmsNodeParams
-            .into_iter()
-            .map(|node| KmsStorageNode {
-                storage_url: node.storageUrl,
-                storage_prefix: node.storagePrefix,
-            })
-            .collect();
+        let decode_error = |e| anyhow::anyhow!("failed to decode NewKmsContext event: {e}");
+        let storage_node = |storage_url, storage_prefix| KmsStorageNode {
+            storage_url,
+            storage_prefix,
+        };
+        let nodes: Vec<KmsStorageNode> =
+            if log.topic0() == Some(&IProtocolConfigV014::NewKmsContext::SIGNATURE_HASH) {
+                IProtocolConfigV014::NewKmsContext::decode_log_data(log.data())
+                    .map_err(decode_error)?
+                    .kmsNodeParams
+                    .into_iter()
+                    .map(|node| storage_node(node.storageUrl, node.storagePrefix))
+                    .collect()
+            } else {
+                IProtocolConfig::NewKmsContext::decode_log_data(log.data())
+                    .map_err(decode_error)?
+                    .kmsNodeParams
+                    .into_iter()
+                    .map(|node| storage_node(node.storageUrl, node.storagePrefix))
+                    .collect()
+            };
         if nodes.is_empty() {
             anyhow::bail!("NewKmsContext for context {context_id} contains no KMS nodes");
         }

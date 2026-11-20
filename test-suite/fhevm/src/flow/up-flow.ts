@@ -2325,11 +2325,7 @@ export const upgradeBootstrappedStack = async (state: State, steps: readonly Upg
         runContractTask("gateway-sc", "gateway-sc-deploy", contractUpgradeCommand(task, contract)),
       );
     }
-    for (const [task, contract] of CANONICAL_HOST_CONTRACT_UPGRADES) {
-      await once(`host:${contract}`, () =>
-        runContractTask("host-sc", "host-sc-deploy", contractUpgradeCommand(task, contract)),
-      );
-    }
+    // KMSGeneration reads the five-field `KmsNode`, so ProtocolConfig upgrades first.
     for (const [task, contract] of HOST_CONTRACT_UPGRADES) {
       const command = contractUpgradeCommand(task, contract);
       await once(`host:${contract}`, () => runContractTask("host-sc", "host-sc-deploy", command));
@@ -2341,6 +2337,11 @@ export const upgradeBootstrappedStack = async (state: State, steps: readonly Upg
           }),
         );
       }
+    }
+    for (const [task, contract] of CANONICAL_HOST_CONTRACT_UPGRADES) {
+      await once(`host:${contract}`, () =>
+        runContractTask("host-sc", "host-sc-deploy", contractUpgradeCommand(task, contract)),
+      );
     }
   };
   // A KMS core and its connector are one rollout unit: upgrade them operator by operator,

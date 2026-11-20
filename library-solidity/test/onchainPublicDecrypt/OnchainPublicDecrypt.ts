@@ -100,6 +100,7 @@ describe('OnchainPublicDecrypt', function () {
       mpcIdentity: `127.0.0.${index + 1}`,
       caCert: '0x',
       storagePrefix: '',
+      connectorUrl: `https://kms-connector-${index + 1}.example.com`,
     }));
     const newThresholds = { publicDecryption: 2, userDecryption: 2, kmsGen: 2, mpc: 2 };
     // accounts[7] signs for the default context too, so its confirmation also covers the previous side's
@@ -159,6 +160,7 @@ describe('OnchainPublicDecrypt', function () {
         mpcIdentity: '127.0.0.1',
         caCert: '0x',
         storagePrefix: '',
+        connectorUrl: 'https://kms-connector-1.example.com',
       },
     ];
     const resetThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };

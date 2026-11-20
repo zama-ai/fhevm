@@ -373,7 +373,8 @@ abstract contract HostContractsDeployerTestUtils is Test {
                 partyId: int32(uint32(i)),
                 mpcIdentity: ipAddress,
                 caCert: "",
-                storagePrefix: string.concat("kms/node", vm.toString(i))
+                storagePrefix: string.concat("kms/node", vm.toString(i)),
+                connectorUrl: string.concat("https://kms-connector-", vm.toString(i), ".example.com")
             });
         }
     }
@@ -395,7 +396,8 @@ abstract contract HostContractsDeployerTestUtils is Test {
                 txSenderAddress: params[i].txSenderAddress,
                 signerAddress: params[i].signerAddress,
                 ipAddress: params[i].ipAddress,
-                storageUrl: params[i].storageUrl
+                storageUrl: params[i].storageUrl,
+                connectorUrl: params[i].connectorUrl
             });
         }
     }

@@ -13,7 +13,7 @@ use crate::{
     pattern_matcher::PatternMatcher,
 };
 use alloy::primitives::{Log as InnerLog, B256};
-use alloy::rpc::types::eth::Log as RpcLog;
+use alloy::rpc::types::eth::{Filter, Log as RpcLog};
 use anyhow::Context;
 use indexmap::IndexMap;
 use jsonrpsee::{
@@ -183,15 +183,22 @@ impl EthRpcApiServer for MockRpcHandler {
         Ok(Some(block_data))
     }
 
-    async fn get_logs(&self, _filter: Value) -> RpcResult<Vec<Value>> {
+    async fn get_logs(&self, filter: Value) -> RpcResult<Vec<Value>> {
         debug!(
             "RpcHandlers: handling eth_getLogs with filter: {:?}",
-            _filter
+            filter
         );
 
-        // Get all logs from blockchain state (no filtering applied for simplicity)
-        let all_logs = self.blockchain_state.get_all_logs();
-        let structured_logs = self.format_logs(&all_logs, None);
+        // Seeded logs carry no block, so only the address and topics of the filter apply.
+        let filter: Filter = serde_json::from_value(filter)
+            .map_err(|e| ErrorObject::owned(-32602, e.to_string(), None::<()>))?;
+        let logs: Vec<InnerLog> = self
+            .blockchain_state
+            .get_all_logs()
+            .into_iter()
+            .filter(|log| filter.matches(log))
+            .collect();
+        let structured_logs = self.format_logs(&logs, None);
 
         // Convert alloy RpcLog structs to JSON Values
         let formatted_logs: Vec<Value> = structured_logs
@@ -200,7 +207,7 @@ impl EthRpcApiServer for MockRpcHandler {
             .collect();
 
         info!(
-            "RpcHandlers: Returning {} total logs for eth_getLogs (no filtering applied)",
+            "RpcHandlers: Returning {} logs for eth_getLogs",
             formatted_logs.len()
         );
 

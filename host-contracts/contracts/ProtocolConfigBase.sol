@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
 import {KmsContextAnchor, KmsNode, KmsThresholds} from "./shared/Structs.sol";
+import {KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 
 /**
  * @title ProtocolConfigBase
@@ -70,9 +71,19 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     // ERC-7201 namespaced storage
     // -----------------------------------------------------------------------------------------
 
+    /// @dev The v0.14 `KmsNode`, before it gained `connectorUrl`. Only `_migrateKmsNodesFromV014` uses it.
+    ///      Delete both in the release after the v0.14 upgrade.
+    struct KmsNodeV014 {
+        address txSenderAddress;
+        address signerAddress;
+        string ipAddress;
+        string storageUrl;
+    }
+
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfig
     struct ProtocolConfigStorage {
-        /// @notice Monotonic allocation counter for KMS context IDs on the canonical. Unused on a replica.
+        /// @notice Monotonic allocation counter for KMS context IDs on the canonical. Unused on a replica,
+        ///         except by the v0.14 upgrade migration.
         uint256 currentKmsContextId;
         /// @notice KMS nodes per context.
         mapping(uint256 contextId => KmsNode[]) kmsNodesForContext;
@@ -81,6 +92,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice Signer lookup per context.
         mapping(uint256 contextId => mapping(address signer => bool isRegistered)) isKmsSignerForContext;
         /// @notice KmsNode by tx sender per context.
+        /// @dev Each mapping value has its own slot range, so `KmsNode` can grow in place. A value
+        ///      stored before ProtocolConfig v0.3.0 reads an empty `connectorUrl`.
         mapping(uint256 contextId => mapping(address txSender => KmsNode node)) kmsNodeByTxSenderForContext;
         /// @notice Signer addresses per context, in insertion order.
         mapping(uint256 contextId => address[]) kmsSignerAddressesForContext;
@@ -364,6 +377,39 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
+     * @dev Rewrites every committee that v0.14 stored from the four-field to the five-field `KmsNode`,
+     *      in definition order, with an empty `connectorUrl`. v0.14 stored each committee under an ID
+     *      in (`KMS_CONTEXT_COUNTER_BASE`, `currentKmsContextId`] and kept it after a destruction.
+     *      The old elements are read and popped through the v0.14 type. A delete or pop through the
+     *      five-field type would take an address slot for a string header and clear the wrong slots.
+     */
+    function _migrateKmsNodesFromV014() internal {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        for (uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1; contextId <= $.currentKmsContextId; contextId++) {
+            KmsNode[] storage nodes = $.kmsNodesForContext[contextId];
+            KmsNodeV014[] storage v014NodesStorage;
+            assembly {
+                v014NodesStorage.slot := nodes.slot
+            }
+            KmsNodeV014[] memory v014Nodes = v014NodesStorage;
+            while (v014NodesStorage.length != 0) {
+                v014NodesStorage.pop();
+            }
+            for (uint256 i = 0; i < v014Nodes.length; i++) {
+                nodes.push(
+                    KmsNode({
+                        txSenderAddress: v014Nodes[i].txSenderAddress,
+                        signerAddress: v014Nodes[i].signerAddress,
+                        ipAddress: v014Nodes[i].ipAddress,
+                        storageUrl: v014Nodes[i].storageUrl,
+                        connectorUrl: ""
+                    })
+                );
+            }
+        }
+    }
+
+    /**
      * @dev Validates a single threshold: must be non-zero and at most nodeCount.
      */
     function _checkThreshold(string memory name, uint256 value, uint256 nodeCount) internal pure {
@@ -420,6 +466,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     /**
      * @dev Hash of a context's node set and thresholds.
+     *      It covers each node's `connectorUrl`, so a replica submitter cannot swap a URL without
+     *      invalidating the signatures.
      */
     function _nodeConfigHash(KmsNode[] memory nodes, KmsThresholds memory thresholds) internal pure returns (bytes32) {
         return keccak256(abi.encode(nodes, thresholds));

@@ -8,6 +8,7 @@ import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol
 import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IProtocolConfigBase} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigBase.sol";
+import {IProtocolConfigV014} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigV014.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
@@ -16,6 +17,8 @@ import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol"
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 import {ProtocolConfigTestBase} from "../ProtocolConfigTestBase.sol";
+import {ProtocolConfigV014StateWriter} from "../ProtocolConfigV014StateWriter.sol";
+import {ProtocolConfigV014LayoutExample} from "@fhevm-host-contracts/examples/ProtocolConfigV014LayoutExample.sol";
 
 contract ProtocolConfigTest is ProtocolConfigTestBase {
     address internal constant owner = address(456);
@@ -280,6 +283,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
             assertEq(nodes[i].signerAddress, expectedNodes[i].signerAddress);
             assertEq(nodes[i].ipAddress, expectedNodes[i].ipAddress);
             assertEq(nodes[i].storageUrl, expectedNodes[i].storageUrl);
+            assertEq(nodes[i].connectorUrl, expectedNodes[i].connectorUrl);
             assertEq(signers[i], expectedNodes[i].signerAddress);
             assertTrue(protocolConfig.isKmsSignerForContext(contextId, expectedNodes[i].signerAddress));
             assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, expectedNodes[i].txSenderAddress));
@@ -290,6 +294,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
             assertEq(node.signerAddress, expectedNodes[i].signerAddress);
             assertEq(node.ipAddress, expectedNodes[i].ipAddress);
             assertEq(node.storageUrl, expectedNodes[i].storageUrl);
+            assertEq(node.connectorUrl, expectedNodes[i].connectorUrl);
         }
         // Negative: unregistered addresses must return false.
         assertFalse(protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD)));
@@ -482,14 +487,42 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         });
 
         uint256 expectedBlock = block.number;
+        vm.recordLogs();
         vm.prank(owner);
         protocolConfig.defineNewKmsContextAndEpoch(params, thresholds, "kms-v1", pcrValues);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
 
         (uint256 emissionBlockNumber, bytes32 contextInfoHash) = protocolConfig.getKmsContextAnchor(
             KMS_CONTEXT_COUNTER_BASE + 2
         );
         assertEq(emissionBlockNumber, expectedBlock);
         assertEq(contextInfoHash, keccak256(abi.encode(params, thresholds, "kms-v1", pcrValues)));
+        // The kms-worker checks the anchor against the hash of the event data.
+        assertEq(logs[0].topics[0], IProtocolConfig.NewKmsContext.selector);
+        assertEq(keccak256(logs[0].data), contextInfoHash);
+    }
+
+    function test_defineNewKmsContextStoresEmptyConnectorUrl() public {
+        _setupTwoNodeContext();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        KmsNodeParams[] memory params = _makeKmsNodeParams(3);
+        KmsThresholds memory thresholds = _defaultThresholds();
+        params[0].connectorUrl = "";
+
+        vm.prank(owner);
+        bytes32 nodeConfigHash = _defineNewKmsContextAndEpoch(params, thresholds);
+
+        KmsNode[] memory expected = _toKmsNodes(params);
+        for (uint256 i = 0; i < params.length; i++) {
+            assertEq(
+                abi.encode(protocolConfig.getKmsNodeForContext(contextId, params[i].txSenderAddress)),
+                abi.encode(expected[i])
+            );
+        }
+
+        _activatePendingContextWithDefaultSigners(contextId, nodeConfigHash, EPOCH_COUNTER_BASE + 2, 3);
+        assertEq(protocolConfig.getCurrentKmsContextId(), contextId);
+        assertEq(abi.encode(protocolConfig.getKmsNodesForContext(contextId)), abi.encode(expected));
     }
 
     function test_historicalContextReadable() public {
@@ -1745,15 +1778,34 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         ProtocolConfig(protocolConfigAdd).reinitializeV3();
     }
 
-    /// @dev Upgrades a v0.14 proxy in place. v0.14 shares the ProtocolConfigStorage layout and its initializer
-    ///      writes no canonical storage, so a fresh proxy pinned at version 3 matches a v0.14 proxy.
-    function test_reinitializeV3OnV014StateThenRotatesEpoch() public {
-        _setupTwoNodeContext();
-        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        _pinToV014InitializedVersion();
+    function _upgradeV014ToProtocolConfig() internal {
+        protocolConfig = ProtocolConfig(protocolConfigAdd);
         address impl = address(new ProtocolConfig());
         vm.prank(owner);
         protocolConfig.upgradeToAndCall(impl, abi.encodeCall(ProtocolConfig.reinitializeV3, ()));
+    }
+
+    /// @dev Asserts that `slot` holds the header of `value` and its data. `value` must be a multiple of 32 bytes long.
+    function _assertStoredLongString(bytes32 slot, string memory value) internal view {
+        bytes memory data = bytes(value);
+        assertEq(uint256(vm.load(protocolConfigAdd, slot)), data.length * 2 + 1);
+        uint256 dataSlot = uint256(keccak256(abi.encode(slot)));
+        for (uint256 i = 0; i < data.length / 32; i++) {
+            bytes32 word;
+            assembly {
+                word := mload(add(data, mul(add(i, 1), 32)))
+            }
+            assertEq(vm.load(protocolConfigAdd, bytes32(dataSlot + i)), word);
+        }
+    }
+
+    /// @dev Upgrades a v0.14 proxy in place. The v0.14 committee then activates a new epoch.
+    function test_reinitializeV3OnV014StateThenRotatesEpoch() public {
+        _deployACL(owner);
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2));
+        _deployV014ProtocolConfig(owner, contextId, EPOCH_COUNTER_BASE + 1, nodes, _defaultThresholds());
+        _upgradeV014ToProtocolConfig();
 
         // The confirm path reads the committee that v0.14 stored, so a rotation completes after the upgrade.
         uint256 epochId = EPOCH_COUNTER_BASE + 2;
@@ -1761,6 +1813,128 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         (uint256 currentContextId, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(currentContextId, contextId);
         assertEq(currentEpochId, epochId);
+    }
+
+    /// @dev The v0.14 state holds C1 superseded but still Active, C2 destroyed and C3 active. Each committee
+    ///      is stored in reverse address order, with long and short strings. After the upgrade, every
+    ///      committee has the five-slot stride and the getters return the v0.14 fields in definition order
+    ///      with an empty `connectorUrl`. The C3 committee then confirms a switch, and governance destroys C1.
+    function test_reinitializeV3MigratesV014Committees() public {
+        uint256 c1 = KMS_CONTEXT_COUNTER_BASE + 1;
+        KmsNode[][] memory committees = new KmsNode[][](3);
+        committees[0] = _v014Fixture(_toKmsNodes(_makeKmsNodeParams(3)));
+        committees[1] = _v014Fixture(_toKmsNodes(_makeKmsNodeParams(4)));
+        committees[2] = _v014Fixture(_toKmsNodes(_makeKmsNodeParams(2)));
+        KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 1, userDecryption: 2, kmsGen: 2, mpc: 1});
+        _deployACL(owner);
+        ProtocolConfigV014StateWriter writer = _deployV014ProtocolConfig(owner);
+        writer.storeContext(
+            c1,
+            _toV014Nodes(committees[0]),
+            thresholds,
+            ProtocolConfigV014LayoutExample.ContextState.Active
+        );
+        writer.storeEpoch(EPOCH_COUNTER_BASE + 1, c1, ProtocolConfigV014LayoutExample.EpochState.Active);
+        writer.storeContext(
+            c1 + 1,
+            _toV014Nodes(committees[1]),
+            thresholds,
+            ProtocolConfigV014LayoutExample.ContextState.None
+        );
+        writer.storeContext(
+            c1 + 2,
+            _toV014Nodes(committees[2]),
+            thresholds,
+            ProtocolConfigV014LayoutExample.ContextState.Active
+        );
+        writer.storeEpoch(EPOCH_COUNTER_BASE + 2, c1 + 2, ProtocolConfigV014LayoutExample.EpochState.Active);
+        _upgradeV014ToProtocolConfig();
+
+        for (uint256 c = 0; c < committees.length; c++) {
+            uint256 contextId = c1 + c;
+            KmsNode[] memory nodes = committees[c];
+            bytes32 lengthSlot = _kmsNodesSlot(contextId);
+            assertEq(uint256(vm.load(protocolConfigAdd, lengthSlot)), nodes.length);
+            bytes32 secondNodeSlot = bytes32(uint256(keccak256(abi.encode(lengthSlot))) + 5);
+            assertEq(vm.load(protocolConfigAdd, secondNodeSlot), bytes32(uint256(uint160(nodes[1].txSenderAddress))));
+            for (uint256 i = 0; i < nodes.length; i++) {
+                assertEq(
+                    abi.encode(protocolConfig.getKmsNodeForContext(contextId, nodes[i].txSenderAddress)),
+                    abi.encode(nodes[i])
+                );
+            }
+        }
+        assertEq(abi.encode(protocolConfig.getKmsNodesForContext(c1)), abi.encode(committees[0]));
+        assertEq(abi.encode(protocolConfig.getKmsNodesForContext(c1 + 2)), abi.encode(committees[2]));
+        address[] memory signers = protocolConfig.getKmsSignersForContext(c1 + 2);
+        assertEq(signers.length, 2);
+        for (uint256 i = 0; i < signers.length; i++) {
+            assertEq(signers[i], committees[2][i].signerAddress);
+            assertTrue(protocolConfig.isKmsTxSenderForContext(c1 + 2, committees[2][i].txSenderAddress));
+        }
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(c1 + 2), thresholds.userDecryption);
+        assertEq(protocolConfig.getKmsGenThresholdForContext(c1 + 2), thresholds.kmsGen);
+
+        (uint256 newContextId, bytes32 nodeConfigHash) = _defineSameSetContextSwitch();
+        _activatePendingContextWithDefaultSigners(newContextId, nodeConfigHash, EPOCH_COUNTER_BASE + 3, 2);
+        assertEq(protocolConfig.getCurrentKmsContextId(), newContextId);
+        assertEq(
+            abi.encode(protocolConfig.getKmsNodesForContext(newContextId)),
+            abi.encode(_toKmsNodes(_makeKmsNodeParams(2)))
+        );
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(c1);
+        assertFalse(protocolConfig.isValidKmsContext(c1));
+    }
+
+    /// @dev Pins every slot of a two-node v0.14 committee after the upgrade. v0.14 stored node 1 at element
+    ///      slots 4 to 7. The current layout stores it at slots 5 to 9. Its v0.14 `ipAddress` data must be
+    ///      cleared, and the third data slot of its v0.14 `storageUrl` must not survive under its new
+    ///      `ipAddress` header. The v0.14 slot 4 holds an address with its low bit set. A delete through the
+    ///      five-field type would read it as a long string header and run out of gas.
+    function test_reinitializeV3RewritesV014CommitteeSlots() public {
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        KmsNode[] memory nodes = new KmsNode[](2);
+        nodes[0] = KmsNode({
+            txSenderAddress: address(0xA1),
+            signerAddress: vm.addr(kmsPk0),
+            ipAddress: "10.0.0.1",
+            storageUrl: "https://kms-storage-0.s3.eu-west-1.amazonaws.com/fhevm/public-01",
+            connectorUrl: ""
+        });
+        nodes[1] = KmsNode({
+            txSenderAddress: 0x1111111111111111111111111111111111111111,
+            signerAddress: vm.addr(kmsPk1),
+            ipAddress: "kms-node-1.mpc-party-one.internal.zama.example.org/connector-001",
+            storageUrl: "https://kms-storage-1.s3.eu-west-1.amazonaws.com/fhevm/public-data/kms-node-one/prefix-000000001",
+            connectorUrl: ""
+        });
+        _deployACL(owner);
+        _deployV014ProtocolConfig(owner, contextId, EPOCH_COUNTER_BASE + 1, nodes, _defaultThresholds());
+        bytes32 lengthSlot = _kmsNodesSlot(contextId);
+        uint256 element = uint256(keccak256(abi.encode(lengthSlot)));
+        uint256 v014IpAddressData = uint256(keccak256(abi.encode(element + 6)));
+        assertNotEq(vm.load(protocolConfigAdd, bytes32(v014IpAddressData)), bytes32(0));
+        _upgradeV014ToProtocolConfig();
+
+        assertEq(uint256(vm.load(protocolConfigAdd, lengthSlot)), 2);
+        assertEq(vm.load(protocolConfigAdd, bytes32(element)), bytes32(uint256(uint160(nodes[0].txSenderAddress))));
+        assertEq(vm.load(protocolConfigAdd, bytes32(element + 1)), bytes32(uint256(uint160(nodes[0].signerAddress))));
+        assertEq(
+            vm.load(protocolConfigAdd, bytes32(element + 2)),
+            bytes32(bytes(nodes[0].ipAddress)) | bytes32(bytes(nodes[0].ipAddress).length * 2)
+        );
+        _assertStoredLongString(bytes32(element + 3), nodes[0].storageUrl);
+        assertEq(vm.load(protocolConfigAdd, bytes32(element + 4)), bytes32(0));
+        assertEq(vm.load(protocolConfigAdd, bytes32(element + 5)), bytes32(uint256(uint160(nodes[1].txSenderAddress))));
+        assertEq(vm.load(protocolConfigAdd, bytes32(element + 6)), bytes32(uint256(uint160(nodes[1].signerAddress))));
+        _assertStoredLongString(bytes32(element + 7), nodes[1].ipAddress);
+        _assertStoredLongString(bytes32(element + 8), nodes[1].storageUrl);
+        assertEq(vm.load(protocolConfigAdd, bytes32(element + 9)), bytes32(0));
+        assertEq(vm.load(protocolConfigAdd, bytes32(v014IpAddressData)), bytes32(0));
+        assertEq(vm.load(protocolConfigAdd, bytes32(v014IpAddressData + 1)), bytes32(0));
+        assertEq(vm.load(protocolConfigAdd, bytes32(uint256(keccak256(abi.encode(element + 7))) + 2)), bytes32(0));
+        assertEq(abi.encode(protocolConfig.getKmsNodesForContext(contextId)), abi.encode(nodes));
     }
 
     /// @dev A context left Pending at upgrade could never be confirmed, so the upgrade must revert.
@@ -2092,8 +2266,54 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         protocolConfig.confirmKmsContextCreation(newContextId, abi.encodePacked(r, s), EMPTY_EXTRA_DATA);
     }
 
-    /// @dev nodeConfigHash binds the stored nodes and thresholds. A signature over other thresholds
-    ///      recovers an unrelated address, and the same signer over the defined ones is accepted.
+    /// @dev Topic of the `NewKmsContext` event of ProtocolConfig v0.2.0 (fhevm v0.14), the keccak256 of
+    ///      `NewKmsContext(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])`.
+    function test_v014NewKmsContextTopic() public pure {
+        assertEq(
+            IProtocolConfigV014.NewKmsContext.selector,
+            0x204d6b80121154cd87d99cf54c639a3dd0a53b3084277098de972ebdd34c6be9
+        );
+    }
+
+    /// @dev Same vector as `new_context_request_carries_node_config_hash` in
+    ///      `kms-connector/crates/kms-worker/src/core/event_processor/protocol_config.rs`. The KMS
+    ///      connector signs this hash, so both sides must compute it the same way. The contract
+    ///      accepts a confirmation only over the hash it stored for the context.
+    function test_nodeConfigHashVector() public {
+        _setupTwoNodeContext();
+        KmsNodeParams[] memory params = new KmsNodeParams[](2);
+        params[0].txSenderAddress = address(0xA1);
+        params[0].signerAddress = address(0xB1);
+        params[0].ipAddress = "127.0.0.1";
+        params[0].storageUrl = "https://s0.example.com";
+        params[0].connectorUrl = "https://kms-connector-0.example.com";
+        params[1].txSenderAddress = address(0xA2);
+        params[1].signerAddress = address(0xB2);
+        params[1].ipAddress = "127.0.0.2";
+        params[1].storageUrl = "https://s1.example.com";
+        params[1].connectorUrl = "https://kms-connector-1.example.com";
+        KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 1, userDecryption: 2, kmsGen: 2, mpc: 1});
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContextAndEpoch(params, thresholds, "", new PcrValues[](0));
+
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        bytes memory signature = _computeSignature(
+            kmsPk0,
+            _hashContextCreation(
+                KMS_CONTEXT_COUNTER_BASE + 1,
+                newContextId,
+                0x80aae14e4bc0f57eb57a523a84108249e1589b94e83c46fb6e5cc58e9771f5c7,
+                EMPTY_EXTRA_DATA
+            )
+        );
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
+        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk0), signature, EMPTY_EXTRA_DATA);
+        protocolConfig.confirmKmsContextCreation(newContextId, signature, EMPTY_EXTRA_DATA);
+    }
+
+    /// @dev nodeConfigHash binds the stored nodes, each `connectorUrl` included, and thresholds. A signature
+    ///      over other thresholds or another `connectorUrl` recovers an unrelated address, and the same
+    ///      signer over the defined ones is accepted.
     function test_revertConfirmKmsContextCreationOverOtherNodeConfig() public {
         _setupTwoNodeContext();
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
@@ -2115,6 +2335,20 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
                 previousContextId,
                 newContextId,
                 _hashNodeConfig(nodes, otherThresholds),
+                EMPTY_EXTRA_DATA
+            )
+        );
+        vm.expectPartialRevert(IProtocolConfig.KmsContextCreationUnauthorized.selector);
+        protocolConfig.confirmKmsContextCreation(newContextId, signature, EMPTY_EXTRA_DATA);
+
+        KmsNodeParams[] memory otherNodes = _makeKmsNodeParams(2);
+        otherNodes[1].connectorUrl = "https://attacker.example.com";
+        signature = _computeSignature(
+            kmsPk0,
+            _hashContextCreation(
+                previousContextId,
+                newContextId,
+                _hashNodeConfig(otherNodes, thresholds),
                 EMPTY_EXTRA_DATA
             )
         );

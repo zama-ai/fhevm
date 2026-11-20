@@ -125,6 +125,8 @@ describe('task:deployAllHostContracts', function () {
     const [contextId, epochId] = await protocolConfig.getCurrentKmsContextAndEpoch();
     expect(contextId).to.equal(KMS_CONTEXT_COUNTER_BASE + 0x0bn);
     expect(epochId).to.equal(EPOCH_COUNTER_BASE + 0x0en);
+    const [node] = await protocolConfig.getKmsNodesForContext(contextId);
+    expect(node.connectorUrl).to.equal(process.env.KMS_NODE_CONNECTOR_URL_0);
   });
 });
 
@@ -254,6 +256,7 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
       expect(secondaryNodesOnChain[i].signerAddress).to.equal(canonicalNodesOnChain[i].signerAddress);
       expect(secondaryNodesOnChain[i].ipAddress).to.equal(canonicalNodesOnChain[i].ipAddress);
       expect(secondaryNodesOnChain[i].storageUrl).to.equal(canonicalNodesOnChain[i].storageUrl);
+      expect(secondaryNodesOnChain[i].connectorUrl).to.equal(canonicalNodesOnChain[i].connectorUrl);
     }
 
     expect(await secondary.getPublicDecryptionThresholdForContext(secondaryContextId)).to.equal(
@@ -470,6 +473,16 @@ describe('canonical snapshot env (buildCanonicalSnapshotEnv / readCanonicalSnaps
     process.env.CANONICAL_KMS_NODES = JSON.stringify(nodes);
     expect(() => readCanonicalSnapshotFromEnv()).to.throw(
       /"CANONICAL_KMS_NODES" env variable entry 0 field "signerAddress" must be a valid address/,
+    );
+  });
+
+  it('rejects a node without connectorUrl', async function () {
+    await exportToEnv();
+    const nodes = JSON.parse(process.env.CANONICAL_KMS_NODES!);
+    delete nodes[0].connectorUrl;
+    process.env.CANONICAL_KMS_NODES = JSON.stringify(nodes);
+    expect(() => readCanonicalSnapshotFromEnv()).to.throw(
+      /"CANONICAL_KMS_NODES" env variable entry 0 field "connectorUrl" is missing/,
     );
   });
 

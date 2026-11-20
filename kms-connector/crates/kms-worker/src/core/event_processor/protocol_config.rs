@@ -4,7 +4,7 @@ use crate::core::{
 };
 use alloy::{
     eips::BlockId,
-    primitives::{FixedBytes, Keccak256, U256, keccak256},
+    primitives::{FixedBytes, U256, keccak256},
     providers::Provider,
     rpc::types::Filter,
     sol_types::{SolEvent, SolValue},
@@ -14,6 +14,7 @@ use connector_utils::types::{
     KmsGrpcRequest, db::KeyType, extra_data::extra_data_v2_payload, u256_to_request_id,
 };
 use fhevm_host_bindings::{
+    i_protocol_config_v014::IProtocolConfigV014,
     kms_generation::{
         IKMSGeneration::KeyInfo,
         KMSGeneration::{self, KMSGenerationInstance},
@@ -22,8 +23,8 @@ use fhevm_host_bindings::{
         IKMSGeneration::KeyDigest,
         IProtocolConfig::{EpochCrsResult, EpochKeyResult},
         ProtocolConfig::{
-            KmsContextDestroyed, KmsEpochDestroyed, KmsNode, NewKmsContext, NewKmsEpoch,
-            ProtocolConfigInstance,
+            self, KmsContextDestroyed, KmsEpochDestroyed, KmsNode, KmsNodeParams, KmsThresholds,
+            NewKmsContext, NewKmsEpoch, ProtocolConfigInstance,
         },
     },
 };
@@ -159,6 +160,9 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
     ///
     /// Uses the `previousContextId` field to fetch the anchor via `getKmsContextAnchor`, then
     /// uses the block number to filter for the event.
+    ///
+    /// A previous context defined before the `connectorUrl` upgrade has its event in the v0.14
+    /// shape. Its anchor hashes that shape, so it is verified before the conversion.
     async fn fetch_previous_context_creation_event(
         &self,
         new_context_event: &NewKmsContext,
@@ -174,7 +178,10 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
 
         let filter = Filter::new()
             .address(*self.protocol_config_contract.address())
-            .event_signature(NewKmsContext::SIGNATURE_HASH)
+            .event_signature(vec![
+                NewKmsContext::SIGNATURE_HASH,
+                IProtocolConfigV014::NewKmsContext::SIGNATURE_HASH,
+            ])
             .from_block(previous_context_block)
             .to_block(previous_context_block);
         let anchor_logs = self
@@ -191,10 +198,9 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
                 new_context_event.previousContextId
             ))),
             [anchor_log] => {
-                let previous_context_event = NewKmsContext::decode_log(&anchor_log.inner)
-                    .map_err(ProcessingError::transient)?
-                    .data;
-                let event_hash = compute_anchor_event_hash(&previous_context_event);
+                // The event data is `abi.encode(kmsNodeParams, thresholds, softwareVersion,
+                // pcrValues)`, which `ProtocolConfig` hashes into the anchor.
+                let event_hash = keccak256(&anchor_log.inner.data.data);
                 if event_hash != previous_context_anchor.contextInfoHash {
                     return Err(ProcessingError::transient(anyhow!(
                         "Previous context hash verification failed: computed={:?}, on-chain={:?}",
@@ -202,7 +208,17 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
                         previous_context_anchor.contextInfoHash,
                     )));
                 }
-                Ok(previous_context_event)
+                if anchor_log.topic0() == Some(&IProtocolConfigV014::NewKmsContext::SIGNATURE_HASH)
+                {
+                    let event = IProtocolConfigV014::NewKmsContext::decode_log(&anchor_log.inner)
+                        .map_err(ProcessingError::transient)?
+                        .data;
+                    Ok(new_kms_context_from_v014(event))
+                } else {
+                    Ok(NewKmsContext::decode_log(&anchor_log.inner)
+                        .map_err(ProcessingError::transient)?
+                        .data)
+                }
             }
             logs => Err(ProcessingError::transient(anyhow!(
                 "Too many events found at anchor {previous_context_anchor:?}: {logs:?}"
@@ -274,6 +290,48 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         }
 
         Ok(EpochMaterial { keys, crs_list })
+    }
+}
+
+/// Converts a `NewKmsContext` emitted by `ProtocolConfig` v0.2.0 (fhevm v0.14) to the current shape.
+///
+/// That contract stored its nodes without `connectorUrl`, so `connectorUrl` is empty, as the
+/// contract still reads it for such a context.
+fn new_kms_context_from_v014(event: IProtocolConfigV014::NewKmsContext) -> NewKmsContext {
+    NewKmsContext {
+        contextId: event.contextId,
+        previousContextId: event.previousContextId,
+        kmsNodeParams: event
+            .kmsNodeParams
+            .into_iter()
+            .map(|n| KmsNodeParams {
+                txSenderAddress: n.txSenderAddress,
+                signerAddress: n.signerAddress,
+                ipAddress: n.ipAddress,
+                storageUrl: n.storageUrl,
+                partyId: n.partyId,
+                mpcIdentity: n.mpcIdentity,
+                caCert: n.caCert,
+                storagePrefix: n.storagePrefix,
+                connectorUrl: String::new(),
+            })
+            .collect(),
+        thresholds: KmsThresholds {
+            publicDecryption: event.thresholds.publicDecryption,
+            userDecryption: event.thresholds.userDecryption,
+            kmsGen: event.thresholds.kmsGen,
+            mpc: event.thresholds.mpc,
+        },
+        softwareVersion: event.softwareVersion,
+        pcrValues: event
+            .pcrValues
+            .into_iter()
+            .map(|p| ProtocolConfig::PcrValues {
+                pcr0: p.pcr0,
+                pcr1: p.pcr1,
+                pcr2: p.pcr2,
+            })
+            .collect(),
     }
 }
 
@@ -431,7 +489,7 @@ fn key_type_to_string(key_type: u8) -> anyhow::Result<String> {
 ///
 /// Mirrors `ProtocolConfig`: `keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds))`,
 /// where each `KmsNode` is the projection of a `KmsNodeParams` stored by the contract.
-pub fn compute_node_config_hash(event: &NewKmsContext) -> FixedBytes<32> {
+fn compute_node_config_hash(event: &NewKmsContext) -> FixedBytes<32> {
     let nodes: Vec<KmsNode> = event
         .kmsNodeParams
         .iter()
@@ -440,6 +498,7 @@ pub fn compute_node_config_hash(event: &NewKmsContext) -> FixedBytes<32> {
             signerAddress: n.signerAddress,
             ipAddress: n.ipAddress.clone(),
             storageUrl: n.storageUrl.clone(),
+            connectorUrl: n.connectorUrl.clone(),
         })
         .collect();
     keccak256((nodes, event.thresholds.clone()).abi_encode_sequence())
@@ -455,20 +514,93 @@ fn to_block_number(block_number: U256) -> Result<u64, ProcessingError> {
     })
 }
 
-/// Computes the hash of a `NewKmsContext` event.
-///
-/// Used to be compared with the `contextInfoHash` field in the acnhor.
-pub fn compute_anchor_event_hash(event: &NewKmsContext) -> FixedBytes<32> {
-    // keccak256(abi.encode(initialKmsNodeParams, initialThresholds, softwareVersion, pcrValues))
-    let encoded_data = (
-        event.kmsNodeParams.as_slice(),
-        event.thresholds.clone(),
-        &event.softwareVersion,
-        event.pcrValues.as_slice(),
-    )
-        .abi_encode_sequence();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::{
+        primitives::{B256, Log, LogData, address, b256},
+        providers::{ProviderBuilder, mock::Asserter},
+        rpc::types::Log as RpcLog,
+    };
 
-    let mut hasher = Keccak256::new();
-    hasher.update(encoded_data);
-    hasher.finalize()
+    fn previous_context_log_data() -> LogData {
+        NewKmsContext::default().encode_log_data()
+    }
+
+    /// Builds a processor whose previous context has `anchor_hash` as anchor hash and
+    /// `previous_context_log_data()` as event.
+    fn processor_with_anchor_hash(anchor_hash: B256) -> ProtocolConfigProcessor<impl Provider> {
+        let asserter = Asserter::new();
+        asserter.push_success(&(U256::ZERO, anchor_hash).abi_encode_sequence());
+        asserter.push_success(&vec![RpcLog {
+            inner: Log {
+                address: Config::default().protocol_config_contract.address,
+                data: previous_context_log_data(),
+            },
+            ..Default::default()
+        }]);
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter);
+        ProtocolConfigProcessor::new(&Config::default(), provider)
+    }
+
+    /// The expected hash is the vector of `test_nodeConfigHashVector` in
+    /// `host-contracts/test/protocolConfig/canonical/protocolConfig.t.sol`.
+    #[tokio::test]
+    async fn new_context_request_carries_node_config_hash() {
+        let event = NewKmsContext {
+            kmsNodeParams: vec![
+                KmsNodeParams {
+                    txSenderAddress: address!("0x00000000000000000000000000000000000000A1"),
+                    signerAddress: address!("0x00000000000000000000000000000000000000B1"),
+                    ipAddress: "127.0.0.1".to_string(),
+                    storageUrl: "https://s0.example.com".to_string(),
+                    connectorUrl: "https://kms-connector-0.example.com".to_string(),
+                    ..Default::default()
+                },
+                KmsNodeParams {
+                    txSenderAddress: address!("0x00000000000000000000000000000000000000A2"),
+                    signerAddress: address!("0x00000000000000000000000000000000000000B2"),
+                    ipAddress: "127.0.0.2".to_string(),
+                    storageUrl: "https://s1.example.com".to_string(),
+                    connectorUrl: "https://kms-connector-1.example.com".to_string(),
+                    ..Default::default()
+                },
+            ],
+            thresholds: KmsThresholds {
+                publicDecryption: U256::from(1),
+                userDecryption: U256::from(2),
+                kmsGen: U256::from(2),
+                mpc: U256::from(1),
+            },
+            ..Default::default()
+        };
+        let processor = processor_with_anchor_hash(keccak256(&previous_context_log_data().data));
+
+        let KmsGrpcRequest::NewMpcContext { new, .. } = processor
+            .prepare_new_kms_context_request(&event)
+            .await
+            .unwrap()
+        else {
+            panic!("expected a NewMpcContext request");
+        };
+        assert_eq!(
+            new.node_config_hash,
+            b256!("0x80aae14e4bc0f57eb57a523a84108249e1589b94e83c46fb6e5cc58e9771f5c7").to_vec(),
+        );
+    }
+
+    #[tokio::test]
+    async fn previous_context_anchor_mismatch_is_rejected() {
+        let processor = processor_with_anchor_hash(B256::ZERO);
+
+        let err = processor
+            .prepare_new_kms_context_request(&NewKmsContext::default())
+            .await
+            .expect_err("a mismatched anchor must be rejected");
+        assert!(
+            format!("{:#}", err.source).contains("Previous context hash verification failed"),
+            "unexpected error: {:#}",
+            err.source
+        );
+    }
 }
