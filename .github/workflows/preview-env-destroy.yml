@@ -142,15 +142,28 @@ jobs:
           sparse-checkout: |
             ci/preview-env/scripts/wallets/sweep-wallets.sh
             ci/preview-env/scripts/wallets/sweep-wallets.cjs
+            .github/actions/install-safe-chain/action.yml
           sparse-checkout-cone-mode: false
 
+      - name: Install safe-chain
+        id: safe-chain
+        continue-on-error: true
+        uses: ./.github/actions/install-safe-chain
+
+      # Never install npm packages unguarded: if safe-chain failed, skip this step.
+      # The sweep then fails under its own continue-on-error and the teardown still
+      # runs. `outcome`, not `conclusion`: with continue-on-error, `conclusion` is
+      # always `success`.
       - name: Install ethers for the wallet sweep
+        id: ethers
+        if: steps.safe-chain.outcome == 'success'
         continue-on-error: true
         run: |
           mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
           npm install --silent --no-save ethers@6
 
       - name: Return leftover testnet funds to the treasury
+        id: sweep
         continue-on-error: true
         # Each refund waits for one confirmation on Sepolia/Amoy; bounded so a stalled
         # RPC cannot eat the job's 30m and strand the namespace.
@@ -231,3 +244,18 @@ jobs:
         if: failure() && github.event_name == 'workflow_dispatch'
         run: |
           echo ":warning: Teardown of namespace \`${NAMESPACE}\` FAILED - Crossplane-managed AWS resources may still be leaking; check the run and clean up manually." >> "$GITHUB_STEP_SUMMARY"
+
+      # Runs after the teardown so the namespace is always deleted, but turns the
+      # job red when the sweep was skipped or failed: the leftover funds in the
+      # namespace's wallets are lost, so make it visible. safe-chain and ethers are
+      # checked on their own because without ethers the sweep script finds no
+      # treasury and exits 0.
+      - name: Report skipped or failed wallet sweep
+        if: >-
+          (steps.safe-chain.outcome == 'failure' ||
+          steps.ethers.outcome == 'failure' ||
+          steps.sweep.outcome == 'failure') &&
+          steps.destroy.outputs.deleted == 'true'
+        run: |
+          echo "::error::The wallet sweep was skipped or failed: leftover testnet funds in ${NAMESPACE} may not have been returned to the treasury."
+          exit 1

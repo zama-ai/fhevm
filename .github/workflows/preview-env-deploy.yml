@@ -1056,6 +1056,9 @@ jobs:
           echo "POLLER_SEED_START_BLOCK=$((hex))" >> "$GITHUB_ENV"
           echo "blockchain-dev host head block $((hex))"
 
+      - name: Install safe-chain
+        uses: ./.github/actions/install-safe-chain
+
       - name: Install ethers for wallet derivation
         run: |
           mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
