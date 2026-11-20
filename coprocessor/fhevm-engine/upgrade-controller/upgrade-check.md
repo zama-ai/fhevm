@@ -14,7 +14,7 @@ key. Every operator can run it on its own.
 | Access | Used for |
 | --- | --- |
 | Postgres, read-only role, on the live coprocessor DB | `upgrade_state`, `versioning`, `consensus_epoch_history`, ciphertext tables |
-| Gateway RPC | the registered coprocessors in `GatewayConfig` |
+| Gateway RPC | the registered coprocessors in `GatewayConfig`, and Gateway block times |
 | HTTP read on every member's bucket URL | the signed decision records |
 | S3 read on this operator's ciphertext bucket | the `ct64` and `ct128` objects |
 
@@ -43,6 +43,7 @@ cargo run -p upgrade-controller --bin upgrade-check -- \
 | `--region` | `AWS_REGION` | `eu-west-1` | S3 region |
 | `--context-id` | - | `1` | last part of the S3 key `ct64/<handle>/<context-id>` |
 | `--digest-limit` | - | `0` | check at most this many handles in step 4 (`0` = all) |
+| `--post-cutover-duration` | - | `60m` | how far past the cutover steps 3 and 4 reach (for example `5m`, `2h`) |
 | `--json` | - | off | also print the full report as JSON on the last line |
 
 ## Verdicts and exit codes
@@ -53,7 +54,7 @@ cargo run -p upgrade-controller --bin upgrade-check -- \
 | 1 | fail | at least one check failed |
 | 2 | not executed | no finished attempt in `upgrade_state` |
 | 3 | rolled back | the attempt failed and no check contradicts the rollback |
-| 4 | inconclusive | an endpoint was unreachable or data was missing |
+| 4 | inconclusive | an endpoint was unreachable, data was missing, or the checked range is not complete yet |
 
 ```mermaid
 flowchart TD
@@ -68,7 +69,7 @@ flowchart TD
     R2 -- no --> RB[3 rolled back]
     S --> S1{Any check failed?}
     S1 -- yes --> F
-    S1 -- no --> S2{Bucket or S3 unreachable?}
+    S1 -- no --> S2{Bucket or S3 unreachable, or range not complete?}
     S2 -- yes --> I
     S2 -- no --> P[0 pass]
 ```
@@ -115,16 +116,61 @@ CLI.
 
 ### Step 3: ciphertext consensus version (DB)
 
+Steps 3 and 4 cover a bounded range, so two runs check the same data and a
+pass means the whole range was there to check.
+
+```
+start_block            cutover time        scan cutoff            now
+    |----------------------|-------------------|-------------------|
+    |<------------- checked by steps 3 and 4 ->|   not checked
+                           |<----------------->|
+                           --post-cutover-duration (default 60m)
+```
+
+- Cutover time is `consensus_epoch_history.completed_at`, written by this
+  operator's cutover transaction.
+- Scan cutoff is cutover time plus `--post-cutover-duration`.
+- Times are this operator's ingest times, not chain block times, so two
+  operators can check slightly different ranges.
+- The tool also prints the consensus anchor block per chain from the `quorum`
+  records. This is where the fleet reached consensus; the cutover ran later.
+  It is informational and does not bound the scan.
+
+The checks:
+
 - Outputs: for each chain, every completed, allowed, non-errored computation
-  at or after the chain's `start_block` must have a `ciphertexts` row whose
+  from the chain's `start_block` up to the last block ingested at or before
+  the scan cutoff must have a `ciphertexts` row whose
   `consensus_version` equals the target.
 - Inputs: every handle of a verified proof at or after `gw_start_block` (a
-  Gateway block) must have a `ciphertexts` row whose `consensus_version`
+  Gateway block) that the gw-listener ingested at or before the scan cutoff
+  must have a `ciphertexts` row whose `consensus_version`
   equals the target.
+
+The run is inconclusive, not a pass, when the range is not complete yet:
+
+| Case | Result |
+| --- | --- |
+| the scan cutoff is still in the future | inconclusive, re-run later |
+| a host chain has no block ingested after the cutoff | inconclusive, the listener may be behind |
+| the gw-listener has not scanned the Gateway up to the cutoff | inconclusive |
+| the Gateway is quiet: the gw-listener is at the Gateway tip and the cutoff has passed | complete |
+
+The Gateway only produces a block when it has a transaction, so with no inputs
+there may be no Gateway block after the cutoff. The tool handles this by asking
+the Gateway for the first block the gw-listener has not scanned yet
+(`gw_listener_last_block.last_block_num + 1`). If that block does not exist,
+the listener is at the tip and nothing is missing. If it exists and its time is
+after the cutoff, everything up to the cutoff is scanned. Otherwise the
+listener is behind.
+
+A host chain has no such check, because the tool has no host RPC. A host chain
+that stops producing blocks stays inconclusive.
 
 ### Step 4: digest consistency (DB vs S3)
 
-For the outputs of step 3 and for the inputs present in `allowed_handles`, and
+For the outputs of step 3 and for the step 3 inputs present in
+`allowed_handles` (so the same bounded range), and
 for both `ct64` and `ct128`, the tool compares three values:
 
 - the keccak256 of the ciphertext bytes in the DB,

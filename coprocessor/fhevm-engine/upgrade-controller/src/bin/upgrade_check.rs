@@ -29,7 +29,12 @@
 //!   3. Ciphertext versions (DB): every allowed, completed output handle
 //!      computed at or after each chain's `start_block`, and every input
 //!      handle verified at or after `gw_start_block` (a Gateway block), carries
-//!      `ciphertexts.consensus_version` equal to the target.
+//!      `ciphertexts.consensus_version` equal to the target. The scan stops
+//!      at the cutover time (`consensus_epoch_history.completed_at`) plus
+//!      `--post-cutover-duration` (default 60m), measured by this operator's
+//!      ingest times. A host chain with no block ingested after that point,
+//!      or a gw-listener that has not scanned the Gateway up to it, makes the
+//!      run inconclusive. A quiet Gateway (no block past that point) is fine.
 //!   4. Digest consistency (DB vs S3): for those outputs and for the inputs
 //!      present in `allowed_handles`, the keccak256 of the DB blob, the
 //!      `ciphertext_digest` row and the S3 object agree for ct64 and ct128.
@@ -110,6 +115,13 @@ struct Args {
     #[arg(long, default_value_t = 0)]
     digest_limit: usize,
 
+    /// How far past the cutover the checks reach. Steps 3 and 4 cover what
+    /// this operator ingested up to the cutover time
+    /// (`consensus_epoch_history.completed_at`) plus this duration. If a chain
+    /// has not been ingested past that point yet, the run is inconclusive.
+    #[arg(long, default_value = "60m", value_parser = humantime::parse_duration)]
+    post_cutover_duration: Duration,
+
     /// Print the full report as JSON on the last line.
     #[arg(long, default_value_t = false)]
     json: bool,
@@ -165,6 +177,9 @@ struct MemberReport {
 struct ChainVersionReport {
     chain_id: i64,
     start_block: i64,
+    /// Last host block of the output scan (inclusive). None for the inputs,
+    /// which are bounded by ingest time instead.
+    end_block: Option<i64>,
     total: i64,
     missing: i64,
     mismatched: i64,
@@ -192,6 +207,13 @@ struct Report {
     proposal_id: Option<String>,
     proposal_block: Option<i64>,
     members: Vec<MemberReport>,
+    /// Highest consensus anchor block per chain across the verified quorum
+    /// records (host chains and the Gateway). Informational.
+    anchors: BTreeMap<i64, i64>,
+    /// `consensus_epoch_history.completed_at`: when this operator cut over.
+    cutover_time: Option<String>,
+    /// cutover_time + --post-cutover-duration: where steps 3 and 4 stop.
+    scan_cutoff: Option<String>,
     output_versions: Vec<ChainVersionReport>,
     input_versions: Option<ChainVersionReport>,
     digests: Option<DigestCounters>,
@@ -374,6 +396,40 @@ fn digest_status(computed: Option<&str>, stored: Option<&str>, s3: &S3Fetch) -> 
     }
 }
 
+/// Lowest and highest consensus anchor block per chain over the anchors of all
+/// verified quorum records. Each member anchors on the first block it saw every
+/// member agree on, so two members can sign different blocks for one chain.
+fn anchor_ranges<I: IntoIterator<Item = (i64, i64)>>(anchors: I) -> BTreeMap<i64, (i64, i64)> {
+    let mut ranges: BTreeMap<i64, (i64, i64)> = BTreeMap::new();
+    for (chain_id, block) in anchors {
+        ranges
+            .entry(chain_id)
+            .and_modify(|(low, high)| {
+                *low = (*low).min(block);
+                *high = (*high).max(block);
+            })
+            .or_insert((block, block));
+    }
+    ranges
+}
+
+/// Whether the gw-listener has scanned every Gateway block up to the scan
+/// cutoff. `next_block_time` is the timestamp of the first Gateway block the
+/// listener has NOT scanned yet, or None when the listener is at the Gateway
+/// tip. The Gateway only produces a block when it has a transaction, so a
+/// quiet Gateway has no block past the cutoff: being at the tip once the cutoff
+/// has passed is then complete coverage, not a lagging listener.
+fn gateway_scanned_to_cutoff(
+    next_block_time: Option<u64>,
+    cutoff_unix: i64,
+    cutoff_passed: bool,
+) -> bool {
+    match next_block_time {
+        Some(time) => i64::try_from(time).is_ok_and(|time| time > cutoff_unix),
+        None => cutoff_passed,
+    }
+}
+
 /// The one tolerated anomaly: at a chain's cutover block a blue
 /// ciphertext_digest row can survive the merge (its ciphertext128 is NULL and
 /// green's sns guard never refills it). Reported by name, not as a failure.
@@ -533,12 +589,24 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
         "versioning: stack_version={live_stack_version} consensus_version={live_consensus_version}"
     );
 
-    const EPOCH_SQL: &str = "SELECT consensus_epoch, outcome, consensus_version, stack_version \
+    // The scan cutoff is computed by the DB so it uses the same clock as the
+    // timestamps it is compared with. It comes back as text and is bound again
+    // as `$n::timestamptz`, which also makes every later query replayable.
+    const EPOCH_SQL: &str = "SELECT consensus_epoch, outcome, consensus_version, stack_version, \
+         completed_at::TEXT AS cutover_time, \
+         (completed_at + make_interval(secs => $3))::TEXT AS scan_cutoff, \
+         FLOOR(EXTRACT(EPOCH FROM completed_at + make_interval(secs => $3)))::BIGINT \
+           AS scan_cutoff_unix, \
+         NOW() >= completed_at + make_interval(secs => $3) AS cutoff_passed \
          FROM consensus_epoch_history WHERE proposal_id = $1 AND proposal_block = $2";
-    println!("SQL: {EPOCH_SQL} [$1={proposal_id_hex}, $2={proposal_block}]");
+    let post_cutover_secs = args.post_cutover_duration.as_secs_f64();
+    println!(
+        "SQL: {EPOCH_SQL} [$1={proposal_id_hex}, $2={proposal_block}, $3={post_cutover_secs}]"
+    );
     let epoch = sqlx::query(EPOCH_SQL)
         .bind(&proposal_id)
         .bind(proposal_block)
+        .bind(post_cutover_secs)
         .fetch_optional(&pool)
         .await
         .context("querying consensus_epoch_history")?;
@@ -567,6 +635,19 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
         }
     };
     report.epoch_outcome = epoch_outcome.clone();
+    // (cutoff as text, cutoff as unix seconds, whether the cutoff has passed).
+    // NULL while the epoch is still pending.
+    let mut scan_cutoff: Option<(String, i64, bool)> = None;
+    if let Some(row) = &epoch {
+        report.cutover_time = row.try_get("cutover_time")?;
+        let cutoff: Option<String> = row.try_get("scan_cutoff")?;
+        let cutoff_unix: Option<i64> = row.try_get("scan_cutoff_unix")?;
+        let cutoff_passed: Option<bool> = row.try_get("cutoff_passed")?;
+        if let (Some(cutoff), Some(unix), Some(passed)) = (cutoff, cutoff_unix, cutoff_passed) {
+            report.scan_cutoff = Some(cutoff.clone());
+            scan_cutoff = Some((cutoff, unix, passed));
+        }
+    }
 
     if rolled_back {
         println!("upgrade_state says the attempt FAILED: verifying the rollback was decided");
@@ -610,7 +691,7 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
         .get_block_number()
         .await
         .context("reading the Gateway tip")?;
-    let service = S3Service::new(provider, gateway_config_address);
+    let service = S3Service::new(provider.clone(), gateway_config_address);
     let gw_block = u64::try_from(gw_start_block).context("negative gw_start_block")?;
     let members = match service.get_members_at(gw_block).await {
         Ok(m) => m,
@@ -634,6 +715,7 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
         .context("building the HTTP client")?;
     let record_key = decision::key(&proposal_id, proposal_block);
     let mut decisions: Vec<Option<Decision>> = Vec::new();
+    let mut quorum_anchors: Vec<(i64, i64)> = Vec::new();
     let mut transport_errors = 0usize;
     for (address, bucket_url) in &members {
         let url = format!("{}/{}", bucket_url.trim_end_matches('/'), record_key);
@@ -732,6 +814,9 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
                         member_report.decision = Some(decision_name(payload.decision).to_string());
                         member_report.target_stack_version =
                             Some(payload.target_stack_version.clone());
+                        if payload.decision == Decision::Quorum {
+                            quorum_anchors.extend(payload.anchors.iter().copied());
+                        }
                         decisions.push(Some(payload.decision));
                     }
                 }
@@ -781,10 +866,43 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
             }
         }
     }
+    // Informational: where the fleet reached consensus. The cutover itself ran
+    // later, at the cutover time printed in step 3.
+    for (chain_id, (low, high)) in anchor_ranges(quorum_anchors) {
+        if low == high {
+            println!("consensus anchor: chain {chain_id} block {high}");
+        } else {
+            println!("consensus anchor: chain {chain_id} blocks {low}..{high} across members");
+        }
+        report.anchors.insert(chain_id, high);
+    }
 
     // ---- Step 3: ciphertext consensus_version --------------------------
     println!("\n== Step 3: ciphertext consensus_version (DB) ==");
     let mut digest_targets: Vec<DigestTarget> = Vec::new();
+    let Some((scan_cutoff, scan_cutoff_unix, cutoff_passed)) = scan_cutoff else {
+        report.fail(
+            "consensus_epoch_history has no completed_at for this attempt: the cutover time \
+             is unknown, so steps 3 and 4 cannot run"
+                .to_string(),
+        );
+        return Ok(Verdict::Fail);
+    };
+    println!(
+        "cutover time {}; checking what was ingested up to {scan_cutoff} (cutover + {})",
+        report.cutover_time.as_deref().unwrap_or("-"),
+        humantime::format_duration(args.post_cutover_duration)
+    );
+    // Set when the scan could not cover everything up to the cutoff: the run
+    // is then inconclusive, never a pass over less than was asked for.
+    let mut coverage_incomplete = false;
+    if !cutoff_passed {
+        report.warn(format!(
+            "the scan cutoff {scan_cutoff} is still in the future; re-run after it for a \
+             complete check"
+        ));
+        coverage_incomplete = true;
+    }
 
     const OUTPUT_HANDLES_SQL: &str = "SELECT DISTINCT comp.output_handle AS handle, \
          comp.block_number AS block_number, \
@@ -793,9 +911,17 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
          FROM computations comp \
          LEFT JOIN ciphertexts c ON c.handle = comp.output_handle \
          WHERE comp.host_chain_id = $1 AND comp.block_number >= $2 \
+           AND comp.block_number <= $3 \
            AND comp.is_error = false AND comp.is_allowed = true \
            AND comp.is_completed = true \
          ORDER BY comp.block_number";
+    // `created_at` is when this operator ingested the block. The last block
+    // ingested at or before the cutoff ends the scan; a block ingested after
+    // the cutoff proves ingestion went past it.
+    const HOST_BOUND_SQL: &str = "SELECT \
+         MAX(block_number) FILTER (WHERE created_at <= $2::timestamptz) AS end_block, \
+         COALESCE(bool_or(created_at > $2::timestamptz), false) AS ingested_past_cutoff \
+         FROM host_chain_blocks_valid WHERE chain_id = $1 AND block_status <> 'orphaned'";
     for chain in &gcs {
         let Some(start_block) = chain.start_block else {
             report.fail(format!(
@@ -805,18 +931,48 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
             continue;
         };
         println!(
-            "SQL: {OUTPUT_HANDLES_SQL} [$1={}, $2={start_block}]",
+            "SQL: {HOST_BOUND_SQL} [$1={}, $2={scan_cutoff}]",
+            chain.host_chain_id
+        );
+        let bound = sqlx::query(HOST_BOUND_SQL)
+            .bind(chain.host_chain_id)
+            .bind(&scan_cutoff)
+            .fetch_one(&pool)
+            .await
+            .context("querying the host scan bound")?;
+        let end_block: Option<i64> = bound.try_get("end_block")?;
+        let ingested_past_cutoff: bool = bound.try_get("ingested_past_cutoff")?;
+        if !ingested_past_cutoff {
+            report.warn(format!(
+                "chain {}: no block ingested after the scan cutoff {scan_cutoff} yet, so \
+                 coverage up to the cutoff is not proven; re-run once the chain moves on",
+                chain.host_chain_id
+            ));
+            coverage_incomplete = true;
+        }
+        let Some(end_block) = end_block else {
+            report.warn(format!(
+                "chain {}: no block ingested at or before the scan cutoff; chain skipped",
+                chain.host_chain_id
+            ));
+            coverage_incomplete = true;
+            continue;
+        };
+        println!(
+            "SQL: {OUTPUT_HANDLES_SQL} [$1={}, $2={start_block}, $3={end_block}]",
             chain.host_chain_id
         );
         let rows = sqlx::query(OUTPUT_HANDLES_SQL)
             .bind(chain.host_chain_id)
             .bind(start_block)
+            .bind(end_block)
             .fetch_all(&pool)
             .await
             .context("querying output handles")?;
         let mut chain_report = ChainVersionReport {
             chain_id: chain.host_chain_id,
             start_block,
+            end_block: Some(end_block),
             ..Default::default()
         };
         for row in rows {
@@ -853,7 +1009,8 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
             });
         }
         println!(
-            "chain {}: {} outputs from block {start_block}, {} missing, {} on the wrong version",
+            "chain {}: {} outputs in blocks [{start_block}..{end_block}], {} missing, {} on the \
+             wrong version",
             chain.host_chain_id, chain_report.total, chain_report.missing, chain_report.mismatched
         );
         report.output_versions.push(chain_report);
@@ -863,11 +1020,67 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
     match gw_start_block {
         None => report.fail("no GCS row carries a gw_start_block".to_string()),
         Some(gw_start_block) => {
+            // Has the gw-listener scanned every Gateway block up to the cutoff?
+            // Ask the Gateway for the first block the listener has not scanned.
+            const GW_PROGRESS_SQL: &str =
+                "SELECT last_block_num FROM gw_listener_last_block WHERE dummy_id";
+            println!("SQL: {GW_PROGRESS_SQL}");
+            let last_scanned: Option<i64> = sqlx::query_scalar(GW_PROGRESS_SQL)
+                .fetch_optional(&pool)
+                .await
+                .context("querying gw_listener_last_block")?
+                .flatten();
+            match last_scanned {
+                None => {
+                    report.warn(
+                        "gw_listener_last_block is empty: cannot tell how far the gw-listener \
+                         scanned the Gateway"
+                            .to_string(),
+                    );
+                    coverage_incomplete = true;
+                }
+                Some(last_scanned) => {
+                    let next =
+                        u64::try_from(last_scanned).context("negative gw_listener_last_block")? + 1;
+                    let next_block_time = provider
+                        .get_block_by_number(next.into())
+                        .await
+                        .context("reading the Gateway block after the gw-listener watermark")?
+                        .map(|block| block.header.timestamp);
+                    if gateway_scanned_to_cutoff(next_block_time, scan_cutoff_unix, cutoff_passed) {
+                        match next_block_time {
+                            Some(_) => println!(
+                                "gw-listener scanned to Gateway block {last_scanned}; block \
+                                 {next} is past the scan cutoff"
+                            ),
+                            None => println!(
+                                "gw-listener scanned to Gateway block {last_scanned}, the \
+                                 Gateway tip: the Gateway produced no block after it (no \
+                                 transactions), so no input is missing"
+                            ),
+                        }
+                    } else {
+                        if next_block_time.is_some() {
+                            report.warn(format!(
+                                "gw-listener scanned only to Gateway block {last_scanned}, and \
+                                 block {next} is not past the scan cutoff: inputs up to the \
+                                 cutoff may not be ingested yet"
+                            ));
+                        }
+                        coverage_incomplete = true;
+                    }
+                }
+            }
+            // `created_at` is when the gw-listener ingested the proof request.
             const INPUT_HANDLES_SQL: &str = "SELECT zk_proof_id, block_number, handles \
-                 FROM verify_proofs WHERE verified = true AND block_number >= $1";
-            println!("SQL: {INPUT_HANDLES_SQL} [$1={gw_start_block}] (Gateway blocks)");
+                 FROM verify_proofs WHERE verified = true AND block_number >= $1 \
+                   AND created_at <= $2::timestamptz";
+            println!(
+                "SQL: {INPUT_HANDLES_SQL} [$1={gw_start_block}, $2={scan_cutoff}] (Gateway blocks)"
+            );
             let rows = sqlx::query(INPUT_HANDLES_SQL)
                 .bind(gw_start_block)
+                .bind(&scan_cutoff)
                 .fetch_all(&pool)
                 .await
                 .context("querying verified input proofs")?;
@@ -1052,7 +1265,7 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
     if !report.failures.is_empty() {
         return Ok(Verdict::Fail);
     }
-    if transport_errors > 0 || unreachable > 0 {
+    if transport_errors > 0 || unreachable > 0 || coverage_incomplete {
         return Ok(Verdict::Inconclusive);
     }
     Ok(Verdict::Pass)
@@ -1304,6 +1517,30 @@ mod tests {
         assert!(!is_known_cutover_boundary(Some(101), Some(100)));
         assert!(!is_known_cutover_boundary(None, Some(100)));
         assert!(!is_known_cutover_boundary(Some(100), None));
+    }
+
+    #[test]
+    fn anchor_ranges_keep_lowest_and_highest_per_chain() {
+        let ranges = anchor_ranges([(1, 150), (2, 40), (1, 152), (1, 149)]);
+        assert_eq!(ranges.get(&1), Some(&(149, 152)));
+        assert_eq!(ranges.get(&2), Some(&(40, 40)));
+        assert_eq!(ranges.get(&3), None);
+        assert!(anchor_ranges([]).is_empty());
+    }
+
+    #[test]
+    fn gateway_coverage_handles_a_quiet_gateway() {
+        // The next unscanned block is past the cutoff: everything is scanned.
+        assert!(gateway_scanned_to_cutoff(Some(1001), 1000, true));
+        // The next unscanned block is at or before the cutoff: listener behind.
+        assert!(!gateway_scanned_to_cutoff(Some(1000), 1000, true));
+        assert!(!gateway_scanned_to_cutoff(Some(900), 1000, true));
+        // Listener at the tip of a quiet Gateway: complete once the cutoff
+        // has passed, not before (a block before the cutoff can still come).
+        assert!(gateway_scanned_to_cutoff(None, 1000, true));
+        assert!(!gateway_scanned_to_cutoff(None, 1000, false));
+        // A timestamp that does not fit i64 never counts as coverage.
+        assert!(!gateway_scanned_to_cutoff(Some(u64::MAX), 1000, true));
     }
 
     #[test]

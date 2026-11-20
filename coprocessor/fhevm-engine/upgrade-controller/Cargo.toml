@@ -12,6 +12,7 @@ aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
+humantime = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
