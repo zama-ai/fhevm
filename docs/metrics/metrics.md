@@ -275,7 +275,7 @@ The GC sets the gauges every `PAD_GC_INTERVAL` (1 min). Every pad-worker reads a
 
 ### consensus-detector
 
-The consensus-detector compares each pad output that this coprocessor computed with the S3 outputs of the other coprocessors, with the rules of the manifest comparison. It reads the attestation of their `ct128` objects, and groups the valid attestations by digests with the `GatewayConfig` threshold. `pad_consensus` keeps the result of each check, and `pad_consensus_answer` the answer of each coprocessor. Drift rows stay. Other rows are deleted `--pad-consensus-retention` (24 h by default) after the check ends, unlike the manifests, which keep all rows. The detector finds the outputs in `pad_ct64`, which the ct128 GC does not delete, and checks only the outputs computed in this retention.
+The consensus-detector compares each pad output that this coprocessor computed with the S3 outputs of the other coprocessors, with the rules of the manifest comparison. It reads the attestation of their `ct128` objects, and groups the valid attestations by digests with the `GatewayConfig` threshold. `pad_consensus` keeps the result of each check, and `pad_consensus_answer` the answer of each coprocessor. Drift rows stay. Other rows are deleted `--pad-consensus-retention` (24 h by default) after the check ends, unlike the manifests, which keep all rows. As for the manifests, a check waits while the signer of this coprocessor is not in the registry. The detector deletes such a check when it is older than the retention. The detector finds the outputs in `pad_ct64`, which the ct128 GC does not delete, and checks only the outputs computed in this retention.
 
 #### Metric Name: `coprocessor_pad_consensus_results_total`
  - **Type**: Counter

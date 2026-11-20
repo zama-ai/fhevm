@@ -127,10 +127,12 @@ pub async fn pass(pool: &PgPool, http: &reqwest::Client, config: &Config) -> sql
     )
     .execute(pool)
     .await?;
-    // The drift evidence stays, as for the manifests.
+    // The drift evidence stays, as for the manifests. A check that never ends is deleted when it
+    // is older than the retention.
     sqlx::query!(
         "DELETE FROM pad_consensus
-          WHERE done_at < NOW() - make_interval(secs => $1) AND outcome <> 'drift'",
+          WHERE COALESCE(done_at, created_at) < NOW() - make_interval(secs => $1)
+            AND outcome IS DISTINCT FROM 'drift'",
         retention,
     )
     .execute(pool)
@@ -165,6 +167,16 @@ pub async fn pass(pool: &PgPool, http: &reqwest::Client, config: &Config) -> sql
         signer: Address::from_slice(&row.signer),
         expired: row.expired,
     });
+    // As for the manifests: our output counts only when our signer is in the registry.
+    let (outputs, unregistered): (Vec<Output>, Vec<Output>) =
+        outputs.partition(|output| members.iter().any(|(signer, _)| *signer == output.signer));
+    if !unregistered.is_empty() {
+        warn!(
+            outputs = unregistered.len(),
+            signer = %unregistered[0].signer,
+            "Pad consensus: our signer is not in the GatewayConfig registry, the checks wait"
+        );
+    }
     // At the same time: an unreachable coprocessor costs one timeout, not one for each output.
     let results: Vec<sqlx::Result<bool>> = futures::stream::iter(outputs)
         .map(|output| {
@@ -549,6 +561,75 @@ mod tests {
             result(&pool).await,
             (Some("consensus".into()), Some("matches_quorum".into()))
         );
+    }
+
+    #[tokio::test]
+    async fn waits_while_our_signer_is_not_registered() {
+        let ours = PrivateKeySigner::random();
+        let [a, b] = [(); 2].map(|()| PrivateKeySigner::random());
+        let members = vec![
+            (
+                a.address(),
+                peer(StatusCode::OK, Some(attestation(&a, a.address(), OURS))).await,
+            ),
+            (
+                b.address(),
+                peer(StatusCode::OK, Some(attestation(&b, b.address(), OURS))).await,
+            ),
+        ];
+        let (_instance, pool) = database(ours.address(), &members, 2).await;
+
+        // With our output, three outputs agree. Our output does not count, so the pass asks no peer
+        // and ends no check.
+        let ended = pass(&pool, &reqwest::Client::new(), &Config::default()).await;
+        assert_eq!(ended.unwrap(), 0);
+        assert_eq!(result(&pool).await, (None, None));
+        let answers: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pad_consensus_answer")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(answers, 0);
+    }
+
+    #[tokio::test]
+    async fn deletes_old_checks_except_drift() {
+        let ours = PrivateKeySigner::random();
+        let members = vec![(ours.address(), peer(StatusCode::OK, None).await)];
+        let (_instance, pool) = database(ours.address(), &members, 1).await;
+        // All three are older than the retention: an open check, an ended check and a drift check.
+        for (label, outcome, done) in [
+            (1u8, None, false),
+            (2, Some("consensus"), true),
+            (3, Some("drift"), true),
+        ] {
+            sqlx::query(
+                "INSERT INTO pad_consensus (prf_instance, label, pad_length, ciphertext_digest,
+                                            ciphertext128_digest, signer, created_at, outcome,
+                                            done_at)
+                 VALUES (0, $1, 64, $2, $3, $4, NOW() - INTERVAL '3 days', $5,
+                         CASE WHEN $6 THEN NOW() - INTERVAL '2 days' END)",
+            )
+            .bind(B256::repeat_byte(label).as_slice())
+            .bind(OURS.0.as_slice())
+            .bind(OURS.1.as_slice())
+            .bind(ours.address().as_slice())
+            .bind(outcome)
+            .bind(done)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        pass(&pool, &reqwest::Client::new(), &Config::default())
+            .await
+            .unwrap();
+        let labels: Vec<Vec<u8>> =
+            sqlx::query_scalar("SELECT label FROM pad_consensus ORDER BY label")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        // The drift check stays. The pass also adds the output of `database`.
+        assert_eq!(labels, vec![B256::repeat_byte(3).to_vec(), LABEL.to_vec()]);
     }
 
     #[tokio::test]
