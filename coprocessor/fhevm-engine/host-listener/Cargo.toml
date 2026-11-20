@@ -9,6 +9,8 @@ publish.workspace = true
 test-failpoints = ["consumer/test-failpoints"]
 default = []
 test_bypass_key_extraction = []
+# Enable legacy ingestion helpers for integration tests in sibling crates.
+test-utils = []
 
 [[bin]]
 path = "src/bin/main.rs"
@@ -88,7 +90,7 @@ tracing-test = { workspace = true }
 # Enable test bypass features for integration tests
 [dev-dependencies.host-listener]
 path = "."
-features = ["test_bypass_key_extraction"]
+features = ["test_bypass_key_extraction", "test-utils"]
 
 [lints]
 workspace = true

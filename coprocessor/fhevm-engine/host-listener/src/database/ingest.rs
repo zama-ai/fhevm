@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::future::Future;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -30,7 +31,9 @@ use crate::database::derived_history::{
 };
 use crate::database::event_envelope::{classify, DecodedEvent};
 use crate::database::event_operands::{
-    validate_collection_shape, validate_scalar_mode,
+    requires_executor_version, validate_collection_shape, validate_scalar_mode,
+    validate_scalar_values, validate_scalar_values_for_executor_version,
+    validate_type_metadata, ExecutorVersion, ExecutorVersionSchedule,
 };
 use crate::database::synthetic_ops::{
     synthetic_logs, synthetic_transaction_hash, SyntheticContext,
@@ -41,6 +44,7 @@ use crate::database::tfhe_event_propagate::{
     uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
     LogTfhe, TransactionHash, REPLAY_METADATA_CONFLICT,
 };
+use crate::executor_version::ExecutorVersionRequest;
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
 use crate::protocol_config::metrics::PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER;
@@ -85,6 +89,7 @@ impl IngestResult {
 /// The original delivery is not complete until every required link commits.
 pub const HISTORY_RECOVERY_BATCH: usize = 32;
 
+#[cfg(any(test, feature = "test-utils"))]
 #[allow(clippy::too_many_arguments)]
 pub async fn ingest_with_history_recovery<GetBlock, BlockFuture>(
     chain_id: ChainId,
@@ -96,27 +101,172 @@ pub async fn ingest_with_history_recovery<GetBlock, BlockFuture>(
     protocol: &Option<Address>,
     bridge: &Option<Address>,
     options: IngestOptions,
-    mut get_block: GetBlock,
+    get_block: GetBlock,
 ) -> anyhow::Result<IngestResult>
 where
     GetBlock: FnMut(u64) -> BlockFuture,
     BlockFuture: Future<Output = anyhow::Result<BlockLogs<Log>>>,
 {
+    ingest_with_history_recovery_and_executor_versions(
+        chain_id,
+        db,
+        block,
+        acl,
+        tfhe,
+        kms,
+        protocol,
+        bridge,
+        options,
+        get_block,
+        |_| std::future::ready(Ok(ExecutorVersionSchedule::default())),
+    )
+    .await
+}
+
+/// Read checkpoints for this exact block and parent in the current stack schema.
+pub(crate) async fn executor_version_request(
+    db: &Database,
+    chain_id: ChainId,
+    block: &BlockLogs<Log>,
+    proxy: Option<Address>,
+) -> Result<ExecutorVersionRequest, sqlx::Error> {
+    let mut request = ExecutorVersionRequest::from_block(block, proxy);
+    if let Some(proxy) = proxy {
+        let pool = db.pool().await;
+        let (version, schedule) =
+            load_executor_schedule(&pool, chain_id, &block.summary, proxy)
+                .await?;
+        if schedule.is_none() {
+            request.legacy_ending_version = version;
+        }
+        request.persisted_schedule = schedule;
+        request.persisted_parent_version = load_parent_executor_version(
+            &pool,
+            chain_id,
+            &block.summary,
+            proxy,
+        )
+        .await?;
+    }
+    Ok(request)
+}
+
+async fn load_parent_executor_version<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Postgres>,
+    chain_id: ChainId,
+    block: &BlockSummary,
+    proxy: Address,
+) -> Result<Option<ExecutorVersion>, sqlx::Error> {
+    let Some(parent_number) = block.number.checked_sub(1) else {
+        return Ok(None);
+    };
+    let version: Option<String> = sqlx::query_scalar(
+        "SELECT tfhe_executor_version FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3
+           AND tfhe_executor_address = $4 AND tfhe_executor_version IS NOT NULL",
+    )
+    .bind(chain_id.as_i64())
+    .bind(parent_number as i64)
+    .bind(block.parent_hash.as_slice())
+    .bind(proxy.as_slice())
+    .fetch_optional(executor)
+    .await?;
+    Ok(version.as_deref().and_then(ExecutorVersion::parse))
+}
+
+async fn load_executor_schedule<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Postgres>,
+    chain_id: ChainId,
+    block: &BlockSummary,
+    proxy: Address,
+) -> Result<
+    (Option<ExecutorVersion>, Option<ExecutorVersionSchedule>),
+    sqlx::Error,
+> {
+    let saved: Option<(Option<String>, Option<sqlx::types::Json<ExecutorVersionSchedule>>)> =
+        sqlx::query_as(
+            "SELECT tfhe_executor_version, tfhe_executor_schedule FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3
+           AND tfhe_executor_address = $4",
+        )
+        .bind(chain_id.as_i64())
+        .bind(block.number as i64)
+        .bind(block.hash.as_slice())
+        .bind(proxy.as_slice())
+        .fetch_optional(executor)
+        .await?;
+    let (version, schedule) = saved.unwrap_or_default();
+    Ok((
+        version.as_deref().and_then(ExecutorVersion::parse),
+        schedule.map(|saved| saved.0),
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn ingest_with_history_recovery_and_executor_versions<
+    GetBlock,
+    BlockFuture,
+    GetExecutorSchedule,
+    ScheduleFuture,
+>(
+    chain_id: ChainId,
+    db: &mut Database,
+    block: &BlockLogs<Log>,
+    acl: &Option<Address>,
+    tfhe: &Option<Address>,
+    kms: &Option<Address>,
+    protocol: &Option<Address>,
+    bridge: &Option<Address>,
+    options: IngestOptions,
+    mut get_block: GetBlock,
+    mut get_executor_schedule: GetExecutorSchedule,
+) -> anyhow::Result<IngestResult>
+where
+    GetBlock: FnMut(u64) -> BlockFuture,
+    BlockFuture: Future<Output = anyhow::Result<BlockLogs<Log>>>,
+    GetExecutorSchedule: FnMut(ExecutorVersionRequest) -> ScheduleFuture,
+    ScheduleFuture: Future<Output = anyhow::Result<ExecutorVersionSchedule>>,
+{
     let mut repair = None;
     let mut fetched = 0;
     loop {
-        let result = ingest_block_logs(
-            chain_id,
-            db,
-            repair.as_ref().unwrap_or(block),
-            acl,
-            tfhe,
-            kms,
-            protocol,
-            bridge,
-            options.clone(),
-        )
-        .await?;
+        let block_to_ingest = repair.as_ref().unwrap_or(block);
+        let request =
+            executor_version_request(db, chain_id, block_to_ingest, *tfhe)
+                .await?;
+        let result = match get_executor_schedule(request).await {
+            Ok(schedule) => {
+                ingest_block_logs_with_executor_schedule(
+                    chain_id,
+                    db,
+                    block_to_ingest,
+                    acl,
+                    tfhe,
+                    kms,
+                    protocol,
+                    bridge,
+                    options.clone(),
+                    schedule,
+                )
+                .await?
+            }
+            Err(error) => {
+                // Repair an absent predecessor before requiring its historical
+                // state. It may inherit the version already stored on its parent.
+                let Some(tx) = db.new_transaction().await? else {
+                    return Ok(IngestResult::Complete);
+                };
+                match admit_block_history(db, chain_id, tx, block_to_ingest)
+                    .await?
+                {
+                    ControlFlow::Break(outcome) => outcome,
+                    ControlFlow::Continue((tx, _)) => {
+                        tx.rollback().await?;
+                        return Err(error);
+                    }
+                }
+            }
+        };
         match result {
             IngestResult::Complete if repair.take().is_some() => continue,
             IngestResult::Complete => return Ok(result),
@@ -158,11 +308,27 @@ pub fn validate_block_logs(block: &BlockLogs<Log>) -> Result<(), sqlx::Error> {
 }
 
 /// Validate decoded executor metadata before admitting the event to ingestion.
+#[cfg(test)]
 fn validate_tfhe_event(
     event: &TfheContract::TfheContractEvents,
     chain_id: u64,
 ) -> Result<(), &'static str> {
+    validate_tfhe_event_for_version(event, chain_id, None)
+}
+
+fn validate_tfhe_event_for_version(
+    event: &TfheContract::TfheContractEvents,
+    chain_id: u64,
+    executor_version: Option<ExecutorVersion>,
+) -> Result<(), &'static str> {
     validate_scalar_mode(event)?;
+    validate_type_metadata(event)?;
+    match executor_version {
+        Some(version) => {
+            validate_scalar_values_for_executor_version(event, version)?
+        }
+        None => validate_scalar_values(event)?,
+    }
     validate_collection_shape(event)?;
     for handle in tfhe_result_handles(event) {
         validate_computed_handle_metadata(&handle.0, chain_id)?;
@@ -443,6 +609,7 @@ fn is_valid_fallback_dst_handle(
     true
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 #[allow(clippy::too_many_arguments)]
 pub async fn ingest_block_logs(
     chain_id: ChainId,
@@ -455,11 +622,39 @@ pub async fn ingest_block_logs(
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<IngestResult, sqlx::Error> {
+    ingest_block_logs_with_executor_schedule(
+        chain_id,
+        db,
+        block_logs,
+        acl_contract_address,
+        tfhe_contract_address,
+        kms_generation_contract_address,
+        protocol_config_contract_address,
+        confidential_bridge_address,
+        options,
+        ExecutorVersionSchedule::default(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn ingest_block_logs_with_executor_schedule(
+    chain_id: ChainId,
+    db: &mut Database,
+    block_logs: &BlockLogs<Log>,
+    acl_contract_address: &Option<Address>,
+    tfhe_contract_address: &Option<Address>,
+    kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
+    confidential_bridge_address: &Option<Address>,
+    options: IngestOptions,
+    executor_version_schedule: ExecutorVersionSchedule,
+) -> Result<IngestResult, sqlx::Error> {
     let Some(tx) = db.new_transaction().await? else {
         info!("cutover completed — host-listener skipping block ingest (retired stack)");
         return Ok(IngestResult::Complete);
     };
-    ingest_block_logs_in_transaction(
+    ingest_block_logs_in_transaction_with_executor_schedule(
         chain_id,
         db,
         tx,
@@ -470,17 +665,19 @@ pub async fn ingest_block_logs(
         protocol_config_contract_address,
         confidential_bridge_address,
         options,
+        executor_version_schedule,
     )
     .await
 }
 
 /// Ingest using the caller's transaction, preserving locks acquired before
 /// ingestion. Consumes and commits the transaction on success.
+#[cfg(any(test, feature = "test-utils"))]
 #[allow(clippy::too_many_arguments)]
 pub async fn ingest_block_logs_in_transaction(
     chain_id: ChainId,
     db: &Database,
-    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    tx: sqlx::Transaction<'_, sqlx::Postgres>,
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
@@ -488,6 +685,36 @@ pub async fn ingest_block_logs_in_transaction(
     protocol_config_contract_address: &Option<Address>,
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
+) -> Result<IngestResult, sqlx::Error> {
+    ingest_block_logs_in_transaction_with_executor_schedule(
+        chain_id,
+        db,
+        tx,
+        block_logs,
+        acl_contract_address,
+        tfhe_contract_address,
+        kms_generation_contract_address,
+        protocol_config_contract_address,
+        confidential_bridge_address,
+        options,
+        ExecutorVersionSchedule::default(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn ingest_block_logs_in_transaction_with_executor_schedule(
+    chain_id: ChainId,
+    db: &Database,
+    tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    block_logs: &BlockLogs<Log>,
+    acl_contract_address: &Option<Address>,
+    tfhe_contract_address: &Option<Address>,
+    kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
+    confidential_bridge_address: &Option<Address>,
+    options: IngestOptions,
+    mut executor_version_schedule: ExecutorVersionSchedule,
 ) -> Result<IngestResult, sqlx::Error> {
     validate_block_logs(block_logs)?;
 
@@ -541,71 +768,48 @@ pub async fn ingest_block_logs_in_transaction(
     }
     let touched_handles = touched_handles.into_iter().collect::<Vec<_>>();
 
-    // The identity/parent check and all block writes share one per-chain
-    // admission lock. A second replica must observe this transaction's rows
-    // before it can admit a conflicting finalized block. It also serializes
-    // computation/ACL reconciliation for overlapping deliveries, so the
-    // per-handle lock stripes used in v0.14 are unnecessary here.
     use fhevm_engine_common::chain_recovery::{
-        host_role_tx, lock_history_tx, record_halt, HistoryMismatch,
-        ListenerSource,
+        record_halt, HistoryMismatch, ListenerSource,
     };
-    let history_role = host_role_tx(&mut tx).await?;
-    lock_history_tx(
-        &mut tx,
-        ListenerSource::Host,
-        history_role,
-        chain_id.as_i64(),
-    )
-    .await?;
-    if let Some(conflict) = host_history_conflict(
-        &mut tx,
-        chain_id,
-        i64::try_from(block_logs.summary.number)
-            .map_err(|err| sqlx::Error::Protocol(err.to_string()))?,
-        block_logs.summary.hash.as_slice(),
-        Some(block_logs.summary.parent_hash.as_slice()),
-    )
-    .await?
-    {
-        tx.rollback().await?;
-        if !block_logs.finalized {
-            // Live subscriptions and the broker's independent live/final
-            // queues can deliver an old fork after its replacement finalized.
-            // This observation makes no new canonical claim: discard it
-            // without touching work or containing the already-consistent DB.
-            warn!(
-                block_number = block_logs.summary.number,
-                block_hash = ?block_logs.summary.hash,
-                conflict_height = conflict.block_number,
-                "Ignoring delayed non-finalized block outside committed history"
-            );
-            return Ok(IngestResult::Complete);
-        }
-        record_halt(
-            &db.pool().await,
-            conflict.observation(
-                ListenerSource::Host,
-                history_role,
-                chain_id.as_i64(),
-            ),
-        )
-        .await?;
-        return Err(sqlx::Error::Protocol(conflict.reason.into()));
-    }
-    if block_logs.finalized {
-        if let Some(block_number) =
-            super::history_verification::missing_finalized_link(
-                &mut tx,
-                chain_id.as_i64(),
-                block_logs.summary.number as i64,
-                block_logs.summary.hash.as_slice(),
-                Some(block_logs.summary.parent_hash.as_slice()),
+    let (mut tx, history_role) =
+        match admit_block_history(db, chain_id, tx, block_logs).await? {
+            ControlFlow::Continue(admitted) => admitted,
+            ControlFlow::Break(outcome) => return Ok(outcome),
+        };
+
+    // Resolution happens outside the transaction. Another replica may have
+    // committed more upgrade evidence while we were waiting for admission.
+    if executor_version_schedule.tracks_versions() {
+        if let Some(proxy) = tfhe_contract_address {
+            if let Some(expected) = executor_version_schedule.parent_checkpoint
+            {
+                let current = load_parent_executor_version(
+                    &mut *tx,
+                    chain_id,
+                    &block_logs.summary,
+                    *proxy,
+                )
+                .await?;
+                if current != expected {
+                    return Err(sqlx::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::WouldBlock,
+                        "Parent executor checkpoint changed; retry version resolution",
+                    )));
+                }
+            }
+
+            if let (_, Some(saved)) = load_executor_schedule(
+                &mut *tx,
+                chain_id,
+                &block_logs.summary,
+                *proxy,
             )
             .await?
-        {
-            tx.rollback().await?;
-            return Ok(IngestResult::NeedsHistory(HistoryGap { block_number }));
+            {
+                executor_version_schedule
+                    .merge_checkpoint(&saved)
+                    .map_err(|reason| sqlx::Error::Protocol(reason.into()))?;
+            }
         }
     }
 
@@ -759,10 +963,29 @@ pub async fn ingest_block_logs_in_transaction(
                 TfheContract::TfheContractEvents::SELECTORS,
             ) {
                 DecodedEvent::Decoded(event) => {
-                    validate_tfhe_event(&event.data, chain_id.as_u64())
-                        .map_err(|reason| {
-                            sqlx::Error::Protocol(reason.into())
-                        })?;
+                    let executor_version = log.log_index.map_or_else(
+                        || executor_version_schedule.ending_version(),
+                        |log_index| {
+                            executor_version_schedule
+                                .version_for_log_index(log_index)
+                        },
+                    );
+                    if executor_version_schedule.tracks_versions()
+                        && !is_synthetic
+                        && executor_version.is_none()
+                        && requires_executor_version(&log.inner)
+                    {
+                        return Err(sqlx::Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::WouldBlock,
+                            "Executor checkpoint changed; retry version resolution for FHE event",
+                        )));
+                    }
+                    validate_tfhe_event_for_version(
+                        &event.data,
+                        chain_id.as_u64(),
+                        executor_version,
+                    )
+                    .map_err(|reason| sqlx::Error::Protocol(reason.into()))?;
                     // Old handles did not commit operand origin. Recognize
                     // their exact preimage, not a guessed activation height.
                     // Wildcard development configurations without an ACL
@@ -1287,6 +1510,33 @@ pub async fn ingest_block_logs_in_transaction(
         allow_event_count,
     )
     .await?;
+    if executor_version_schedule.tracks_versions() {
+        if let Some(tfhe_address) = tfhe_contract_address {
+            let version =
+                executor_version_schedule.ending_version().map(|version| {
+                    format!(
+                        "FHEVMExecutor v{}.{}.{}",
+                        version.major, version.minor, version.patch
+                    )
+                });
+            sqlx::query(
+                "UPDATE host_chain_blocks_valid \
+                 SET tfhe_executor_address = $1, tfhe_executor_version = \
+                     CASE WHEN tfhe_executor_address = $1 AND tfhe_executor_schedule IS NULL \
+                          THEN COALESCE($2, tfhe_executor_version) ELSE $2 END, \
+                     tfhe_executor_schedule = $6 \
+                 WHERE chain_id = $3 AND block_number = $4 AND block_hash = $5",
+            )
+            .bind(tfhe_address.as_slice())
+            .bind(version)
+            .bind(chain_id.as_i64())
+            .bind(block_number as i64)
+            .bind(block_hash.as_slice())
+            .bind(sqlx::types::Json(&executor_version_schedule))
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
     // A replay's inferred grouping can differ from the persisted computation's
     // chain. Order the union before taking any chain row locks: two separately
     // sorted passes can still deadlock (inferred B -> stored A vs A -> B).
@@ -1390,6 +1640,90 @@ pub async fn ingest_block_logs_in_transaction(
 /// existing finalizer. Admission and deferred finalization both call this while
 /// holding the same history lock. An absent legacy parent is unknown, so only
 /// the same-height and successor checks apply in that case.
+/// An obsolete delivery or a missing finalized link can be handled even when
+/// the version RPC no longer serves that fork. A caller continuing ingestion
+/// holds the same admission lock through commit.
+pub(crate) async fn admit_block_history<'a>(
+    db: &Database,
+    chain_id: ChainId,
+    mut tx: sqlx::Transaction<'a, sqlx::Postgres>,
+    block_logs: &BlockLogs<Log>,
+) -> Result<
+    ControlFlow<IngestResult, (sqlx::Transaction<'a, sqlx::Postgres>, bool)>,
+    sqlx::Error,
+> {
+    // The identity/parent check and all block writes share one per-chain
+    // admission lock. A second replica must observe this transaction's rows
+    // before it can admit a conflicting finalized block. It also serializes
+    // computation/ACL reconciliation for overlapping deliveries, so the
+    // per-handle lock stripes used in v0.14 are unnecessary here.
+    use fhevm_engine_common::chain_recovery::{
+        host_role_tx, lock_history_tx, record_halt, ListenerSource,
+    };
+    let history_role = host_role_tx(&mut tx).await?;
+    lock_history_tx(
+        &mut tx,
+        ListenerSource::Host,
+        history_role,
+        chain_id.as_i64(),
+    )
+    .await?;
+    if let Some(conflict) = host_history_conflict(
+        &mut tx,
+        chain_id,
+        i64::try_from(block_logs.summary.number)
+            .map_err(|err| sqlx::Error::Protocol(err.to_string()))?,
+        block_logs.summary.hash.as_slice(),
+        Some(block_logs.summary.parent_hash.as_slice()),
+    )
+    .await?
+    {
+        tx.rollback().await?;
+        if !block_logs.finalized {
+            // Live subscriptions and the broker's independent live/final
+            // queues can deliver an old fork after its replacement finalized.
+            // This observation makes no new canonical claim: discard it
+            // without touching work or containing the already-consistent DB.
+            warn!(
+                block_number = block_logs.summary.number,
+                block_hash = ?block_logs.summary.hash,
+                conflict_height = conflict.block_number,
+                "Ignoring delayed non-finalized block outside committed history"
+            );
+            return Ok(ControlFlow::Break(IngestResult::Complete));
+        }
+        record_halt(
+            &db.pool().await,
+            conflict.observation(
+                ListenerSource::Host,
+                history_role,
+                chain_id.as_i64(),
+            ),
+        )
+        .await?;
+        return Err(sqlx::Error::Protocol(conflict.reason.into()));
+    }
+    if block_logs.finalized {
+        if let Some(block_number) =
+            super::history_verification::missing_finalized_link(
+                &mut tx,
+                chain_id.as_i64(),
+                block_logs.summary.number as i64,
+                block_logs.summary.hash.as_slice(),
+                Some(block_logs.summary.parent_hash.as_slice()),
+            )
+            .await?
+        {
+            tx.rollback().await?;
+            return Ok(ControlFlow::Break(IngestResult::NeedsHistory(
+                HistoryGap { block_number },
+            )));
+        }
+    }
+
+    Ok(ControlFlow::Continue((tx, history_role)))
+}
+
 async fn host_history_conflict(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     chain_id: ChainId,
@@ -2648,9 +2982,268 @@ mod tests {
     use crate::contracts::TfheContract;
     use crate::contracts::TfheContract::TfheContractEvents;
     use crate::database::tfhe_event_propagate::ClearConst;
-    use alloy::primitives::{Address, FixedBytes};
+    use alloy::primitives::{Address, FixedBytes, U256};
+    use alloy::sol_types::SolEvent;
 
     use super::*;
+
+    #[tokio::test]
+    async fn executor_schedule_migration_updates_existing_green_schema() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::PgPool::connect(instance.db_url.as_str())
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::raw_sql(
+            r#"CREATE SCHEMA "gcs-executor-checkpoint-test";
+               CREATE TABLE "gcs-executor-checkpoint-test".host_chain_blocks_valid
+                   (LIKE public.host_chain_blocks_valid INCLUDING ALL);
+               ALTER TABLE "gcs-executor-checkpoint-test".host_chain_blocks_valid
+                   DROP COLUMN tfhe_executor_schedule;
+               INSERT INTO "gcs-executor-checkpoint-test".host_chain_blocks_valid
+                   (chain_id, block_hash, block_number, block_status, tfhe_executor_version)
+                   VALUES (42, decode('64', 'hex'), 100, 'finalized', 'FHEVMExecutor v0.6.0');"#,
+        ).execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(include_str!("../../../db-migration/migrations/20261119120000_host_executor_schedule.sql"))
+            .execute(&mut *tx).await.unwrap();
+        let row: (String, Option<serde_json::Value>) = sqlx::query_as(
+            r#"SELECT tfhe_executor_version, tfhe_executor_schedule
+               FROM "gcs-executor-checkpoint-test".host_chain_blocks_valid WHERE chain_id=42"#,
+        ).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(row, ("FHEVMExecutor v0.6.0".to_owned(), None));
+        tx.commit().await.unwrap();
+    }
+
+    #[test]
+    fn ingestion_preserves_legacy_scalar_values_and_versions_typed_zero() {
+        let mut result = [0_u8; 32];
+        result[21] = COMPUTED_HANDLE_INDEX_MARKER;
+        result[22..30].copy_from_slice(&1_u64.to_be_bytes());
+        result[30] = 2;
+        result[31] = HANDLE_VERSION;
+        let make_event = |result, pt| {
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt,
+                toType: 2,
+                result: FixedBytes(result),
+            })
+        };
+        assert_eq!(
+            validate_tfhe_event(&make_event(result, U256::from(255)), 1),
+            Ok(())
+        );
+
+        assert_eq!(
+            validate_tfhe_event(&make_event(result, U256::from(256)), 1),
+            Ok(()),
+            "legacy trivial-encryption values outside the current type range remain replayable"
+        );
+
+        result[30] = 3;
+        let event = make_event(result, U256::ZERO);
+        assert_eq!(
+            validate_tfhe_event(&event, 1),
+            Err("event result type disagrees with operation metadata")
+        );
+
+        result[30] = 2;
+        let mut lhs = [0_u8; 32];
+        lhs[30] = 2;
+        lhs[31] = HANDLE_VERSION;
+        let division_event = |rhs: U256| {
+            TfheContractEvents::FheDiv(TfheContract::FheDiv {
+                caller: Address::ZERO,
+                lhs: FixedBytes(lhs),
+                rhs: FixedBytes(rhs.to_be_bytes::<32>()),
+                scalarByte: FixedBytes([1]),
+                result: FixedBytes(result),
+            })
+        };
+        for version in [
+            None,
+            Some(ExecutorVersion::new(0, 2, 0)),
+            Some(ExecutorVersion::new(0, 3, 0)),
+        ] {
+            assert_eq!(
+                validate_tfhe_event_for_version(
+                    &division_event(U256::from(256)),
+                    1,
+                    version
+                ),
+                Ok(())
+            );
+            assert_eq!(
+                validate_tfhe_event_for_version(
+                    &division_event(U256::ZERO),
+                    1,
+                    version
+                ),
+                Err("division/remainder scalar divisor is zero")
+            );
+        }
+        for version in
+            [ExecutorVersion::new(0, 4, 0), ExecutorVersion::new(0, 7, 0)]
+        {
+            assert_eq!(
+                validate_tfhe_event_for_version(
+                    &division_event(U256::from(256)),
+                    1,
+                    Some(version)
+                ),
+                Err(
+                    "division/remainder scalar divisor is zero for its FheType"
+                )
+            );
+        }
+        let TfheContractEvents::FheDiv(div) = division_event(U256::from(256))
+        else {
+            unreachable!()
+        };
+        let rem = TfheContractEvents::FheRem(TfheContract::FheRem {
+            caller: div.caller,
+            lhs: div.lhs,
+            rhs: div.rhs,
+            scalarByte: div.scalarByte,
+            result: div.result,
+        });
+        assert!(validate_tfhe_event_for_version(
+            &rem,
+            1,
+            Some(ExecutorVersion::new(0, 2, 0))
+        )
+        .is_ok());
+        assert!(validate_tfhe_event_for_version(
+            &rem,
+            1,
+            Some(ExecutorVersion::new(0, 4, 0))
+        )
+        .is_err());
+        assert_eq!(
+            validate_tfhe_event(&division_event(U256::from(257)), 1),
+            Ok(())
+        );
+
+        let mul_div_event = |divisor: U256| {
+            TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+                caller: Address::ZERO,
+                factor1: FixedBytes(lhs),
+                factor2: FixedBytes(U256::from(256).to_be_bytes::<32>()),
+                divisor: FixedBytes(divisor.to_be_bytes::<32>()),
+                scalarByte: FixedBytes([3]),
+                result: FixedBytes(result),
+            })
+        };
+        assert_eq!(
+            validate_tfhe_event(&mul_div_event(U256::from(256)), 1),
+            Err("MulDiv divisor is zero for its FheType")
+        );
+        assert_eq!(
+            validate_tfhe_event(&mul_div_event(U256::from(257)), 1),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn scalar_admission_matches_historical_executor_implementations() {
+        let handle = |ty| {
+            let mut bytes = [0_u8; 32];
+            bytes[21] = COMPUTED_HANDLE_INDEX_MARKER;
+            bytes[22..30].copy_from_slice(&1_u64.to_be_bytes());
+            bytes[30] = ty;
+            bytes[31] = HANDLE_VERSION;
+            FixedBytes(bytes)
+        };
+        // 1515d36df5 added all three range checks together, with the 0.6 ->
+        // 0.7 version bump. The old executor accepted these exact arguments.
+        let scalar = FixedBytes(U256::from(257).to_be_bytes::<32>());
+        let events = [
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: U256::from(256),
+                toType: 2,
+                result: handle(2),
+            }),
+            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                caller: Address::ZERO,
+                lhs: handle(2),
+                rhs: scalar,
+                scalarByte: FixedBytes([1]),
+                result: handle(2),
+            }),
+            TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+                caller: Address::ZERO,
+                factor1: handle(2),
+                factor2: scalar,
+                divisor: scalar,
+                scalarByte: FixedBytes([3]),
+                result: handle(2),
+            }),
+        ];
+        for event in &events {
+            for version in
+                [ExecutorVersion::new(0, 5, 0), ExecutorVersion::new(0, 6, 0)]
+            {
+                assert!(validate_tfhe_event_for_version(
+                    event,
+                    1,
+                    Some(version)
+                )
+                .is_ok());
+            }
+            assert!(validate_tfhe_event_for_version(
+                event,
+                1,
+                Some(ExecutorVersion::new(0, 7, 0))
+            )
+            .is_err());
+        }
+
+        // fb301b1d35 added the uint8 shift/rotate cap without changing 0.7.
+        // Versioned admission must accept the earlier implementation's logs.
+        let amount = FixedBytes(U256::from(256).to_be_bytes::<32>());
+        let shifts = [
+            TfheContractEvents::FheShl(TfheContract::FheShl {
+                caller: Address::ZERO,
+                lhs: handle(3),
+                rhs: amount,
+                scalarByte: FixedBytes([1]),
+                result: handle(3),
+            }),
+            TfheContractEvents::FheShr(TfheContract::FheShr {
+                caller: Address::ZERO,
+                lhs: handle(3),
+                rhs: amount,
+                scalarByte: FixedBytes([1]),
+                result: handle(3),
+            }),
+            TfheContractEvents::FheRotl(TfheContract::FheRotl {
+                caller: Address::ZERO,
+                lhs: handle(3),
+                rhs: amount,
+                scalarByte: FixedBytes([1]),
+                result: handle(3),
+            }),
+            TfheContractEvents::FheRotr(TfheContract::FheRotr {
+                caller: Address::ZERO,
+                lhs: handle(3),
+                rhs: amount,
+                scalarByte: FixedBytes([1]),
+                result: handle(3),
+            }),
+        ];
+        for event in &shifts {
+            assert!(validate_tfhe_event_for_version(
+                event,
+                1,
+                Some(ExecutorVersion::new(0, 7, 0))
+            )
+            .is_ok());
+            assert!(crate::database::event_operands::validate_scalar_values_for_current_executor(event).is_err());
+        }
+    }
 
     fn fixture_chain(hash: u8, dependencies: &[u8]) -> Chain {
         Chain {
@@ -3679,5 +4272,149 @@ mod tests {
             assert!(logs_contain(message));
             assert!(logs_contain("host_chain_id=2"));
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn executor_upgrade_boundary_controls_scalar_admission_atomically() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let chain_id = ChainId::try_from(42_u64).expect("chain id");
+        let proxy = Address::with_last_byte(0x42);
+        let summary = BlockSummary {
+            number: 100,
+            hash: FixedBytes::with_last_byte(0x64),
+            parent_hash: FixedBytes::with_last_byte(0x63),
+            timestamp: 1_790_000_000,
+        };
+        let block_hash = summary.hash;
+        let make_log = |result_id: u8, pt: u64, log_index: u64| {
+            let mut handle = [0_u8; 32];
+            handle[0] = result_id;
+            handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
+            handle[22..30].copy_from_slice(&42_u64.to_be_bytes());
+            handle[30] = 2;
+            handle[31] = HANDLE_VERSION;
+            let event = TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: U256::from(pt),
+                toType: 2,
+                result: FixedBytes(handle),
+            };
+            Log {
+                inner: alloy::primitives::Log {
+                    address: proxy,
+                    data: event.encode_log_data(),
+                },
+                block_number: Some(summary.number),
+                block_hash: Some(block_hash),
+                block_timestamp: Some(summary.timestamp),
+                transaction_hash: Some(FixedBytes::with_last_byte(0x90)),
+                transaction_index: Some(0),
+                log_index: Some(log_index),
+                removed: false,
+            }
+        };
+        let make_schedule = || {
+            let mut schedule = ExecutorVersionSchedule::new(Some(
+                ExecutorVersion::new(0, 6, 0),
+            ));
+            schedule.add_transition(1, Some(ExecutorVersion::new(0, 7, 0)));
+            schedule
+        };
+        let options = IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        };
+        let acl = None;
+        let kms = None;
+        let protocol = None;
+        let bridge = None;
+        let mut db = Database::new(&instance.db_url, chain_id, 16)
+            .await
+            .expect("database client");
+
+        let invalid_logs = vec![
+            // The upgrade is effective strictly after log index 1. This
+            // event remains v0.6 and is therefore valid despite the v0.7
+            // uint8 range check.
+            make_log(1, 256, 1),
+            // This event is after the upgrade and must fail the v0.7 bound.
+            make_log(2, 256, 2),
+        ];
+        let error = ingest_block_logs_with_executor_schedule(
+            chain_id,
+            &mut db,
+            &BlockLogs {
+                logs: invalid_logs,
+                summary,
+                catchup: false,
+                finalized: true,
+            },
+            &acl,
+            &Some(proxy),
+            &kms,
+            &protocol,
+            &bridge,
+            options.clone(),
+            make_schedule(),
+        )
+        .await
+        .expect_err("post-upgrade out-of-range value must be rejected");
+        assert!(error.to_string().contains("trivial-encryption value"));
+
+        let pool = db.pool().await;
+        let rolled_back_rows: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM host_chain_blocks_valid \
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(block_hash.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("query rollback state");
+        assert_eq!(
+            rolled_back_rows, 0,
+            "rejected block must roll back atomically"
+        );
+
+        let valid_logs = vec![make_log(1, 256, 1), make_log(2, 255, 2)];
+        ingest_block_logs_with_executor_schedule(
+            chain_id,
+            &mut db,
+            &BlockLogs {
+                logs: valid_logs,
+                summary,
+                catchup: false,
+                finalized: true,
+            },
+            &acl,
+            &Some(proxy),
+            &kms,
+            &protocol,
+            &bridge,
+            options,
+            make_schedule(),
+        )
+        .await
+        .expect("valid retry")
+        .require_complete()
+        .expect("valid retry must complete");
+
+        let counts: (i32, Option<String>) = sqlx::query_as(
+            "SELECT fhe_event_count, tfhe_executor_version \
+             FROM host_chain_blocks_valid \
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(block_hash.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("persisted accepted block");
+        assert_eq!(counts.0, 2);
+        assert_eq!(counts.1.as_deref(), Some("FHEVMExecutor v0.7.0"));
     }
 }

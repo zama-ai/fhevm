@@ -9,6 +9,12 @@ pragma solidity ^0.8.24;
 /// Then wrap ABI + bytecode + deployedBytecode as
 /// `{ "abi", "bytecode": { "object" }, "deployedBytecode": { "object" } }`.
 contract RawLog {
+    // The listeners query the configured executor's version before admitting
+    // FHE events. Keep this fixture on the current versioned validation path.
+    function getVersion() external pure returns (string memory) {
+        return "FHEVMExecutor v0.7.0";
+    }
+
     function emitLog(bytes32[] calldata topics, bytes calldata data) external {
         uint256 n = topics.length;
         require(n <= 4, "too many topics");

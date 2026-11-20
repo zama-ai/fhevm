@@ -1,13 +1,233 @@
 //! Pure application event metadata, shared by ingestion and application-only fuzz targets.
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
+use alloy::primitives::Address;
+use alloy::sol_types::SolEvent;
 use alloy_primitives::FixedBytes;
+use alloy_primitives::Log as PrimitiveLog;
+use alloy_primitives::U256;
 use fhevm_engine_common::handle_metadata::get_ct_type;
 
 type Handle = FixedBytes<32>;
 type ScalarByte = FixedBytes<1>;
 type OperandBoundaryMask = [u8; 32];
 const OPERAND_BOUNDARY_MASK_BYTES: usize = 32;
+
+/// Semantic version reported by `FHEVMExecutor.getVersion()`.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub struct ExecutorVersion {
+    pub major: u64,
+    pub minor: u64,
+    pub patch: u64,
+}
+
+impl ExecutorVersion {
+    pub const fn new(major: u64, minor: u64, patch: u64) -> Self {
+        Self {
+            major,
+            minor,
+            patch,
+        }
+    }
+
+    /// Accept the released executor versions whose validation rules are known.
+    pub fn parse(value: &str) -> Option<Self> {
+        let version = value.strip_prefix("FHEVMExecutor v")?;
+        let mut components = version.split('.');
+        let major = parse_canonical_component(components.next()?)?;
+        let minor = parse_canonical_component(components.next()?)?;
+        let patch = parse_canonical_component(components.next()?)?;
+        if components.next().is_some()
+            || !matches!((major, minor, patch), (0, 1..=7, 0))
+        {
+            return None;
+        }
+        let parsed = Self {
+            major,
+            minor,
+            patch,
+        };
+        Some(parsed)
+    }
+}
+
+fn parse_canonical_component(value: &str) -> Option<u64> {
+    if value.is_empty()
+        || (value.len() > 1 && value.starts_with('0'))
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    value.parse().ok()
+}
+
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
+pub struct ExecutorVersionTransition {
+    /// The new implementation is active after the `Upgraded` log at this index.
+    pub after_log_index: u64,
+    pub implementation: Option<Address>,
+    /// `None` means the version was not needed for any operation in this segment.
+    pub version: Option<ExecutorVersion>,
+}
+
+/// Executor version at a block's start and any upgrades observed in that block.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
+pub struct ExecutorVersionSchedule {
+    tracks_versions: bool,
+    pub(crate) initial_version: Option<ExecutorVersion>,
+    /// A canonical RPC read at the parent hash stays valid across partial
+    /// deliveries. A version inherited from the parent row can be corrected.
+    #[serde(default)]
+    pub(crate) initial_version_from_rpc: bool,
+    pub(crate) transitions: Vec<ExecutorVersionTransition>,
+    /// The parent's DB value observed before RPC resolution, checked at commit.
+    /// Outer None is used by test-only schedules that bypass the resolver.
+    #[serde(skip)]
+    pub(crate) parent_checkpoint: Option<Option<ExecutorVersion>>,
+}
+
+impl ExecutorVersionSchedule {
+    pub fn new(initial_version: Option<ExecutorVersion>) -> Self {
+        Self {
+            tracks_versions: true,
+            initial_version,
+            initial_version_from_rpc: false,
+            transitions: Vec::new(),
+            parent_checkpoint: None,
+        }
+    }
+
+    pub(crate) fn tracks_versions(&self) -> bool {
+        self.tracks_versions
+    }
+
+    pub fn add_transition(
+        &mut self,
+        after_log_index: u64,
+        version: Option<ExecutorVersion>,
+    ) {
+        self.transitions.push(ExecutorVersionTransition {
+            after_log_index,
+            implementation: None,
+            version,
+        });
+        self.transitions
+            .sort_by_key(|transition| transition.after_log_index);
+    }
+
+    /// Combine observations of the same block and proxy. A partial delivery may
+    /// omit an upgrade or fail its lookup, but cannot erase an earlier success.
+    pub(crate) fn merge_checkpoint(
+        &mut self,
+        saved: &Self,
+    ) -> Result<(), &'static str> {
+        if saved.initial_version_from_rpc {
+            if self.initial_version_from_rpc
+                && self.initial_version != saved.initial_version
+            {
+                return Err("Conflicting canonical executor versions at the same parent hash");
+            }
+            self.initial_version = saved.initial_version;
+            self.initial_version_from_rpc = true;
+        }
+        for transition in &saved.transitions {
+            if let Some(current) = self.transitions.iter_mut().find(|current| {
+                current.after_log_index == transition.after_log_index
+            }) {
+                if current.implementation.is_some()
+                    && transition.implementation.is_some()
+                    && current.implementation != transition.implementation
+                {
+                    return Err("Conflicting executor implementations at the same upgrade log");
+                }
+                if current.version.is_some()
+                    && transition.version.is_some()
+                    && current.version != transition.version
+                {
+                    return Err(
+                        "Conflicting executor versions at the same upgrade log",
+                    );
+                }
+                current.implementation =
+                    current.implementation.or(transition.implementation);
+                current.version = current.version.or(transition.version);
+            } else {
+                self.transitions.push(*transition);
+            }
+        }
+        self.transitions
+            .sort_by_key(|transition| transition.after_log_index);
+        Ok(())
+    }
+
+    pub fn version_for_log_index(
+        &self,
+        log_index: u64,
+    ) -> Option<ExecutorVersion> {
+        let mut version = self.initial_version;
+        for transition in &self.transitions {
+            if transition.after_log_index >= log_index {
+                break;
+            }
+            version = transition.version;
+        }
+        version
+    }
+
+    pub fn ending_version(&self) -> Option<ExecutorVersion> {
+        self.transitions
+            .last()
+            .map_or(self.initial_version, |transition| transition.version)
+    }
+}
+
+pub(crate) fn requires_executor_version(log: &PrimitiveLog) -> bool {
+    log.data.topics().first().is_some_and(|selector| {
+        *selector != TfheContract::Initialized::SIGNATURE_HASH
+            && *selector != TfheContract::Upgraded::SIGNATURE_HASH
+            && TfheContractEvents::SELECTORS.contains(&selector.0)
+    })
+}
+
+/// Extract the configured executor proxy's implementation changes from a
+/// block. A new implementation is effective after its `Upgraded` log index.
+pub fn executor_upgrade_transitions_for_proxy<'a>(
+    logs: impl IntoIterator<Item = (Option<u64>, &'a PrimitiveLog)>,
+    tfhe_proxy: Address,
+) -> Vec<(u64, Address)> {
+    let mut upgrades = logs
+        .into_iter()
+        .filter_map(|(log_index, log)| {
+            if log.address != tfhe_proxy {
+                return None;
+            }
+            let log_index = log_index?;
+            if log.data.topics().first()
+                != Some(&TfheContract::Upgraded::SIGNATURE_HASH)
+            {
+                return None;
+            }
+            let upgraded = TfheContract::Upgraded::decode_log(log).ok()?;
+            Some((log_index, upgraded.implementation))
+        })
+        .collect::<Vec<_>>();
+    upgrades.sort_by_key(|(log_index, _)| *log_index);
+    upgrades
+}
 
 /// Before executor d28bce3ae (October 2025), binary operations masked the
 /// scalar byte's low bit but emitted the original byte. Replay can cross that
@@ -62,10 +282,764 @@ pub fn validate_scalar_mode(
     }
 }
 
+fn scalar_is_zero_for_type(
+    value: U256,
+    handle_type: &Handle,
+) -> Result<bool, &'static str> {
+    let width = match get_ct_type(handle_type.as_slice()) {
+        Some(2) => 8,
+        Some(3) => 16,
+        Some(4) => 32,
+        Some(5) => 64,
+        Some(6) => 128,
+        _ => {
+            return Err("division/remainder has an unsupported operand FheType")
+        }
+    };
+    let mask = (U256::from(1) << width) - U256::from(1);
+    Ok((value & mask) == U256::ZERO)
+}
+
+/// Validate only scalar-value constraints shared by the executor versions
+/// whose events the listener may replay. This checks event arguments and
+/// handle metadata only; it never reads ciphertexts or calls a TFHE operation.
+/// Binary scalar range checks, trivial-encryption range checks and MulDiv
+/// scalar range checks were added after older executors could emit those
+/// events. Since logs do not carry an executor activation version, enforcing
+/// the newer checks here could reject valid history. Div/Rem rejected only a
+/// full-word zero in the oldest supported versions. Version 0.3.0 was reused
+/// before and after typed-zero checks were introduced, so only v0.4.0 and later
+/// establish those checks. MulDiv typed-zero checks have been present since
+/// v0.14 introduced it. The oldest bounded-random events only required a nonzero
+/// power of two. Old shift events can have full-width amounts.
+pub fn validate_scalar_values(
+    op: &TfheContractEvents,
+) -> Result<(), &'static str> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+
+    match op {
+        E::FheDiv(C::FheDiv {
+            rhs, scalarByte, ..
+        })
+        | E::FheRem(C::FheRem {
+            rhs, scalarByte, ..
+        }) => {
+            if binary_rhs_is_scalar(scalarByte)
+                && U256::from_be_bytes(rhs.0) == U256::ZERO
+            {
+                Err("division/remainder scalar divisor is zero")
+            } else {
+                Ok(())
+            }
+        }
+        E::FheMulDiv(C::FheMulDiv {
+            factor1, divisor, ..
+        }) => {
+            if !matches!(get_ct_type(factor1.as_slice()), Some(2..=5)) {
+                return Err("MulDiv has an unsupported operand FheType");
+            }
+            if scalar_is_zero_for_type(U256::from_be_bytes(divisor.0), factor1)?
+            {
+                Err("MulDiv divisor is zero for its FheType")
+            } else {
+                Ok(())
+            }
+        }
+        E::FheRandBounded(C::FheRandBounded {
+            upperBound,
+            randType,
+            ..
+        }) => {
+            if !matches!(*randType, 2..=6 | 8) {
+                return Err("bounded-random target has an unsupported FheType");
+            }
+            if *upperBound == U256::ZERO
+                || (*upperBound & (*upperBound - U256::from(1))) != U256::ZERO
+            {
+                return Err(
+                    "bounded-random upper bound is not a nonzero power of two",
+                );
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Apply scalar-range checks introduced by the currently active executor.
+pub fn validate_scalar_values_for_current_executor(
+    op: &TfheContractEvents,
+) -> Result<(), &'static str> {
+    validate_scalar_values_for_executor_version(
+        op,
+        ExecutorVersion::new(0, 7, 0),
+    )?;
+    // This helper describes the checked-in implementation, not every contract
+    // reporting v0.7. Historical ingestion must use the versioned helper below.
+    if let Some((rhs, scalar_byte)) = scalar_shift_operands(op) {
+        if binary_rhs_is_scalar(scalar_byte)
+            && U256::from_be_bytes(rhs.0) > U256::from(u8::MAX)
+        {
+            return Err("scalar shift exceeds the current executor range");
+        }
+    }
+    Ok(())
+}
+
+/// Apply only constraints shared by every implementation reporting this version.
+/// Div/Rem typed-zero checks were added to a v0.3 implementation in March 2026
+/// (2da166bece), but a September 2025 implementation also reported v0.3 without
+/// those checks (7e12c8bfc1), then the version reset to v0.1. Only v0.4 onward
+/// guarantees the typed-zero checks. Scalar range checks
+/// for trivial encryption, binary operations and MulDiv started in v0.7
+/// (1515d36df5). The later uint8 shift cap (fb301b1d35) did NOT bump v0.7, so a
+/// version string cannot establish that cap. Historical ingestion accepts the
+/// earlier v0.7 range until implementation-specific activation evidence exists.
+pub fn validate_scalar_values_for_executor_version(
+    op: &TfheContractEvents,
+    version: ExecutorVersion,
+) -> Result<(), &'static str> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+
+    const V0_4_0: ExecutorVersion = ExecutorVersion::new(0, 4, 0);
+    const V0_7_0: ExecutorVersion = ExecutorVersion::new(0, 7, 0);
+
+    fn fits(value: U256, ty: i16) -> bool {
+        let width = match ty {
+            0 => 1,
+            2 => 8,
+            3 => 16,
+            4 => 32,
+            5 => 64,
+            6 => 128,
+            7 => 160,
+            8 => return true,
+            _ => return false,
+        };
+        value < (U256::from(1) << width)
+    }
+
+    validate_scalar_values(op)?;
+
+    if version >= V0_4_0 {
+        // 79a316a8e2 added this limit in October 2025 without bumping v0.3.
+        // Like typed-zero checks, only v0.4 onward guarantees it was present.
+        if let E::FheRandBounded(C::FheRandBounded {
+            upperBound,
+            randType,
+            ..
+        }) = op
+        {
+            let width = match *randType {
+                2 => 8,
+                3 => 16,
+                4 => 32,
+                5 => 64,
+                6 => 128,
+                _ => 256,
+            };
+            if width < 256 && *upperBound > (U256::from(1) << width) {
+                return Err(
+                    "bounded-random upper bound exceeds its FheType range",
+                );
+            }
+        }
+        if let E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        }) = op
+        {
+            if binary_rhs_is_scalar(scalarByte)
+                && scalar_is_zero_for_type(U256::from_be_bytes(rhs.0), lhs)?
+            {
+                return Err(
+                    "division/remainder scalar divisor is zero for its FheType",
+                );
+            }
+        }
+    }
+
+    if version >= V0_7_0 {
+        if let E::TrivialEncrypt(C::TrivialEncrypt { pt, toType, .. }) = op {
+            if !fits(*pt, i16::from(*toType)) {
+                return Err(
+                    "trivial-encryption value exceeds its target FheType range",
+                );
+            }
+        }
+    }
+
+    if version >= V0_7_0 {
+        if let Some((lhs, rhs, scalar_byte)) = binary_event_operands(op) {
+            if binary_rhs_is_scalar(scalar_byte)
+                && !fits(
+                    U256::from_be_bytes(rhs.0),
+                    get_ct_type(lhs.as_slice()).unwrap_or(255),
+                )
+            {
+                return Err("binary scalar exceeds its operand FheType range");
+            }
+        }
+
+        if let E::FheMulDiv(C::FheMulDiv {
+            factor1,
+            factor2,
+            divisor,
+            scalarByte,
+            ..
+        }) = op
+        {
+            let ty = get_ct_type(factor1.as_slice()).unwrap_or(255);
+            if !fits(U256::from_be_bytes(divisor.0), ty)
+                || (fhe_mul_div_factor2_is_scalar(scalarByte)
+                    && !fits(U256::from_be_bytes(factor2.0), ty))
+            {
+                return Err("MulDiv scalar exceeds its factor FheType range");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn binary_event_operands(
+    op: &TfheContractEvents,
+) -> Option<(&Handle, &Handle, &ScalarByte)> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+
+    match op {
+        E::FheAdd(C::FheAdd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheSub(C::FheSub {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMul(C::FheMul {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitAnd(C::FheBitAnd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitOr(C::FheBitOr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitXor(C::FheBitXor {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheEq(C::FheEq {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheNe(C::FheNe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGe(C::FheGe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGt(C::FheGt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLe(C::FheLe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLt(C::FheLt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMin(C::FheMin {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMax(C::FheMax {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShl(C::FheShl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShr(C::FheShr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotl(C::FheRotl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotr(C::FheRotr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        }) => Some((lhs, rhs, scalarByte)),
+        _ => None,
+    }
+}
+
+fn scalar_shift_operands(
+    op: &TfheContractEvents,
+) -> Option<(&Handle, &ScalarByte)> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+
+    match op {
+        E::FheShl(C::FheShl {
+            rhs, scalarByte, ..
+        })
+        | E::FheShr(C::FheShr {
+            rhs, scalarByte, ..
+        })
+        | E::FheRotl(C::FheRotl {
+            rhs, scalarByte, ..
+        })
+        | E::FheRotr(C::FheRotr {
+            rhs, scalarByte, ..
+        }) => Some((rhs, scalarByte)),
+        _ => None,
+    }
+}
+
+/// Check the host operation's declared FheType metadata without inspecting any
+/// ciphertext bytes. These relationships are committed by the executor when
+/// it emits an event and must agree with the result handle before ingestion.
+pub fn validate_type_metadata(
+    op: &TfheContractEvents,
+) -> Result<(), &'static str> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+
+    const BOOL: u8 = 0;
+    const U8: u8 = 2;
+    const U16: u8 = 3;
+    const U32: u8 = 4;
+    const U64: u8 = 5;
+    const U128: u8 = 6;
+    const U160: u8 = 7;
+    const U256: u8 = 8;
+    const ARITHMETIC: &[u8] = &[U8, U16, U32, U64, U128];
+    const NUMERIC: &[u8] = &[U8, U16, U32, U64, U128, U256];
+    const BITWISE: &[u8] = &[BOOL, U8, U16, U32, U64, U128, U256];
+    const HOST_VALUE: &[u8] = &[BOOL, U8, U16, U32, U64, U128, U160, U256];
+    const MEMBERSHIP: &[u8] = &[U8, U16, U32, U64, U128, U160, U256];
+    const RANDOM: &[u8] = &[BOOL, U8, U16, U32, U64, U128, U256];
+
+    fn ty(handle: &Handle) -> u8 {
+        handle.0[30]
+    }
+    fn require_allowed(
+        handle: &Handle,
+        allowed: &[u8],
+    ) -> Result<u8, &'static str> {
+        let value = ty(handle);
+        if allowed.contains(&value) {
+            Ok(value)
+        } else {
+            Err("event operand has an unsupported FheType")
+        }
+    }
+    fn require_result_type(
+        handle: &Handle,
+        expected: u8,
+    ) -> Result<(), &'static str> {
+        if ty(handle) == expected {
+            Ok(())
+        } else {
+            Err("event result type disagrees with operation metadata")
+        }
+    }
+    fn binary(
+        lhs: &Handle,
+        rhs: &Handle,
+        scalar_byte: &ScalarByte,
+        result: &Handle,
+        allowed: &[u8],
+        bool_result: bool,
+    ) -> Result<(), &'static str> {
+        let lhs_type = require_allowed(lhs, allowed)?;
+        if !binary_rhs_is_scalar(scalar_byte) && ty(rhs) != lhs_type {
+            return Err("encrypted binary operands have different FheTypes");
+        }
+        require_result_type(result, if bool_result { BOOL } else { lhs_type })
+    }
+
+    match op {
+        E::FheAdd(C::FheAdd {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheSub(C::FheSub {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheMul(C::FheMul {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheMin(C::FheMin {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheMax(C::FheMax {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        }) => binary(lhs, rhs, scalarByte, result, ARITHMETIC, false),
+        E::FheBitAnd(C::FheBitAnd {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheBitOr(C::FheBitOr {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheBitXor(C::FheBitXor {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        }) => binary(lhs, rhs, scalarByte, result, BITWISE, false),
+        E::FheShl(C::FheShl {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheShr(C::FheShr {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheRotl(C::FheRotl {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheRotr(C::FheRotr {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        }) => binary(lhs, rhs, scalarByte, result, NUMERIC, false),
+        E::FheEq(C::FheEq {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheNe(C::FheNe {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        }) => binary(lhs, rhs, scalarByte, result, HOST_VALUE, true),
+        E::FheGe(C::FheGe {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheGt(C::FheGt {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheLe(C::FheLe {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheLt(C::FheLt {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        }) => binary(lhs, rhs, scalarByte, result, ARITHMETIC, true),
+        E::FheNeg(C::FheNeg { ct, result, .. }) => {
+            let input_type = require_allowed(ct, NUMERIC)?;
+            require_result_type(result, input_type)
+        }
+        E::FheNot(C::FheNot { ct, result, .. }) => {
+            let input_type = require_allowed(ct, BITWISE)?;
+            require_result_type(result, input_type)
+        }
+        E::Cast(C::Cast {
+            ct, toType, result, ..
+        }) => {
+            let input_type =
+                require_allowed(ct, &[BOOL, U8, U16, U32, U64, U128, U256])?;
+            if !NUMERIC.contains(toType) {
+                return Err("cast target has an unsupported FheType");
+            }
+            if input_type == *toType {
+                return Err("cast input and target FheTypes are identical");
+            }
+            require_result_type(result, *toType)
+        }
+        E::FheIfThenElse(C::FheIfThenElse {
+            control,
+            ifTrue,
+            ifFalse,
+            result,
+            ..
+        }) => {
+            require_allowed(control, &[BOOL])?;
+            let branch_type = require_allowed(ifTrue, HOST_VALUE)?;
+            if ty(ifFalse) != branch_type {
+                return Err("conditional branches have different FheTypes");
+            }
+            require_result_type(result, branch_type)
+        }
+        E::TrivialEncrypt(C::TrivialEncrypt { toType, result, .. }) => {
+            if !HOST_VALUE.contains(toType) {
+                return Err(
+                    "trivial-encryption target has an unsupported FheType",
+                );
+            }
+            require_result_type(result, *toType)
+        }
+        E::FheRand(C::FheRand {
+            randType, result, ..
+        }) => {
+            if !RANDOM.contains(randType) {
+                return Err("random target has an unsupported FheType");
+            }
+            require_result_type(result, *randType)
+        }
+        E::FheRandBounded(C::FheRandBounded {
+            randType, result, ..
+        }) => {
+            if !NUMERIC.contains(randType) {
+                return Err("bounded-random target has an unsupported FheType");
+            }
+            require_result_type(result, *randType)
+        }
+        E::FheSum(C::FheSum { values, result, .. }) => {
+            let result_type = require_allowed(result, ARITHMETIC)?;
+            if values.iter().any(|value| ty(value) != result_type) {
+                return Err("sum operands disagree with result FheType");
+            }
+            Ok(())
+        }
+        E::FheIsIn(C::FheIsIn {
+            value,
+            values,
+            result,
+            ..
+        }) => {
+            let value_type = require_allowed(value, MEMBERSHIP)?;
+            if values.iter().any(|element| ty(element) != value_type) {
+                return Err("membership operands have different FheTypes");
+            }
+            require_result_type(result, BOOL)
+        }
+        E::FheMulDiv(C::FheMulDiv {
+            factor1,
+            factor2,
+            scalarByte,
+            result,
+            ..
+        }) => {
+            let input_type = require_allowed(factor1, &[U8, U16, U32, U64])?;
+            if !fhe_mul_div_factor2_is_scalar(scalarByte)
+                && ty(factor2) != input_type
+            {
+                return Err("MulDiv encrypted factors have different FheTypes");
+            }
+            require_result_type(result, input_type)
+        }
+        E::VerifyInput(_) | E::Initialized(_) | E::Upgraded(_) => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod scalar_boundary_tests {
     use super::*;
     use alloy_primitives::Address;
+
+    #[test]
+    fn bounded_random_limits_follow_historical_executor_rules() {
+        for (ty, width) in
+            [(2, 8), (3, 16), (4, 32), (5, 64), (6, 128), (8, 256)]
+        {
+            let make_event = |bound| {
+                TfheContractEvents::FheRandBounded(
+                    TfheContract::FheRandBounded {
+                        caller: Address::ZERO,
+                        upperBound: bound,
+                        randType: ty,
+                        seed: Default::default(),
+                        result: Handle::ZERO,
+                    },
+                )
+            };
+            for minor in 1..=7 {
+                let version = ExecutorVersion::new(0, minor, 0);
+                for invalid in [U256::ZERO, U256::from(3)] {
+                    assert!(validate_scalar_values_for_executor_version(
+                        &make_event(invalid),
+                        version
+                    )
+                    .is_err());
+                }
+                let bound = U256::from(1) << width.min(255);
+                assert!(validate_scalar_values_for_executor_version(
+                    &make_event(bound),
+                    version
+                )
+                .is_ok());
+                if width < 256 {
+                    let over = make_event(bound << 1);
+                    assert!(validate_scalar_values(&over).is_ok());
+                    assert_eq!(
+                        validate_scalar_values_for_executor_version(
+                            &over, version
+                        )
+                        .is_ok(),
+                        minor < 4
+                    );
+                    assert!(validate_scalar_values_for_current_executor(&over)
+                        .is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn executor_version_parser_rejects_unreviewed_versions() {
+        for minor in 1..=7 {
+            let value = format!("FHEVMExecutor v0.{minor}.0");
+            assert_eq!(
+                ExecutorVersion::parse(&value),
+                Some(ExecutorVersion::new(0, minor, 0))
+            );
+        }
+        for value in [
+            "FHEVMExecutor v0.0.0",
+            "FHEVMExecutor v0.3.1",
+            "FHEVMExecutor v0.7.1",
+            "FHEVMExecutor v0.8.0",
+            "FHEVMExecutor v99.0.0",
+            "unknown executor",
+        ] {
+            assert_eq!(ExecutorVersion::parse(value), None, "{value}");
+        }
+    }
 
     fn shifts(rhs: Handle, flag: u8, ty: u8) -> [TfheContractEvents; 4] {
         use TfheContract as C;

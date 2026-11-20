@@ -4,12 +4,12 @@ use alloy::primitives::U256;
 use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::SolEvent;
-use host_listener::contracts::TfheContract::TrivialEncrypt;
+use host_listener::contracts::TfheContract::{TrivialEncrypt, Upgraded};
 use serial_test::serial;
 use std::time::Duration;
 use test_harness::instance::ImportMode;
 mod common;
-use common::{emit_log_request, RawLog};
+use common::{emit_log_request, trivial_encrypt_request, RawLog};
 
 /// Exercise the deployed websocket entry point, not just its admission helper.
 /// A malformed known event must terminate it before a later valid block lands.
@@ -31,6 +31,29 @@ async fn websocket_rejected_block_exits_without_advancing_past_it(
         .await?;
     let emitter = RawLog::deploy(provider.clone()).await?;
     let caller = provider.signer_addresses().next().unwrap();
+    let implementation = RawLog::deploy(provider.clone()).await?;
+    provider
+        .send_transaction(emit_log_request(
+            &emitter,
+            Upgraded {
+                implementation: *implementation.address(),
+            }
+            .encode_log_data(),
+        ))
+        .await?
+        .get_receipt()
+        .await?;
+    let versioned = provider
+        .send_transaction(trivial_encrypt_request(
+            &emitter,
+            caller,
+            U256::from(255),
+            2,
+            42,
+        ))
+        .await?
+        .get_receipt()
+        .await?;
     let bad = provider
         .send_transaction(emit_log_request(
             &emitter,
@@ -84,11 +107,21 @@ async fn websocket_rejected_block_exits_without_advancing_past_it(
     let latest: Option<i64> = sqlx::query_scalar("SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id=42")
         .fetch_one(&pool).await?;
     assert!(latest.is_none_or(|n| n < bad.block_number.unwrap() as i64));
+    assert!(versioned.block_number.unwrap() < bad.block_number.unwrap());
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM computations")
             .fetch_one(&pool)
             .await?,
-        0
+        1,
+        "the versioned operation preceding the rejected block should commit"
     );
+    let version: String = sqlx::query_scalar(
+        "SELECT tfhe_executor_version FROM host_chain_blocks_valid \
+         WHERE chain_id=42 AND block_number=$1",
+    )
+    .bind(versioned.block_number.unwrap() as i64)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(version, "FHEVMExecutor v0.7.0");
     Ok(())
 }

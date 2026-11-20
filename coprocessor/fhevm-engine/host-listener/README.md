@@ -42,14 +42,45 @@ matching coprocessor work to the database. Configure the broker with `--url`,
 `--broker-url`, or the `BROKER_URL` environment variable.
 
 ```bash
-BROKER_URL=redis://listener-redis:6379 host_listener_consumer \
+BROKER_URL=redis://listener-redis:6379 RPC_HTTP_URL=http://host-node:8545 host_listener_consumer \
   --database-url=postgresql://postgres:testmdp@0.0.0.0:5432/coprocessor \
   --acl-contract-address=<ACL_CONTRACT_ADDRESS> \
   --tfhe-contract-address=<TFHE_CONTRACT_ADDRESS> \
   --chain-id=<CHAIN_ID>
 ```
 
-Use `--url` or `--broker-url` to override `BROKER_URL` for a single process.
+Set the host RPC using `--executor-version-rpc-url` or `RPC_HTTP_URL` before upgrading
+the consumer. For each enabled consumer, Helm requires the chain's `httpUrl`,
+`httpUrlValueFrom`, or an explicit environment or CLI override.
+It must serve the configured chain and support canonical block-hash `eth_call`
+(EIP-1898). The listener recognizes executor versions 0.1.0 through 0.7.0.
+Update the version rules before deploying an executor that reports a new version.
+
+Contiguous blocks reuse the exact parent's committed version. Each block also
+stores its upgrade log positions, implementations, and resolved versions. Replays
+merge that evidence under the history admission lock, so partial deliveries and
+RPC failures cannot discard a resolved upgrade. A fuller delivery can add an
+upgrade omitted earlier. An unresolved newly discovered upgrade clears the
+inherited ending version until its implementation can be resolved.
+The listener also records when it read a block's starting version directly at
+the canonical parent hash. Empty replays can reuse that version after a restart.
+Starting versions inherited from the database follow corrections to the parent.
+
+Checkpoints written before upgrade schedules were stored require a canonical
+end-of-block lookup to reconcile a conflicting version. An unresolved replay
+preserves the old checkpoint and waits for RPC recovery. HTTP and WebSocket
+ingestion repair missing finalized predecessors before retrying a failed version
+lookup, allowing those predecessors to carry forward an existing checkpoint.
+
+Blocks without executor operations can advance before the proxy is deployed or while it uses
+the deployment placeholder. An upgrade without subsequent executor operations
+can commit with its ending version unresolved if the implementation lookup fails.
+The first operation that needs an unresolved version reads historical state and
+can require an archive endpoint. Empty, reverting, and unsupported version
+responses for those operations block ingestion. A revert for an operation in
+historical replay is retried like an unavailable archive snapshot. It requires
+an RPC endpoint that can serve the canonical state or an operator correction
+before ingestion can pass that block.
 
 ### Poller starting block (`--seed-start-block`)
 
@@ -135,7 +166,7 @@ There are 3 types of events related to:
 ### Database Events
 
 > Status: proposal
-> Database events are used to hint the scheduler to dispath workload and to notice workload completion.
+> Database events are used to hint the scheduler to dispatch workload and to notice workload completion.
 
 > https://stackoverflow.com/questions/56747634/how-do-i-use-the-postgres-crate-to-receive-table-modification-events-from-postgr
 

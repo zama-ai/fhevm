@@ -631,6 +631,8 @@ async fn broker_final_catchup_queue_repairs_a_blocked_final_delivery(
     let mut child = Command::new(env!("CARGO_BIN_EXE_host_listener_consumer"))
         .kill_on_drop(true)
         .args([
+            "--executor-version-rpc-url",
+            &f.anvil.endpoint(),
             "--url",
             &url,
             "--chain-id",

@@ -26,12 +26,16 @@ use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 use fhevm_engine_common::versioning::{reconcile_stack_mode, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
+use crate::database::event_operands::ExecutorVersionSchedule;
 use crate::database::history_verification::verify_finalized_history;
 use crate::database::ingest::{
     update_finalized_blocks, validate_block_logs, BlockLogs, IngestOptions,
 };
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
+};
+use crate::executor_version::{
+    ExecutorVersionRequest, ExecutorVersionResolver,
 };
 use crate::health_check::HealthCheck;
 use crate::kms_generation::aws_s3::AwsS3Client;
@@ -229,6 +233,7 @@ pub struct InfiniteLogIter {
     pub tick_block: HeartBeat,
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
+    executor_versions: ExecutorVersionResolver,
     catchup_finalization_in_blocks: u64,
     tracks_kms_generation: bool,
     rpc_finalized_block: Option<i64>,
@@ -320,11 +325,26 @@ impl InfiniteLogIter {
             block_history: BlockHistory::new(
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
+            executor_versions: ExecutorVersionResolver::default(),
             catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
             tracks_kms_generation: !args.kms_generation_address.is_empty(),
             rpc_finalized_block: None,
             timeout_request_websocket: args.timeout_request_websocket,
         }
+    }
+
+    pub(crate) async fn executor_version_schedule(
+        &self,
+        request: ExecutorVersionRequest,
+    ) -> Result<ExecutorVersionSchedule> {
+        let provider = self.provider.read().await.clone();
+        self.executor_versions
+            .resolve(
+                request,
+                provider.as_ref().map(|p| p as &dyn Provider),
+                Duration::from_secs(self.timeout_request_websocket),
+            )
+            .await
     }
 
     async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
@@ -1170,7 +1190,7 @@ async fn db_insert_block(
     );
     let mut retries = 10;
     loop {
-        let res = crate::database::ingest::ingest_with_history_recovery(
+        let res = crate::database::ingest::ingest_with_history_recovery_and_executor_versions(
             chain_id,
             db,
             block_logs,
@@ -1187,6 +1207,7 @@ async fn db_insert_block(
                 disable_synthetic_ops: args.disable_synthetic_ops,
             },
             |number| log_iter.canonical_block_for_recovery(number),
+            |request| log_iter.executor_version_schedule(request),
         )
         .await;
         let err = match res {
@@ -1616,6 +1637,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::database::event_operands::ExecutorVersion;
     use std::collections::VecDeque;
     use std::sync::Arc;
 
@@ -1649,6 +1671,7 @@ mod tests {
             tick_block: HeartBeat::new(),
             reorg_maximum_duration_in_blocks: reorg_max,
             block_history: BlockHistory::new(reorg_max as usize),
+            executor_versions: ExecutorVersionResolver::default(),
             catchup_finalization_in_blocks: 20,
             tracks_kms_generation: false,
             rpc_finalized_block: None,
@@ -1661,6 +1684,107 @@ mod tests {
         block.header.hash = BlockHash::with_last_byte(hash);
         block.header.inner.number = 42;
         block
+    }
+
+    #[tokio::test]
+    async fn websocket_version_schedule_uses_committed_parents_without_a_provider(
+    ) {
+        let iter = new_test_iter(50);
+        let proxy = Address::with_last_byte(0x42);
+        let parent = BlockLogs {
+            logs: vec![],
+            summary: BlockSummary {
+                number: 100,
+                hash: BlockHash::with_last_byte(0x64),
+                parent_hash: BlockHash::with_last_byte(0x63),
+                timestamp: 1_790_000_000,
+            },
+            catchup: false,
+            finalized: true,
+        };
+        let version = ExecutorVersion::new(0, 5, 0);
+        let mut parent_request =
+            ExecutorVersionRequest::from_block(&parent, Some(proxy));
+        parent_request.persisted_parent_version = Some(version);
+        let parent_schedule = iter
+            .executor_version_schedule(parent_request)
+            .await
+            .expect("executor version lookup");
+        assert_eq!(parent_schedule.ending_version(), Some(version));
+
+        let child = BlockLogs {
+            logs: vec![],
+            summary: BlockSummary {
+                number: 101,
+                hash: BlockHash::with_last_byte(0x65),
+                parent_hash: parent.summary.hash,
+                timestamp: parent.summary.timestamp + 1,
+            },
+            catchup: false,
+            finalized: true,
+        };
+        let mut child_request =
+            ExecutorVersionRequest::from_block(&child, Some(proxy));
+        // The parent was committed by ingestion before its checkpoint can be reused.
+        child_request.persisted_parent_version =
+            parent_schedule.ending_version();
+        let child_schedule = iter
+            .executor_version_schedule(child_request)
+            .await
+            .expect("executor version lookup");
+        assert_eq!(child_schedule.ending_version(), Some(version));
+    }
+
+    #[tokio::test]
+    async fn websocket_executor_version_failure_does_not_become_unknown_metadata(
+    ) {
+        use crate::contracts::TfheContract::TrivialEncrypt;
+        use alloy::primitives::U256;
+        use alloy::sol_types::SolEvent;
+        let iter = new_test_iter(50);
+        let proxy = Address::with_last_byte(0x42);
+        let block = BlockLogs {
+            logs: vec![Log {
+                inner: alloy::primitives::Log {
+                    address: proxy,
+                    data: TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: U256::from(1),
+                        toType: 2,
+                        result: BlockHash::ZERO,
+                    }
+                    .encode_log_data(),
+                },
+                log_index: Some(0),
+                ..Default::default()
+            }],
+            summary: BlockSummary {
+                number: 100,
+                hash: BlockHash::with_last_byte(100),
+                parent_hash: BlockHash::with_last_byte(99),
+                timestamp: 1_790_000_000,
+            },
+            catchup: false,
+            finalized: true,
+        };
+        assert!(iter
+            .executor_version_schedule(ExecutorVersionRequest::from_block(
+                &block,
+                Some(proxy)
+            ))
+            .await
+            .is_err());
+        let mut recovered =
+            ExecutorVersionRequest::from_block(&block, Some(proxy));
+        recovered.persisted_parent_version =
+            Some(ExecutorVersion::new(0, 7, 0));
+        assert_eq!(
+            iter.executor_version_schedule(recovered)
+                .await
+                .unwrap()
+                .ending_version(),
+            Some(ExecutorVersion::new(0, 7, 0))
+        );
     }
 
     #[tokio::test]

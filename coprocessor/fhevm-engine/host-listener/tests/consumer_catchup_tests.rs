@@ -150,21 +150,113 @@ async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
     exercise_history_gap(std::env::var("CATCHUP_BROKER_URL").unwrap()).await;
 }
 
-#[tokio::test]
-async fn amqp_delayed_history_gaps_recover_without_unbounded_repairs() {
+async fn rabbitmq(
+) -> testcontainers::ContainerAsync<testcontainers::GenericImage> {
     use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage};
 
-    let rabbitmq = GenericImage::new("rabbitmq", "3.8.22-management")
+    GenericImage::new("rabbitmq", "3.8.22-management")
         .with_exposed_port(5672.into())
         .with_wait_for(WaitFor::message_on_stdout(
             "Server startup complete; 4 plugins started.",
         ))
         .start()
         .await
-        .unwrap();
+        .unwrap()
+}
+
+#[tokio::test]
+async fn amqp_delayed_history_gaps_recover_without_unbounded_repairs() {
+    let rabbitmq = rabbitmq().await;
     let port = rabbitmq.get_host_port_ipv4(5672).await.unwrap();
     exercise_history_gap(format!("amqp://guest:guest@127.0.0.1:{port}/%2f"))
         .await;
+}
+
+#[tokio::test]
+async fn redis_replaced_executor_snapshot_yields_to_its_replacement() {
+    exercise_replaced_executor_snapshot(
+        std::env::var("CATCHUP_BROKER_URL").unwrap(),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn amqp_replaced_executor_snapshot_yields_to_its_replacement() {
+    let rabbitmq = rabbitmq().await;
+    let port = rabbitmq.get_host_port_ipv4(5672).await.unwrap();
+    exercise_replaced_executor_snapshot(format!(
+        "amqp://guest:guest@127.0.0.1:{port}/%2f"
+    ))
+    .await;
+}
+
+async fn exercise_replaced_executor_snapshot(broker_url: String) {
+    use alloy::primitives::B256;
+    use host_listener::consumer::catchup::store;
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::PgPool::connect(instance.db_url.as_str()).await.unwrap();
+        let chain = ChainId::try_from((uuid::Uuid::new_v4().as_u128() % 900_000_000) as u64 + 100_000_000).unwrap();
+        let identity = format!("host-listener-consumer.{chain}");
+        let id = store::ensure_requested(&pool, chain.as_i64(), &identity, &ManualCatchupArgs {
+            catchup_from_block: Some(101), catchup_up_to_block: Some(101),
+            catchup_unfinalized: true, no_override_catchup: true
+        }, Some(102), None, false).await.unwrap().unwrap();
+        let broker = Broker::from_url(&broker_url).await.unwrap();
+        let client = consumer::ListenerConsumer::new(&broker, chain.as_u64(), &identity)
+            .with_group_suffix(format!("v{}", fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION));
+        client.ensure_catchup_consumer().await.unwrap();
+        client.ensure_final_consumer().await.unwrap();
+        let publisher = broker.publisher_unscoped().await.unwrap();
+
+        let replacement = event_block(chain.as_u64(), 101, BlockFlow::Catchup, Some(id), false);
+        let mut orphan = replacement.clone();
+        orphan.last_in_catchup = true;
+        orphan.block_hash = B256::repeat_byte(0xaa);
+        orphan.parent_hash = B256::repeat_byte(0xbb);
+        let stale_parent = serde_json::json!(orphan.parent_hash);
+        let attempted = std::sync::Arc::new(tokio::sync::Notify::new());
+        let observed = attempted.clone();
+        let mut config = test_config(broker_url, instance.db_url.clone(), chain, ManualCatchupArgs::default());
+        config.executor_version_rpc = version_rpc(chain.as_u64(), move |params| {
+            if params[1]["blockHash"] == stale_parent {
+                observed.notify_one();
+                return None;
+            }
+            Some("FHEVMExecutor v0.7.0")
+        });
+        let run = tokio::spawn(run_consumer(config));
+        publisher.publish_to_topic(&client.catchup_consumer_topic(), &orphan).await.unwrap();
+        attempted.notified().await;
+        // Prove this same queue can process another delivery while the first
+        // snapshot remains unavailable. The failed last marker must stay pending.
+        publisher.publish_to_topic(&client.catchup_consumer_topic(), &replacement).await.unwrap();
+        wait_for_events(&pool, chain, &[101]).await;
+        let state = || sqlx::query_scalar::<_, String>("SELECT status FROM host_consumer_catchups WHERE id=$1")
+            .bind(id).fetch_one(&pool);
+        assert_eq!(state().await.unwrap(), "ONGOING");
+        let mut finalized = replacement;
+        finalized.flow = BlockFlow::Final;
+        finalized.catchup_id = None;
+        publisher.publish_to_topic(&client.final_consumer_topic(), &finalized).await.unwrap();
+        while !sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM host_chain_blocks_valid WHERE chain_id=$1 AND block_hash=$2 AND block_status='finalized')")
+            .bind(chain.as_i64()).bind(finalized.block_hash.as_slice()).fetch_one(&pool).await.unwrap() {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        // Redelivery after a committed replacement can now discard the old fork.
+        publisher.publish_to_topic(&client.catchup_consumer_topic(), &orphan).await.unwrap();
+        while state().await.unwrap() != "DONE" {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let orphans: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id=$1 AND block_hash=$2")
+            .bind(chain.as_i64()).bind(orphan.block_hash.as_slice()).fetch_one(&pool).await.unwrap();
+        assert_eq!(orphans, 0);
+        assert!(!run.is_finished());
+        run.abort();
+        let _ = run.await;
+    }).await.expect("replacement and stale redelivery must finish");
 }
 
 async fn exercise_history_gap(broker_url: String) {
@@ -1616,6 +1708,56 @@ async fn wait_for_events(
     result.unwrap();
 }
 
+/// The catchup fixtures have synthetic block hashes. Answer version calls for
+/// those hashes over the same JSON-RPC transport used by a deployed consumer.
+fn version_rpc(
+    chain_id: u64,
+    version_at: impl Fn(&serde_json::Value) -> Option<&'static str>
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+) -> alloy::providers::DynProvider {
+    use alloy::providers::{Provider, ProviderBuilder};
+    use alloy::sol_types::SolCall;
+    use axum::{routing::post, Json, Router};
+    use serde_json::{json, Value};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap())
+        .parse()
+        .unwrap();
+    let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+    let route = post(move |Json(req): Json<Value>| {
+        let version_at = version_at.clone();
+        async move {
+            let id = &req["id"];
+            let result = match req["method"].as_str().unwrap() {
+                "eth_chainId" => json!(format!("{chain_id:#x}")),
+                "eth_call" => {
+                    assert_eq!(req["params"][1]["requireCanonical"], true);
+                    let Some(version) = version_at(&req["params"]) else {
+                        return Json(
+                            json!({"jsonrpc":"2.0", "id":id, "error":{"code":-32000,"message":"snapshot unavailable"}}),
+                        );
+                    };
+                    let bytes = host_listener::contracts::TfheContract::getVersionCall::abi_encode_returns(&version.to_owned());
+                    json!(alloy::primitives::Bytes::from(bytes))
+                }
+                other => panic!("Unexpected executor RPC method {other}"),
+            };
+            Json(json!({"jsonrpc":"2.0", "id":id, "result":result}))
+        }
+    });
+    tokio::spawn(async move {
+        axum::serve(listener, Router::new().route("/", route))
+            .await
+            .unwrap()
+    });
+    ProviderBuilder::new().connect_http(url).erased()
+}
+
 fn test_config(
     broker_url: String,
     database_url: fhevm_engine_common::utils::DatabaseURL,
@@ -1628,6 +1770,9 @@ fn test_config(
         catchup_unfinalized: manual_catchup.catchup_unfinalized,
         no_override_catchup: manual_catchup.no_override_catchup,
         url: broker_url,
+        executor_version_rpc: version_rpc(chain_id.as_u64(), |_| {
+            Some("FHEVMExecutor v0.7.0")
+        }),
         acl_address: Address::ZERO,
         tfhe_address: Address::repeat_byte(1),
         kms_generation_address: Some(Address::repeat_byte(2)),

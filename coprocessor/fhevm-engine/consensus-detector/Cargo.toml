@@ -44,7 +44,7 @@ fhevm_gateway_bindings = { path = "../../../gateway-contracts/rust_bindings" }
 
 [dev-dependencies]
 axum = { workspace = true }
-host-listener = { path = "../host-listener" }
+host-listener = { path = "../host-listener", features = ["test-utils"] }
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 
