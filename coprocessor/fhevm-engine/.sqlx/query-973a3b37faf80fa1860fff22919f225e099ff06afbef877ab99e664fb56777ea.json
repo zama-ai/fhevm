@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH found AS (\n               SELECT prf_instance, label, pad_length, ciphertext_digest, ciphertext128_digest,\n                      signer, created_at\n                 FROM pad_ct64\n                WHERE created_at > GREATEST(NOW() - make_interval(secs => $1),\n                                            to_timestamp($2::FLOAT8) - INTERVAL '1 minute')\n           ), inserted AS (\n               INSERT INTO pad_consensus (prf_instance, label, pad_length, ciphertext_digest,\n                                          ciphertext128_digest, signer)\n               SELECT prf_instance, label, pad_length, ciphertext_digest, ciphertext128_digest,\n                      signer\n                 FROM found\n               ON CONFLICT DO NOTHING\n           )\n           SELECT EXTRACT(EPOCH FROM MAX(created_at))::FLOAT8 FROM found",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "extract",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "973a3b37faf80fa1860fff22919f225e099ff06afbef877ab99e664fb56777ea"
+}

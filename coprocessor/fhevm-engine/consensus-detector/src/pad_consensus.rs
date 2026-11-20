@@ -63,14 +63,28 @@ static MISSING: LazyLock<IntCounterVec> = LazyLock::new(|| {
 /// Outputs checked at the same time in a pass.
 const CONCURRENT_CHECKS: usize = 16;
 
+/// Time between two deletions of the old checks.
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
+
+/// What a detector keeps from one pass to the next.
+#[derive(Debug, Default)]
+struct PassState {
+    /// The latest `pad_ct64.created_at` that a pass found, in seconds since the epoch. `None`
+    /// before the first pass: that pass reads the full retention.
+    found_up_to: Option<f64>,
+    /// When a pass last deleted the old checks.
+    cleaned_at: Option<std::time::Instant>,
+}
+
 /// Runs a pass every `config.interval`, until `cancel`.
 pub async fn run(pool: PgPool, http: reqwest::Client, config: Config, cancel: CancellationToken) {
+    let mut state = PassState::default();
     loop {
         tokio::select! {
             () = cancel.cancelled() => return,
             () = tokio::time::sleep(config.interval) => {}
         }
-        if let Err(e) = pass(&pool, &http, &config).await {
+        if let Err(e) = pass(&pool, &http, &config, &mut state).await {
             error!(error = %e, "Pad consensus pass failed");
         }
     }
@@ -89,7 +103,12 @@ struct Output {
 
 /// Adds the new outputs, deletes the old ended checks except drift, and checks a batch.
 /// Returns the checks that this pass ended.
-pub async fn pass(pool: &PgPool, http: &reqwest::Client, config: &Config) -> sqlx::Result<u64> {
+async fn pass(
+    pool: &PgPool,
+    http: &reqwest::Client,
+    config: &Config,
+    state: &mut PassState,
+) -> sqlx::Result<u64> {
     // The coprocessors and the quorum threshold, from the registry that the manifests use.
     let registry = sqlx::query!(
         "SELECT signer_address, s3_bucket_url, coprocessor_threshold FROM gateway_config_coprocessors"
@@ -116,27 +135,48 @@ pub async fn pass(pool: &PgPool, http: &reqwest::Client, config: &Config) -> sql
 
     let deadline = config.deadline.as_secs_f64();
     let retention = config.retention.as_secs_f64();
-    sqlx::query!(
-        "INSERT INTO pad_consensus (prf_instance, label, pad_length, ciphertext_digest,
-                                    ciphertext128_digest, signer)
-         SELECT prf_instance, label, pad_length, ciphertext_digest, ciphertext128_digest, signer
-           FROM pad_ct64
-          WHERE created_at > NOW() - make_interval(secs => $1)
-         ON CONFLICT DO NOTHING",
+    // Find only the outputs after the last output that a pass found. The overlap of 1 minute finds
+    // a row that committed after a newer row, because `created_at` is the start of its transaction.
+    let found_up_to = sqlx::query_scalar!(
+        r#"WITH found AS (
+               SELECT prf_instance, label, pad_length, ciphertext_digest, ciphertext128_digest,
+                      signer, created_at
+                 FROM pad_ct64
+                WHERE created_at > GREATEST(NOW() - make_interval(secs => $1),
+                                            to_timestamp($2::FLOAT8) - INTERVAL '1 minute')
+           ), inserted AS (
+               INSERT INTO pad_consensus (prf_instance, label, pad_length, ciphertext_digest,
+                                          ciphertext128_digest, signer)
+               SELECT prf_instance, label, pad_length, ciphertext_digest, ciphertext128_digest,
+                      signer
+                 FROM found
+               ON CONFLICT DO NOTHING
+           )
+           SELECT EXTRACT(EPOCH FROM MAX(created_at))::FLOAT8 FROM found"#,
         retention,
+        state.found_up_to,
     )
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
+    if found_up_to > state.found_up_to {
+        state.found_up_to = found_up_to;
+    }
     // The drift evidence stays, as for the manifests. A check that never ends is deleted when it
     // is older than the retention.
-    sqlx::query!(
-        "DELETE FROM pad_consensus
-          WHERE COALESCE(done_at, created_at) < NOW() - make_interval(secs => $1)
-            AND outcome IS DISTINCT FROM 'drift'",
-        retention,
-    )
-    .execute(pool)
-    .await?;
+    if state
+        .cleaned_at
+        .is_none_or(|at| at.elapsed() >= CLEANUP_INTERVAL)
+    {
+        sqlx::query!(
+            "DELETE FROM pad_consensus
+              WHERE COALESCE(done_at, created_at) < NOW() - make_interval(secs => $1)
+                AND outcome IS DISTINCT FROM 'drift'",
+            retention,
+        )
+        .execute(pool)
+        .await?;
+        state.cleaned_at = Some(std::time::Instant::now());
+    }
     // The next check time is a lease: another detector skips these rows until then.
     let rows = sqlx::query!(
         r#"UPDATE pad_consensus SET next_check_at = NOW() + make_interval(secs => $1)
@@ -479,17 +519,45 @@ mod tests {
 
     /// Adds our output for `label`, computed 2 hours ago: the ct128 GC deleted its `pads` row.
     async fn add_output(pool: &PgPool, ours: Address, label: B256) {
+        add_output_aged(pool, ours, label, 7200.0).await;
+    }
+
+    /// Adds our output for `label`, computed `before` seconds before the output of `database`.
+    async fn add_output_before(pool: &PgPool, ours: Address, label: B256, before: f64) {
         sqlx::query(
             "INSERT INTO pad_ct64 (prf_instance, label, pad_length, ciphertext64,
                                    ciphertext_digest, ciphertext128_digest, signer, signature,
                                    attestation_version, created_at)
-             VALUES (0, $1, 64, '\\x00', $2, $3, $4, $5, 1, NOW() - INTERVAL '2 hours')",
+             SELECT 0, $1, 64, '\\x00', $2, $3, $4, $5, 1,
+                    created_at - make_interval(secs => $6)
+               FROM pad_ct64 WHERE label = $7",
         )
         .bind(label.as_slice())
         .bind(OURS.0.as_slice())
         .bind(OURS.1.as_slice())
         .bind(ours.as_slice())
         .bind([0u8; 65].as_slice())
+        .bind(before)
+        .bind(LABEL.as_slice())
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// Adds our output for `label`, computed `age` seconds ago.
+    async fn add_output_aged(pool: &PgPool, ours: Address, label: B256, age: f64) {
+        sqlx::query(
+            "INSERT INTO pad_ct64 (prf_instance, label, pad_length, ciphertext64,
+                                   ciphertext_digest, ciphertext128_digest, signer, signature,
+                                   attestation_version, created_at)
+             VALUES (0, $1, 64, '\\x00', $2, $3, $4, $5, 1, NOW() - make_interval(secs => $6))",
+        )
+        .bind(label.as_slice())
+        .bind(OURS.0.as_slice())
+        .bind(OURS.1.as_slice())
+        .bind(ours.as_slice())
+        .bind([0u8; 65].as_slice())
+        .bind(age)
         .execute(pool)
         .await
         .unwrap();
@@ -554,8 +622,11 @@ mod tests {
         // Two detectors, as Blue and Green during a round: one of them ends the check. The output
         // is 2 hours old, older than the ct128 GC and the deadline: the retention still finds it.
         let config = Config::default();
-        let (first, second) =
-            tokio::join!(pass(&pool, &http, &config), pass(&pool, &http, &config));
+        let (mut blue, mut green) = (PassState::default(), PassState::default());
+        let (first, second) = tokio::join!(
+            pass(&pool, &http, &config, &mut blue),
+            pass(&pool, &http, &config, &mut green)
+        );
         assert_eq!(first.unwrap() + second.unwrap(), 1);
         assert_eq!(
             result(&pool).await,
@@ -581,7 +652,13 @@ mod tests {
 
         // With our output, three outputs agree. Our output does not count, so the pass asks no peer
         // and ends no check.
-        let ended = pass(&pool, &reqwest::Client::new(), &Config::default()).await;
+        let ended = pass(
+            &pool,
+            &reqwest::Client::new(),
+            &Config::default(),
+            &mut PassState::default(),
+        )
+        .await;
         assert_eq!(ended.unwrap(), 0);
         assert_eq!(result(&pool).await, (None, None));
         let answers: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pad_consensus_answer")
@@ -589,6 +666,39 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(answers, 0);
+    }
+
+    #[tokio::test]
+    async fn finds_only_the_outputs_after_the_last_one_found() {
+        let ours = PrivateKeySigner::random();
+        let members = vec![(ours.address(), peer(StatusCode::OK, None).await)];
+        let (_instance, pool) = database(ours.address(), &members, 1).await;
+        let mut state = PassState::default();
+        let config = Config::default();
+        let http = reqwest::Client::new();
+
+        // The first pass finds the output of `database`, 2 hours old.
+        pass(&pool, &http, &config, &mut state).await.unwrap();
+        sqlx::query("DELETE FROM pad_consensus")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // One output 30 s before it, in the overlap of 1 minute. One output 90 s before it, which is
+        // too old. One new output.
+        let [overlap, old, new] = [1u8, 2, 3].map(B256::repeat_byte);
+        add_output_before(&pool, ours.address(), overlap, 30.0).await;
+        add_output_before(&pool, ours.address(), old, 90.0).await;
+        add_output_aged(&pool, ours.address(), new, 0.0).await;
+
+        pass(&pool, &http, &config, &mut state).await.unwrap();
+        let labels: Vec<Vec<u8>> =
+            sqlx::query_scalar("SELECT label FROM pad_consensus ORDER BY label")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        // The output of `database` is in the overlap too.
+        let expected = [overlap, new, LABEL].map(|label| label.to_vec());
+        assert_eq!(labels, expected);
     }
 
     #[tokio::test]
@@ -620,9 +730,14 @@ mod tests {
             .unwrap();
         }
 
-        pass(&pool, &reqwest::Client::new(), &Config::default())
-            .await
-            .unwrap();
+        pass(
+            &pool,
+            &reqwest::Client::new(),
+            &Config::default(),
+            &mut PassState::default(),
+        )
+        .await
+        .unwrap();
         let labels: Vec<Vec<u8>> =
             sqlx::query_scalar("SELECT label FROM pad_consensus ORDER BY label")
                 .fetch_all(&pool)
@@ -653,7 +768,9 @@ mod tests {
 
         // 20 outputs, checked one after another, would take 20 timeouts. At the same time, 2.
         let started = std::time::Instant::now();
-        pass(&pool, &http, &Config::default()).await.unwrap();
+        pass(&pool, &http, &Config::default(), &mut PassState::default())
+            .await
+            .unwrap();
         assert!(started.elapsed() < timeout * 10, "{:?}", started.elapsed());
     }
 
@@ -678,7 +795,9 @@ mod tests {
         };
 
         // Drift does not end the check while a peer can still answer.
-        pass(&pool, &http, &config).await.unwrap();
+        pass(&pool, &http, &config, &mut PassState::default())
+            .await
+            .unwrap();
         assert_eq!(result(&pool).await, (None, None));
         let invalid: Vec<(Vec<u8>, String)> = sqlx::query_as(
             "SELECT peer_signer, reason FROM pad_consensus_answer WHERE reason IS NOT NULL",
@@ -699,13 +818,17 @@ mod tests {
             deadline: Duration::ZERO,
             ..config
         };
-        pass(&pool, &http, &expired).await.unwrap();
+        pass(&pool, &http, &expired, &mut PassState::default())
+            .await
+            .unwrap();
         assert_eq!(
             result(&pool).await,
             (Some("drift".into()), Some("inconclusive".into()))
         );
         // The drift evidence stays after the deadline.
-        pass(&pool, &http, &expired).await.unwrap();
+        pass(&pool, &http, &expired, &mut PassState::default())
+            .await
+            .unwrap();
         assert_eq!(result(&pool).await.0, Some("drift".into()));
     }
 }
