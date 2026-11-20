@@ -194,8 +194,8 @@ leaves the proxy untouched.
 The context id, epoch id, node set and thresholds become the `initializeFromCanonical` calldata, so
 the tasks check them in full. The chain id and the address also become calldata. They set the
 canonical EIP-712 domain. The tasks parse the chain id and block number as decimal strings. They
-require a chain id in [1, 2^64) and a valid nonzero address. They only check the block hash for
-presence, then print it. The block number and block hash are provenance.
+only check the address and the block hash for presence. The block number and block hash are
+provenance.
 
 | Environment       | Task                                            | Signer                                              |
 | ----------------- | ----------------------------------------------- | --------------------------------------------------- |
