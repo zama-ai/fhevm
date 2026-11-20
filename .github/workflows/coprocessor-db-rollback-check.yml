@@ -1,0 +1,79 @@
+name: coprocessor-db-rollback-check
+
+# Fails a pull request that leaves the rollback tool incomplete or wrong:
+#   - migration-files: a migration without a down file, a down file without a
+#     migration, or a stray file (the image build runs the same check);
+#   - roundtrip: tests/roundtrip.sh against a throwaway Postgres, which applies
+#     the coprocessor's migrations, reverts them one by one with the tool and
+#     compares the schema after each revert with the one before the migration.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/coprocessor-db-rollback-check.yml
+      - coprocessor-db-rollback/**
+
+permissions: {}
+
+concurrency:
+  group: coprocessor-db-rollback-check-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: coprocessor-db-rollback-check/migration-files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: 'read' # Required to checkout repository code
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Every migration has a down file
+        run: coprocessor-db-rollback/scripts/migrate.sh check
+
+  roundtrip:
+    name: coprocessor-db-rollback-check/roundtrip
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to pull the db-migration image from ghcr.io
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The tool reads versioning.stack_version with psql.
+      - name: Install psql if missing
+        run: command -v psql >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
+
+      # The test must run the sqlx build the migrations are applied with. That
+      # binary is in the db-migration image the rollback image is built on
+      # (DB_MIGRATION_TAG in the Dockerfile), so it is copied from there instead
+      # of being compiled here.
+      - name: Take sqlx-cli from the db-migration image
+        run: |
+          tag=$(sed -n 's/^ARG DB_MIGRATION_TAG=//p' coprocessor-db-rollback/Dockerfile)
+          test -n "$tag"
+          image="ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${tag}"
+          echo "db-migration image: ${image}"
+          id=$(docker create "${image}")
+          mkdir -p "${HOME}/.local/bin"
+          docker cp "${id}:/usr/local/bin/sqlx" "${HOME}/.local/bin/sqlx"
+          docker rm "${id}" >/dev/null
+          chmod +x "${HOME}/.local/bin/sqlx"
+          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+          "${HOME}/.local/bin/sqlx" --version
+
+      - name: Round trip against a throwaway Postgres
+        run: coprocessor-db-rollback/tests/roundtrip.sh

@@ -1,0 +1,2 @@
+ALTER TABLE computations
+  ADD COLUMN IF NOT EXISTS uncomputable_counter SMALLINT NOT NULL DEFAULT 1;
