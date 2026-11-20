@@ -47,7 +47,15 @@ jobs:
           persist-credentials: 'false'
 
       - name: Log in to ghcr.io
-        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The tool reads versioning.stack_version with psql.
+      - name: Install psql if missing
+        run: command -v psql >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
 
       # The test must run the sqlx build the migrations are applied with. That
       # binary is in the db-migration image the rollback image is built on

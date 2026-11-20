@@ -2,7 +2,7 @@
 #
 # End-to-end test of the rollback tool against a throwaway Postgres.
 #
-# Requirements: Docker, and sqlx-cli 0.7.2 on the PATH
+# Requirements: Docker, psql, and sqlx-cli 0.7.2 on the PATH
 #   cargo install sqlx-cli --version 0.7.2 --locked --no-default-features --features rustls,postgres
 #
 # What it proves:
@@ -11,8 +11,9 @@
 #      db-migration image applies them), then every migration above the
 #      baseline is reverted one by one with migrate.sh. After each revert the
 #      schema must be identical to the one recorded before that migration.
-#   2. Full rollback to the baseline with data, in a single command, followed
-#      by a re-upgrade.
+#   2. Full rollback to the baseline with data, on a database stamped with a
+#      v0.15 stack version, in a single command: the stamp must become the
+#      requested release. Followed by a re-upgrade.
 #   3. The down that refuses to run on data it cannot convert stops the
 #      rollback, changes nothing, and deletes that data only with --force.
 #   4. Guards. The tool refuses to run when the image and the database are out
@@ -76,6 +77,16 @@ db_version() {
     psql_do -c 'SELECT coalesce(max(version), 0) FROM _sqlx_migrations'
 }
 
+# Makes the database look like one that runs v0.15: the stamp a cutover writes.
+# The migration itself only seeds 'v0.14'.
+stamp_live() {
+    psql_do -q -c "UPDATE versioning SET stack_version = 'v0.15.1', updated_at = NOW() WHERE singleton"
+}
+
+stack_version() {
+    psql_do -c 'SELECT stack_version FROM versioning WHERE singleton'
+}
+
 # Runs migrate.sh expecting a failure whose output contains a given text.
 expect_failure() {
     local label=$1 expected=$2
@@ -95,6 +106,7 @@ expect_failure() {
 # -------------------------------------------------------------------------
 
 command -v sqlx >/dev/null || { echo "sqlx-cli is required, see the header of this script" >&2; exit 1; }
+command -v psql >/dev/null || { echo "psql is required: migrate.sh reads versioning.stack_version with it" >&2; exit 1; }
 
 echo "== The rollback copies are identical to the coprocessor's migrations"
 for file in "$COPROCESSOR_MIGRATIONS"/*.sql; do
@@ -136,11 +148,12 @@ for version in "${ABOVE[@]}"; do
     apply_up_to "$version"
     snapshot "$WORK/up_$version"
 done
+stamp_live
 
 for ((i = ${#ABOVE[@]} - 1; i >= 0; i--)); do
     reverted=${ABOVE[i]}
     if (( i > 0 )); then target=${ABOVE[i - 1]}; else target=$BASELINE; fi
-    if ! output=$("$MIGRATE" rollback "$target" 2>&1); then
+    if ! output=$("$MIGRATE" rollback "$target" --stack-version v0.15.1 2>&1); then
         fail "revert $reverted: $output"
         break
     fi
@@ -167,12 +180,15 @@ INSERT INTO upgrade_state (stack_role, state, status, host_chain_id) VALUES
 INSERT INTO chain_recovery_halts (source, stack_role, chain_id, block_number, reason) VALUES
     ('host', 'BCS', 11155111, 42, 'test');
 SQL
+stamp_live
 
-if output=$("$MIGRATE" rollback "$BASELINE" 2>&1); then
-    pass "rollback $LAST -> $BASELINE"
+if output=$("$MIGRATE" rollback "$BASELINE" --stack-version 0.14.8 2>&1); then
+    [[ $output == *"stack_version=v0.15.1->0.14.8"* && $output == *"status=success"*"stack_version=0.14.8"* ]] \
+        && pass "rollback $LAST -> $BASELINE, stamped 0.14.8" || fail "rollback $LAST -> $BASELINE: stamp not reported: $output"
 else
     fail "rollback $LAST -> $BASELINE: $output"
 fi
+[[ $(stack_version) == 0.14.8 ]] && pass "versioning.stack_version is 0.14.8: a v0.14.8 binary is not retired" || fail "versioning.stack_version is $(stack_version)"
 
 snapshot "$WORK/full_down"
 if diff -u "$WORK/up_$BASELINE" "$WORK/full_down" >"$WORK/diff_full"; then
@@ -215,7 +231,9 @@ INSERT INTO upgrade_state (stack_role, state, status, host_chain_id) VALUES
     ('BCS', 'LIVE', 'completed', 80002),
     ('GCS', 'LIVE', 'completed', 11155111);
 SQL
-expect_failure "per-chain upgrade_state rows: reports where it stopped" "current=20260725120000 target=$BASELINE" "$MIGRATE" rollback "$BASELINE"
+stamp_live
+expect_failure "per-chain upgrade_state rows: reports where it stopped" "current=20260725120000 target=$BASELINE" "$MIGRATE" rollback "$BASELINE" --stack-version 0.14.8
+[[ $(stack_version) == v0.15.1 ]] && pass "the stamp is untouched after a failed rollback" || fail "the stamp changed after a failed rollback: $(stack_version)"
 snapshot "$WORK/stopped"
 if diff -u "$WORK/up_20260725120000" "$WORK/stopped" >"$WORK/diff_stopped"; then
     pass "schema is exactly the one of the version it stopped at"
@@ -229,7 +247,7 @@ echo "== Forced rollback across 20260725120000"
 expect_failure "anything other than --force is refused" "usage:" "$MIGRATE" rollback "$BASELINE" --yes
 # Stop right below 20260725120000 first: host_chain_id still exists there, so the
 # rows the forced down kept can be checked. 20260708120000 drops the column.
-if output=$("$MIGRATE" rollback 20260721120000 --force 2>&1); then
+if output=$("$MIGRATE" rollback 20260721120000 --force --stack-version 0.14.8 2>&1); then
     [[ $output == *"force=true"* ]] && pass "forced rollback to 20260721120000" || fail "forced rollback did not report force=true: $output"
 else
     fail "forced rollback to 20260721120000: $output"
@@ -243,7 +261,7 @@ else
 fi
 [[ $(psql_do -c "SELECT string_agg(stack_role || ':' || host_chain_id, ',' ORDER BY stack_role) FROM upgrade_state") == BCS:80002,GCS:11155111 ]] \
     && pass "only the row with the lowest host_chain_id survived per stack role" || fail "unexpected upgrade_state rows: $(psql_do -c 'SELECT stack_role, host_chain_id FROM upgrade_state')"
-if output=$("$MIGRATE" rollback "$BASELINE" 2>&1); then
+if output=$("$MIGRATE" rollback "$BASELINE" --stack-version 0.14.8 2>&1); then
     pass "the rest of the rollback to $BASELINE needs no --force"
 else
     fail "rollback 20260721120000 -> $BASELINE: $output"
@@ -258,8 +276,12 @@ fi
 echo "== Guards"
 reset_db
 apply_all
+stamp_live
 
-[[ $("$MIGRATE" info 2>&1 | tail -1) == *"in_sync=true"* ]] && pass "info reports in sync" || fail "info does not report in sync"
+[[ $("$MIGRATE" info 2>&1 | tail -1) == *"in_sync=true stack_version=v0.15.1"* ]] && pass "info reports in sync and the stamp" || fail "info does not report in sync and the stamp: $("$MIGRATE" info 2>&1 | tail -1)"
+
+expect_failure "stamped database: rollback without --stack-version is refused" "pass --stack-version" "$MIGRATE" rollback "$BASELINE"
+expect_failure "malformed stack version is refused" "stack version must look like" "$MIGRATE" rollback "$BASELINE" --stack-version latest
 
 [[ $("$MIGRATE" rollback "$LAST" 2>&1) == *"status=noop"* ]] && pass "rollback to the current version is a no-op" || fail "rollback to the current version is not a no-op"
 

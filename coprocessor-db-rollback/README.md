@@ -30,6 +30,8 @@ database it checks that:
    A copy that differs from what was applied means its down file cannot be
    trusted.
 4. **The target is not below the baseline** (see [The baseline](#the-baseline)).
+5. **The release that runs next is named** when the database is stamped with a
+   stack version (see [The stack version](#the-stack-version)).
 
 If a check fails, nothing is changed. After a rollback the tool confirms that
 the database is exactly at the requested version instead of trusting the exit
@@ -50,13 +52,35 @@ Rolling back from v0.14.x to v0.13.x needs down files for the 26 migrations
 v0.14.x added (`20260514120000` to `20260704130000`) and a lower baseline; they
 are not written yet.
 
+## The stack version
+
+The schema is not the whole state. The `versioning` table holds one row with
+`stack_version`, the release that owns the database. It is written when the
+database is created and at each Blue/Green cutover, and never by a migration
+after the first one. Every coprocessor binary compares its own version with
+it at start and on every change: a binary older than the stamp treats itself
+as retired and stops processing.
+
+A rollback of the schema alone therefore leaves the previous release unable
+to run: the database would say `0.15.1` and the v0.14 binaries would pause.
+The db-migration Job of the previous release does not reset the stamp either;
+it keeps the versions of an existing database.
+
+So `rollback` refuses to run on a stamped database unless it is told the
+release that runs next, with `--stack-version <release>`, and sets the stamp
+once every down has been applied. `info` prints the current stamp. The value
+is compared as `major.minor.patch`, a leading `v` and a suffix are ignored:
+`0.14.8`, `v0.14.8` and `v0.14.8-1` are the same release.
+
 ## Usage
 
 ```sh
 migrate.sh check                      # validate the migration files, no database needed
 migrate.sh info                       # run every check, print the database state (read-only)
-migrate.sh rollback <target-version>  # revert every migration above <target-version>
-migrate.sh rollback <target-version> --force
+migrate.sh rollback <target-version> --stack-version <release>
+                                      # revert every migration above <target-version>,
+                                      # then stamp the database with <release>
+migrate.sh rollback <target-version> --stack-version <release> --force
                                       # same, deleting the data that blocks a down
 ```
 
@@ -72,14 +96,14 @@ explicitly:
 
 ```sh
 docker run --rm -e DATABASE_URL=postgres://user:password@host:5432/coprocessor \
-  ghcr.io/zama-ai/fhevm/coprocessor-db-rollback:<tag> rollback 20260704130000
+  ghcr.io/zama-ai/fhevm/coprocessor-db-rollback:<tag> rollback 20260704130000 --stack-version 0.14.8
 ```
 
 Output is one `key=value` line per event:
 
 ```text
-event=rollback_plan action=rollback current=20261012150000 target=20260704130000 force=false revert=20261012150000,20261007120000,...
-event=rollback_result action=rollback status=success previous=20261012150000 current=20260704130000 target=20260704130000 reverted=...
+event=rollback_plan action=rollback current=20261012150000 target=20260704130000 force=false revert=20261012150000,20261007120000,... stack_version=0.15.1->0.14.8
+event=rollback_result action=rollback status=success previous=20261012150000 current=20260704130000 target=20260704130000 force=false reverted=... stack_version=0.14.8
 ```
 
 `status` is `success`, `noop` (already at the target) or `failed`. The exit code
@@ -118,7 +142,9 @@ one): it is the one that knows every migration applied to the database.
    to be removed, and an open session can hold a lock a down needs.
 4. Take an RDS snapshot of the instance. The downs drop tables and columns, and
    the snapshot is the only way back to the data they held.
-5. Run `rollback <target-version>` and check for `status=success`.
+5. Run `rollback <target-version> --stack-version <release>`, where the
+   release is the coprocessor version about to be deployed (`0.14.8` for
+   v0.14.8-1), and check for `status=success` and the new `stack_version`.
 6. Deploy the previous coprocessor and db-migration versions. The db-migration
    image re-applies the migrations of the previous release that the rollback
    removed (`20260928120000` for v0.14.x) and refuses to start against a
@@ -239,7 +265,9 @@ Against a throwaway Postgres it:
   baseline one by one, and compares the schema after each revert with the
   schema recorded before the migration;
 - rolls back from the newest migration to the baseline in one command with data
-  in the tables, then upgrades again;
+  in the tables and a database stamped `v0.15.1`, checks the stamp became the
+  requested release, then upgrades again;
+- checks that a stamped database refuses a rollback without `--stack-version`;
 - checks that each down that refuses on data stops the rollback and changes
   nothing, and that `--force` deletes exactly that data;
 - checks that every guard refuses to run and leaves the database untouched.

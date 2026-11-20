@@ -6,6 +6,9 @@
 #   migrate.sh info                       validate everything, print the database state
 #   migrate.sh rollback <target-version>  revert every migration above <target-version>
 #                                         (not below the baseline, 20260704130000)
+#   migrate.sh rollback <target-version> --stack-version <release>
+#                                         same, and stamp versioning.stack_version
+#                                         with the release that will run next
 #   migrate.sh rollback <target-version> --force
 #                                         same, and let the down files that refuse to
 #                                         run delete the data that blocks them
@@ -22,6 +25,13 @@
 # that would otherwise stop on data they cannot convert, through the
 # `coprocessor_db_rollback.force` session setting, and makes them delete that data
 # instead. It is meant for test environments.
+#
+# The schema is not the whole state. `versioning.stack_version` names the
+# release that owns the database; a coprocessor binary older than it treats
+# itself as retired and stops processing. The down files never touch that row
+# (its migration is below the baseline), so a rollback must be told which
+# release runs next: it refuses to run on a stamped database without
+# --stack-version, and sets the stamp once every down has been applied.
 #
 # Environment:
 #   DATABASE_URL    postgres connection string (required for info and rollback)
@@ -55,13 +65,14 @@ BASELINE_VERSION=${BASELINE_VERSION:-20260704130000}
 ACTION=${1:-}
 TARGET_VERSION=${2:-}
 FORCE=false
+STACK_VERSION=''
 
 # =========================================================================
 # Helpers
 # =========================================================================
 
 usage() {
-    echo "usage: $0 check | info | rollback <target-version> [--force]" >&2
+    echo "usage: $0 check | info | rollback <target-version> [--stack-version <release>] [--force]" >&2
 }
 
 # Print a failure line and stop. $1 is the action, $2 the reason.
@@ -172,6 +183,19 @@ check_migration_files() {
 # Database access
 # =========================================================================
 
+# Runs one SQL statement with psql and prints its single value.
+query() {
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -X -q -At -c "$1"
+}
+
+# The stack version the database is stamped with, or an empty string when the
+# versioning table does not exist.
+live_stack_version() {
+    if [ "$(query "SELECT to_regclass('public.versioning') IS NOT NULL")" = t ]; then
+        query "SELECT stack_version FROM versioning WHERE singleton"
+    fi
+}
+
 # Runs `sqlx migrate info`, retrying while the database is not reachable.
 # On failure the reason is left in $command_output (sqlx prints its errors on
 # stdout, so both streams are captured).
@@ -241,15 +265,30 @@ case "$ACTION" in
         [ "$#" -eq 1 ] || { usage; exit 1; }
         ;;
     rollback)
-        case "$#" in
-            2) ;;
-            3)
-                [ "$3" = --force ] || { usage; exit 1; }
-                FORCE=true
-                ;;
+        [ "$#" -ge 2 ] || { usage; exit 1; }
+        shift 2
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --force)
+                    FORCE=true
+                    ;;
+                --stack-version)
+                    [ "$#" -ge 2 ] || { usage; exit 1; }
+                    STACK_VERSION=$2
+                    shift
+                    ;;
+                *)
+                    usage
+                    exit 1
+                    ;;
+            esac
+            shift
+        done
+        case "$STACK_VERSION" in
+            '') ;;
+            v[0-9]*.[0-9]* | [0-9]*.[0-9]*) ;;
             *)
-                usage
-                exit 1
+                fail rollback "stack version must look like v0.14.8 or 0.14.8, got: $STACK_VERSION"
                 ;;
         esac
         case "$TARGET_VERSION" in
@@ -287,6 +326,9 @@ fi
 
 if ! command -v sqlx >/dev/null 2>&1; then
     fail "$ACTION" "sqlx-cli is not installed"
+fi
+if ! command -v psql >/dev/null 2>&1; then
+    fail "$ACTION" "psql is not installed"
 fi
 
 if [ -z "$DATABASE_URL" ]; then
@@ -333,7 +375,10 @@ CURRENT_VERSION=$(current_version "$before_info")
 if [ "$ACTION" = info ]; then
     cat "$before_info"
     applied=$(installed_versions "$before_info" | awk 'END { print NR }')
-    echo "event=rollback_result action=info status=success current=$CURRENT_VERSION applied=$applied known=$MIGRATION_COUNT in_sync=true"
+    if ! LIVE_STACK_VERSION=$(live_stack_version 2>"$command_output"); then
+        fail info "could not read versioning.stack_version: $(compact "$command_output")"
+    fi
+    echo "event=rollback_result action=info status=success current=$CURRENT_VERSION applied=$applied known=$MIGRATION_COUNT in_sync=true stack_version=${LIVE_STACK_VERSION:-none}"
     exit 0
 fi
 
@@ -352,12 +397,29 @@ fi
 # Applied versions above the target, newest first: the order they are reverted in.
 PLAN=$(installed_versions "$before_info" | awk -v target="$TARGET_VERSION" '$1 + 0 > target + 0' | sort -rn | tr '\n' ',' | sed 's/,$//')
 
-if [ -z "$PLAN" ]; then
-    echo "event=rollback_result action=rollback status=noop current=$CURRENT_VERSION target=$TARGET_VERSION"
+if ! LIVE_STACK_VERSION=$(live_stack_version 2>"$command_output"); then
+    fail rollback "could not read versioning.stack_version: $(compact "$command_output")"
+fi
+
+# The stamp only changes when it is asked for and differs. A missing versioning
+# table (target below its migration) has nothing to stamp.
+STAMP=false
+if [ -n "$STACK_VERSION" ] && [ -n "$LIVE_STACK_VERSION" ] && [ "$STACK_VERSION" != "$LIVE_STACK_VERSION" ]; then
+    STAMP=true
+fi
+
+if [ -z "$PLAN" ] && [ "$STAMP" = false ]; then
+    echo "event=rollback_result action=rollback status=noop current=$CURRENT_VERSION target=$TARGET_VERSION stack_version=${LIVE_STACK_VERSION:-none}"
     exit 0
 fi
 
-echo "event=rollback_plan action=rollback current=$CURRENT_VERSION target=$TARGET_VERSION force=$FORCE revert=$PLAN"
+# A binary older than the stamp retires itself, so a schema rollback without
+# the matching stamp leaves the previous release unable to run.
+if [ -n "$PLAN" ] && [ -n "$LIVE_STACK_VERSION" ] && [ -z "$STACK_VERSION" ]; then
+    fail rollback "the database is stamped with stack version $LIVE_STACK_VERSION and a binary older than that retires itself: pass --stack-version <release that will run after the rollback>"
+fi
+
+echo "event=rollback_plan action=rollback current=$CURRENT_VERSION target=$TARGET_VERSION force=$FORCE revert=${PLAN:-none} stack_version=${LIVE_STACK_VERSION:-none}->${STACK_VERSION:-${LIVE_STACK_VERSION:-none}}"
 
 # The down files read this session setting; see the header of each one for what
 # it makes them do. It is set for the revert only, never for the checks above.
@@ -366,7 +428,9 @@ if [ "$FORCE" = true ]; then
     export PGOPTIONS
 fi
 
-if ! sqlx migrate revert \
+if [ -z "$PLAN" ]; then
+    : >"$command_output"
+elif ! sqlx migrate revert \
     --source "$MIGRATIONS_DIR" \
     --target-version "$TARGET_VERSION" >"$command_output" 2>&1; then
     error=$(compact "$command_output")
@@ -397,4 +461,16 @@ if [ "$FINAL_VERSION" != "$TARGET_VERSION" ]; then
     exit 1
 fi
 
-echo "event=rollback_result action=rollback status=success previous=$CURRENT_VERSION current=$FINAL_VERSION target=$TARGET_VERSION force=$FORCE reverted=$PLAN"
+# Stamp the release that runs next. Done last: the schema is at the target
+# whatever happens here, and the result line says whether the stamp followed.
+if [ "$STAMP" = true ]; then
+    if ! stamped=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -X -q -At -v v="$STACK_VERSION" \
+        -c "UPDATE versioning SET stack_version = :'v', updated_at = NOW() WHERE singleton RETURNING stack_version" 2>"$command_output") \
+        || [ "$stamped" != "$STACK_VERSION" ]; then
+        echo "event=rollback_result action=rollback status=failed previous=$CURRENT_VERSION current=$FINAL_VERSION target=$TARGET_VERSION force=$FORCE reverted=${PLAN:-none} stack_version=$LIVE_STACK_VERSION error=\"the schema is at the target but versioning.stack_version could not be set to $STACK_VERSION: $(compact "$command_output")\"" >&2
+        exit 1
+    fi
+    LIVE_STACK_VERSION=$STACK_VERSION
+fi
+
+echo "event=rollback_result action=rollback status=success previous=$CURRENT_VERSION current=$FINAL_VERSION target=$TARGET_VERSION force=$FORCE reverted=${PLAN:-none} stack_version=${LIVE_STACK_VERSION:-none}"
