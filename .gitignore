@@ -95,3 +95,11 @@ mochawesome-report/
 #-------------------------------------------------------------------------------
 # Build artifacts directory
 target/
+
+# js-sdk Claude specific
+# Claude Code: .claude/ is ignored repo-wide (#1697), except the js-sdk
+# team's shared skills. Local files (settings.local.json, etc.) stay ignored.
+#-------------------------------------------------------------------------------
+!sdk/js-sdk/.claude/
+sdk/js-sdk/.claude/*
+!sdk/js-sdk/.claude/skills/
