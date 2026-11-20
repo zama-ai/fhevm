@@ -62,12 +62,9 @@
  * baseline, while a switch is pending (the previous context must keep serving during the
  * reshare), and after each transition.
  *
- * Replicas: the scenario has a second host chain that runs a ProtocolConfigReplica. After the
- * same-committee switch, the epoch rotation, the context destruction, the post-destroy switch, the
- * abort and recovery, and the node swap, the profile replays the signed KMS confirmations of the
- * canonical chain onto each replica (`task:buildReplicaReplayCalldata`, then the `submit*` calls).
- * Each replica must then report the canonical active context, epoch and signers, and the
- * destroyed context must no longer be valid there.
+ * Replicas: the second host chain runs a ProtocolConfigReplica. After each canonical step, the
+ * profile replays the signed KMS confirmations onto it (`task:buildReplicaReplayCalldata`, then the
+ * `submit*` calls). The replica must then match the canonical context, epoch and signers.
  *
  * Disruptive and single-run: the profile advances the KMS context/epoch and destroys the retired
  * ones, so it expects a pristine stack. Re-up between runs
@@ -182,17 +179,16 @@ export const parseReplayCalldata = (output: string): string[] =>
 const REPLAY_OUTPUT_FILE = "replica-replay.txt";
 const KMS_SIGNERS_SIGNATURE = "getKmsSignersForContext(uint256)(address[])";
 
-type CanonicalTarget = { rpcUrl: string; configAddress: string };
 type Replica = { chain: HostChainRuntime; rpcUrl: string; address: string };
 
 const replicasOf = (state: State): Replica[] =>
   extraHostChains(state).map((chain) => ({
     chain,
-    rpcUrl: `http://localhost:${chain.rpcPort}`,
+    rpcUrl: hostReachableRpcUrl(state.discovery!.endpoints.hosts[chain.key].http),
     address: withHexPrefix(state.discovery!.hosts[chain.key].PROTOCOL_CONFIG_CONTRACT_ADDRESS),
   }));
 
-const assertReplicaMatchesCanonical = async (replica: Replica, canonical: CanonicalTarget, afterWhat: string) => {
+const assertReplicaMatchesCanonical = async (replica: Replica, canonical: SwitchTarget, afterWhat: string) => {
   const expected = await readContextAndEpoch(canonical.rpcUrl, canonical.configAddress);
   const actual = await readContextAndEpoch(replica.rpcUrl, replica.address);
   if (actual.contextId !== expected.contextId || actual.epochId !== expected.epochId) {
@@ -213,8 +209,7 @@ const assertReplicaMatchesCanonical = async (replica: Replica, canonical: Canoni
   }
 };
 
-/** Checks each extra host chain runs a ProtocolConfigReplica that starts at the canonical state. */
-const assertReplicasDeployed = async (state: State, canonical: CanonicalTarget) => {
+const assertReplicasDeployed = async (state: State, canonical: SwitchTarget) => {
   for (const replica of replicasOf(state)) {
     const version = await castCall(replica.rpcUrl, replica.address, "getVersion()(string)");
     if (!version.includes("ProtocolConfigReplica")) {
@@ -226,23 +221,21 @@ const assertReplicasDeployed = async (state: State, canonical: CanonicalTarget) 
   }
 };
 
-/** Waits until the canonical ProtocolConfig emits `KmsContextDestructionQuorumReached` for `contextId`.
- * The KMS nodes confirm a destruction asynchronously, after `destroyKmsContext` has returned. */
-const waitForContextDestructionQuorum = async (canonical: CanonicalTarget, contextId: bigint) => {
-  const topic = await keccakTopic("KmsContextDestructionQuorumReached(uint256,bytes)");
+/** The KMS nodes confirm a destruction asynchronously, after the destroy call has returned. */
+const waitForDestructionQuorum = async (canonical: SwitchTarget, event: string, destroyedId: bigint) => {
+  const topic = await keccakTopic(event);
   const deadline = Date.now() + ACTIVATION_TIMEOUT_MS;
   const hasQuorum = async () => {
     const logs = await run([
       "cast", "logs", "--json", "--from-block", "0", "--address", canonical.configAddress,
-      "--rpc-url", canonical.rpcUrl, topic, `0x${uint256ToId(contextId)}`,
+      "--rpc-url", canonical.rpcUrl, topic, `0x${uint256ToId(destroyedId)}`,
     ]);
     return (JSON.parse(logs.stdout) as unknown[]).length > 0;
   };
   while (!(await hasQuorum())) {
     if (Date.now() >= deadline) {
       throw new PreflightError(
-        `kms-context-switch: no KmsContextDestructionQuorumReached for context ${contextId} on the canonical ProtocolConfig ` +
-          `within ${ACTIVATION_TIMEOUT_MS / 1000}s. The KMS nodes must sign and submit confirmKmsContextDestruction.`,
+        `kms-context-switch: no ${event} for id ${destroyedId} on ${canonical.where} within ${ACTIVATION_TIMEOUT_MS / 1000}s`,
       );
     }
     await Bun.sleep(ACTIVATION_POLL_MS);
@@ -250,33 +243,17 @@ const waitForContextDestructionQuorum = async (canonical: CanonicalTarget, conte
 };
 
 /**
- * Brings every replica up to the canonical state through the signed submit path. The replay task
- * builds the `submit*` calldata from the canonical events up to the finalized block. Any account may
- * send it, because the replica checks the KMS signatures. Then checks that each replica matches the
- * canonical active context, epoch and signers, and that each of `destroyedContextIds` is no longer
- * valid on the replica.
+ * The replay task reads the canonical events only up to the latest finalized block. Any account may
+ * send the calldata, because the replica checks the KMS signatures.
  */
-const syncReplicas = async (
-  state: State,
-  canonical: CanonicalTarget,
-  owner: Owner,
-  afterWhat: string,
-  destroyedContextIds: bigint[] = [],
-) => {
-  for (const contextId of destroyedContextIds) {
-    await waitForContextDestructionQuorum(canonical, contextId);
-  }
+const syncReplicas = async (state: State, canonical: SwitchTarget, afterWhat: string) => {
   await waitForLatestFinalized(canonical.rpcUrl);
   const canonicalChain = defaultHostChain(state);
+  const hostSc = await readEnvFile(envPath("host-sc"));
+  // The host pauser is a funded anvil account on every host chain. It is not the ACL owner of the replica.
+  const sender: Owner = { key: hostSc.PAUSER_PRIVATE_KEY, address: hostSc.PAUSER_ADDRESS_0 };
   for (const replica of replicasOf(state)) {
     const { chain } = replica;
-    for (const contextId of destroyedContextIds) {
-      if (!(await castBool(replica.rpcUrl, replica.address, "isValidKmsContext(uint256)(bool)", contextId.toString()))) {
-        throw new PreflightError(
-          `kms-context-switch: context ${contextId} is not valid on the replica on ${chain.key} before the replay of its destruction`,
-        );
-      }
-    }
     console.log(`[kms-context-switch] replaying ${afterWhat} onto the replica on ${chain.key}…`);
     await runContractTask(
       "host-sc",
@@ -292,16 +269,9 @@ const syncReplicas = async (
     );
     const output = await readFile(path.join(path.dirname(chain.addressesPath), REPLAY_OUTPUT_FILE), "utf8");
     for (const calldata of parseReplayCalldata(output)) {
-      await castSend(replica.rpcUrl, replica.address, owner, calldata);
+      await castSend(replica.rpcUrl, replica.address, sender, calldata);
     }
     await assertReplicaMatchesCanonical(replica, canonical, afterWhat);
-    for (const contextId of destroyedContextIds) {
-      if (await castBool(replica.rpcUrl, replica.address, "isValidKmsContext(uint256)(bool)", contextId.toString())) {
-        throw new PreflightError(
-          `kms-context-switch: context ${contextId} is still valid on the replica on ${chain.key} after the replay of its destruction`,
-        );
-      }
-    }
     console.log(`[kms-context-switch] replica on ${chain.key} matches canonical after ${afterWhat}`);
   }
 };
@@ -854,8 +824,7 @@ export const runKmsContextSwitchProfile = async (
 
   const baseline = await readContextAndEpoch(rpcUrl, configAddress);
   console.log(`[kms-context-switch] baseline on ${where}: contextId=${baseline.contextId} epochId=${baseline.epochId}`);
-  const canonical = { rpcUrl, configAddress };
-  const owner = await loadHostOwner();
+  const canonical = { rpcUrl, configAddress, where };
   await assertReplicasDeployed(state, canonical);
 
   // Baseline app smoke first, so a later failure is attributable to the transition it follows.
@@ -867,7 +836,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     baseline, false,
   );
-  await syncReplicas(state, canonical, owner, "the same-committee context switch");
+  await syncReplicas(state, canonical, "the same-committee context switch");
 
   // 2) Same-committee key resharing (NewKmsEpoch). Then probes the new epoch ID activates.
   console.log("[kms-context-switch] broadcasting defineNewEpochForCurrentKmsContext (NewKmsEpoch)…");
@@ -889,9 +858,10 @@ export const runKmsContextSwitchProfile = async (
     );
   }
   await runSmoke(`kms-context-switch: input-proof after the epoch rotation (epochId=${afterEpoch.epochId})`);
-  await syncReplicas(state, canonical, owner, "the epoch rotation");
+  await syncReplicas(state, canonical, "the epoch rotation");
 
   // 3) Destruction: retire the baseline context and the superseded epoch across every layer.
+  const owner = await loadHostOwner();
   await destroyContextAndEpoch(
     state,
     { rpcUrl, protocolConfig: configAddress, owner },
@@ -904,7 +874,24 @@ export const runKmsContextSwitchProfile = async (
     runDecryption,
     runSmoke,
   );
-  await syncReplicas(state, canonical, owner, "the context destruction", [baseline.contextId]);
+  await waitForDestructionQuorum(canonical, "KmsContextDestructionQuorumReached(uint256,bytes)", baseline.contextId);
+  await waitForDestructionQuorum(canonical, "KmsEpochDestructionQuorumReached(uint256,bytes)", afterSwitch.epochId);
+  await syncReplicas(state, canonical, "the context and epoch destruction");
+  for (const replica of replicasOf(state)) {
+    const [isContextValid, isEpochValid] = await Promise.all([
+      castBool(replica.rpcUrl, replica.address, "isValidKmsContext(uint256)(bool)", baseline.contextId.toString()),
+      castBool(
+        replica.rpcUrl, replica.address, "isValidEpochForContext(uint256,uint256)(bool)",
+        afterSwitch.contextId.toString(), afterSwitch.epochId.toString(),
+      ),
+    ]);
+    if (isContextValid || isEpochValid) {
+      throw new PreflightError(
+        `kms-context-switch: after the replay, the replica on ${replica.chain.key} reports context ${baseline.contextId} ` +
+          `valid=${isContextValid} and epoch ${afterSwitch.epochId} valid=${isEpochValid}. Both must be false`,
+      );
+    }
+  }
 
   // 4a) A context switch must still work after a destroy. The connector reads the previous
   //     key/CRS material via getCrsMaterials, which resolves the context that material was
@@ -921,7 +908,7 @@ export const runKmsContextSwitchProfile = async (
   console.log(
     `[kms-context-switch] post-destroy switch activated: contextId ${afterEpoch.contextId} -> ${afterDestroySwitch.contextId} (epochId=${afterDestroySwitch.epochId})`,
   );
-  await syncReplicas(state, canonical, owner, "the post-destroy context switch");
+  await syncReplicas(state, canonical, "the post-destroy context switch");
 
   // 4b) Abort a stuck epoch rotation. Check that the single-in-flight guard reverts a second
   //     operation, that destroying the Pending epoch aborts the rotation, and that a fresh
@@ -929,7 +916,7 @@ export const runKmsContextSwitchProfile = async (
   const recovered = await abortStuckRotation(
     state, { rpcUrl, configAddress, where }, owner, afterDestroySwitch, runDecryption,
   );
-  await syncReplicas(state, canonical, owner, "the aborted and recovered epoch rotation");
+  await syncReplicas(state, canonical, "the aborted and recovered epoch rotation");
 
   // 5) Node swap: drop a committee node, promote the spare. Running it after every destroy and
   //    abort above also proves the lifecycle never left the system unable to switch.
@@ -938,7 +925,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     recovered, true, runProxyCheck,
   );
-  await syncReplicas(state, canonical, owner, "the node swap");
+  await syncReplicas(state, canonical, "the node swap");
 
   // 6a) Once the swap is finalized, every coprocessor-proxy accepts the promoted spare, and the
   //     dropped node while the outgoing context is still Active: 6b's refusal then comes from the
@@ -973,7 +960,7 @@ export const runKmsContextSwitchProfile = async (
       "outcomes and the committee-only cascade asserted); a further switch after the destroy still reshared and activated; a stuck rotation " +
       "was aborted (single-in-flight revert + Pending-epoch destroy) and recovered; the node swap activated " +
       "and the promoted spare serves the 2t+1 quorum; user-decryption works under each transition; the " +
-      "input-proof app flow held at every checkpoint; every replica followed each step through the signed submit path" +
+      "input-proof app flow held at every checkpoint; every replica matched the canonical context, epoch and signers after the replay of each step, and dropped the destroyed context and epoch" +
       (runProxyCheck
         ? "; and every coprocessor-proxy refused the spare while the swap was held at Created, accepted it once promoted, accepted the dropped node until its context was destroyed, then refused it"
         : ""),
