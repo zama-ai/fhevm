@@ -107,6 +107,7 @@ pub async fn initialize_gateway(
         ReadinessChecker::new(
             host_acl_checker,
             &settings.gateway,
+            &settings.protocol_config.ethereum_http_rpc_url,
             dequeue_shutdown.clone(),
         )
         .await?,

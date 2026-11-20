@@ -306,10 +306,10 @@ pub enum GwCiphertextCheckConfig {
         /// Handles probed concurrently within one attempt. Each handle fans out one `HEAD` per
         /// Coprocessor bucket, so this also bounds per-bucket concurrency.
         max_concurrent_handles: NonZeroUsize,
-        /// `GatewayConfig` contract, source of the Coprocessor registry (signers, S3 buckets and
-        /// majority threshold) used by this check. Only this check consumes it, so it lives here
-        /// rather than on the shared `contracts` block.
-        gateway_config_address: String,
+        /// `CoprocessorConfig` contract on Ethereum, source of the Coprocessor registry (signers,
+        /// storage URLs and majority threshold) used by this check. Only this check consumes it,
+        /// so it lives here rather than on the shared `contracts` block.
+        coprocessor_config_address: String,
     },
 }
 
@@ -912,13 +912,13 @@ impl Settings {
             addresses.push(("keyurl.kms_generation_address", kms_generation_address));
         }
         if let GwCiphertextCheckConfig::CoprocessorAttestations {
-            gateway_config_address,
+            coprocessor_config_address,
             ..
         } = &self.gateway.readiness_checker.gw_ciphertext_check
         {
             addresses.push((
-                "gw_ciphertext_check.gateway_config_address",
-                gateway_config_address,
+                "gw_ciphertext_check.coprocessor_config_address",
+                coprocessor_config_address,
             ));
         }
 
@@ -1346,18 +1346,18 @@ mod tests {
     }
 
     #[test]
-    fn test_gw_ciphertext_check_gateway_config_address_is_required() {
-        // Without the GatewayConfig address there is no Coprocessor registry at all, so startup
+    fn test_gw_ciphertext_check_coprocessor_config_address_is_required() {
+        // Without the CoprocessorConfig address there is no Coprocessor registry at all, so startup
         // must fail rather than silently degrade the readiness gate.
         assert_field_is_required(
-            "gateway.readiness_checker.gw_ciphertext_check.gateway_config_address",
+            "gateway.readiness_checker.gw_ciphertext_check.coprocessor_config_address",
         );
     }
 
     /// The on-chain Gateway check never builds a Coprocessor registry, so it must not demand the
     /// address that only feeds one.
     #[test]
-    fn test_gw_ciphertext_check_gateway_chain_does_not_require_gateway_config_address() {
+    fn test_gw_ciphertext_check_gateway_chain_does_not_require_coprocessor_config_address() {
         let settings = settings_new(
             ConfigBuilder::from_example()
                 .expect("example config")
@@ -1369,7 +1369,7 @@ mod tests {
                     .expect("valid gateway_chain block"),
                 ),
         )
-        .expect("`source: gateway_chain` without `gateway_config_address` should still validate");
+        .expect("`source: gateway_chain` without `coprocessor_config_address` should still validate");
 
         assert!(matches!(
             settings.gateway.readiness_checker.gw_ciphertext_check,
@@ -1393,7 +1393,7 @@ mod tests {
             request_timeout_ms,
             registry_refresh_ms,
             max_concurrent_handles: NonZeroUsize::new(8).unwrap(),
-            gateway_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7".to_string(),
+            coprocessor_config_address: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7".to_string(),
         }
     }
 
@@ -1487,7 +1487,7 @@ mod tests {
     }
 
     // `head_timeout_ms`, `request_timeout_ms`, `registry_refresh_ms`, `max_concurrent_handles`,
-    // and `gateway_config_address` are covered by
+    // and `coprocessor_config_address` are covered by
     // `test_gw_ciphertext_check_head_timeout_is_required` and friends above, run against the
     // example's `source: coprocessor_attestations` block; `retry` is the remaining one of the six.
     #[test]
@@ -2209,7 +2209,7 @@ mod tests {
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 5);
 
         // gw_ciphertext_check: YAML has source: coprocessor_attestations, 5000/240000/60000; env
-        // overrides to 7000/300000/90000 and a different gateway_config_address (source and
+        // overrides to 7000/300000/90000 and a different coprocessor_config_address (source and
         // max_concurrent_handles come from the YAML base, untouched by env).
         match &settings.gateway.readiness_checker.gw_ciphertext_check {
             GwCiphertextCheckConfig::CoprocessorAttestations {
@@ -2217,7 +2217,7 @@ mod tests {
                 request_timeout_ms,
                 registry_refresh_ms,
                 max_concurrent_handles,
-                gateway_config_address,
+                coprocessor_config_address,
                 ..
             } => {
                 assert_eq!(*head_timeout_ms, 7000);
@@ -2225,7 +2225,7 @@ mod tests {
                 assert_eq!(*registry_refresh_ms, 90000);
                 assert_eq!(max_concurrent_handles.get(), 8);
                 assert_eq!(
-                    gateway_config_address,
+                    coprocessor_config_address,
                     "0x1C5d0A5B44e0B3D1A3d1c05A0f5aC2C2b64f1d3C"
                 );
             }
