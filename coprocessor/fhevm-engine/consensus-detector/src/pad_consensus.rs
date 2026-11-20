@@ -63,6 +63,11 @@ static MISSING: LazyLock<IntCounterVec> = LazyLock::new(|| {
 /// Outputs checked at the same time in a pass.
 const CONCURRENT_CHECKS: usize = 16;
 
+/// How long a pass holds its checks: longer than a batch with slow peers, so that another detector
+/// does not ask the same peers again. At the end of its pass, a check that stays open sets its next
+/// time.
+const LEASE: Duration = Duration::from_secs(120);
+
 /// Time between two deletions of the old checks.
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 
@@ -188,7 +193,7 @@ async fn pass(
                      FOR UPDATE SKIP LOCKED)
         RETURNING prf_instance, label, pad_length, ciphertext_digest, ciphertext128_digest,
                   signer, created_at <= NOW() - make_interval(secs => $3) AS "expired!""#,
-        config.interval.as_secs_f64(),
+        LEASE.as_secs_f64(),
         config.batch,
         deadline,
     )
@@ -221,7 +226,7 @@ async fn pass(
     let results: Vec<sqlx::Result<bool>> = futures::stream::iter(outputs)
         .map(|output| {
             let members = &members;
-            async move { check(pool, http, members, threshold, &output).await }
+            async move { check(pool, http, members, threshold, config.interval, &output).await }
         })
         .buffer_unordered(CONCURRENT_CHECKS)
         .collect()
@@ -240,6 +245,7 @@ async fn check(
     http: &reqwest::Client,
     members: &[(Address, String)],
     threshold: usize,
+    interval: Duration,
     output: &Output,
 ) -> sqlx::Result<bool> {
     let subject = &output.subject;
@@ -328,6 +334,17 @@ async fn check(
     let (outcome, local_result) = compare(output.digests, answers.values().flatten(), threshold);
     let all_answered = peers.iter().all(|(signer, _)| answers.contains_key(signer));
     if !(outcome == "consensus" || all_answered || output.expired) {
+        // The next check of this output comes after `interval`, not at the end of the lease.
+        sqlx::query!(
+            "UPDATE pad_consensus SET next_check_at = NOW() + make_interval(secs => $4)
+              WHERE prf_instance = $1 AND label = $2 AND pad_length = $3 AND done_at IS NULL",
+            prf,
+            subject.label.as_slice(),
+            pad_length,
+            interval.as_secs_f64(),
+        )
+        .execute(pool)
+        .await?;
         return Ok(false);
     }
     // Only one detector ends a check, so the metrics and logs count it once.
@@ -434,6 +451,10 @@ mod tests {
     use alloy::signers::{local::PrivateKeySigner, SignerSync};
     use axum::{http::StatusCode, Router};
     use ciphertext_attestation::{prf::Version, PrfOutputAttestationPayload};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
     use test_harness::instance::{setup_test_db, ImportMode};
     use tokio::net::TcpListener;
 
@@ -515,6 +536,23 @@ mod tests {
         let base_url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         base_url
+    }
+
+    /// A peer bucket that answers 404 after `delay`, and counts the requests.
+    async fn counting_peer(delay: Duration) -> (String, Arc<AtomicUsize>) {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counter = requests.clone();
+        let app = Router::new().fallback(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            async move {
+                tokio::time::sleep(delay).await;
+                StatusCode::NOT_FOUND
+            }
+        });
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (base_url, requests)
     }
 
     /// Adds our output for `label`, computed 2 hours ago: the ct128 GC deleted its `pads` row.
@@ -745,6 +783,43 @@ mod tests {
                 .unwrap();
         // The drift check stays. The pass also adds the output of `database`.
         assert_eq!(labels, vec![B256::repeat_byte(3).to_vec(), LABEL.to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn another_detector_does_not_ask_again_during_a_slow_batch() {
+        let ours = PrivateKeySigner::random();
+        let peer_key = PrivateKeySigner::random();
+        let (url, requests) = counting_peer(Duration::from_secs(3)).await;
+        let members = vec![
+            (ours.address(), peer(StatusCode::OK, None).await),
+            (peer_key.address(), url),
+        ];
+        let (_instance, pool) = database(ours.address(), &members, 2).await;
+        let config = Config {
+            interval: Duration::from_secs(1),
+            ..Config::default()
+        };
+        let http = reqwest::Client::new();
+
+        // The second detector starts after the interval, while the first one waits for the peer.
+        let mut blue = PassState::default();
+        let first = pass(&pool, &http, &config, &mut blue);
+        let second = async {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            pass(&pool, &http, &config, &mut PassState::default()).await
+        };
+        let (first, second) = tokio::join!(first, second);
+        assert_eq!((first.unwrap(), second.unwrap()), (0, 0));
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+
+        // The check stays open: its next time is after the interval, not at the end of the lease.
+        let soon: bool = sqlx::query_scalar(
+            "SELECT next_check_at < NOW() + INTERVAL '1 minute' FROM pad_consensus",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(soon);
     }
 
     #[tokio::test]
