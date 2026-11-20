@@ -648,32 +648,31 @@ async fn test_answers_an_unknown_signer_at_once_when_the_waiters_are_full() {
     let t = start_without_polls().await;
     // Longer than the wait: every waiter keeps its connection for the whole wait.
     t.rpc.set_reply_delay(Duration::from_secs(60));
-    let unknown_request = |path: String| {
-        let request = t.client.get(t.url(&path));
-        async move {
-            let auth = auth_header(&PrivateKeySigner::random(), &path, b"").await;
-            request.header("authorization", auth).send().await.unwrap()
-        }
-    };
-
-    let waiters: Vec<_> = (0..MAX_UNKNOWN_SIGNER_WAITERS)
-        .map(|_| tokio::spawn(unknown_request(prf_path(1))))
-        .collect();
-    tokio::time::sleep(UNKNOWN_SIGNER_WAIT / 3).await;
-
-    let started = Instant::now();
-    let response = unknown_request(prf_path(1)).await;
-    assert!(
-        started.elapsed() < UNKNOWN_SIGNER_WAIT / 3,
-        "{:?}",
-        started.elapsed()
-    );
-    assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
-
-    for waiter in waiters {
-        let response = waiter.await.unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    const OVERFLOW: usize = 4;
+    let path = prf_path(1);
+    let mut requests = Vec::new();
+    for _ in 0..MAX_UNKNOWN_SIGNER_WAITERS + OVERFLOW {
+        let auth = auth_header(&PrivateKeySigner::random(), &path, b"").await;
+        requests.push(t.client.get(t.url(&path)).header("authorization", auth));
     }
+
+    // All sent at once: the first MAX_UNKNOWN_SIGNER_WAITERS to arrive wait, the others don't.
+    let answers = futures_util::future::join_all(requests.into_iter().map(|request| async move {
+        let started = Instant::now();
+        let response = request.send().await.unwrap();
+        (started.elapsed(), response)
+    }))
+    .await;
+    let mut waited = 0;
+    for (elapsed, response) in answers {
+        assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
+        if elapsed >= UNKNOWN_SIGNER_WAIT {
+            waited += 1;
+        } else {
+            assert!(elapsed < UNKNOWN_SIGNER_WAIT / 2, "{elapsed:?}");
+        }
+    }
+    assert_eq!(waited, MAX_UNKNOWN_SIGNER_WAITERS);
     assert_eq!(t.prf_service.hits(), 0);
 }
 

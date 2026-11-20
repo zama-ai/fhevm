@@ -190,13 +190,16 @@ impl ProxyHttp for Proxy {
             // The signer can be a node of a KMS context whose activation is finalized but not read
             // yet, so it is checked again after one read before being refused.
             Err(AuthError::UnknownSigner(_)) => {
-                let waiter = self.unknown_signer_waiters.try_acquire();
-                let wait = if waiter.is_ok() {
-                    UNKNOWN_SIGNER_WAIT
-                } else {
-                    Duration::ZERO
-                };
-                self.kms_tx_senders.refresh_after_miss(wait).await;
+                match self.unknown_signer_waiters.try_acquire() {
+                    Ok(_waiter) => {
+                        self.kms_tx_senders
+                            .refresh_after_miss(UNKNOWN_SIGNER_WAIT)
+                            .await
+                    }
+                    Err(_) => {
+                        self.kms_tx_senders.wake_after_miss();
+                    }
+                }
                 self.verifier.verify(authorization, target, b"")
             }
             verified => verified,

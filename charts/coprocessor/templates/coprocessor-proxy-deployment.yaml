@@ -30,6 +30,10 @@
 {{- if not (or $protocolConfigChain.httpUrl $protocolConfigChain.httpUrlValueFrom) }}
 {{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with httpUrl or httpUrlValueFrom" $canonicalChainId) }}
 {{- end }}
+{{- $idleTimeout := $proxy.clientIdleTimeoutSeconds }}
+{{- if or (lt (int $idleTimeout) 1) (ne (toString (int $idleTimeout)) (toString $idleTimeout)) }}
+{{- fail "coprocessorProxy.clientIdleTimeoutSeconds must be a whole number of seconds, at least 1" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
