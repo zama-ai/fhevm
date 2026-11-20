@@ -8,7 +8,16 @@ description: >
   context/epoch destruction all run on the unchanged {1,2,3,4} committee, and the spare enables
   the final node-swap switch — a new committee {1,2,3,5} (drop node 4, add the spare node 5),
   keeping n=4 so the threshold stays valid, exercising the KMS core's two-sets resharing with a
-  genuine membership change (node 4 leaves Set 1, node 5 joins Set 2).
+  genuine membership change (node 4 leaves Set 1, node 5 joins Set 2). The second host chain
+  runs a ProtocolConfigReplica, which the profile brings up to date through the signed submit path
+  after each canonical step.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
 topology:
   count: 2
   threshold: 2

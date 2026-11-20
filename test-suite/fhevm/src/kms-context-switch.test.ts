@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseContextAndEpoch } from "./commands/kms-context-switch";
+import { parseContextAndEpoch, parseReplayCalldata } from "./commands/kms-context-switch";
 
 describe("kms-context-switch parseContextAndEpoch", () => {
   test("parses the two newline-separated uint values cast prints", () => {
@@ -36,5 +36,32 @@ describe("kms-context-switch parseContextAndEpoch", () => {
 
   test("throws on empty output", () => {
     expect(() => parseContextAndEpoch("")).toThrow(/getCurrentKmsContextAndEpoch/);
+  });
+});
+
+describe("kms-context-switch parseReplayCalldata", () => {
+  test("returns the calldata of each call in replay order", () => {
+    const output = [
+      "Nothing to compile",
+      "ProtocolConfigReplica replay",
+      "  target: 0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "  scanned canonical blocks: 0..812",
+      "",
+      "1. submitKmsContextAndEpoch",
+      '  decodedArgs: [{"contextId":"7"}]',
+      "  calldata: 0xabc123",
+      "",
+      "2. submitKmsContextDestruction",
+      '  decodedArgs: ["6",["0x01"],"0x00"]',
+      "  calldata: 0xDEF456",
+      "",
+      "Skipped destructions. The owner can apply one with task:mirrorKmsContextDestruction or task:mirrorKmsEpochDestruction:",
+      "  - Destruction of epoch 9: the task cannot read the state of this epoch on the replica.",
+    ].join("\r\n");
+    expect(parseReplayCalldata(output)).toEqual(["0xabc123", "0xDEF456"]);
+  });
+
+  test("returns no calldata when there is nothing to replay", () => {
+    expect(parseReplayCalldata("ProtocolConfigReplica replay\n  scanned canonical blocks: 0..40\n\nNothing to replay.\n")).toEqual([]);
   });
 });
