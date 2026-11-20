@@ -15,7 +15,7 @@ import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
-import {ProtocolConfigTestBase} from "./ProtocolConfigTestBase.sol";
+import {ProtocolConfigTestBase} from "../ProtocolConfigTestBase.sol";
 
 contract ProtocolConfigTest is ProtocolConfigTestBase {
     address internal constant owner = address(456);

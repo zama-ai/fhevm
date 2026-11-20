@@ -33,6 +33,7 @@ import {
   deployFreshEmptyUUPSProxy,
   deployFreshKMSGenerationProxy,
   deployFreshProtocolConfigProxy,
+  deployFreshProtocolConfigReplicaProxy,
   deployFreshUninitializedProtocolConfigProxy,
   readHostAddress,
   rotateToNewKmsContext,
@@ -337,6 +338,22 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
         canonicalProtocolConfigAddress: await notProtocolConfig.getAddress(),
       }),
     ).to.be.rejectedWith(/reports version "KMSGeneration.*expected "ProtocolConfig/);
+  });
+
+  it('rejects a replica', async function () {
+    const replicaAddress = await deployFreshProtocolConfigReplicaProxy(
+      deployer,
+      KMS_CONTEXT_COUNTER_BASE + 1n,
+      EPOCH_COUNTER_BASE + 1n,
+      buildProtocolConfigNodes(),
+      buildProtocolConfigThresholds(),
+    );
+    await expect(
+      readCanonicalSnapshot(hre, {
+        canonicalProvider: ethers.provider,
+        canonicalProtocolConfigAddress: replicaAddress,
+      }),
+    ).to.be.rejectedWith(/reports version "ProtocolConfigReplica v/);
   });
 
   it('rejects when the canonical address is an uninitialized empty proxy', async function () {

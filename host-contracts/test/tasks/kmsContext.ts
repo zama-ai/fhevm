@@ -17,6 +17,7 @@ import {
   DUMMY_EPOCH_MATERIAL,
   DefinedKmsContext,
   confirmContextCreation,
+  confirmContextCreationQuorum,
   confirmContextDestruction,
   confirmEpochActivation,
   confirmEpochDestruction,
@@ -305,6 +306,13 @@ describe('KMS context tasks', function () {
       return defineNewKmsContext(await asOwner(), nodes, newThresholds);
     }
 
+    // Reaches the creation quorum with the new committee plus one old signer, then activates the epoch.
+    async function completeSwitch(context: DefinedKmsContext): Promise<bigint> {
+      const epochId = await confirmContextCreationQuorum(protocolConfig, [...newSigners, oldSigners[0]], context);
+      await confirmEpochActivation(protocolConfig, newSigners, context.contextId, epochId);
+      return epochId;
+    }
+
     async function defineEpoch(): Promise<{ epochId: bigint; blockNumber: number }> {
       const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
       const epochId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsEpoch', 'epochId');
@@ -368,8 +376,7 @@ describe('KMS context tasks', function () {
 
     it('reports CREATED once the creation quorum is reached, with the epoch still PENDING', async function () {
       const context = await defineSwitch();
-      const epochId = await confirmContextCreation(protocolConfig, [...newSigners, oldSigners[0]], context);
-      expect(epochId, 'creation quorum should emit NewKmsEpoch').to.not.be.undefined;
+      const epochId = await confirmContextCreationQuorum(protocolConfig, [...newSigners, oldSigners[0]], context);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.contextState).to.equal('CREATED');
@@ -382,8 +389,7 @@ describe('KMS context tasks', function () {
 
     it('reports fully live once the epoch is activated', async function () {
       const context = await defineSwitch();
-      const epochId = await confirmContextCreation(protocolConfig, [...newSigners, oldSigners[0]], context);
-      await confirmEpochActivation(protocolConfig, newSigners, context.contextId, epochId!);
+      const epochId = await completeSwitch(context);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.flow).to.equal('idle');
@@ -416,7 +422,7 @@ describe('KMS context tasks', function () {
 
     it('reports a destroyed CREATED switch with its epoch gone', async function () {
       const context = await defineSwitch();
-      const epochId = await confirmContextCreation(protocolConfig, [...newSigners, oldSigners[0]], context);
+      const epochId = await confirmContextCreationQuorum(protocolConfig, [...newSigners, oldSigners[0]], context);
       await (await (await asOwner()).destroyKmsContext(context.contextId)).wait();
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
@@ -487,8 +493,7 @@ describe('KMS context tasks', function () {
       await (await (await asOwner()).destroyKmsContext(destroyedContextId)).wait();
 
       const context = await defineSwitch();
-      const epochId = await confirmContextCreation(protocolConfig, [...newSigners, oldSigners[0]], context);
-      await confirmEpochActivation(protocolConfig, newSigners, context.contextId, epochId!);
+      await completeSwitch(context);
       await confirmContextDestruction(protocolConfig, [newSigners[0]], destroyedContextId);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
@@ -517,8 +522,7 @@ describe('KMS context tasks', function () {
       await confirmEpochDestruction(protocolConfig, [oldSigners[0], oldSigners[1]], destroyedEpochId);
 
       const context = await defineSwitch();
-      const epochId = await confirmContextCreation(protocolConfig, [...newSigners, oldSigners[0]], context);
-      await confirmEpochActivation(protocolConfig, newSigners, context.contextId, epochId!);
+      await completeSwitch(context);
       await confirmEpochDestruction(protocolConfig, [newSigners[0]], destroyedEpochId);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
@@ -543,13 +547,13 @@ describe('KMS context tasks', function () {
 
     it('flags epoch activation confirmations that signed different extraData', async function () {
       const context = await defineSwitch();
-      const epochId = await confirmContextCreation(protocolConfig, [...newSigners, oldSigners[0]], context);
-      await confirmEpochActivation(protocolConfig, [newSigners[0]], context.contextId, epochId!);
+      const epochId = await confirmContextCreationQuorum(protocolConfig, [...newSigners, oldSigners[0]], context);
+      await confirmEpochActivation(protocolConfig, [newSigners[0]], context.contextId, epochId);
       await confirmEpochActivation(
         protocolConfig,
         [newSigners[1]],
         context.contextId,
-        epochId!,
+        epochId,
         DUMMY_EPOCH_MATERIAL,
         '0x01',
       );
@@ -590,8 +594,7 @@ describe('KMS context tasks', function () {
     it('reports the quorum reached on one extraData despite an earlier divergent confirmation', async function () {
       const context = await defineSwitch();
       await confirmContextCreation(protocolConfig, [oldSigners[0]], context, '0x01');
-      const epochId = await confirmContextCreation(protocolConfig, [...newSigners, oldSigners[1]], context);
-      expect(epochId, 'creation quorum should emit NewKmsEpoch').to.not.be.undefined;
+      await confirmContextCreationQuorum(protocolConfig, [...newSigners, oldSigners[1]], context);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.contextState).to.equal('CREATED');
@@ -642,8 +645,8 @@ describe('KMS context tasks', function () {
       expect(creation.newSignersOutstanding).to.deep.equal([await newSigners[1].getAddress()]);
       expect(creation.stuckBelowPreviousThreshold).to.equal(false);
 
-      const epochId = await confirmContextCreation(protocolConfig, [newSigners[1]], context);
-      await confirmEpochActivation(protocolConfig, sharedSignerCommittee, context.contextId, epochId!);
+      const epochId = await confirmContextCreationQuorum(protocolConfig, [newSigners[1]], context);
+      await confirmEpochActivation(protocolConfig, sharedSignerCommittee, context.contextId, epochId);
 
       // The signer of both committees stays a confirmer, and the quorum reached before the rotation stays reached.
       const afterRotation = await inspectKmsContextSwitch(hre, proxyAddress, 0);
