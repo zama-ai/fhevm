@@ -54,7 +54,7 @@ where
         let pool = CiphertextPool::from_config(config)?;
         let registry = CoprocessorRegistry::connect(
             provider,
-            config.gateway_config_contract.address,
+            config.coprocessor_config_contract.address,
             config.copro_registry_refresh,
             cancel_token,
             CriticalFailurePolicy::Shutdown,
@@ -122,8 +122,11 @@ where
             "Consensus reached for handle"
         );
 
-        let winning_buckets: Vec<String> =
-            consensus.winners.into_iter().map(|w| w.bucket).collect();
+        let winning_buckets: Vec<_> = consensus
+            .winners
+            .into_iter()
+            .map(|w| w.storage_url)
+            .collect();
         let ciphertext = s3::retrieve_verified_ciphertext(
             &self.s3_client,
             handle,

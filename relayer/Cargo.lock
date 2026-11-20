@@ -1946,7 +1946,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-signer",
  "anyhow",
- "fhevm_gateway_bindings",
+ "fhevm_host_bindings",
  "futures",
  "hex",
  "serde",
@@ -1956,6 +1956,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -2632,6 +2633,7 @@ dependencies = [
  "async-trait",
  "ciphertext-attestation",
  "fhevm_gateway_bindings",
+ "fhevm_host_bindings",
  "futures",
  "futures-util",
  "hex",

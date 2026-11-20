@@ -7,7 +7,7 @@ license = "BSD-3-Clause-Clear"
 
 [features]
 # Networked half (on-chain registry mirroring, S3 HEAD attestation fetch, consensus fan-out).
-client = ["dep:alloy", "dep:anyhow", "dep:futures", "dep:tokio", "dep:tokio-util", "dep:fhevm_gateway_bindings"]
+client = ["dep:alloy", "dep:anyhow", "dep:futures", "dep:tokio", "dep:tokio-util", "dep:fhevm_host_bindings"]
 # Test-only constructors for `client` types (e.g. a `CoprocessorRegistry` with an injected
 # snapshot), for consumers exercising their own code against this crate's client without hitting
 # the chain. Enable it only from `[dev-dependencies]`.
@@ -22,6 +22,7 @@ sha3 = { version = "0.10.8", default-features = false }
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
 thiserror = { version = "2", default-features = false }
 tracing = { version = "0.1", default-features = false }
+url = { version = "2", default-features = false, features = ["std"] }
 
 # `client` feature only, see [features] above.
 alloy = { version = "2", default-features = false, optional = true, features = [
@@ -33,7 +34,7 @@ anyhow = { version = "1", default-features = false, optional = true, features = 
 futures = { version = "0.3", default-features = false, optional = true }
 tokio = { version = "1", default-features = false, optional = true, features = ["rt", "time"] }
 tokio-util = { version = "0.7", default-features = false, optional = true }
-fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false, optional = true }
+fhevm_host_bindings = { path = "../../host-contracts/rust_bindings", default-features = false, optional = true }
 
 [dev-dependencies]
 alloy-signer-local = { version = "2", default-features = false }

@@ -242,7 +242,8 @@ mod tests {
         let entries = [&s1, &s2, &s3].map(|s| crate::CoprocessorEntry {
             tx_sender: s.address(),
             signer: s.address(),
-            bucket: format!("http://bucket-{}", s.address()),
+            storage_url: format!("http://bucket-{}", s.address()).parse().unwrap(),
+            prf_endpoint_url: None,
         });
         let mut round = crate::ConsensusRound::<PrfOutputAttestation>::open(
             subject(),

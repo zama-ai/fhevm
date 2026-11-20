@@ -5,7 +5,7 @@ use crate::{
 };
 use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::primitives::{Log, LogData};
-use alloy::sol_types::{SolCall, SolEvent, SolValue};
+use alloy::sol_types::{SolCall, SolEvent};
 use rand::{Rng, RngExt};
 use std::{
     str::FromStr,
@@ -19,10 +19,7 @@ use tracing::{debug, info};
 
 // Re-export FHEVM bindings for convenience
 pub use fhevm_gateway_bindings::decryption::Decryption;
-pub use fhevm_gateway_bindings::gateway_config::GatewayConfig;
 pub use fhevm_gateway_bindings::input_verification::InputVerification;
-
-use crate::ct_attestation::CtAttestationMock;
 
 /// Selects which user-decryption gateway overload the mock should match
 /// when registering a success pattern. `Direct` / `Delegated` are the
@@ -68,15 +65,6 @@ const MOCK_PUBLIC_KEY_SIZE: usize = 32;
 const MOCK_SIGNATURE_SIZE: usize = 65;
 
 // Mock data generation helpers
-
-/// Wrap ABI-encoded return data as a successful `eth_call` response.
-fn success_bytes(data: Vec<u8>) -> Response {
-    Response::Success {
-        hash: None,
-        data: crate::mock_server::ResponseData::Bytes(Bytes::from(data)),
-        scheduled_transactions: Vec::new(),
-    }
-}
 
 /// Generate a random hash for transaction IDs
 fn random_hash() -> B256 {
@@ -242,7 +230,6 @@ pub struct FhevmMockWrapper {
     next_zk_proof_id: Arc<AtomicU64>,
     pub decryption_contract: Address,
     pub input_proof_contract: Address,
-    pub gateway_config_contract: Address,
 }
 
 impl FhevmMockWrapper {
@@ -251,7 +238,6 @@ impl FhevmMockWrapper {
         json_rpc_server: MockServer,
         decryption_contract: Address,
         input_proof_contract: Address,
-        gateway_config_contract: Address,
     ) -> Self {
         info!(
             decryption_contract = %decryption_contract,
@@ -277,11 +263,6 @@ impl FhevmMockWrapper {
             InputVerification::DEPLOYED_BYTECODE.clone(),
         );
 
-        json_rpc_server.set_code(
-            gateway_config_contract,
-            GatewayConfig::DEPLOYED_BYTECODE.clone(),
-        );
-
         Self {
             json_rpc_server,
             next_zk_proof_id: Arc::new(
@@ -289,7 +270,6 @@ impl FhevmMockWrapper {
             ),
             decryption_contract,
             input_proof_contract,
-            gateway_config_contract,
         }
     }
 
@@ -389,89 +369,6 @@ impl FhevmMockWrapper {
                 Decryption::isUserDecryptionReady_1Call::SELECTOR,
             ),
             error_response,
-            UsageLimit::Unlimited,
-        );
-    }
-
-    /// Serve the `GatewayConfig` registry views the off-chain readiness check reads: the
-    /// tx-sender list, the per-Coprocessor signer↔bucket binding and the majority threshold.
-    ///
-    /// The bucket URLs come from the [`CtAttestationMock`]'s live listeners, so the relayer
-    /// resolves real origins off-chain and probes them over HTTP.
-    pub fn set_coprocessor_registry(&self, attestation_mock: &CtAttestationMock) {
-        let coprocessors = attestation_mock.coprocessors().to_vec();
-        let threshold = attestation_mock.majority_threshold();
-        debug!(
-            coprocessors = coprocessors.len(),
-            threshold, "Registering GatewayConfig Coprocessor registry"
-        );
-
-        let tx_senders: Vec<Address> = coprocessors.iter().map(|c| c.tx_sender).collect();
-        self.on_gateway_config_view(
-            GatewayConfig::getCoprocessorTxSendersCall::SELECTOR,
-            tx_senders.abi_encode(),
-        );
-
-        self.on_gateway_config_view(
-            GatewayConfig::getCoprocessorMajorityThresholdCall::SELECTOR,
-            U256::from(threshold).abi_encode(),
-        );
-
-        // `getCoprocessor` is per-tx-sender, so the response has to depend on the calldata.
-        let gateway_config_contract = self.gateway_config_contract;
-        self.json_rpc_server.on_call_dynamic(
-            matches_contract_and_selector_for_call(
-                gateway_config_contract,
-                GatewayConfig::getCoprocessorCall::SELECTOR,
-            ),
-            move |params: &mock_server::CallParams| -> Response {
-                let decoded = GatewayConfig::getCoprocessorCall::abi_decode_raw(&params.input[4..])
-                    .expect("calldata: failed to decode getCoprocessorCall");
-                let Some(coprocessor) = coprocessors
-                    .iter()
-                    .find(|c| c.tx_sender == decoded.coprocessorTxSenderAddress)
-                else {
-                    return Response::Error(format!(
-                        "getCoprocessor: {} is not a registered tx sender",
-                        decoded.coprocessorTxSenderAddress
-                    ));
-                };
-                success_bytes(
-                    GatewayConfig::Coprocessor {
-                        txSenderAddress: coprocessor.tx_sender,
-                        signerAddress: coprocessor.signer,
-                        s3BucketUrl: coprocessor.s3_bucket_url.clone(),
-                    }
-                    .abi_encode(),
-                )
-            },
-            UsageLimit::Unlimited,
-        );
-    }
-
-    /// Configure the `GatewayConfig` registry views to return a JSON-RPC error, simulating a
-    /// gateway read node that is unavailable while the registry snapshot is refreshed.
-    pub fn set_coprocessor_registry_error(&self) {
-        debug!("Configuring GatewayConfig registry views to return RPC error");
-
-        for selector in [
-            GatewayConfig::getCoprocessorTxSendersCall::SELECTOR,
-            GatewayConfig::getCoprocessorMajorityThresholdCall::SELECTOR,
-            GatewayConfig::getCoprocessorCall::SELECTOR,
-        ] {
-            self.json_rpc_server.on_call(
-                matches_contract_and_selector_for_call(self.gateway_config_contract, selector),
-                Response::Error("RPC error: node unavailable".to_string()),
-                UsageLimit::Unlimited,
-            );
-        }
-    }
-
-    /// Register a static ABI-encoded return for one `GatewayConfig` view function.
-    fn on_gateway_config_view(&self, selector: [u8; 4], return_data: Vec<u8>) {
-        self.json_rpc_server.on_call(
-            matches_contract_and_selector_for_call(self.gateway_config_contract, selector),
-            success_bytes(return_data),
             UsageLimit::Unlimited,
         );
     }
@@ -1444,10 +1341,8 @@ mod tests {
         let server = MockServer::new(MockConfig::new());
         let decryption_addr = Address::repeat_byte(1);
         let input_addr = Address::repeat_byte(2);
-        let gateway_config_addr = Address::repeat_byte(3);
 
-        let wrapper =
-            FhevmMockWrapper::new(server, decryption_addr, input_addr, gateway_config_addr);
+        let wrapper = FhevmMockWrapper::new(server, decryption_addr, input_addr);
 
         assert_eq!(
             wrapper.decryption_contract, decryption_addr,

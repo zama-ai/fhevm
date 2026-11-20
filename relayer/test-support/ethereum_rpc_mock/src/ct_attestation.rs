@@ -7,16 +7,25 @@
 //! real object-store container.
 //!
 //! Each Coprocessor gets its own [`wiremock::MockServer`], hence its own port, so the bucket URLs
-//! the mocked `GatewayConfig` hands back are genuinely distinct origins. Attestations are signed
+//! the mocked `CoprocessorConfig` hands back are genuinely distinct origins. Attestations are signed
 //! per-request from the path, since the signature binds the handle and tests mint handles at
 //! runtime.
 
-use alloy::primitives::{Address, B256, U256};
+use crate::{MockServer as RpcMockServer, Response, UsageLimit};
+use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::signers::SignerSync;
+use alloy::sol_types::{SolCall, SolValue};
 use alloy_signer_local::PrivateKeySigner;
 use ciphertext_attestation::{
     ciphertext::Version, CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat,
     S3_METADATA_ATTESTATION_HEADER,
+};
+use fhevm_host_bindings::{
+    coprocessor_config::CoprocessorConfig,
+    i_coprocessor_config_base::ICoprocessorConfigBase::{
+        getCoprocessorMajorityThresholdForContextCall, getCoprocessorsForContextCall,
+        getCurrentCoprocessorContextIdCall, Coprocessor,
+    },
 };
 use std::time::Duration;
 use tracing::debug;
@@ -48,7 +57,7 @@ const AGREED_CIPHERTEXT_DIGEST: B256 = B256::repeat_byte(0xBB);
 /// signing cost, and far below any `head_timeout` a test configures.
 const MISS_DELAY: Duration = Duration::from_millis(200);
 
-/// One Coprocessor as the mocked `GatewayConfig` reports it.
+/// One Coprocessor as the mocked `CoprocessorConfig` reports it.
 #[derive(Clone, Debug)]
 pub struct MockCoprocessor {
     pub tx_sender: Address,
@@ -161,13 +170,56 @@ impl CtAttestationMock {
         }
     }
 
-    /// The registry as the mocked `GatewayConfig` should report it.
+    /// The registry as the mocked `CoprocessorConfig` should report it.
     pub fn coprocessors(&self) -> &[MockCoprocessor] {
         &self.coprocessors
     }
 
     pub fn majority_threshold(&self) -> usize {
         self.majority_threshold
+    }
+
+    /// Mocks the `CoprocessorConfig` contract at address `coprocessor_config` on `server`, so it
+    /// returns these Coprocessors and majority threshold.
+    pub fn serve_coprocessor_registry(&self, server: &RpcMockServer, coprocessor_config: Address) {
+        server.set_code(
+            coprocessor_config,
+            CoprocessorConfig::DEPLOYED_BYTECODE.clone(),
+        );
+
+        let coprocessors: Vec<Coprocessor> = self
+            .coprocessors
+            .iter()
+            .map(|c| Coprocessor {
+                txSenderAddress: c.tx_sender,
+                signerAddress: c.signer,
+                storageUrl: c.s3_bucket_url.clone(),
+                prfEndpointUrl: String::new(),
+            })
+            .collect();
+        for (selector, return_data) in [
+            (
+                getCurrentCoprocessorContextIdCall::SELECTOR,
+                COPROCESSOR_CONTEXT_ID.abi_encode(),
+            ),
+            (
+                getCoprocessorsForContextCall::SELECTOR,
+                coprocessors.abi_encode(),
+            ),
+            (
+                getCoprocessorMajorityThresholdForContextCall::SELECTOR,
+                U256::from(self.majority_threshold).abi_encode(),
+            ),
+        ] {
+            let return_data = Bytes::from(return_data);
+            server.on_call(
+                move |params| {
+                    params.to == coprocessor_config && params.input.starts_with(&selector)
+                },
+                Response::call_success(return_data),
+                UsageLimit::Unlimited,
+            );
+        }
     }
 
     /// Every bucket serves a valid attestation over the same material: consensus succeeds.

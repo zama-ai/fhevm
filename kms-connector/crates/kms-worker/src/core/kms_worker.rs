@@ -317,7 +317,7 @@ impl
         let context_manager =
             DbContextManager::new(db_pool.clone(), &config, ethereum_provider.clone());
         let ciphertext_manager =
-            CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
+            CiphertextManager::connect(ethereum_provider.clone(), &config, cancel_token).await?;
         let decryption_processor = DecryptionProcessor::new(
             &config,
             gateway_provider.clone(),

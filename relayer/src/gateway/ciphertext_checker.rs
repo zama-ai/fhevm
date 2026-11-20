@@ -10,7 +10,7 @@ use crate::{
     core::{errors::EventProcessingError, event::HandleContractPair, job_id::JobId},
     gateway::arbitrum::bindings::Decryption,
     host::{
-        provider::{build_gateway_provider, Provider},
+        provider::{build_gateway_provider, build_host_provider, Provider},
         redact_alloy_error,
     },
     readiness::ReadinessCheckError,
@@ -48,6 +48,7 @@ pub enum CiphertextChecker {
 impl CiphertextChecker {
     pub async fn new(
         gateway_config: &GatewayConfig,
+        ethereum_http_rpc_url: &str,
         cancel_token: CancellationToken,
     ) -> Result<Self, EventProcessingError> {
         match &gateway_config.readiness_checker.gw_ciphertext_check {
@@ -62,16 +63,16 @@ impl CiphertextChecker {
                 request_timeout_ms,
                 registry_refresh_ms,
                 max_concurrent_handles,
-                gateway_config_address,
+                coprocessor_config_address,
             } => Ok(Self::CoprocessorAttestations(
                 CoprocessorAttestationCheck::new(
-                    gateway_config,
+                    ethereum_http_rpc_url,
                     retry.clone(),
                     *head_timeout_ms,
                     *request_timeout_ms,
                     *registry_refresh_ms,
                     *max_concurrent_handles,
-                    gateway_config_address,
+                    coprocessor_config_address,
                     cancel_token,
                 )
                 .await?,
@@ -324,36 +325,38 @@ pub struct CoprocessorAttestationCheck {
 }
 
 impl CoprocessorAttestationCheck {
-    /// Mirrors the Coprocessor registry from `GatewayConfig` and starts its refresh task.
+    /// Mirrors the Coprocessor registry from `CoprocessorConfig` and starts its refresh task.
     ///
     /// `cancel_token` stops the refresh task and nothing else — a critically failed refresh is
     /// answered per request, see [`Self::check_handles_with_retry`].
     #[allow(clippy::too_many_arguments)]
     async fn new(
-        gateway_config: &GatewayConfig,
+        ethereum_http_rpc_url: &str,
         retry: RetrySettings,
         head_timeout_ms: u64,
         request_timeout_ms: u64,
         registry_refresh_ms: u64,
         max_concurrent_handles: NonZeroUsize,
-        gateway_config_address: &str,
+        coprocessor_config_address: &str,
         cancel_token: CancellationToken,
     ) -> Result<Self, EventProcessingError> {
-        let gateway_config_address = Address::from_str(gateway_config_address).map_err(|_| {
-            EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
-                "gw_ciphertext_check.gateway_config_address".to_owned(),
-            ))
-        })?;
-
-        let provider = build_gateway_provider(&gateway_config.blockchain_rpc.read_http_url)
-            .map_err(|e| EventProcessingError::ValidationFailed {
-                field: "blockchain_rpc_url".to_string(),
-                reason: e.to_string(),
+        let coprocessor_config_address =
+            Address::from_str(coprocessor_config_address).map_err(|_| {
+                EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
+                    "gw_ciphertext_check.coprocessor_config_address".to_owned(),
+                ))
             })?;
+
+        let provider = build_host_provider(ethereum_http_rpc_url).map_err(|e| {
+            EventProcessingError::ValidationFailed {
+                field: "protocol_config.ethereum_http_rpc_url".to_string(),
+                reason: e.to_string(),
+            }
+        })?;
 
         let registry = CoprocessorRegistry::connect(
             provider,
-            gateway_config_address,
+            coprocessor_config_address,
             Duration::from_millis(registry_refresh_ms),
             cancel_token,
             CriticalFailurePolicy::ServeStale,

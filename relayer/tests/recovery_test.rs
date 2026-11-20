@@ -24,7 +24,7 @@ use alloy::primitives::{Address, Bytes, B256};
 use common::test_schema::TestSchema;
 use common::utils::{
     http_port_of, random_handle, spawn_relayer, wire_settings_to_mocks, GatewayMock, HostMock,
-    ReadinessSource, TEST_CONFIG_PATH,
+    TEST_CONFIG_PATH,
 };
 use ethereum_rpc_mock::{
     ct_attestation::CtAttestationMock, fhevm::UserDecryptKind, SubscriptionTarget,
@@ -70,11 +70,9 @@ impl RecoveryTestSetup {
         let ct_attestation = CtAttestationMock::start().await;
         ct_attestation.serve_attestations().await;
 
-        let host = HostMock::start(&settings).await?;
-        let broken_gateway =
-            GatewayMock::start(ReadinessSource::CoprocessorAttestations(&ct_attestation)).await?;
-        let working_gateway =
-            GatewayMock::start(ReadinessSource::CoprocessorAttestations(&ct_attestation)).await?;
+        let host = HostMock::start(&settings, Some(&ct_attestation)).await?;
+        let broken_gateway = GatewayMock::start().await?;
+        let working_gateway = GatewayMock::start().await?;
 
         tracing::info!(
             "Setting up recovery test - broken gateway: {}, working gateway: {}, host: {}, schema: {}",

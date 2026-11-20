@@ -39,11 +39,6 @@ pub const TEST_CONFIG_PATH: &str = "tests/relayer-test-config.yaml";
 /// Gateway contract addresses the mocks and [`TEST_CONFIG_PATH`] agree on.
 const TEST_INPUT_VERIFICATION_ADDRESS: &str = "0xe61cff9c581c7c91aef682c2c10e8632864339ab";
 
-/// Must match `gateway.readiness_checker.gw_ciphertext_check.gateway_config_address` in
-/// [`TEST_CONFIG_PATH`]: under `source: coprocessor_attestations` the relayer reads the Coprocessor
-/// registry from it while starting up. `source: gateway_chain` carries no such key.
-const TEST_GATEWAY_CONFIG_ADDRESS: &str = "0x576Ea67208b146E63C5255d0f90104E25e3e04c7";
-
 /// Host-chain mock server, with every response the relayer needs to boot already registered.
 ///
 /// Held by the test setup: dropping it shuts the listener down.
@@ -57,10 +52,18 @@ pub struct HostMock {
 impl HostMock {
     /// Start a host-chain mock on an OS-assigned port, reported as `self.port`, and register
     /// the responses every test relies on: ACL allow-all for the configured host chains, plus
-    /// the `KMSGeneration` / `ProtocolConfig` getters the `/v2/keyurl` poller reads. `settings`
-    /// is only read for contract addresses, so it can be an unwired copy of the test config.
+    /// the `KMSGeneration` / `ProtocolConfig` getters the `/v2/keyurl` poller reads.
+    ///
+    /// Under `source: coprocessor_attestations`, also serves the `CoprocessorConfig` registry
+    /// pointing at the `ct_attestation` buckets, which must then be given.
+    ///
+    /// `settings` is only read for contract addresses, so it can be an unwired copy of the test
+    /// config.
     #[allow(dead_code)]
-    pub async fn start(settings: &Settings) -> anyhow::Result<Self> {
+    pub async fn start(
+        settings: &Settings,
+        ct_attestation: Option<&CtAttestationMock>,
+    ) -> anyhow::Result<Self> {
         let config = MockConfig {
             port: 0,
             ..MockConfig::new()
@@ -98,6 +101,18 @@ impl HostMock {
             }
         }
 
+        if let GwCiphertextCheckConfig::CoprocessorAttestations {
+            coprocessor_config_address,
+            ..
+        } = &settings.gateway.readiness_checker.gw_ciphertext_check
+        {
+            let coprocessor_config_addr = Address::from_str(coprocessor_config_address)
+                .expect("Invalid coprocessor_config_address in test config");
+            ct_attestation
+                .expect("source: coprocessor_attestations needs attestation buckets")
+                .serve_coprocessor_registry(&server, coprocessor_config_addr);
+        }
+
         Ok(HostMock {
             port,
             server,
@@ -106,19 +121,10 @@ impl HostMock {
     }
 }
 
-/// Which ciphertext-readiness source a [`GatewayMock`] is wired for. Only the selected one gets
-/// fixtures: wiring both would let a test pass on answers the relayer never asked for.
-#[allow(dead_code)]
-pub enum ReadinessSource<'a> {
-    /// `Decryption.isPublicDecryptionReady` / `isUserDecryptionReady_1`. Deliberately left
-    /// unarmed: patterns are matched first-registered-first, so a ready-by-default pattern would
-    /// shadow every later `set_readiness_failure()`. Each test arms its own outcome.
-    GatewayChain,
-    /// Off-chain buckets, reached through the `GatewayConfig` Coprocessor registry.
-    CoprocessorAttestations(&'a CtAttestationMock),
-}
-
-/// Gateway-chain mock server with the FHEVM patterns and the selected readiness source wired.
+/// Gateway-chain mock server with the FHEVM patterns wired. The on-chain readiness check
+/// (`Decryption.isPublicDecryptionReady` / `isUserDecryptionReady_1`) is deliberately left
+/// unarmed: patterns are matched first-registered-first, so a ready-by-default pattern would
+/// shadow every later `set_readiness_failure()`. Each test arms its own outcome.
 ///
 /// Held by the test setup: dropping it shuts the listener down.
 #[allow(dead_code)]
@@ -130,10 +136,10 @@ pub struct GatewayMock {
 
 impl GatewayMock {
     /// Start a gateway-chain mock on an OS-assigned port, reported as `self.port`. FHEVM patterns
-    /// and `readiness`'s fixtures are registered before the server listens, so the relayer cannot
-    /// observe a half-configured gateway.
+    /// are registered before the server listens, so the relayer cannot observe a half-configured
+    /// gateway.
     #[allow(dead_code)]
-    pub async fn start(readiness: ReadinessSource<'_>) -> anyhow::Result<Self> {
+    pub async fn start() -> anyhow::Result<Self> {
         let config = MockConfig {
             port: 0,
             ..MockConfig::new()
@@ -145,15 +151,7 @@ impl GatewayMock {
             Address::from_str(TEST_DECRYPTION_ADDRESS).expect("Invalid decryption address"),
             Address::from_str(TEST_INPUT_VERIFICATION_ADDRESS)
                 .expect("Invalid input verification address"),
-            Address::from_str(TEST_GATEWAY_CONFIG_ADDRESS).expect("Invalid gateway config address"),
         );
-        match readiness {
-            // Deliberately unarmed — see the variant's doc.
-            ReadinessSource::GatewayChain => {}
-            ReadinessSource::CoprocessorAttestations(ct_attestation) => {
-                fhevm.set_coprocessor_registry(ct_attestation)
-            }
-        }
 
         let handle = server
             .start()
@@ -450,27 +448,19 @@ impl TestSetup {
         // Initialize tracing once with settings
         init_tracing_once(&settings.log);
 
-        let host = HostMock::start(&settings).await?;
-
-        let (ct_attestation, gateway) =
-            match &settings.gateway.readiness_checker.gw_ciphertext_check {
-                GwCiphertextCheckConfig::CoprocessorAttestations { .. } => {
-                    // Attested by default — nearly every test needs an available ciphertext; tests
-                    // wanting another outcome re-arm the buckets themselves.
-                    let ct_attestation = Arc::new(CtAttestationMock::start().await);
-                    ct_attestation.serve_attestations().await;
-                    let gateway = GatewayMock::start(ReadinessSource::CoprocessorAttestations(
-                        &ct_attestation,
-                    ))
-                    .await?;
-                    (Some(ct_attestation), gateway)
-                }
-                // No ready-by-default counterpart here — see ReadinessSource::GatewayChain.
-                GwCiphertextCheckConfig::GatewayChain { .. } => (
-                    None,
-                    GatewayMock::start(ReadinessSource::GatewayChain).await?,
-                ),
-            };
+        let ct_attestation = match &settings.gateway.readiness_checker.gw_ciphertext_check {
+            GwCiphertextCheckConfig::CoprocessorAttestations { .. } => {
+                // Attested by default — nearly every test needs an available ciphertext; tests
+                // wanting another outcome re-arm the buckets themselves.
+                let ct_attestation = Arc::new(CtAttestationMock::start().await);
+                ct_attestation.serve_attestations().await;
+                Some(ct_attestation)
+            }
+            // No ready-by-default counterpart here — see `GatewayMock`.
+            GwCiphertextCheckConfig::GatewayChain { .. } => None,
+        };
+        let host = HostMock::start(&settings, ct_attestation.as_deref()).await?;
+        let gateway = GatewayMock::start().await?;
         let (host_port, gateway_port) = (host.port, gateway.port);
 
         tracing::info!(
@@ -536,8 +526,8 @@ impl TestSetup {
     /// `fhevm_mock` / `host_server` expectations apply no matter which of the two pods ends up
     /// dispatching. Gets its own HTTP/metrics ports, same as any other constructor - the spawn
     /// path already binds port 0 and echoes the real address back. `ct_attestation` is an `Arc`
-    /// clone of `existing`'s, since both instances' gateway mocks share one `GatewayConfig`
-    /// registry pointing at the same attestation buckets.
+    /// clone of `existing`'s, since both instances share one host mock, whose `CoprocessorConfig`
+    /// registry points at the same attestation buckets.
     ///
     /// The returned instance does not own the schema or the mocks, so its `shutdown()` leaves
     /// them alone: dropping either while `existing` is still running would pull the database or

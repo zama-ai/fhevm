@@ -83,9 +83,11 @@ impl ReadinessChecker {
     pub async fn new(
         host_acl: HostAclChecker,
         gateway_config: &GatewayConfig,
+        ethereum_http_rpc_url: &str,
         cancel_token: CancellationToken,
     ) -> Result<Self, EventProcessingError> {
-        let ciphertext = CiphertextChecker::new(gateway_config, cancel_token).await?;
+        let ciphertext =
+            CiphertextChecker::new(gateway_config, ethereum_http_rpc_url, cancel_token).await?;
         Ok(Self {
             host_acl,
             ciphertext,

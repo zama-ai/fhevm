@@ -9,6 +9,7 @@ use std::{
     num::NonZeroUsize,
 };
 use tracing::{trace, warn};
+use url::Url;
 
 /// An attestation that Coprocessors sign and a [`ConsensusRound`] counts.
 pub trait Attestation: Clone + Debug {
@@ -34,7 +35,10 @@ pub trait Attestation: Clone + Debug {
 pub struct CoprocessorEntry {
     pub tx_sender: Address,
     pub signer: Address,
-    pub bucket: String,
+    /// Public base URL of the Coprocessor's storage for ciphertexts and attestations.
+    pub storage_url: Url,
+    /// Base URL of the Coprocessor's PRF endpoint, `None` when it does not serve one.
+    pub prf_endpoint_url: Option<Url>,
 }
 
 /// One round of asking every registered Coprocessor for an attestation.
@@ -329,7 +333,8 @@ mod tests {
         let entries = signers.into_iter().map(|signer| CoprocessorEntry {
             tx_sender: signer,
             signer,
-            bucket: format!("http://bucket-{signer}"),
+            storage_url: format!("http://bucket-{signer}").parse().unwrap(),
+            prf_endpoint_url: None,
         });
         ConsensusRound::open(
             CiphertextRef::new(HANDLE, COPROCESSOR_CONTEXT_ID),
