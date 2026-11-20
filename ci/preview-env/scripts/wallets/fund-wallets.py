@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -84,6 +85,14 @@ def claim(faucet: str, addr: str, amount_wei: str | None) -> None:
     print(f"claimed from {faucet} -> {addr} session={sid} status={result.get('status')}", flush=True)
 
 
+def banner_balance_eth(text: str) -> float | None:
+    """PoWFaucet warns with 'running out of funds! Faucet Balance: 3.926 ETH' while the wallet still pays."""
+    match = re.search(r"balance:\s*([0-9]+(?:\.[0-9]+)?)\s*eth", text, re.IGNORECASE)
+    if not match:
+        return None
+    return float(match.group(1))
+
+
 def require_faucet_funded(faucet: str, label: str) -> None:
     """PoWFaucet keeps answering 'claiming' when its wallet is empty; its status banner says so."""
     try:
@@ -92,8 +101,14 @@ def require_faucet_funded(faucet: str, label: str) -> None:
         print(f"WARN {label} faucet config unavailable: {exc}", flush=True)
         return
     for entry in config.get("faucetStatus") or []:
-        if "out of funds" in str(entry.get("text", "")).lower():
-            raise SystemExit(f"{label} faucet {faucet} is out of funds ({entry.get('text')}); refill its wallet before deploying")
+        text = str(entry.get("text", ""))
+        if "out of funds" not in text.lower():
+            continue
+        balance = banner_balance_eth(text)
+        if balance is not None and balance > 0:
+            print(f"WARN {label} faucet low ({text}); continuing while it still holds ETH", flush=True)
+            continue
+        raise SystemExit(f"{label} faucet {faucet} is out of funds ({text}); refill its wallet before deploying")
 
 
 def fund_one(rpc_url: str, faucet: str, addr: str, floor: int, label: str) -> None:
