@@ -614,6 +614,8 @@ const applyCoprocessorProxyTestSuiteEnv = (
         `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`,
     )
     .join(",");
+  // The "PRF endpoint" suite uses the GatewayConfig coprocessor threshold as its quorum.
+  envs["test-suite"].COPROCESSOR_THRESHOLD = supported ? String(plan.topology.threshold) : "";
   // The suite signs as party 1's connector, a KMS tx-sender of the active context.
   envs["test-suite"].KMS_CONNECTOR_PRIVATE_KEY = supported ? envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY : "";
   // The "PRF endpoint" suite signs as each committee connector. Spares are not tx-senders yet.

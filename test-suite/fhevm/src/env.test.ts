@@ -245,6 +245,7 @@ describe("env", () => {
         pair.instanceEnvs["coprocessor.1"].DATABASE_URL,
       ].join(","),
     );
+    expect(suite.COPROCESSOR_THRESHOLD).toBe(pair.componentEnvs["gateway-sc"].COPROCESSOR_THRESHOLD);
     expect(suite.COPROCESSOR_PROXY_CA_CERT).toBe("/etc/coprocessor-proxy/tls.crt");
     // Party 1's connector key, whose address the host ProtocolConfig deploy lists as a KMS tx-sender.
     expect(suite.KMS_CONNECTOR_PRIVATE_KEY).not.toBe("");
@@ -276,6 +277,7 @@ describe("env", () => {
         "COPROCESSOR_PROXY_METRICS_URLS",
         "COPROCESSOR_BUCKET_URLS",
         "COPROCESSOR_DATABASE_URLS",
+        "COPROCESSOR_THRESHOLD",
         "KMS_CONNECTOR_PRIVATE_KEY",
         "KMS_CONNECTOR_PRIVATE_KEYS",
       ]) {
