@@ -6,10 +6,11 @@ use alloy::{
 use anyhow::anyhow;
 use fhevm_host_bindings::acl::ACL::{
     decryptionSignatureInvalidatedBeforeCall, isAllowedCall, isAllowedForDecryptionCall,
-    isHandleDelegatedForUserDecryptionCall,
+    isDelegatedForUserDecryptionCall, isHandleDelegatedForUserDecryptionCall,
 };
 use kms_connector_api::ErrorCode;
 
+#[derive(PartialEq)]
 pub enum AclCheck {
     /// Passes if `start_timestamp` is not before the user's signature invalidation timestamp.
     SignatureNotInvalidated {
@@ -23,6 +24,12 @@ pub enum AclCheck {
     AnyAllowed {
         handle: B256,
         accounts: Vec<Address>,
+    },
+    /// Passes if `delegate` is a user decryption delegate of any of `delegators` for `contract`.
+    AnyDelegated {
+        delegate: Address,
+        contract: Address,
+        delegators: Vec<Address>,
     },
 }
 
@@ -65,6 +72,7 @@ impl AclCheck {
     fn calls_len(&self) -> usize {
         match self {
             Self::AnyAllowed { accounts, .. } => accounts.len(),
+            Self::AnyDelegated { delegators, .. } => delegators.len(),
             _ => 1,
         }
     }
@@ -82,6 +90,22 @@ impl AclCheck {
                     isAllowedCall {
                         handle: *handle,
                         account,
+                    }
+                    .abi_encode()
+                    .into()
+                })
+                .collect(),
+            Self::AnyDelegated {
+                delegate,
+                contract,
+                delegators,
+            } => delegators
+                .iter()
+                .map(|&delegator| {
+                    isDelegatedForUserDecryptionCall {
+                        delegator,
+                        delegate: *delegate,
+                        contractAddress: *contract,
                     }
                     .abi_encode()
                     .into()
@@ -155,6 +179,22 @@ impl AclCheck {
                     ));
                 }
             }
+            Self::AnyDelegated {
+                delegate,
+                contract,
+                delegators,
+            } => {
+                let mut any_delegated = false;
+                for result in results {
+                    any_delegated |= decode::<isDelegatedForUserDecryptionCall>(result)?;
+                }
+                if !any_delegated {
+                    return denied(anyhow!(
+                        "{delegate} is not a delegate of any of {delegators:?} for contract \
+                        {contract}"
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -188,6 +228,14 @@ mod tests {
         }
     }
 
+    fn any_delegated(delegators_len: usize) -> AclCheck {
+        AclCheck::AnyDelegated {
+            delegate: rand_address(),
+            contract: rand_address(),
+            delegators: (0..delegators_len).map(|_| rand_address()).collect(),
+        }
+    }
+
     fn results(values: Vec<Vec<u8>>) -> Vec<Bytes> {
         values.into_iter().map(Bytes::from).collect()
     }
@@ -195,16 +243,20 @@ mod tests {
     #[test]
     fn verify_all_gives_each_check_its_own_results() {
         // Only the last check fails, with an error code no other check returns. Getting that code
-        // shows each check read its own results, including `AnyAllowed`, which reads two.
+        // shows each check read its own results, including `AnyAllowed` and `AnyDelegated`, which
+        // read two.
         let checks = [
             allowed(),
             any_allowed(2),
+            any_delegated(2),
             AclCheck::signature_not_invalidated(rand_address(), U256::ZERO),
         ];
         let results = results(vec![
             true.abi_encode(),      // Allowed
             false.abi_encode(),     // AnyAllowed, 1st account
             true.abi_encode(),      // AnyAllowed, 2nd account
+            true.abi_encode(),      // AnyDelegated, 1st delegator
+            false.abi_encode(),     // AnyDelegated, 2nd delegator
             U256::ONE.abi_encode(), // invalidation timestamp > start timestamp (0): rejected
         ]);
 
