@@ -38,6 +38,36 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use upload::Uploader;
 
+/// Waits until each row of the key of `key_id` has its compressed key set: the key load reads all
+/// of them. The host-listener can store the row of a key first, and its compressed key set later.
+/// Returns false on a stop.
+pub async fn wait_for_key(
+    pool: &PgPool,
+    key_id: &[u8],
+    interval: Duration,
+    cancel: &CancellationToken,
+) -> anyhow::Result<bool> {
+    loop {
+        // `bool_and` gives NULL when the key has no row, and `COALESCE` makes it false.
+        let stored: bool = sqlx::query_scalar(
+            "SELECT COALESCE(bool_and(compressed_xof_keyset IS NOT NULL), FALSE)
+               FROM keys WHERE key_id = $1",
+        )
+        .bind(key_id)
+        .fetch_one(pool)
+        .await
+        .context("look for the key of --prf-key-id")?;
+        if stored {
+            return Ok(true);
+        }
+        info!(key_id = %hex::encode(key_id), "Waiting for the compressed key set of --prf-key-id");
+        tokio::select! {
+            () = cancel.cancelled() => return Ok(false),
+            () = sleep(interval) => {}
+        }
+    }
+}
+
 /// The same limit as the database check of `HealthStatus`.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 /// Maximum rows for each resubmit read.

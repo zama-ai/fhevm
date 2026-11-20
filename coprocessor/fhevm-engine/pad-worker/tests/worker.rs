@@ -447,6 +447,62 @@ async fn the_connector_with_fewer_rows_in_progress_goes_first() {
 }
 
 #[tokio::test]
+async fn waits_for_the_compressed_key_set_of_its_key() {
+    let (_instance, pool) = db().await;
+    let key_id = [4u8; 32];
+    let cancel = CancellationToken::new();
+    let waiting = tokio::spawn({
+        let (pool, cancel) = (pool.clone(), cancel.clone());
+        async move { pad_worker::wait_for_key(&pool, &key_id, Duration::from_millis(50), &cancel).await }
+    });
+
+    // No row, then a row without the compressed key set: the pad-worker waits.
+    sleep(Duration::from_millis(300)).await;
+    assert!(!waiting.is_finished());
+    sqlx::query(
+        "INSERT INTO keys (key_id_gw, key_id, pks_key, sks_key, chain_id, block_hash)
+         VALUES ($1, $1, ''::BYTEA, ''::BYTEA, 1, $2)",
+    )
+    .bind(key_id.as_slice())
+    .bind([0u8; 32].as_slice())
+    .execute(&pool)
+    .await
+    .unwrap();
+    sleep(Duration::from_millis(300)).await;
+    assert!(!waiting.is_finished());
+
+    // The first row gets the compressed key set. A second row of the key, from another block, does
+    // not have it: the pad-worker still waits.
+    sqlx::query("UPDATE keys SET compressed_xof_keyset = '\\x00'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO keys (key_id_gw, key_id, pks_key, sks_key, chain_id, block_hash)
+         VALUES ($1, $1, ''::BYTEA, ''::BYTEA, 1, $2)",
+    )
+    .bind(key_id.as_slice())
+    .bind([1u8; 32].as_slice())
+    .execute(&pool)
+    .await
+    .unwrap();
+    sleep(Duration::from_millis(300)).await;
+    assert!(!waiting.is_finished());
+
+    sqlx::query("UPDATE keys SET compressed_xof_keyset = '\\x00'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let found = tokio::time::timeout(DEADLINE, waiting).await.unwrap();
+    assert!(found.unwrap().unwrap());
+
+    // A stop ends the wait.
+    cancel.cancel();
+    let stopped = pad_worker::wait_for_key(&pool, &[5u8; 32], Duration::from_secs(60), &cancel);
+    assert!(!stopped.await.unwrap());
+}
+
+#[tokio::test]
 async fn uploads_the_output_with_its_attestation() {
     let (_instance, pool) = db().await;
     let (_localstack, client, uploader) = s3().await;

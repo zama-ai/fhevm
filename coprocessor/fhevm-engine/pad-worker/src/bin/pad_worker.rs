@@ -17,7 +17,9 @@ use fhevm_engine_common::{
     types::{CoproSigner, SignerType},
     utils::DatabaseURL,
 };
-use pad_worker::{evaluator::TfheEvaluator, upload::Uploader, Config, Health, PadWorker};
+use pad_worker::{
+    evaluator::TfheEvaluator, upload::Uploader, wait_for_key, Config, Health, PadWorker,
+};
 use sqlx::postgres::PgPoolOptions;
 use std::{num::NonZeroUsize, str::FromStr, sync::Arc, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
@@ -190,31 +192,6 @@ async fn uploader(args: &Args) -> Uploader {
         return uploader.without_sha256_checksum();
     }
     uploader
-}
-
-/// Waits until the host-listener has stored the key. Returns false on a stop.
-async fn wait_for_key(
-    pool: &sqlx::PgPool,
-    key_id: &[u8],
-    interval: Duration,
-    cancel: &CancellationToken,
-) -> anyhow::Result<bool> {
-    loop {
-        let stored: bool =
-            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM keys WHERE key_id = $1)")
-                .bind(key_id)
-                .fetch_one(pool)
-                .await
-                .context("look for the key of --prf-key-id")?;
-        if stored {
-            return Ok(true);
-        }
-        info!(key_id = %hex::encode(key_id), "Waiting for the key of --prf-key-id");
-        tokio::select! {
-            () = cancel.cancelled() => return Ok(false),
-            () = tokio::time::sleep(interval) => {}
-        }
-    }
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
