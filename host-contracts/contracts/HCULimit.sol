@@ -317,7 +317,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 result
     ) internal virtual override {
         _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(result, _latency(opCost), 0);
+        _setResultDepths(result, _latency(opCost), 0, caller);
     }
 
     /**
@@ -330,7 +330,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 result
     ) internal virtual override {
         _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(result, _latency(opCost), _cacheDepths(op1, caller));
+        _setResultDepths(result, _latency(opCost), _cacheDepths(op1, caller), caller);
     }
 
     /**
@@ -344,7 +344,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 result
     ) internal virtual override {
         _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(result, _latency(opCost), _maxDepths(_cacheDepths(op1, caller), _cacheDepths(op2, caller)));
+        _setResultDepths(
+            result,
+            _latency(opCost),
+            _maxDepths(_cacheDepths(op1, caller), _cacheDepths(op2, caller)),
+            caller
+        );
     }
 
     /**
@@ -362,7 +367,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         _setResultDepths(
             result,
             _latency(opCost),
-            _maxDepths(_cacheDepths(op1, caller), _maxDepths(_cacheDepths(op2, caller), _cacheDepths(op3, caller)))
+            _maxDepths(_cacheDepths(op1, caller), _maxDepths(_cacheDepths(op2, caller), _cacheDepths(op3, caller))),
+            caller
         );
     }
 
@@ -382,7 +388,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
             inputDepths = _maxDepths(inputDepths, _cacheDepths(values[i], caller));
         }
 
-        _setResultDepths(result, _latency(opCost), inputDepths);
+        _setResultDepths(result, _latency(opCost), inputDepths, caller);
     }
 
     /**
@@ -402,19 +408,31 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
             inputDepths = _maxDepths(inputDepths, _cacheDepths(values[i], caller));
         }
 
-        _setResultDepths(result, _latency(opCost), inputDepths);
+        _setResultDepths(result, _latency(opCost), inputDepths, caller);
     }
 
     /// @dev Records `result`'s depths: the operation's latency added to both depths of its deepest input, checked
-    ///      against both limits.
-    function _setResultDepths(bytes32 result, uint256 opLatency, uint256 inputDepths) private {
+    ///      against both limits and against the depth limit of `caller`'s quota, so a contract computes no value
+    ///      deeper than its quota allows, whether it keeps the value or not.
+    function _setResultDepths(bytes32 result, uint256 opLatency, uint256 inputDepths, address caller) private {
         uint256 depths = (opLatency | (opLatency << 128)) + inputDepths;
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (uint128(depths) > $.maxHCUDepthPerTx) revert HCUTransactionDepthLimitExceeded();
         uint256 maxDepth = $.maxCrossTxDepth;
-        uint256 carried = depths >> 128;
-        if (maxDepth != 0 && carried > maxDepth) {
-            revert HCUCrossTxDepthLimitExceeded(_blocksToDecay(carried - maxDepth, $.crossTxDepthDecayPerBlock));
+        if (maxDepth != 0) {
+            uint256 carried = depths >> 128;
+            if (carried > maxDepth) {
+                revert HCUCrossTxDepthLimitExceeded(_blocksToDecay(carried - maxDepth, $.crossTxDepthDecayPerBlock));
+            }
+            uint16 quotaId = _quotaOf(caller);
+            uint256 quotaMaxDepth = $.quotas[quotaId].maxStoredDepth;
+            if (quotaMaxDepth != 0 && carried > quotaMaxDepth) {
+                revert HCUStoredDepthExceeded(
+                    caller,
+                    quotaId,
+                    _blocksToDecay(carried - quotaMaxDepth, $.crossTxDepthDecayPerBlock)
+                );
+            }
         }
         _storeDepths(result, depths);
     }

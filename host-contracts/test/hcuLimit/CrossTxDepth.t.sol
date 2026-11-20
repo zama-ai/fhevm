@@ -341,13 +341,16 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         alice.share(address(bob));
     }
 
-    function test_StoredDepthLimitLeavesTheExecutorsTransientGrantsUnchecked() public {
+    /// A contract computes no value deeper than its quota's limit, even one it never grants: it could otherwise
+    /// make the value public with allowForDecryption, which checks no depth.
+    function test_QuotaDepthLimitRefusesEveryResultNotOnlyGrants() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
         hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setStoredDepthLimit(DEFAULT_QUOTA, start + step);
-        // FHEVMExecutor hands the deeper result to alice; only a grant by alice would be checked.
-        alice.compute(alice.value());
+        bytes32 value = alice.value();
+        vm.expectPartialRevert(HCULimit.HCUStoredDepthExceeded.selector);
+        alice.compute(value);
     }
 
     function test_StoredDepthLimitIsOffWhileTheDepthLimitIsOff() public {
