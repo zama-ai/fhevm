@@ -33,6 +33,7 @@ import { dockerInspect } from "../flow/readiness";
 import { assertManagedWriterOwnership, withQuiescedWriters } from "../flow/writer-ownership";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl, readEnvFile } from "../utils/fs";
+import { keyVerificationEnv } from "../utils/key-verification-env";
 import { composeEnv, run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -171,6 +172,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Run the three connector-http-* suites (public decrypt, user decrypt, negative) in one go.",
   "coprocessor-proxy":
     "Sign as KMS party 1's connector against every coprocessor-proxy and the prf-service behind it.",
+  "prf-endpoint":
+    "Sign as the KMS connectors against the PRF endpoint of every coprocessor: outputs, budgets and proxy limits.",
   random: "Run random generation coverage.",
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
@@ -738,15 +741,17 @@ const assertMatchedTests = (output: string, label: string) => {
   }
 };
 
+/** The profiles that need coprocessor-proxy, prf-service and the pad-worker. */
+const PRF_PROFILES = new Set(["coprocessor-proxy", "prf-endpoint"]);
+
 /**
- * Throws unless the run of profile `name` executed its tests. The coprocessor-proxy suite skips
- * itself when it finds no proxy URL, so its tests all end pending; the CLI only runs the profile on
- * a stack with proxies, so such a run must fail rather than pass.
+ * Throws unless the run of profile `name` executed its tests. A PRF suite with no proxy URL skips
+ * itself, but the CLI runs these profiles only on stacks with proxies: such a run must fail.
  */
 export const assertProfileRanTests = (name: string, output: string, label: string) => {
   assertMatchedTests(output, label);
-  if (name === "coprocessor-proxy" && !SOME_PASSING_RE.test(output)) {
-    throw new PreflightError(`${label}: no coprocessor-proxy test passed; the suite skips itself without COPROCESSOR_PROXY_URLS`);
+  if (PRF_PROFILES.has(name) && !SOME_PASSING_RE.test(output)) {
+    throw new PreflightError(`${label}: no ${name} test passed; the suite skips itself without COPROCESSOR_PROXY_URLS`);
   }
 };
 
@@ -1027,6 +1032,27 @@ const localDbMigrationImageRef = (state: Pick<State, "overrides" | "builtImages"
 
 const psqlQuery = async (database: string, query: string): Promise<string> =>
   scalarQuery(database, query, postgresRuntime());
+
+const gatewayReadinessSnapshotSql = (gcsStackVersion: string) => `
+  WITH gate AS (
+    SELECT min(gw_start_block) AS start, bool_and(gw_window_rewound) AS rewound
+    FROM public.upgrade_state WHERE stack_role='GCS' AND status='in_progress'
+  ), cursors AS (
+    SELECT (SELECT last_block_num FROM public.gw_listener_last_block WHERE dummy_id) AS blue_tip,
+           (SELECT last_block_num FROM "gcs-${gcsStackVersion.replaceAll('"', '""')}".gw_listener_last_block WHERE dummy_id) AS green_tip
+  )
+  SELECT row_to_json(d) FROM (
+    SELECT gate.*, cursors.*,
+      (SELECT stack_version FROM public.versioning WHERE singleton) AS live_version,
+      (SELECT consensus_version FROM public.versioning WHERE singleton) AS consensus_version,
+      EXISTS (SELECT FROM public.listener_block_checkpoints WHERE source='gateway' AND stack_role='BCS') AS has_blue_history,
+      EXISTS (SELECT FROM public.listener_block_checkpoints WHERE source='gateway' AND stack_role='BCS' AND block_number=blue_tip) AS blue_checkpoint,
+      EXISTS (SELECT FROM public.listener_block_checkpoints WHERE source='gateway' AND stack_role='GCS' AND block_number=green_tip) AS green_checkpoint,
+      EXISTS (SELECT FROM public.chain_recovery_halts WHERE resolved_at IS NULL) AS halted,
+      EXISTS (SELECT FROM public.listener_replay_state WHERE pending) AS replay_pending,
+      EXISTS (SELECT FROM public.verify_proofs WHERE block_number < gate.start AND verified IS NULL) AS pre_window_proof_pending
+    FROM gate CROSS JOIN cursors
+  ) d;`;
 
 const waitUntil = async (opts: {
   label: string;
@@ -1372,6 +1398,18 @@ const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
             db,
             "SELECT CASE WHEN BOOL_AND(gw_dry_run_started) THEN 'started' ELSE 'waiting' END FROM upgrade_state WHERE stack_role='GCS';",
           )) === "started",
+      }).catch(async (error: unknown) => {
+        // The latch alone cannot distinguish a missing checkpoint from a stalled
+        // cursor or recovery. Capture each operator before CI tears the stack down.
+        for (const operator of databases) {
+          try {
+            const snapshot = await psqlQuery(operator, gatewayReadinessSnapshotSql(gcsStackVersion));
+            console.error(`Gateway readiness (${operator}): ${snapshot}`);
+          } catch (diagnosticError) {
+            console.error(`Could not read Gateway readiness (${operator}):`, diagnosticError);
+          }
+        }
+        throw error;
       });
     }
   };
@@ -1403,6 +1441,7 @@ const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
       ["INPUT_VERIFIER_CONTRACT_ADDRESS", chainEnvValue(index, "INPUT_VERIFIER_CONTRACT_ADDRESS", "INPUT_VERIFIER_CONTRACT_ADDRESS")],
       ["FHEVM_EXECUTOR_CONTRACT_ADDRESS", chainEnvValue(index, "FHEVM_EXECUTOR_CONTRACT_ADDRESS", "FHEVM_EXECUTOR_CONTRACT_ADDRESS")],
       ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", chainEnvValue(index, "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "PROTOCOL_CONFIG_CONTRACT_ADDRESS")],
+      ...Object.entries(keyVerificationEnv(testSuiteEnv, index)),
     ].flatMap(([name, value]) => ["-e", `${name}=${value}`]);
   const trafficTargets: TrafficTarget[] = hostChains.map((chain, index) => ({
     label: chain.key,
@@ -2255,7 +2294,7 @@ const runTest = async (testName: string | undefined, options: TestOptions) => {
     }
     return state.scenario.kind === "blue-green"
       ? "blue-green stacks run without coprocessor-proxy"
-      : "COPROCESSOR_PROXY_VERSION or COPROCESSOR_PRF_SERVICE_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
+      : "COPROCESSOR_PROXY_VERSION, COPROCESSOR_PRF_SERVICE_VERSION or COPROCESSOR_PAD_WORKER_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
   };
 
   const dbStateRevertSkipReason = () =>
@@ -2655,7 +2694,7 @@ const runTest = async (testName: string | undefined, options: TestOptions) => {
         throw new PreflightError(`${name}: ${precondition}`);
       }
     }
-    if (name === "coprocessor-proxy") {
+    if (PRF_PROFILES.has(name)) {
       const precondition = coprocessorProxySkipReason();
       if (precondition) {
         throw new PreflightError(`${name}: ${precondition}`);
@@ -2740,7 +2779,7 @@ const runTest = async (testName: string | undefined, options: TestOptions) => {
             continue;
           }
         }
-        if (profile === "coprocessor-proxy") {
+        if (PRF_PROFILES.has(profile)) {
           const skipReason = coprocessorProxySkipReason();
           if (skipReason) {
             console.log(`[test] skipping ${profile}: ${skipReason}`);

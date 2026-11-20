@@ -118,6 +118,8 @@ const sdkClient = (value = 42n): UserDecryptSdkClient => ({
     onProgress(progress.succeeded);
     return [{ type: "uint64", value }];
   }),
+  signUnifiedDecryptionPermit: vi.fn().mockResolvedValue({ permit: Symbol("unified") }),
+  decryptValuesNoGateway: vi.fn().mockResolvedValue([{ type: "uint64", value }]),
 });
 
 const client = (baseUrl: string) =>
@@ -590,5 +592,158 @@ describe("UserDecryptExecutor", () => {
     await expect(executor.prepare(1)).rejects.toThrow(
       "On-chain ACL delegation for owner lane 0 expires at 1",
     );
+  });
+});
+
+describe("UserDecryptExecutor over relayer-http", () => {
+  const relayerHttpEnv = (): LoadTestEnv => ({ ...env(), useRelayerHttp: true });
+
+  const relayerHttpError = (fields: Record<string, unknown>) =>
+    Object.assign(new Error("relayer-http request failed"), {
+      name: "RelayerHttpResponseError",
+      ...fields,
+    });
+
+  const prepared = async (target: UserDecryptSdkClient) => {
+    const executor = new UserDecryptExecutor(
+      relayerHttpEnv(),
+      // relayer-http routes come from the relayer origin, so the /v2 prefix check is skipped.
+      ({ baseUrl: "https://a.example", apiPrefix: "/v1" }) as never,
+      undefined,
+      5_000,
+      false,
+      { createSdkClient: vi.fn().mockReturnValue(target) },
+    );
+    await executor.prepare(1);
+    return executor;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.createClientContext.mockImplementation(({ relayerUrl }) => ({
+      contractAddress: CONTRACT,
+      chain: { relayerUrl },
+      publicClient: {},
+    }));
+    mocks.laneAccount.mockReturnValue({ address: OWNER });
+    mocks.openIfExists.mockResolvedValue({
+      meta: meta(),
+      loadItems: vi.fn().mockResolvedValue([item()]),
+    });
+  });
+
+  it("signs a unified permit and decrypts in one request with no job telemetry", async () => {
+    const target = sdkClient();
+    const executor = await prepared(target);
+    const controller = new AbortController();
+
+    const result = await executor.execute(0, controller.signal);
+
+    // One preflight call at prepare() plus one for the executed request.
+    expect(target.signUnifiedDecryptionPermit).toHaveBeenCalledTimes(2);
+    expect(target.signUnifiedDecryptionPermit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        contractAddresses: [CONTRACT],
+        durationSeconds: 86_400,
+        signerAddress: OWNER,
+      }),
+    );
+    expect(target.signLegacyDecryptionPermit).not.toHaveBeenCalled();
+    expect(target.decryptValues).not.toHaveBeenCalled();
+    expect(target.decryptValuesNoGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        encryptedValues: [item().handle],
+        contractAddress: CONTRACT,
+        options: {
+          timeout: 5_000,
+          signal: controller.signal,
+          headers: { "x-request-id": result.sentRequestId },
+        },
+      }),
+    );
+    expect(result).toMatchObject({
+      flow: "user-decrypt",
+      outcome: "succeeded",
+      verified: true,
+      pollCount: 0,
+    });
+    expect(result.jobId).toBeUndefined();
+    expect(result.submitLatencyMs).toBeUndefined();
+    expect(result.firstRetryAfterMs).toBeUndefined();
+    expect(result.outcomeB).toBeUndefined();
+  });
+
+  it("records a relayer-http error response as a failed leg with its code, status and requestId", async () => {
+    const target = sdkClient();
+    vi.mocked(target.decryptValuesNoGateway).mockRejectedValue(
+      relayerHttpError({
+        status: 429,
+        code: "rate_limited",
+        responseMessage: "slow down",
+        requestId: "server-request",
+      }),
+    );
+    const executor = await prepared(target);
+
+    await expect(executor.execute(0, new AbortController().signal)).resolves.toMatchObject({
+      outcome: "failed",
+      errorLabel: "rate_limited",
+      errorMessage: "slow down",
+      submitHttpStatus: 429,
+      echoedRequestId: "server-request",
+      verified: false,
+    });
+  });
+
+  it("records a permit-signing failure as submit_failed without sending a request", async () => {
+    const target = sdkClient();
+    const executor = await prepared(target);
+    vi.mocked(target.signUnifiedDecryptionPermit).mockRejectedValue(new Error("signer offline"));
+
+    await expect(executor.execute(0, new AbortController().signal)).resolves.toMatchObject({
+      outcome: "submit_failed",
+      errorLabel: "sdk_user_decrypt_error",
+      errorMessage: "signer offline",
+    });
+    expect(target.decryptValuesNoGateway).not.toHaveBeenCalled();
+  });
+
+  it("records a non-HTTP failure after the permit is signed as failed", async () => {
+    const target = sdkClient();
+    vi.mocked(target.decryptValuesNoGateway).mockRejectedValue(
+      new Error("KMS share reconstruction failed"),
+    );
+    const executor = await prepared(target);
+
+    await expect(executor.execute(0, new AbortController().signal)).resolves.toMatchObject({
+      outcome: "failed",
+      errorLabel: "sdk_user_decrypt_error",
+      errorMessage: "KMS share reconstruction failed",
+    });
+  });
+
+  it("flags a wrong clear value as verify_failed", async () => {
+    const executor = await prepared(sdkClient(41n));
+
+    await expect(executor.execute(0, new AbortController().signal)).resolves.toMatchObject({
+      outcome: "verify_failed",
+      errorLabel: "values_mismatch",
+      verified: false,
+    });
+  });
+
+  it("classifies an in-flight abort as aborted", async () => {
+    const target = sdkClient();
+    const controller = new AbortController();
+    vi.mocked(target.decryptValuesNoGateway).mockImplementation(async () => {
+      controller.abort(new Error("run cancelled"));
+      throw new Error("run cancelled");
+    });
+    const executor = await prepared(target);
+
+    await expect(executor.execute(0, controller.signal)).resolves.toMatchObject({
+      outcome: "aborted",
+      errorLabel: "client_aborted",
+    });
   });
 });

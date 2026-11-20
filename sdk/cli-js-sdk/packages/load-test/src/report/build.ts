@@ -565,6 +565,7 @@ export type BuildReportInput = Readonly<{
   relayerApiPrefix?: string;
   relayerBUrl?: string;
   relayerBApiPrefix?: string;
+  useRelayerHttp?: boolean;
   startedAt: string;
   endedAt: string;
   records: readonly RequestRecord[];
@@ -664,6 +665,7 @@ export const buildReport = (input: BuildReportInput): Report => {
       relayerApiPrefix: input.relayerApiPrefix,
       relayerBUrl: input.relayerBUrl,
       relayerBApiPrefix: input.relayerBApiPrefix,
+      ...(input.useRelayerHttp ? { decryptTransport: "relayer-http" as const } : {}),
       startedAt: input.startedAt,
       endedAt: input.endedAt,
       plannedRequests: plannedRequestCount(input.scenario.shape) ?? input.submitted,

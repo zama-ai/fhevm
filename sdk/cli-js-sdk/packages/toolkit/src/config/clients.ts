@@ -42,7 +42,7 @@ export const createClients = (options: ClientOptions) => {
   return { chain, fhevm, publicClient, rpcUrl, transport };
 };
 
-const DECRYPT_CLIENT_TKMS_VERSIONS = ["0.13.10", "0.13.20-0"] as const;
+const DECRYPT_CLIENT_TKMS_VERSIONS = ["0.15.0-0"] as const;
 
 export type DecryptClientTkmsVersion =
   (typeof DECRYPT_CLIENT_TKMS_VERSIONS)[number];
@@ -64,11 +64,11 @@ export const asDecryptClientTkmsVersion = (
   );
 };
 
-/** Creates read-only host-chain and version-pinned decrypt-only SDK clients. */
-export const createDecryptClients = (
-  options: ClientOptions,
-  tkmsVersion: DecryptClientTkmsVersion,
-) => {
+/**
+ * Creates read-only host-chain and decrypt-only SDK clients. The SDK ships a
+ * single TKMS version, so callers compare `fhevm.tkmsVersion` after `ready`.
+ */
+export const createDecryptClients = (options: ClientOptions) => {
   const networkConfig = resolveNetworkConfig(options.network);
   configureFhevmRuntime();
 
@@ -79,11 +79,7 @@ export const createDecryptClients = (
     chain: networkConfig.hostChain,
     transport,
   });
-  const fhevm = createFhevmDecryptClient({
-    chain,
-    publicClient,
-    options: { moduleVersions: { kms: tkmsVersion } },
-  });
+  const fhevm = createFhevmDecryptClient({ chain, publicClient });
 
   return { chain, fhevm, publicClient, rpcUrl, transport };
 };
@@ -109,9 +105,8 @@ export type DecryptClientContext = ReturnType<typeof createDecryptClients> &
 /** Creates a decrypt-only context without initializing TFHE encryption. */
 export const createDecryptClientContext = (
   options: ClientOptions,
-  tkmsVersion: DecryptClientTkmsVersion,
 ): DecryptClientContext => ({
-  ...createDecryptClients(options, tkmsVersion),
+  ...createDecryptClients(options),
   contractAddress: resolveContractAddress(options),
 });
 

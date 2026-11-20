@@ -87,7 +87,7 @@ export const registerSuiteCommands = (program: Command): void => {
 
   withEnvOptions(suite.command("prepare <ref>").description("Prepare pools with local CPU/funded on-chain writes and persist evidence"))
     .option("--out <dir>", "output root")
-    .option("--no-readiness-check", "skip GET /health/readiness before mutation")
+    .option("--no-readiness-check", "skip the readiness check (GET /health/readiness, or /healthz with --use-relayer-http) before mutation")
     .option("--lanes <n>", "wallet lanes for handle creation", parseBoundedInt("--lanes", MAX_LANES))
     .option("--max-connections <n>", "max sockets per relayer target for the readiness gate (paired A/B uses up to 2×)", parseBoundedInt("--max-connections", MAX_CONNECTIONS))
     .action(async (ref, options, command) => {
@@ -119,7 +119,7 @@ export const registerSuiteCommands = (program: Command): void => {
     .option("--out <dir>", "output root")
     .option("--baselines-dir <dir>", "baseline reports root", "baselines")
     .option("--prepare", "authorize local CPU and funded on-chain pool writes before execution")
-    .option("--no-readiness-check", "skip GET /health/readiness")
+    .option("--no-readiness-check", "skip the readiness check (GET /health/readiness, or /healthz with --use-relayer-http)")
     .option("--lanes <n>", "wallet lanes for handle creation", parseBoundedInt("--lanes", MAX_LANES))
     .option("--max-connections <n>", "max sockets per relayer target (paired A/B uses up to 2×)", parseBoundedInt("--max-connections", MAX_CONNECTIONS))
     .action(async (ref, options, command) => {

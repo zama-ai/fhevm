@@ -392,6 +392,14 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
+    // Shared, explicitly role-keyed history. Gateway checkpoint promotion and
+    // conflict checks run in promote_gateway_checkpoints at cutover, rather
+    // than through the generic Green-wins table merge.
+    CoprocessorTable {
+        name: "listener_block_checkpoints",
+        duplicated: false,
+        conflict_cols: &[],
+    },
     // Event-derived consensus_epoch history is shared control-plane state. Blue and
     // Green must see the same failed and successful attempts.
     CoprocessorTable {
@@ -443,6 +451,12 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     // Both stacks share the PRF endpoint pads.
     CoprocessorTable {
         name: "pads",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    // The pad-worker runs outside blue-green, and Unmask in both stacks reads the same ct64.
+    CoprocessorTable {
+        name: "pad_ct64",
         duplicated: false,
         conflict_cols: &[],
     },

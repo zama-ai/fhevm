@@ -30,9 +30,14 @@ const record = (overrides: Partial<RequestRecord>): RequestRecord => ({
   ...overrides,
 });
 
-const build = (records: RequestRecord[], testScenario = scenario) => {
+const build = (
+  records: RequestRecord[],
+  testScenario = scenario,
+  useRelayerHttp?: boolean,
+) => {
   const hasB = records.some((entry) => entry.outcomeB !== undefined);
   return buildReport({
+    useRelayerHttp,
     scenario: testScenario,
     network: "testnet",
     relayerUrl: "http://localhost:3000",
@@ -582,6 +587,15 @@ describe("diffReports", () => {
       .toThrow(/errorRateTolerance must be between 0 and 1/);
   });
 
+  it("refuses to compare a gateway baseline with a relayer-http run", () => {
+    const gateway = build([record({})]);
+    const relayerHttp = build([record({})], scenario, true);
+    expect(() => diffReports(gateway, relayerHttp)).toThrow(/decrypt transport/);
+    // Reports written before the field existed are gateway runs.
+    const explicitGateway = { ...gateway, run: { ...gateway.run, decryptTransport: "gateway" as const } };
+    expect(diffReports(gateway, explicitGateway).passed).toBe(true);
+  });
+
   it("rejects a negative latencyTolerance", () => {
     const baseline = build([record({})]);
     const current = build([record({})]);
@@ -591,6 +605,16 @@ describe("diffReports", () => {
 });
 
 describe("renderMarkdownReport", () => {
+  it("records the decrypt transport, leaving it absent for gateway runs", () => {
+    const gateway = build([record({})]);
+    expect(gateway.run.decryptTransport).toBeUndefined();
+    expect(renderMarkdownReport(gateway)).toContain("- **Decrypt transport:** gateway");
+
+    const relayerHttp = build([record({})], scenario, true);
+    expect(relayerHttp.run.decryptTransport).toBe("relayer-http");
+    expect(renderMarkdownReport(relayerHttp)).toContain("- **Decrypt transport:** relayer-http");
+  });
+
   it("renders headline, flow tables, and breaches", () => {
     const report = build([
       record({}),

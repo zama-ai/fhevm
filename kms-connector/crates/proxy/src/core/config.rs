@@ -70,7 +70,8 @@ pub struct Config {
     /// The maximum accepted size of a request body.
     #[serde(default = "default_max_body_bytes")]
     pub max_body_bytes: usize,
-    /// How long the proxy waits for the client to send request bytes before dropping it.
+    /// How long the client has to send its whole request body, once the proxy has received the
+    /// request head, before the proxy drops it.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_request_read_timeout"

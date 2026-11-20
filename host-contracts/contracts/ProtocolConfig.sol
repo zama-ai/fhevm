@@ -106,6 +106,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /**
      * @notice Fresh deploy initializer: creates the first KMS context.
      * @dev When deploying a fresh ProtocolConfig on Ethereum (canonical host), this function is called.
+     *      A fresh KMS committee starts at `KMS_CONTEXT_COUNTER_BASE + 1` and `EPOCH_COUNTER_BASE + 1`.
+     *      A committee that already rotated must pass its active IDs, because the KMS rejects a reused ID.
+     *      The active IDs must also be the highest IDs ever issued. The next rotation issues again any pending or
+     *      abandoned ID above them.
+     * @param initialKmsContextId The first KMS context ID. Must be above `KMS_CONTEXT_COUNTER_BASE`.
+     * @param initialEpochId The first epoch ID. Must be above `EPOCH_COUNTER_BASE`.
      * @param initialKmsNodeParams The initial KMS node set, including MPC metadata.
      * @param initialThresholds The initial thresholds.
      * @param softwareVersion The KMS software version expected for the context.
@@ -113,27 +119,33 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
+        uint256 initialKmsContextId,
+        uint256 initialEpochId,
         KmsNodeParams[] calldata initialKmsNodeParams,
         KmsThresholds calldata initialThresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        if (initialKmsContextId < KMS_CONTEXT_COUNTER_BASE + 1) {
+            revert InvalidKmsContext(initialKmsContextId);
+        }
+        if (initialEpochId < EPOCH_COUNTER_BASE + 1) {
+            revert InvalidKmsEpoch(initialEpochId);
+        }
+
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
-        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        _storeAndActivateKmsContextAndEpoch(
-            newContextId,
-            EPOCH_COUNTER_BASE + 1,
-            _toKmsNodes(initialKmsNodeParams),
-            initialThresholds
-        );
+        _storeKmsNodesAndThresholds(initialKmsContextId, _toKmsNodes(initialKmsNodeParams), initialThresholds);
+        $.currentKmsContextId = initialKmsContextId;
+        $.epochCounter = initialEpochId;
+        _activateKmsContextAndEpoch(initialKmsContextId, initialEpochId);
 
-        $.contextAnchors[newContextId] = KmsContextAnchor({
+        $.contextAnchors[initialKmsContextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,
             contextInfoHash: keccak256(abi.encode(initialKmsNodeParams, initialThresholds, softwareVersion, pcrValues))
         });
         emit NewKmsContext(
-            newContextId,
+            initialKmsContextId,
             KMS_CONTEXT_COUNTER_BASE,
             initialKmsNodeParams,
             initialThresholds,
@@ -143,11 +155,15 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes a proxy upgraded from v0.14, which initialized at version 3.
+     * @dev Reverts with `KmsLifecycleOperationInFlight` while a context switch or epoch rotation is
+     *      in flight.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
+        _checkNoKmsLifecycleOperationInFlight();
+    }
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -321,14 +337,11 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert InvalidKmsContext(kmsContextId);
         }
 
-        // Mark the context destroyed and clear its epoch (if any).
         $.contextState[kmsContextId] = ContextState.None;
-        // A confirmed switch created this context's epoch as the latest-issued one: clear it when it
-        // belongs to this context. It can only be Pending here, since an Active epoch makes its
-        // context the latest active one, which the guard above refuses. Earlier epochs of a retired
-        // context keep their stored state, but nothing can use them: every epoch check also
-        // requires the context. A switch destroyed before its creation quorum has no epoch yet, so
-        // there is nothing to clear and the ownership check below is false.
+        // Destroying an in-flight context also aborts its Pending epoch, if the creation quorum already
+        // created one. Only the latest issued epoch can belong to it. Without the clear, the remaining
+        // activation confirmations could activate the destroyed context, and the in-flight check would
+        // block every later rotation.
         uint256 latestEpochId = $.epochCounter;
         if ($.contextForEpoch[latestEpochId] == kmsContextId) {
             _clearEpoch(latestEpochId);
@@ -349,7 +362,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         // - Active: retire a superseded epoch so its old shares stop being served.
         // - Pending under an Active context: abort a stuck same-set rotation. Activation
         //   confirmations are one-shot per signer, so a divergent confirmation can never reach unanimity
-        //   and the epoch would otherwise stay Pending forever — with its context still current,
+        //   and the epoch would otherwise stay Pending forever. Its context stays current, so
         //   neither destroyKmsContext() (reverts for the latest-active context) nor completion
         //   could ever settle it. The pending epoch of an in-flight context switch (context
         //   Pending/Created) is settled by destroyKmsContext() instead, which clears its paired
@@ -466,6 +479,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function getCurrentKmsContextIdCounter() external view virtual returns (uint256) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        return $.currentKmsContextId;
     }
 
     /// @inheritdoc IProtocolConfig
@@ -605,8 +624,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         bytes32 domainSeparator = keccak256(
             abi.encode(
                 EIP712_DOMAIN_TYPE_HASH,
-                keccak256(bytes(CONTRACT_NAME)),
-                keccak256(bytes("1")),
+                keccak256(bytes(EIP712_NAME)),
+                keccak256(bytes(EIP712_VERSION)),
                 block.chainid,
                 address(this)
             )
@@ -654,16 +673,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         epochId = ++$.epochCounter;
         $.epochState[epochId] = EpochState.Pending;
         $.contextForEpoch[epochId] = contextId;
-    }
-
-    /**
-     * @dev Clears `epochId` back to None and drops its context link. Callers own the preconditions
-     *      and any event emission.
-     */
-    function _clearEpoch(uint256 epochId) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.epochState[epochId] = EpochState.None;
-        delete $.contextForEpoch[epochId];
     }
 
     /**

@@ -21,13 +21,9 @@
  *        - make the target invalid on chain without moving the active context/epoch (destroying a
  *          context also makes its epochs invalid, because `isValidEpochForContext` needs a valid
  *          context, so the contract writes nothing per epoch);
- *        - reach every committee node: its connector forwards `DestroyMpcContext` /
+ *        - reach every node: its connector forwards `DestroyMpcContext` /
  *          `DestroyMpcEpoch` to its core and drops the target from its validation cache;
  *        - leave the current context and epoch serving decryptions and input proofs.
- *      The spare behaves differently, by design: it never held this material, so its core accepts
- *      the context destroy (nothing to delete) but fails the epoch destroy, and the
- *      context-to-epoch cache cascade skips it, because that cascade follows the epoch ids each
- *      core returns. Both are harmless — on-chain epoch validity follows context validity.
  *   4. Recovery and abort. Two independent checks:
  *      a) A context switch must still work after a destroy. That is, destroying a context must
  *         never leave the system stuck and unable to reshare and activate a new one.
@@ -398,12 +394,8 @@ const assertCurrentUnchanged = async (
  *     the active context/epoch does not move;
  *   - connector + KMS Core: every party forwards `DestroyMpcContext` / `DestroyMpcEpoch` to its
  *     core and marks the destroyed target invalid in its validation cache (invalidation follows
- *     the chain event, not the core outcome). The spare never held the material: its core acks
- *     the context destroy trivially but rejects the epoch destroy, so that request ends `failed`
- *     — benign either way. A context destroy also cascades to the context's epoch, whose id
- *     DestroyMpcContext returns — on committee parties only: the spare's core returns no epoch
- *     ids, so its cache row for that epoch stays valid. That stale row is harmless: on-chain
- *     epoch validity derives from context validity;
+ *     the chain event, not the core outcome). A context destroy also invalidates the context's
+ *     cached epochs, on every party;
  *   - app: the current context/epoch keeps serving user decryption and the input-proof flow.
  */
 const destroyContextAndEpoch = async (
@@ -416,7 +408,6 @@ const destroyContextAndEpoch = async (
   const { rpcUrl, protocolConfig, owner } = target;
   const { oldContextId, contextEpochId, oldEpochId, current } = ids;
   const parties = state.scenario.kms.parties;
-  const { committee, spares } = committeePlan(state.scenario.kms);
   const [contextDestroyedTopic, epochDestroyedTopic] = await Promise.all([
     keccakTopic("KmsContextDestroyed(uint256)"),
     keccakTopic("KmsEpochDestroyed(uint256)"),
@@ -488,8 +479,6 @@ const destroyContextAndEpoch = async (
   }
 
   await assertCurrentUnchanged(rpcUrl, protocolConfig, current, "destroying the retired context");
-  // Every party completes the destroy, the spare included: its core never held the context, so
-  // it has nothing to delete and completes trivially.
   await checkConnectorsDbColumn(
     parties, "context-destroy forwarded to KMS Core",
     columnQuery("kms_context_destroyed", "context_id", "status", oldContextId), ["completed"],
@@ -499,19 +488,12 @@ const destroyContextAndEpoch = async (
     // Postgres renders boolean::text as 'true'/'false' (not the 't'/'f' psql shows for the raw type).
     columnQuery("kms_context", "id", "is_valid", oldContextId), ["false"],
   );
-  // DestroyMpcContext returns the epoch ids it decommissioned, and the connector invalidates
-  // them. The retired context's epoch must therefore turn invalid from the context
-  // destroy alone, with no separate destroyKmsEpoch call. Committee only: the spare's core held
-  // no epochs, so it returns no epoch ids and no cascade happens there (checked right after).
+  // The connector invalidates the cached epochs of a destroyed context from the
+  // `KmsContextDestroyed` event. The retired context's epoch must therefore turn invalid from the
+  // context destroy alone, with no separate destroyKmsEpoch call.
   await checkConnectorsDbColumn(
-    committee, "destroyed context cascaded to its epoch in the validation cache",
+    parties, "destroyed context cascaded to its epoch in the validation cache",
     columnQuery("kms_epoch", "id", "is_valid", contextEpochId), ["false"],
-  );
-  // The spare's row for that epoch stays valid — harmless, since on-chain epoch validity derives
-  // from context validity. Checked after the committee cascade settles, so this is not a race.
-  await checkConnectorsDbColumn(
-    spares, "no cascade on the spare (its core returned no epoch ids)",
-    columnQuery("kms_epoch", "id", "is_valid", contextEpochId), ["true"],
   );
   await callContractAndExpectRevert(
     rpcUrl, protocolConfig, owner,
@@ -546,16 +528,8 @@ const destroyContextAndEpoch = async (
   }
   await assertCurrentUnchanged(rpcUrl, protocolConfig, current, "destroying the retired epoch");
   await checkConnectorsDbColumn(
-    committee, "epoch-destroy forwarded to KMS Core",
+    parties, "epoch-destroy forwarded to KMS Core",
     columnQuery("kms_epoch_destroyed", "epoch_id", "status", oldEpochId), ["completed"],
-  );
-  // Unlike a context destroy (which the spare's core acks trivially), the core rejects a destroy
-  // for an epoch it never held, so the spare's request ends failed. Benign: it had nothing to
-  // delete, and its cache row still turns invalid below — invalidation follows the chain event,
-  // not the core outcome.
-  await checkConnectorsDbColumn(
-    spares, "spare's epoch-destroy ends failed (never held the epoch)",
-    columnQuery("kms_epoch_destroyed", "epoch_id", "status", oldEpochId), ["failed"],
   );
   await checkConnectorsDbColumn(
     parties, "destroyed epoch invalidated in the validation cache",
@@ -682,14 +656,8 @@ const abortStuckRotation = async (
       throw new PreflightError(`kms-context-switch: KmsEpochDestroyed event does not carry epochId=${pendingEpochId}`);
     }
     await checkConnectorsDbColumn(
-      committee, "aborted epoch-destroy forwarded to KMS Core",
+      [...committee, ...spares], "aborted epoch-destroy forwarded to KMS Core",
       columnQuery("kms_epoch_destroyed", "epoch_id", "status", pendingEpochId), ["completed"],
-    );
-    // The spare never reshared this Pending epoch, so its core rejects the destroy (see the same
-    // asymmetry in destroyContextAndEpoch).
-    await checkConnectorsDbColumn(
-      spares, "spare's aborted epoch-destroy ends failed (never held the epoch)",
-      columnQuery("kms_epoch_destroyed", "epoch_id", "status", pendingEpochId), ["failed"],
     );
     console.log(`[kms-context-switch] stuck rotation aborted: Pending epoch ${pendingEpochId} destroyed`);
   } finally {

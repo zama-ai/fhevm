@@ -2,3 +2,7 @@
 # credentials git is configured with (credential helper, `insteadOf` rewrite, ...).
 [net]
 git-fetch-with-cli = true
+
+[registry]
+global-min-publish-age = "5 days"
+

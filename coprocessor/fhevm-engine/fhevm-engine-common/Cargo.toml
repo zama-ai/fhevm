@@ -4,6 +4,7 @@ version = "0.6.1"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [dependencies]
 # workspace dependencies
@@ -82,6 +83,10 @@ path = "src/bin/resolve_database_url.rs"
 [[bin]]
 name = "bootstrap_versioning"
 path = "src/bin/bootstrap_versioning.rs"
+
+[[bin]]
+name = "gateway_history_baseline"
+path = "src/bin/gateway_history_baseline.rs"
 
 [lints]
 workspace = true

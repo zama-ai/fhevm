@@ -4,6 +4,7 @@ import type { Account } from "viem/accounts";
 export type PreflightSdkClient = Readonly<{
   generateTransportKeyPair: () => Promise<unknown>;
   signLegacyDecryptionPermit: (parameters: Record<string, unknown>) => Promise<unknown>;
+  signUnifiedDecryptionPermit: (parameters: Record<string, unknown>) => Promise<unknown>;
 }>;
 
 /**
@@ -17,6 +18,9 @@ export type PreflightSdkClient = Readonly<{
  * requires a newer ProtocolConfig than the deployed environment provides)
  * aborts the run here instead of failing every scheduled request for the
  * full duration.
+ *
+ * `permit: "unified"` signs the V2 permit relayer-http requires instead of
+ * the legacy one the gateway relayer accepts.
  */
 export const assertSdkPreflight = async (options: {
   flow: string;
@@ -26,10 +30,11 @@ export const assertSdkPreflight = async (options: {
   durationSeconds: number;
   signer: Account;
   delegatorAddress?: string;
+  permit?: "legacy" | "unified";
 }): Promise<void> => {
   try {
     const transportKeyPair = await options.client.generateTransportKeyPair();
-    await options.client.signLegacyDecryptionPermit({
+    const parameters = {
       transportKeyPair,
       contractAddresses: [options.contractAddress],
       durationSeconds: options.durationSeconds,
@@ -39,7 +44,12 @@ export const assertSdkPreflight = async (options: {
       ...(options.delegatorAddress !== undefined
         ? { delegatorAddress: options.delegatorAddress }
         : {}),
-    });
+    };
+    if (options.permit === "unified") {
+      await options.client.signUnifiedDecryptionPermit(parameters);
+    } else {
+      await options.client.signLegacyDecryptionPermit(parameters);
+    }
   } catch (error) {
     throw new Error(
       `${options.flow} SDK preflight failed for target ${options.target}; no request was ` +

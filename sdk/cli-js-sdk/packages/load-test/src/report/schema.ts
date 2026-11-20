@@ -222,6 +222,8 @@ export type Report = Readonly<{
     relayerApiPrefix?: string;
     relayerBUrl?: string;
     relayerBApiPrefix?: string;
+    /** Decrypt transport; absent means the gateway (reports predating relayer-http). */
+    decryptTransport?: "gateway" | "relayer-http";
     startedAt: string;
     endedAt: string;
     plannedRequests: number;

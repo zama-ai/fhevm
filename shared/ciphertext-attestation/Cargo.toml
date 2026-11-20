@@ -4,6 +4,7 @@ name = "ciphertext-attestation"
 version = "0.15.0"
 edition = "2024"
 license = "BSD-3-Clause-Clear"
+publish = false
 
 [features]
 # Networked half (on-chain registry mirroring, S3 HEAD attestation fetch, consensus fan-out).

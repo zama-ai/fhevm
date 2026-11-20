@@ -1000,7 +1000,12 @@ async fn transition_to_dry_run_started(
 /// this check is intentionally proposal-wide, not filtered by chain_id,
 /// mirroring `prune_gcs_verify_proofs_before_start`.
 ///
-/// Four conditions, all against the Gateway-block domain:
+/// An unresolved halt or replay blocks both fleets. Green must have a checkpoint
+/// at its cursor. Blue must too, except for the v0.14 consensus-1 writer which
+/// only persisted heights. Once Blue has checkpoint history, require its exact
+/// cursor even on a v0.14 stack (e.g. a backport or an audited baseline).
+///
+/// Watermark, alignment and proof requirements apply to all versions:
 ///   1. Green's own watermark: `gcs.gw_listener_last_block.last_block_num >=
 ///      gw_start_block`. Reads the GCS schema explicitly (not `public`), since
 ///      the green gw-listener tails the Gateway into the GCS schema from
@@ -1047,6 +1052,31 @@ async fn check_gw_dry_run_ready(
               WHERE dummy_id = true),
              -1
            ) >= $1
+           AND EXISTS (
+               SELECT 1 FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block g
+               JOIN public.listener_block_checkpoints c
+                 ON c.source = 'gateway' AND c.stack_role = 'GCS'
+                AND c.block_number = g.last_block_num
+               WHERE g.dummy_id = TRUE AND g.last_block_num IS NOT NULL
+           )
+           AND (
+               EXISTS (
+                   SELECT 1 FROM public.gw_listener_last_block b
+                   JOIN public.listener_block_checkpoints c
+                     ON c.source = 'gateway' AND c.stack_role = 'BCS'
+                    AND c.block_number = b.last_block_num
+                   WHERE b.dummy_id
+               ) OR (
+                   EXISTS (
+                       SELECT 1 FROM public.versioning
+                       WHERE singleton AND consensus_version = 1
+                         AND stack_version IN ('v0.14', '0.14', 'v0.14.0', '0.14.0')
+                   ) AND NOT EXISTS (
+                       SELECT 1 FROM public.listener_block_checkpoints
+                       WHERE source = 'gateway' AND stack_role = 'BCS'
+                   )
+               )
+           )
            AND NOT EXISTS (
                SELECT 1 FROM public.verify_proofs
                WHERE block_number IS NOT NULL
@@ -2546,6 +2576,82 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
     Ok(())
 }
 
+async fn promote_gateway_checkpoints(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<Option<(i64, fhevm_engine_common::chain_recovery::HistoryConflict)>, Error> {
+    let cursor: Option<Option<i64>> = sqlx::query_scalar(&format!(
+        "SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+         WHERE dummy_id = TRUE"
+    ))
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(cursor) = cursor.flatten() else {
+        return Ok(None);
+    };
+    let chains: Vec<i64> = sqlx::query_scalar(
+        "SELECT chain_id FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = 'GCS' AND block_number = $1",
+    )
+    .bind(cursor)
+    .fetch_all(&mut **tx)
+    .await?;
+    if cursor == 0 && chains.is_empty() {
+        return Ok(None);
+    }
+    if chains.len() != 1 {
+        return Err(sqlx::Error::Protocol(
+            "Gateway cutover requires one verified checkpoint for its cursor".into(),
+        )
+        .into());
+    }
+    let chain_id = chains[0];
+    let conflict: Option<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT LEAST(g.block_number, b.block_number),
+                CASE WHEN b.block_number > g.block_number THEN b.parent_hash ELSE b.block_hash END,
+                CASE WHEN g.block_number > b.block_number THEN g.parent_hash ELSE g.block_hash END
+         FROM public.listener_block_checkpoints g
+         JOIN public.listener_block_checkpoints b
+           ON b.source = g.source AND b.chain_id = g.chain_id
+          AND (b.block_number = g.block_number
+               OR b.block_number = g.block_number - 1
+               OR g.block_number = b.block_number - 1)
+         WHERE g.source = 'gateway' AND g.stack_role = 'GCS' AND b.stack_role = 'BCS'
+           AND g.chain_id = $1
+           AND ((b.block_number = g.block_number AND b.block_hash <> g.block_hash)
+             OR (b.block_number = g.block_number - 1 AND b.block_hash <> g.parent_hash)
+             OR (g.block_number = b.block_number - 1 AND g.block_hash <> b.parent_hash))
+         ORDER BY LEAST(g.block_number, b.block_number) LIMIT 1",
+    )
+    .bind(chain_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some((block_number, expected_hash, observed_hash)) = conflict {
+        return Ok(Some((
+            chain_id,
+            fhevm_engine_common::chain_recovery::HistoryConflict {
+                block_number,
+                expected_hash,
+                observed_hash,
+                reason: "Gateway identities disagree during stack promotion",
+            },
+        )));
+    }
+    sqlx::query(
+        "INSERT INTO public.listener_block_checkpoints
+            (source, stack_role, chain_id, block_number, block_hash, parent_hash)
+         SELECT source, 'BCS', chain_id, block_number, block_hash, parent_hash
+         FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = 'GCS' AND chain_id = $1
+         ON CONFLICT (source, stack_role, chain_id, block_number)
+         DO UPDATE SET parent_hash = COALESCE(
+             listener_block_checkpoints.parent_hash, EXCLUDED.parent_hash)",
+    )
+    .bind(chain_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(None)
+}
+
 /// Cutover routine — run once every GCS row is `UpgradeAuthorized`, from the
 /// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
 ///
@@ -2643,6 +2749,19 @@ pub async fn execute_cutover(
             reason,
             "cutover refused: this controller cannot run the proposal's release"
         );
+        return Ok(());
+    }
+
+    // Keep Gateway cursor identity with the promoted schema. If the green and
+    // blue histories disagree, commit containment before any merge or drop.
+    if let Some((chain_id, conflict)) = promote_gateway_checkpoints(&mut tx).await? {
+        use fhevm_engine_common::chain_recovery::{record_halt_tx, ListenerSource};
+        record_halt_tx(
+            &mut tx,
+            conflict.observation(ListenerSource::Gateway, false, chain_id),
+        )
+        .await?;
+        tx.commit().await?;
         return Ok(());
     }
 
@@ -4380,9 +4499,16 @@ mod tests {
     #[tokio::test]
     async fn green_schema_reset_invalidates_only_green_replay() {
         use fhevm_engine_common::chain_recovery::{begin_replay, pending_replay, ListenerSource};
-        let (_db, pool) = test_pool().await;
+        let (db, pool) = test_pool().await;
         create_gcs_schema(&pool).await.unwrap();
-        begin_replay(&pool, ListenerSource::Host, true, 42, 1, 64)
+        let green = Pool::<Postgres>::connect_with(
+            fhevm_engine_common::database::apply_gcs_mode_search_path(true)(
+                db.db_url().parse().unwrap(),
+            ),
+        )
+        .await
+        .unwrap();
+        begin_replay(&green, ListenerSource::Host, true, 42, 1, 64)
             .await
             .unwrap();
         begin_replay(&pool, ListenerSource::Host, false, 42, 1, 64)
@@ -4432,6 +4558,9 @@ mod tests {
             for schema in ["public", GCS_SCHEMA_QUOTED] {
                 sqlx::query(&format!("INSERT INTO {schema}.gw_listener_last_block (dummy_id,last_block_num) VALUES (TRUE,1) ON CONFLICT (dummy_id) DO UPDATE SET last_block_num=1"))
                     .execute(&pool).await.unwrap();
+            }
+            for role in ["BCS", "GCS"] {
+                seed_gateway_checkpoint(&pool, role, 1, 1).await;
             }
             sqlx::query("INSERT INTO public.host_chain_blocks_valid (chain_id,block_hash,block_number,block_status) VALUES (1,$1,100,'finalized')")
                 .bind(vec![1_u8;32]).execute(&pool).await.unwrap();
@@ -4563,6 +4692,84 @@ mod tests {
         .execute(pool)
         .await
         .expect("seed consensus_epoch history");
+    }
+
+    #[tokio::test]
+    async fn gateway_promotion_checks_adjacent_retained_ranges() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.unwrap();
+        // Exercise both boundaries, a matching boundary, and legacy anchors
+        // that have no parent hash. The two roles never share a height.
+        for green_is_later in [false, true] {
+            for parent in [Some(vec![1_u8; 32]), Some(vec![9_u8; 32]), None] {
+                let mut tx = pool.begin().await.unwrap();
+                sqlx::query("DELETE FROM public.listener_block_checkpoints")
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+                let green_height = if green_is_later { 101_i64 } else { 100 };
+                for (role, height) in [("GCS", green_height), ("BCS", 201 - green_height)] {
+                    sqlx::query(
+                        "INSERT INTO public.listener_block_checkpoints
+                         (source, stack_role, chain_id, block_number, block_hash, parent_hash)
+                         VALUES ('gateway', $1, 42, $2, $3, $4)",
+                    )
+                    .bind(role)
+                    .bind(height)
+                    .bind(vec![if height == 100 { 1_u8 } else { 2 }; 32])
+                    .bind(if height == 101 { parent.clone() } else { None })
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+                }
+                sqlx::query(&format!(
+                    "INSERT INTO {GCS_SCHEMA_QUOTED}.gw_listener_last_block (dummy_id, last_block_num)
+                             VALUES (TRUE, $1) ON CONFLICT (dummy_id)
+                             DO UPDATE SET last_block_num=EXCLUDED.last_block_num",
+                ))
+                .bind(green_height)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+                let conflict = promote_gateway_checkpoints(&mut tx).await.unwrap();
+                assert_eq!(conflict.is_some(), parent == Some(vec![9_u8; 32]));
+                if let Some((chain_id, conflict)) = conflict {
+                    assert_eq!(chain_id, 42);
+                    assert_eq!(conflict.block_number, 100);
+                    assert_ne!(conflict.expected_hash, conflict.observed_hash);
+                    let blue_rows: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM public.listener_block_checkpoints WHERE stack_role='BCS'",
+                    ).fetch_one(&mut *tx).await.unwrap();
+                    assert_eq!(
+                        blue_rows, 1,
+                        "a conflict must not promote or erase evidence"
+                    );
+                }
+                tx.rollback().await.unwrap();
+            }
+        }
+    }
+
+    async fn seed_gateway_checkpoint(
+        pool: &Pool<Postgres>,
+        stack_role: &str,
+        chain_id: i64,
+        block_number: i64,
+    ) {
+        sqlx::query(
+            "INSERT INTO public.listener_block_checkpoints
+             (source,stack_role,chain_id,block_number,block_hash)
+             VALUES ('gateway',$1,$2,$3,$4)
+             ON CONFLICT (source,stack_role,chain_id,block_number)
+             DO UPDATE SET block_hash=EXCLUDED.block_hash",
+        )
+        .bind(stack_role)
+        .bind(chain_id)
+        .bind(block_number)
+        .bind(vec![u8::from(stack_role == "GCS"); 32])
+        .execute(pool)
+        .await
+        .expect("seed Gateway cursor checkpoint");
     }
 
     /// A `gcs` table NOT in `COPROCESSOR_TABLES`: only `DROP SCHEMA … CASCADE`
@@ -5224,6 +5431,92 @@ mod tests {
         assert_eq!(host_latches, vec![false, false]);
     }
 
+    #[tokio::test]
+    async fn gateway_readiness_across_the_legacy_blue_upgrade() {
+        let (_db, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        create_gcs_schema(&pool).await.unwrap();
+        sqlx::query(
+            "UPDATE public.upgrade_state SET gw_window_rewound = TRUE WHERE stack_role = 'GCS'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Write only the columns available to the pinned v0.14.2-0 Blue listener.
+        let advance_blue = |height: i64| {
+            sqlx::query(
+                "INSERT INTO public.gw_listener_last_block (dummy_id, last_block_num)
+             VALUES (TRUE, $1) ON CONFLICT (dummy_id) DO UPDATE
+             SET last_block_num = EXCLUDED.last_block_num",
+            )
+            .bind(height)
+            .execute(&pool)
+        };
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.gw_listener_last_block (dummy_id, last_block_num)
+             VALUES (TRUE, 101) ON CONFLICT (dummy_id) DO UPDATE SET last_block_num = 101"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        advance_blue(99).await.unwrap();
+        seed_gateway_checkpoint(&pool, "GCS", 42, 101).await;
+        assert!(
+            !check_gw_dry_run_ready(&pool, 100).await.unwrap(),
+            "Blue is behind"
+        );
+        advance_blue(100).await.unwrap();
+        assert!(check_gw_dry_run_ready(&pool, 100).await.unwrap());
+        advance_blue(101).await.unwrap();
+        assert!(check_gw_dry_run_ready(&pool, 101).await.unwrap());
+
+        sqlx::query(
+            "INSERT INTO public.verify_proofs
+            (zk_proof_id, chain_id, contract_address, user_address, block_number)
+            VALUES (1, 1, '0xc', '0xu', 99)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(
+            !check_gw_dry_run_ready(&pool, 101).await.unwrap(),
+            "pre-window proof is pending"
+        );
+        sqlx::query("UPDATE public.verify_proofs SET verified = TRUE WHERE zk_proof_id = 1")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(check_gw_dry_run_ready(&pool, 101).await.unwrap());
+
+        sqlx::query("DELETE FROM public.listener_block_checkpoints WHERE stack_role = 'GCS'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !check_gw_dry_run_ready(&pool, 101).await.unwrap(),
+            "Green needs its exact checkpoint"
+        );
+        seed_gateway_checkpoint(&pool, "GCS", 42, 101).await;
+
+        for (version, consensus) in [("0.15.0", 1_i64), ("v0.14", 2), ("unknown", 1)] {
+            sqlx::query("UPDATE public.versioning SET stack_version=$1, consensus_version=$2 WHERE singleton")
+                .bind(version).bind(consensus).execute(&pool).await.unwrap();
+            assert!(
+                !check_gw_dry_run_ready(&pool, 101).await.unwrap(),
+                "{version}/{consensus} must supply a Blue checkpoint"
+            );
+        }
+        set_live_versions_behind(&pool).await;
+        seed_gateway_checkpoint(&pool, "BCS", 42, 100).await;
+        assert!(
+            !check_gw_dry_run_ready(&pool, 101).await.unwrap(),
+            "an earlier Blue checkpoint cannot cover a later cursor"
+        );
+        seed_gateway_checkpoint(&pool, "BCS", 42, 101).await;
+        assert!(check_gw_dry_run_ready(&pool, 101).await.unwrap());
+    }
+
     /// A restart after the host gate finishes must restore an incomplete
     /// Gateway gate instead of leaving the zkproof-worker paused forever.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -5265,6 +5558,8 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed blue Gateway watermark");
+        // The previous-release Blue writer records only its watermark.
+        seed_gateway_checkpoint(&pool, "GCS", 1, 1).await;
 
         let cancel = CancellationToken::new();
         reconcile(

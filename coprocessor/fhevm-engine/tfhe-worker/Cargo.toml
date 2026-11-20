@@ -5,6 +5,7 @@ default-run = "tfhe_worker"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 autobenches = false
 
 [dependencies]
