@@ -57,9 +57,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @param quotaId Quota the contract is assigned to.
     error HCUTierStopped(address account, uint16 quotaId);
 
-    /// @notice Returned when a contract grants a handle deeper than its quota's stored-depth limit, with allow or
-    ///         allowTransient. Retrying succeeds once the handle has decayed for `retryAfterBlocks`.
-    /// @param account Contract that grants the handle.
+    /// @notice Returned when a contract computes a result deeper than its quota's stored-depth limit, or grants such a
+    ///         handle with allow or allowTransient. Retrying succeeds once the inputs have decayed for
+    ///         `retryAfterBlocks`.
+    /// @param account Contract that computes or grants the handle.
     /// @param quotaId Quota the contract computes in.
     error HCUStoredDepthExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
 
@@ -105,8 +106,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
 
     /// @dev Limit, meter, pause flag, tier and stored-depth limit of one quota, in one slot. All contracts assigned to
     ///      the quota share it. Usage decays by decayPerBlock every block, as carried depth does, and an operation fits
-    ///      while usage stays at most maxHCU. maxStoredDepth caps the carried depth its contracts can grant; 0 leaves
-    ///      only maxCrossTxDepth.
+    ///      while usage stays at most maxHCU. maxStoredDepth caps the depth of every value its contracts compute or
+    ///      grant; 0 leaves only maxCrossTxDepth.
     struct Quota {
         uint48 maxHCU;
         uint48 decayPerBlock;
@@ -313,8 +314,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         address caller,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(result, _latency(opCost), 0);
+        uint256 quotaMaxDepth = _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
+        _setResultDepths(result, _latency(opCost), 0, caller, quotaMaxDepth);
     }
 
     /**
@@ -326,8 +327,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 op1,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(result, _latency(opCost), _cacheDepths(op1, caller));
+        uint256 quotaMaxDepth = _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
+        _setResultDepths(result, _latency(opCost), _cacheDepths(op1, caller), caller, quotaMaxDepth);
     }
 
     /**
@@ -340,8 +341,14 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 op2,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(result, _latency(opCost), _maxDepths(_cacheDepths(op1, caller), _cacheDepths(op2, caller)));
+        uint256 quotaMaxDepth = _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
+        _setResultDepths(
+            result,
+            _latency(opCost),
+            _maxDepths(_cacheDepths(op1, caller), _cacheDepths(op2, caller)),
+            caller,
+            quotaMaxDepth
+        );
     }
 
     /**
@@ -355,12 +362,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32 op3,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
-        _setResultDepths(
-            result,
-            _latency(opCost),
-            _maxDepths(_cacheDepths(op1, caller), _maxDepths(_cacheDepths(op2, caller), _cacheDepths(op3, caller)))
+        uint256 quotaMaxDepth = _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
+        uint256 inputDepths = _maxDepths(
+            _cacheDepths(op1, caller),
+            _maxDepths(_cacheDepths(op2, caller), _cacheDepths(op3, caller))
         );
+        _setResultDepths(result, _latency(opCost), inputDepths, caller, quotaMaxDepth);
     }
 
     /**
@@ -372,14 +379,14 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32[] calldata values,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
+        uint256 quotaMaxDepth = _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
         uint256 inputDepths = 0;
         for (uint256 i = 0; i < values.length; i++) {
             inputDepths = _maxDepths(inputDepths, _cacheDepths(values[i], caller));
         }
 
-        _setResultDepths(result, _latency(opCost), inputDepths);
+        _setResultDepths(result, _latency(opCost), inputDepths, caller, quotaMaxDepth);
     }
 
     /**
@@ -392,26 +399,42 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bytes32[] calldata values,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
+        uint256 quotaMaxDepth = _updateAndVerifyHCUTransactionLimit(_work(opCost), caller);
 
         uint256 inputDepths = _cacheDepths(value, caller);
         for (uint256 i = 0; i < values.length; i++) {
             inputDepths = _maxDepths(inputDepths, _cacheDepths(values[i], caller));
         }
 
-        _setResultDepths(result, _latency(opCost), inputDepths);
+        _setResultDepths(result, _latency(opCost), inputDepths, caller, quotaMaxDepth);
     }
 
     /// @dev Records `result`'s depths: the operation's latency added to both depths of its deepest input, checked
-    ///      against both limits.
-    function _setResultDepths(bytes32 result, uint256 opLatency, uint256 inputDepths) private {
+    ///      against both limits and against `quotaMaxDepth`, the depth limit of `caller`'s quota. So a contract
+    ///      computes no value deeper than its quota allows, including one it never grants.
+    function _setResultDepths(
+        bytes32 result,
+        uint256 opLatency,
+        uint256 inputDepths,
+        address caller,
+        uint256 quotaMaxDepth
+    ) private {
         uint256 depths = (opLatency | (opLatency << 128)) + inputDepths;
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (uint128(depths) > $.maxHCUDepthPerTx) revert HCUTransactionDepthLimitExceeded();
         uint256 maxDepth = $.maxCrossTxDepth;
-        uint256 carried = depths >> 128;
-        if (maxDepth != 0 && carried > maxDepth) {
-            revert HCUCrossTxDepthLimitExceeded(_blocksToDecay(carried - maxDepth, $.crossTxDepthDecayPerBlock));
+        if (maxDepth != 0) {
+            uint256 carried = depths >> 128;
+            if (carried > maxDepth) {
+                revert HCUCrossTxDepthLimitExceeded(_blocksToDecay(carried - maxDepth, $.crossTxDepthDecayPerBlock));
+            }
+            if (quotaMaxDepth != 0 && carried > quotaMaxDepth) {
+                revert HCUStoredDepthExceeded(
+                    caller,
+                    _quotaOf(caller),
+                    _blocksToDecay(carried - quotaMaxDepth, $.crossTxDepthDecayPerBlock)
+                );
+            }
         }
         _storeDepths(result, depths);
     }
@@ -483,9 +506,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      * @notice Updates and verifies the HCU transaction limit.
      * @param opWork The operation's work, charged to the quota, the tiers and the transaction.
      * @param caller Contract that runs the operation, charged to its quota.
+     * @return quotaMaxDepth The depth limit of `caller`'s quota, for the depth check that follows.
      */
-    function _updateAndVerifyHCUTransactionLimit(uint256 opWork, address caller) internal virtual {
-        _updateAndVerifyHCUQuota(opWork, caller);
+    function _updateAndVerifyHCUTransactionLimit(
+        uint256 opWork,
+        address caller
+    ) internal virtual returns (uint256 quotaMaxDepth) {
+        quotaMaxDepth = _updateAndVerifyHCUQuota(opWork, caller);
 
         uint256 transactionHCU = opWork + _getHCUForTransaction();
         if (transactionHCU > uint256(_getHCULimitStorage().maxHCUPerTx)) {
@@ -500,8 +527,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      * @dev Checks both meters before writing either, so a refused operation spends neither.
      * @param opWork Work of the current operation.
      * @param caller Contract that calls FHEVMExecutor.
+     * @return quotaMaxDepth The quota's depth limit, read from the slot this check already loaded.
      */
-    function _updateAndVerifyHCUQuota(uint256 opWork, address caller) internal virtual {
+    function _updateAndVerifyHCUQuota(uint256 opWork, address caller) internal virtual returns (uint256 quotaMaxDepth) {
         uint16 quotaId = _quotaOf(caller);
         Quota storage quota = _getHCULimitStorage().quotas[quotaId];
         if (quota.paused) revert HCUQuotaPaused(caller, quotaId);
@@ -528,6 +556,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
             capacity.usedHCU = uint48(load);
             capacity.lastBlock = uint48(block.number);
         }
+        return quota.maxStoredDepth;
     }
 
     /// @dev Returns the chain's load after decay plus `opWork`, and the blocks before it fits `threshold`; (0, 0) while

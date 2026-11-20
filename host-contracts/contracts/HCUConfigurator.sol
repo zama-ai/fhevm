@@ -292,8 +292,9 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Sets the carried depth above which a quota's contracts cannot grant a handle, with allow or allowTransient.
-     *         0 leaves only the cross-transaction depth limit; otherwise the limit is at most maxDepth.
+     * @notice Sets the depth above which a quota's contracts can neither compute a result nor grant a handle, with
+     *         allow or allowTransient. 0 leaves only the cross-transaction depth limit; otherwise the limit is at most
+     *         maxDepth.
      * @dev The default quota keeps the strictest limit: a quota admin can move its contract to the default quota, grant
      *      a deep handle there and move it back. So the default quota's limit is set first, and another quota's limit
      *      is refused below it; another quota's 0 counts as maxDepth. Raising the default quota's limit later is not

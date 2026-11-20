@@ -62,6 +62,36 @@ contract DepthUser {
         FHEVMExecutor(fhevmExecutorAdd).fheAdd(input, bytes32(uint256(1)), 0x01);
     }
 
+    /// @dev Computes on `input` without keeping the result, with three operands (0), an array (1), a value and an
+    ///      array (2), or one operand (3).
+    function computeShape(bytes32 input, uint8 shape) external {
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = input;
+        values[1] = input;
+        if (shape == 0) {
+            bytes32 condition = FHEVMExecutor(fhevmExecutorAdd).trivialEncrypt(1, FheType.Bool);
+            FHEVMExecutor(fhevmExecutorAdd).fheIfThenElse(condition, input, input);
+        } else if (shape == 1) {
+            FHEVMExecutor(fhevmExecutorAdd).fheSum(values, FheType.Uint64);
+        } else if (shape == 2) {
+            FHEVMExecutor(fhevmExecutorAdd).fheIsIn(input, values, FheType.Uint64);
+        } else {
+            FHEVMExecutor(fhevmExecutorAdd).fheNeg(input);
+        }
+    }
+
+    /// @dev Keeps `input`, which another contract handed over in this transaction, without computing on it.
+    function keep(bytes32 input) external {
+        value = input;
+        ACL(aclAdd).allow(input, address(this));
+    }
+
+    /// @dev Hands this contract's value to `recipient` for this transaction, and `recipient` keeps it.
+    function handOver(DepthUser recipient) external {
+        ACL(aclAdd).allowTransient(value, address(recipient));
+        recipient.keep(value);
+    }
+
     function forward(DepthUser recipient) external {
         ACL(aclAdd).allowTransient(value, address(recipient));
         recipient.addOne(value);
@@ -295,17 +325,19 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         vm.stopPrank();
     }
 
-    function test_StoredDepthLimitRefusesADeepGrant() public {
-        (uint48 start, uint48 step) = _startAndMeasure(alice);
-        vm.prank(owner);
-        hcuConfigurator.setMaxHCUDepthPerTx(step);
-        _setStoredDepthLimit(DEFAULT_QUOTA, start + 2 * step);
+    /// A contract handed a handle in this transaction cannot keep it above its own quota's limit, although the
+    /// contract that handed it over, in a looser quota, could. The depth comes from transient storage.
+    function test_StoredDepthLimitRefusesKeepingAHandedOverHandle() public {
+        (uint48 start, uint48 step) = _startAndMeasure(bob);
+        bob.addOne(bob.value());
+        _setStoredDepthLimit(DEFAULT_QUOTA, start + step);
+        vm.startPrank(owner);
+        hcuConfigurator.setQuota(PARTNER_QUOTA, type(uint48).max, type(uint48).max);
+        hcuConfigurator.assignQuota(PARTNER_QUOTA, address(bob));
+        vm.stopPrank();
+        _setStoredDepthLimit(PARTNER_QUOTA, start + 2 * step);
 
-        alice.addOne(alice.value());
-        assertEq(_storedDepth(alice), start + 2 * step);
-        bytes32 last = alice.value();
-        // The result is computed in the same transaction, so its depth comes from transient storage. One step over the
-        // limit, at one HCU of decay per block.
+        // One step over alice's limit, at one HCU of decay per block.
         vm.expectRevert(
             abi.encodeWithSelector(
                 HCULimit.HCUStoredDepthExceeded.selector,
@@ -314,7 +346,11 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
                 uint256(step)
             )
         );
-        alice.addOne(last);
+        bob.handOver(alice);
+
+        vm.roll(block.number + step);
+        bob.handOver(alice);
+        assertEq(alice.value(), bob.value());
     }
 
     function test_StoredDepthLimitChecksEveryGrantOfAStoredHandle() public {
@@ -341,13 +377,28 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         alice.share(address(bob));
     }
 
-    function test_StoredDepthLimitLeavesTheExecutorsTransientGrantsUnchecked() public {
+    /// A contract computes no value deeper than its quota's limit, even one it never grants: it could otherwise
+    /// make the value public with allowForDecryption, which checks no depth.
+    function test_QuotaDepthLimitRefusesEveryResultNotOnlyGrants() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
-        vm.prank(owner);
-        hcuConfigurator.setMaxHCUDepthPerTx(step);
         _setStoredDepthLimit(DEFAULT_QUOTA, start + step);
-        // FHEVMExecutor hands the deeper result to alice; only a grant by alice would be checked.
-        alice.compute(alice.value());
+        bytes32 value = alice.value();
+        // One step over the limit, at one HCU of decay per block.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                HCULimit.HCUStoredDepthExceeded.selector,
+                address(alice),
+                DEFAULT_QUOTA,
+                uint256(step)
+            )
+        );
+        alice.compute(value);
+
+        // Every operation shape checks it.
+        for (uint8 shape; shape < 4; ++shape) {
+            vm.expectPartialRevert(HCULimit.HCUStoredDepthExceeded.selector);
+            alice.computeShape(value, shape);
+        }
     }
 
     function test_StoredDepthLimitIsOffWhileTheDepthLimitIsOff() public {
