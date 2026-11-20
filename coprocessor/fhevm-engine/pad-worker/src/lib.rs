@@ -301,8 +301,8 @@ impl PadWorker {
             .map_err(|e| OutputError::Signing(format!("signing: {e}")))?;
         let output = Output {
             claim,
-            ct64: Some(outputs.ct64),
-            ct128: outputs.ct128,
+            ct64: Some(outputs.ct64.into()),
+            ct128: outputs.ct128.into(),
             attestation: PrfOutputAttestation {
                 version: payload.version,
                 ciphertext_digest: payload.ciphertext_digest,

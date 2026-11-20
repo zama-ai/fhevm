@@ -1,6 +1,7 @@
 //! The `pads` rows of one PRF instance: claim, output, failure, upload and GC.
 
 use alloy::primitives::{Address, B256};
+use bytes::Bytes;
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
 use sqlx::{types::Uuid, PgPool};
 use std::time::Duration;
@@ -231,8 +232,8 @@ pub async fn release(pool: &PgPool, prf_instance: u16, claims: &[Claim]) -> sqlx
 pub struct Output {
     pub claim: Claim,
     /// `None` when the GC of the ct64 deleted it first.
-    pub ct64: Option<Vec<u8>>,
-    pub ct128: Vec<u8>,
+    pub ct64: Option<Bytes>,
+    pub ct128: Bytes,
     pub attestation: PrfOutputAttestation,
 }
 
@@ -280,8 +281,8 @@ pub async fn claim_uploads(
                     pad_length: u16::try_from(row.pad_length).expect("pad_length is in range"),
                     token: row.claim_token,
                 },
-                ct64: row.ciphertext64,
-                ct128: row.ciphertext128,
+                ct64: row.ciphertext64.map(Bytes::from),
+                ct128: Bytes::from(row.ciphertext128),
                 attestation: PrfOutputAttestation {
                     version,
                     ciphertext_digest: B256::try_from(row.ciphertext_digest.as_slice())

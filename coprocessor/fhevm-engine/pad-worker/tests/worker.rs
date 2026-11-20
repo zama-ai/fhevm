@@ -471,12 +471,8 @@ async fn waits_for_the_compressed_key_set_of_its_key() {
     sleep(Duration::from_millis(300)).await;
     assert!(!waiting.is_finished());
 
-    // The first row gets the compressed key set. A second row of the key, from another block, does
-    // not have it: the pad-worker still waits.
-    sqlx::query("UPDATE keys SET compressed_xof_keyset = '\\x00'")
-        .execute(&pool)
-        .await
-        .unwrap();
+    // Add a second row of the key, from another block. Then the first row gets the compressed key
+    // set, and the second row does not: the pad-worker still waits.
     sqlx::query(
         "INSERT INTO keys (key_id_gw, key_id, pks_key, sks_key, chain_id, block_hash)
          VALUES ($1, $1, ''::BYTEA, ''::BYTEA, 1, $2)",
@@ -486,6 +482,11 @@ async fn waits_for_the_compressed_key_set_of_its_key() {
     .execute(&pool)
     .await
     .unwrap();
+    sqlx::query("UPDATE keys SET compressed_xof_keyset = '\\x00' WHERE block_hash = $1")
+        .bind([0u8; 32].as_slice())
+        .execute(&pool)
+        .await
+        .unwrap();
     sleep(Duration::from_millis(300)).await;
     assert!(!waiting.is_finished());
 

@@ -5,6 +5,7 @@ use crate::rows::{Claim, Output};
 use anyhow::{ensure, Context};
 use aws_sdk_s3::{primitives::ByteStream, types::ChecksumMode, Client};
 use base64::Engine;
+use bytes::Bytes;
 use ciphertext_attestation::{PrfOutputAttestation, S3_METADATA_ATTESTATION_KEY};
 use fhevm_engine_common::prf_output::prf_output_s3_key;
 use sha2::{Digest, Sha256};
@@ -56,18 +57,36 @@ impl Uploader {
     /// Uploads the ct64, if the output has it, and the ct128, then checks the stored objects.
     /// Hold a `slot` while it runs.
     pub async fn upload(&self, output: &Output) -> anyhow::Result<()> {
+        let attestation = serde_json::to_string(&output.attestation)?;
         if let Some(ct64) = &output.ct64 {
-            self.put(&s3_key(&output.claim, Form::Ct64), ct64, output)
-                .await
-                .context("ct64")?;
-        }
-        self.put(&s3_key(&output.claim, Form::Ct128), &output.ct128, output)
+            self.put(
+                &s3_key(&output.claim, Form::Ct64),
+                ct64,
+                &attestation,
+                &output.attestation,
+            )
             .await
-            .context("ct128")
+            .context("ct64")?;
+        }
+        self.put(
+            &s3_key(&output.claim, Form::Ct128),
+            &output.ct128,
+            &attestation,
+            &output.attestation,
+        )
+        .await
+        .context("ct128")
     }
 
-    async fn put(&self, key: &str, body: &[u8], output: &Output) -> anyhow::Result<()> {
-        let attestation = serde_json::to_string(&output.attestation)?;
+    /// Puts `body` at `key` with `attestation`, the JSON of `expected`, then checks the stored
+    /// object.
+    async fn put(
+        &self,
+        key: &str,
+        body: &Bytes,
+        attestation: &str,
+        expected: &PrfOutputAttestation,
+    ) -> anyhow::Result<()> {
         let checksum = self
             .sha256_checksum
             .then(|| base64::engine::general_purpose::STANDARD.encode(Sha256::digest(body)));
@@ -75,9 +94,10 @@ impl Uploader {
             .put_object()
             .bucket(&self.bucket)
             .key(key)
-            .metadata(S3_METADATA_ATTESTATION_KEY, &attestation)
+            .metadata(S3_METADATA_ATTESTATION_KEY, attestation)
             .set_checksum_sha256(checksum.clone())
-            .body(ByteStream::from(body.to_vec()))
+            // A clone of `Bytes` copies no data.
+            .body(ByteStream::from(body.clone()))
             .send()
             .await
             .context("put")?;
@@ -93,7 +113,7 @@ impl Uploader {
                 .and_then(|m| m.get(S3_METADATA_ATTESTATION_KEY))
                 .context("no attestation in the metadata")?,
         )?;
-        ensure!(stored == output.attestation, "other attestation in S3");
+        ensure!(stored == *expected, "other attestation in S3");
         ensure!(
             object.content_length() == i64::try_from(body.len()).ok(),
             "other length in S3"
