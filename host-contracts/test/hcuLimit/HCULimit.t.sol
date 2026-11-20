@@ -159,9 +159,9 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
             abi.encodeCall(HCULimit.setQuota, (3, 1, 1)),
             abi.encodeCall(HCULimit.assignQuota, (3, address(0xBEEF))),
             abi.encodeCall(HCULimit.setQuotaPaused, (3, true)),
-            abi.encodeCall(HCULimit.setQuotaMaxStoredDepth, (3, 1)),
+            abi.encodeCall(HCULimit.setQuotaMaxCarriedDepth, (3, 1)),
             abi.encodeCall(HCULimit.setTxLimits, (1, 1)),
-            abi.encodeCall(HCULimit.setCrossTxDepthLimit, (1, 1))
+            abi.encodeCall(HCULimit.setCarriedDepthLimit, (1, 1))
         ];
         for (uint256 i = 0; i < calls.length; i++) {
             vm.prank(caller);
@@ -2265,14 +2265,14 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.stopPrank();
     }
 
-    /// RFC 040 relies on a quota's limits, usage, pause flag, tier and stored-depth limit sharing one slot.
+    /// RFC 040 relies on a quota's limits, usage, pause flag, tier and carried-depth limit sharing one slot.
     function test_aQuotaFitsInOneSlot() public {
         vm.startPrank(owner);
-        hcuConfigurator.setCrossTxDepthLimit(type(uint48).max, 1);
+        hcuConfigurator.setCarriedDepthLimit(type(uint48).max, 1);
         hcuConfigurator.setQuota(PARTNER_QUOTA, 1_000_000, 1_000_000);
         hcuConfigurator.pauseQuota(PARTNER_QUOTA);
-        hcuConfigurator.setQuotaMaxStoredDepth(DEFAULT_QUOTA, type(uint48).max);
-        hcuConfigurator.setQuotaMaxStoredDepth(PARTNER_QUOTA, type(uint48).max);
+        hcuConfigurator.setQuotaMaxCarriedDepth(DEFAULT_QUOTA, type(uint48).max);
+        hcuConfigurator.setQuotaMaxCarriedDepth(PARTNER_QUOTA, type(uint48).max);
         vm.stopPrank();
         // HCUConfigurator moves a quota only to a tier with a threshold; the highest tier number fills the field.
         vm.prank(hcuConfiguratorAdd);

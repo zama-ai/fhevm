@@ -80,9 +80,9 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         assertEq(upgraded.getVersion(), "HCULimit v0.6.0");
         uint16 reservedBps = upgraded.getTierThreshold(0);
         assertEq(reservedBps, 10_000);
-        (uint48 maxCrossTxDepth, uint48 crossTxDecayPerBlock) = upgraded.getCrossTxDepthLimit();
-        assertEq(maxCrossTxDepth, 0);
-        assertEq(crossTxDecayPerBlock, 0);
+        (uint48 maxCarriedDepth, uint48 carriedDepthDecayPerBlock) = upgraded.getCarriedDepthLimit();
+        assertEq(maxCarriedDepth, 0);
+        assertEq(carriedDepthDecayPerBlock, 0);
         vm.prank(executor);
         upgraded.checkHCUForCast(FheType.Uint8, INPUT, RESULT, DAPP);
         (, , usedHCU) = upgraded.getQuota(DEFAULT_QUOTA);
@@ -180,8 +180,8 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         hcuConfigurator.assignQuota(DAPP_QUOTA, other);
         hcuConfigurator.setQuotaAdmin(DAPP_QUOTA, address(0xAD));
         hcuConfigurator.pauseQuota(DAPP_QUOTA);
-        hcuConfigurator.setCrossTxDepthLimit(10_000_000, 1_000_000);
-        hcuConfigurator.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 6_000_000);
+        hcuConfigurator.setCarriedDepthLimit(10_000_000, 1_000_000);
+        hcuConfigurator.setQuotaMaxCarriedDepth(DEFAULT_QUOTA, 6_000_000);
         hcuConfigurator.assignQuota(DEFAULT_QUOTA, DAPP);
         hcuConfigurator.setCapacity(1_000_000, 100_000);
         hcuConfigurator.setTierThreshold(1, 5_000);
@@ -201,7 +201,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         assertEq(hcuLimit.getContractQuota(other), DAPP_QUOTA);
         assertEq(hcuLimit.getContractQuota(DAPP), DEFAULT_QUOTA);
         assertTrue(hcuLimit.isQuotaPaused(DAPP_QUOTA));
-        assertEq(hcuLimit.getQuotaMaxStoredDepth(DEFAULT_QUOTA), 6_000_000);
+        assertEq(hcuLimit.getQuotaMaxCarriedDepth(DEFAULT_QUOTA), 6_000_000);
         (uint48 maxHCU, , ) = hcuLimit.getQuota(ALLOWLIST_QUOTA);
         assertEq(maxHCU, LEGACY_CAP);
         (uint48 capacityMax, uint48 capacityDecay, ) = hcuLimit.getCapacity();

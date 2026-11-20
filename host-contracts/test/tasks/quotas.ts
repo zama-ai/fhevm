@@ -123,6 +123,25 @@ describe('HCULimit quota tasks', function () {
     });
   });
 
+  it('sets a quota carried-depth limit only up to the ceiling', async function () {
+    await rejects(
+      runQuotaTask('task:setQuotaMaxCarriedDepth', {
+        quotaId,
+        maxCarriedDepth: '20000001',
+        ceiling: '20000000',
+        broadcast: true,
+      }),
+      /above the ceiling 20000000/,
+    );
+    await runQuotaTask('task:setQuotaMaxCarriedDepth', {
+      quotaId,
+      maxCarriedDepth: '20000000',
+      ceiling: '20000000',
+      broadcast: true,
+    });
+    expect(await hcuLimit.getFunction('getQuotaMaxCarriedDepth').staticCall(quotaId)).to.equal(20_000_000n);
+  });
+
   it('rejects malformed arguments before broadcasting', async function () {
     await rejects(
       runQuotaTask('task:setQuota', { quotaId: '65536', maxHcu: '1', decayPerBlock: '1', broadcast: true }),

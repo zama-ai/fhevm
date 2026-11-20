@@ -30,9 +30,9 @@ describe('EncryptedERC20:HCU', function () {
     if (defaultMaxHCU !== MAX_UINT48) {
       await ownerConfigurator.setQuota(0, MAX_UINT48, MAX_UINT48);
     }
-    const [maxCrossTxDepth] = await this.hcuLimit.getCrossTxDepthLimit();
-    if (maxCrossTxDepth !== 0n) {
-      await ownerConfigurator.setCrossTxDepthLimit(0, 0);
+    const [maxCarriedDepth] = await this.hcuLimit.getCarriedDepthLimit();
+    if (maxCarriedDepth !== 0n) {
+      await ownerConfigurator.setCarriedDepthLimit(0, 0);
     }
   });
 
@@ -153,8 +153,8 @@ describe('EncryptedERC20:HCU', function () {
     expect(uncappedUsedHCU).to.eq(0n);
   });
 
-  it('should refuse dependent transfers at the cross-transaction depth limit until decay frees room', async function () {
-    await (await this.hcuConfigurator.connect(this.signers.fred).setCrossTxDepthLimit(5_000_000, 1)).wait();
+  it('should refuse dependent transfers at the carried-depth limit until decay frees room', async function () {
+    await (await this.hcuConfigurator.connect(this.signers.fred).setCarriedDepthLimit(5_000_000, 1)).wait();
     await (await this.erc20.mint(10000)).wait();
 
     // Each transfer computes on the balances left by the previous one, so the chain deepens every time.
@@ -176,8 +176,8 @@ describe('EncryptedERC20:HCU', function () {
         return 0n;
       } catch (error: any) {
         const decoded = this.hcuLimit.interface.parseError(error.data);
-        expect(decoded?.name).to.eq('HCUCrossTxDepthLimitExceeded');
-        return decoded!.args[0] as bigint;
+        expect(decoded?.name).to.eq('HCUCarriedDepthExceeded');
+        return decoded!.args[2] as bigint;
       }
     };
 
@@ -185,7 +185,7 @@ describe('EncryptedERC20:HCU', function () {
     for (let sent = 0; sent < 40 && refusals === 0; sent++) {
       const amount = await encryptAmount();
       if ((await simulate(amount)) > 0n) {
-        await expect(transfer(amount)).to.be.revertedWithCustomError(this.hcuLimit, 'HCUCrossTxDepthLimitExceeded');
+        await expect(transfer(amount)).to.be.revertedWithCustomError(this.hcuLimit, 'HCUCarriedDepthExceeded');
         refusals++;
       } else {
         await (await transfer(amount)).wait();

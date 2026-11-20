@@ -57,12 +57,14 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @param quotaId Quota the contract is assigned to.
     error HCUTierStopped(address account, uint16 quotaId);
 
-    /// @notice Returned when a contract computes a result deeper than its quota's stored-depth limit, or grants such a
-    ///         handle with allow or allowTransient. Retrying succeeds once the inputs have decayed for
-    ///         `retryAfterBlocks`.
-    /// @param account Contract that computes or grants the handle.
+    /// @notice Returned when a contract computes a result whose carried depth exceeds its quota's limit, or the chain's
+    ///         limit when the quota has none.
+    /// @param account Contract that computes the result.
     /// @param quotaId Quota the contract computes in.
-    error HCUStoredDepthExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
+    /// @param retryAfterBlocks Blocks of decay after which this operation fits, if nothing else extends its chain.
+    ///        Later operations of the same transaction can need more, so clients simulate again after waiting.
+    ///        type(uint256).max when the depth built within this transaction alone exceeds the limit.
+    error HCUCarriedDepthExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
 
     /// @notice Returned when a setting is written by an address other than HCUConfigurator.
     error CallerMustBeHCUConfigurator();
@@ -79,11 +81,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
 
     /// @notice Returned when the caller is not the ACL contract.
     error CallerMustBeACLContract();
-
-    /// @notice Returned when an operation's depth carried across transactions exceeds the limit.
-    /// @param retryAfterBlocks Blocks of decay after which this operation fits, if nothing else extends its chain.
-    ///        Later operations of the same transaction can need more, so clients simulate again after waiting.
-    error HCUCrossTxDepthLimitExceeded(uint256 retryAfterBlocks);
 
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "HCULimit";
@@ -104,10 +101,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @dev Threshold on the chain's load while the capacity is unmetered: no operation reaches it.
     uint256 private constant UNMETERED = type(uint256).max;
 
-    /// @dev Limit, meter, pause flag, tier and stored-depth limit of one quota, in one slot. All contracts assigned to
+    /// @dev Limit, meter, pause flag, tier and carried-depth limit of one quota, in one slot. All contracts assigned to
     ///      the quota share it. Usage decays by decayPerBlock every block, as carried depth does, and an operation fits
-    ///      while usage stays at most maxHCU. maxStoredDepth caps the depth of every value its contracts compute or
-    ///      grant; 0 leaves only maxCrossTxDepth.
+    ///      while usage stays at most maxHCU. maxCarriedDepth caps the carried depth of every value its contracts compute,
+    ///      in place of the chain's maxCarriedDepth, stricter or looser; 0 applies the chain's.
     struct Quota {
         uint48 maxHCU;
         uint48 decayPerBlock;
@@ -115,7 +112,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         uint48 lastBlock;
         bool paused;
         uint8 tier;
-        uint48 maxStoredDepth;
+        uint48 maxCarriedDepth;
     }
 
     /// @dev The HCU load the coprocessors absorb on this chain, how much of it they drain per block, the chain's load,
@@ -131,7 +128,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
 
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev The first five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits). The
-    ///      cross-transaction fields and the quotas are appended after the allowlist to keep the existing layout.
+    ///      carried-depth fields and the quotas are appended after the allowlist to keep the existing layout.
     struct HCULimitStorage {
         /// @notice Unused since quotas replaced the global block cap; reinitializeV6 copies it into a quota.
         uint48 globalHCUCapPerBlock;
@@ -154,10 +151,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         /// @notice Whether the allowlist restricted FHE computation when quotas replaced it. No setter; while true and
         ///         the default quota is stopped, allowlisted contracts nobody assigned keep computing (see _quotaOf).
         bool isAllowlistActivated;
-        /// @notice Maximum depth carried across transactions; 0 disables the check.
-        uint48 maxCrossTxDepth;
+        /// @notice Chain's carried-depth limit, for quotas without their own; 0 disables every carried-depth check.
+        uint48 maxCarriedDepth;
         /// @notice Carried depth the coprocessors are assumed to drain per block.
-        uint48 crossTxDepthDecayPerBlock;
+        uint48 carriedDepthDecayPerBlock;
         /// @notice Limit and meter of each quota.
         mapping(uint16 quotaId => Quota) quotas;
         /// @notice Quota of each contract; the default quota when never assigned.
@@ -214,7 +211,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      *      quota is stopped, so unknown contracts stay refused, and allowlisted contracts share the global cap in the
      *      allowlist quota, or are unmetered if also block-whitelisted. Otherwise the default quota gets the global cap,
      *      and the upgrade proposal assigns any block-whitelisted contract to a quota that is not metered. The cap
-     *      becomes maximum and decay per block, which allows the same HCU per block. The cross-transaction depth limit
+     *      becomes maximum and decay per block, which allows the same HCU per block. The carried-depth limit
      *      starts disabled, and the capacity unmetered.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
@@ -270,40 +267,30 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         _setCapacity(maxHCU, decayPerBlock);
     }
 
-    function setQuotaMaxStoredDepth(uint16 quotaId, uint48 maxStoredDepth) external onlyHCUConfigurator {
-        _getHCULimitStorage().quotas[quotaId].maxStoredDepth = maxStoredDepth;
+    function setQuotaMaxCarriedDepth(uint16 quotaId, uint48 maxCarriedDepth) external onlyHCUConfigurator {
+        _getHCULimitStorage().quotas[quotaId].maxCarriedDepth = maxCarriedDepth;
     }
 
     function setTxLimits(uint48 maxHCUPerTx, uint48 maxHCUDepthPerTx) external onlyHCUConfigurator {
         _setTxLimits(maxHCUPerTx, maxHCUDepthPerTx);
     }
 
-    function setCrossTxDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external onlyHCUConfigurator {
+    function setCarriedDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external onlyHCUConfigurator {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        $.maxCrossTxDepth = maxDepth;
-        $.crossTxDepthDecayPerBlock = decayPerBlock;
+        $.maxCarriedDepth = maxDepth;
+        $.carriedDepthDecayPerBlock = decayPerBlock;
     }
 
     /**
      * @notice Caches `handle`'s carried depth for the rest of this transaction and returns it, when `holder` grants the
      *         handle. If this transaction has not seen the handle yet, the depth comes from `holder`'s permission.
-     *         Reverts with HCUStoredDepthExceeded above the stored-depth limit of `holder`'s quota. Returns 0 when
-     *         disabled.
+     *         Returns 0 when disabled. A grant is not checked against any limit: a contract that computes on the
+     *         handle is.
      */
     function cacheDepth(bytes32 handle, address holder) external returns (uint48 depth) {
         if (msg.sender != aclAdd) revert CallerMustBeACLContract();
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.maxCrossTxDepth == 0) return 0;
-        depth = uint48(_cacheDepths(handle, holder) >> 128);
-        uint16 quotaId = _quotaOf(holder);
-        uint48 maxStoredDepth = $.quotas[quotaId].maxStoredDepth;
-        if (maxStoredDepth != 0 && depth > maxStoredDepth) {
-            revert HCUStoredDepthExceeded(
-                holder,
-                quotaId,
-                _blocksToDecay(depth - maxStoredDepth, $.crossTxDepthDecayPerBlock)
-            );
-        }
+        if (_getHCULimitStorage().maxCarriedDepth == 0) return 0;
+        return uint48(_cacheDepths(handle, holder) >> 128);
     }
 
     /**
@@ -409,9 +396,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         _setResultDepths(result, _latency(opCost), inputDepths, caller, quotaMaxDepth);
     }
 
-    /// @dev Records `result`'s depths: the operation's latency added to both depths of its deepest input, checked
-    ///      against both limits and against `quotaMaxDepth`, the depth limit of `caller`'s quota. So a contract
-    ///      computes no value deeper than its quota allows, including one it never grants.
+    /// @dev Records `result`'s depths: the operation's latency added to both depths of its deepest input. The carried
+    ///      depth is checked against `quotaMaxDepth`, the limit of `caller`'s quota, or the chain's limit when the quota
+    ///      has none. So a contract computes no value deeper than its quota allows, including one it never grants.
     function _setResultDepths(
         bytes32 result,
         uint256 opLatency,
@@ -422,18 +409,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         uint256 depths = (opLatency | (opLatency << 128)) + inputDepths;
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (uint128(depths) > $.maxHCUDepthPerTx) revert HCUTransactionDepthLimitExceeded();
-        uint256 maxDepth = $.maxCrossTxDepth;
-        if (maxDepth != 0) {
+        uint256 chainMaxDepth = $.maxCarriedDepth;
+        if (chainMaxDepth != 0) {
+            uint256 limit = quotaMaxDepth != 0 ? quotaMaxDepth : chainMaxDepth;
             uint256 carried = depths >> 128;
-            if (carried > maxDepth) {
-                revert HCUCrossTxDepthLimitExceeded(_blocksToDecay(carried - maxDepth, $.crossTxDepthDecayPerBlock));
-            }
-            if (quotaMaxDepth != 0 && carried > quotaMaxDepth) {
-                revert HCUStoredDepthExceeded(
-                    caller,
-                    _quotaOf(caller),
-                    _blocksToDecay(carried - quotaMaxDepth, $.crossTxDepthDecayPerBlock)
-                );
+            if (carried > limit) {
+                // The depth built within this transaction never decays, so waiting cannot fit it.
+                uint256 retryAfterBlocks = uint128(depths) > limit
+                    ? type(uint256).max
+                    : _blocksToDecay(carried - limit, $.carriedDepthDecayPerBlock);
+                revert HCUCarriedDepthExceeded(caller, _quotaOf(caller), retryAfterBlocks);
             }
         }
         _storeDepths(result, depths);
@@ -448,9 +433,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         bool known;
         (depths, known) = _loadDepths(handle);
         if (known) return depths;
-        if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        if ($.maxCarriedDepth == 0) return 0;
         (uint48 storedDepth, uint48 storedBlock) = ACL(aclAdd).getStoredDepth(handle, holder);
-        depths = _decayed(storedDepth, storedBlock, _getHCULimitStorage().crossTxDepthDecayPerBlock) << 128;
+        depths = _decayed(storedDepth, storedBlock, $.carriedDepthDecayPerBlock) << 128;
         _storeDepths(handle, depths);
     }
 
@@ -556,7 +542,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
             capacity.usedHCU = uint48(load);
             capacity.lastBlock = uint48(block.number);
         }
-        return quota.maxStoredDepth;
+        return quota.maxCarriedDepth;
     }
 
     /// @dev Returns the chain's load after decay plus `opWork`, and the blocks before it fits `threshold`; (0, 0) while
@@ -739,18 +725,18 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Returns the carried depth above which a quota's contracts cannot grant a handle; 0 when it has none.
+     * @notice Returns the carried depth above which a quota's contracts cannot compute a result; 0 when it uses the chain's limit.
      */
-    function getQuotaMaxStoredDepth(uint16 quotaId) public view virtual returns (uint48) {
-        return _getHCULimitStorage().quotas[quotaId].maxStoredDepth;
+    function getQuotaMaxCarriedDepth(uint16 quotaId) public view virtual returns (uint48) {
+        return _getHCULimitStorage().quotas[quotaId].maxCarriedDepth;
     }
 
     /**
-     * @notice Returns the cross-transaction depth limit and its decay per block; (0, 0) when disabled.
+     * @notice Returns the carried-depth limit and its decay per block; (0, 0) when disabled.
      */
-    function getCrossTxDepthLimit() external view returns (uint48 maxDepth, uint48 decayPerBlock) {
+    function getCarriedDepthLimit() external view returns (uint48 maxDepth, uint48 decayPerBlock) {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        return ($.maxCrossTxDepth, $.crossTxDepthDecayPerBlock);
+        return ($.maxCarriedDepth, $.carriedDepthDecayPerBlock);
     }
 
     /**
