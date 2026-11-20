@@ -369,7 +369,10 @@ interface IACL {
      * @notice              Allows the use of handle by address account for this transaction.
      * @dev                 The caller must be allowed to use handle for allowTransient() to succeed.
      *                      If not, allowTransient() reverts.
-     *                      The Coprocessor contract can always allowTransient(), contrarily to allow().
+     *                      This requirement does not apply to the FHEVMExecutor and ConfidentialBridge contracts,
+     *                      contrarily to allow(): they give the first access to new handles,
+     *                      which no account is allowed on yet.
+     *                      Reverts for every caller, including these two contracts, while the ACL is paused.
      * @param ciphertext    Ciphertext.
      * @param account       Address of the account.
      */
@@ -831,7 +834,10 @@ library Impl {
      * @notice              Allows the use of handle by address account for this transaction.
      * @dev                 The caller must be allowed to use handle for allowTransient() to succeed.
      *                      If not, allowTransient() reverts.
-     *                      The Coprocessor contract can always allowTransient(), contrarily to allow().
+     *                      This requirement does not apply to the FHEVMExecutor and ConfidentialBridge contracts,
+     *                      contrarily to allow(): they give the first access to new handles,
+     *                      which no account is allowed on yet.
+     *                      Reverts for every caller, including these two contracts, while the ACL is paused.
      * @param handle        Handle.
      * @param account       Address of the account.
      */

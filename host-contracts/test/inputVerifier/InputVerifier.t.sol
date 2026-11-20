@@ -665,6 +665,25 @@ contract InputVerifierTest is Test {
     }
 
     /**
+     * @dev Tests that the verifyInput function fails if the inputProof only holds the numHandles byte.
+     */
+    function test_VerifyInputFailsIfInputProofHasOneByte() public {
+        _upgradeProxyWithSigners(3);
+
+        (
+            FHEVMExecutor.ContextUserInputs memory context,
+            bytes32 mockInputHandle,
+            bytes memory inputProof
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
+
+        bytes memory oneByteInputProof = new bytes(1);
+        oneByteInputProof[0] = inputProof[0];
+
+        vm.expectRevert(InputVerifier.DeserializingInputProofFail.selector);
+        inputVerifier.verifyInput(context, mockInputHandle, oneByteInputProof);
+    }
+
+    /**
      * @dev Tests that the verifyInput function fails if the index is invalid since it is greater than 254.
      */
     function test_VerifyInputFailsIfInvalidIndexIfEqual255() public {

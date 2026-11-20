@@ -73,9 +73,8 @@ interface IGatewayConfig {
 
     /**
      * @notice Emitted when a KMS context has been destroyed.
-     * @dev Once destroyed, a context's signers and tx senders are reported as not registered by
-     *      `isKmsSignerForContext` / `isKmsTxSenderForContext`, so on-chain verification rejects
-     *      signatures referencing the destroyed context.
+     * @dev Once destroyed, the per-context views revert with `InvalidKmsContext` for this context,
+     *      so on-chain verification rejects signatures referencing it.
      * @param kmsContextId The destroyed KMS context ID.
      */
     event DestroyKmsContext(uint256 indexed kmsContextId);
@@ -365,9 +364,8 @@ interface IGatewayConfig {
 
     /**
      * @notice Destroy a non-current KMS context, preventing it from being used for verification.
-     * @dev Once destroyed, the context's signers and tx senders are reported as not registered by
-     *      `isKmsSignerForContext` / `isKmsTxSenderForContext`, and `getKmsNodeForContext` returns
-     *      the zero `KmsNode`. The current context cannot be destroyed.
+     * @dev Once destroyed, the per-context views revert with `InvalidKmsContext` for this context.
+     *      The current context cannot be destroyed.
      *
      *      WARNING: This mutates state read by `Decryption` without enforcing an on-chain pause.
      *      Operators must follow the runbook before destroying a context, because any in-flight

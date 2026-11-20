@@ -155,8 +155,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @notice The key and CRS generation threshold per context
         mapping(uint256 contextId => uint256) kmsGenThresholdForContext;
         /// @notice Whether a KMS context has been destroyed.
-        /// @dev A destroyed context cannot satisfy any decryption verification: its signers and
-        ///      tx senders are reported as not registered, and its KMS-node lookups return zero.
+        /// @dev A destroyed context cannot satisfy any decryption verification: the per-context
+        ///      views revert with `InvalidKmsContext` for it.
         mapping(uint256 contextId => bool isDestroyed) destroyedKmsContexts;
         /// @notice Whether a registered host chain has been disabled.
         mapping(uint256 chainId => bool isDisabled) disabledHostChains;
@@ -967,8 +967,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice Reverts with `InvalidKmsContext` if the given context is unknown or destroyed.
-     * @dev Used by all external per-context views and setters so that callers cannot read or
-     *      mutate state of a context that does not exist or has been destroyed.
+     * @dev Used by all external per-context views and by `destroyKmsContext`, so that callers
+     *      cannot read or destroy a context that does not exist or has been destroyed.
      */
     function _requireValidContext(uint256 contextId) internal view {
         if (!_isValidKmsContext(contextId)) {
