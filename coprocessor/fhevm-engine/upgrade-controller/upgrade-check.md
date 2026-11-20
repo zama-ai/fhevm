@@ -15,7 +15,7 @@ key. Every operator can run it on its own.
 | --- | --- |
 | Postgres, read-only role, on the live coprocessor DB | `upgrade_state`, `versioning`, `consensus_epoch_history`, ciphertext tables |
 | Gateway RPC | the registered coprocessors in `GatewayConfig`, and Gateway block times |
-| HTTP read on every member's bucket URL | the signed decision records |
+| HTTP read on every member's bucket URL | the signed decision records (`outcome.json`) and the relayed ones (`seen.json`) |
 | S3 read on this operator's ciphertext bucket | the `ct64` and `ct128` objects |
 
 ## Run it
@@ -55,6 +55,7 @@ cargo run -p upgrade-controller --bin upgrade-check -- \
 | 2 | not executed | no finished attempt in `upgrade_state` |
 | 3 | rolled back | the attempt failed and no check contradicts the rollback |
 | 4 | inconclusive | an endpoint was unreachable, data was missing, or the checked range is not complete yet |
+| 5 | dishonest member | no check failed, but a member provably signed both `quorum` and `abort` |
 
 ```mermaid
 flowchart TD
@@ -62,16 +63,15 @@ flowchart TD
     B -- "no rows, no GCS rows, or any in_progress row" --> N[2 not executed]
     B -- "a GCS row is failed" --> R[Step 2: decision records]
     B -- "completed" --> S[Steps 2, 3 and 4]
-    R --> R1{Any check failed?}
-    R1 -- yes --> F[1 fail]
-    R1 -- no --> R2{A member bucket unreachable?}
-    R2 -- yes --> I[4 inconclusive]
-    R2 -- no --> RB[3 rolled back]
-    S --> S1{Any check failed?}
-    S1 -- yes --> F
-    S1 -- no --> S2{Bucket or S3 unreachable, or range not complete?}
-    S2 -- yes --> I
-    S2 -- no --> P[0 pass]
+    R --> C{Any check failed?}
+    S --> C
+    C -- yes --> F[1 fail]
+    C -- no --> D{A member proven dishonest?}
+    D -- yes --> X[5 dishonest member]
+    D -- no --> E{Something unreadable or not complete?}
+    E -- yes --> I[4 inconclusive]
+    E -- "no, failed attempt" --> RB[3 rolled back]
+    E -- "no, completed attempt" --> P[0 pass]
 ```
 
 A runtime error (for example the DB or the Gateway RPC cannot be reached, or
@@ -98,21 +98,70 @@ CLI.
 
 ### Step 2: decision records (Gateway + member buckets)
 
+Each member signs one decision record for the attempt, `quorum` or `abort`,
+and stores it in its own bucket as `outcome.json`. Each member also republishes
+every record it has read as `seen.json`. A record is signed by its member, so a
+copy relayed by a peer counts like the original.
+
+What the tool does:
+
 - Reads the registered coprocessors from `GatewayConfig` at the attempt's
   `gw_start_block`. If the Gateway no longer serves that block, it reads them
   at the Gateway tip and prints a warning.
-- Fetches each member's signed decision record over HTTP.
-- Verifies each record: it names this attempt, its signer is the member, the
-  signer is in the record's own member set, and the signature recovers to the
-  member's address.
-- Checks that each record's target consensus version equals the target, that
-  its member set equals the registered set, and (completed attempt only) that
-  its target stack version equals `versioning.stack_version`.
-- Completed attempt: every member must have a `quorum` record. A missing
-  record or any `abort` record is a failure.
-- Failed attempt: reports whether a member signed `abort`, then stops with
-  "rolled back". All members signing `quorum` is a failure. A missing record
-  is only a warning.
+- Fetches `outcome.json` and `seen.json` from every member's bucket.
+- Verifies every record: it names this attempt, its signer is a registered
+  member (for `outcome.json`: the owner of the bucket), the signer is in the
+  record's own member set, the signature recovers to the signer, and the
+  record is at most 16 KiB. An invalid record is dropped and the bucket that
+  served it is named in a warning.
+- Does not count a record that names another `target_stack_version`,
+  `target_consensus_version` or member set (see "mismatch" below).
+- Counts how many members signed each decision and compares with the fleet
+  thresholds.
+
+Thresholds, with `max_faulty = (members - 1) / 3`:
+
+| Members | Max faulty | Cutover needs `quorum` from | Rollback needs `abort` from |
+| --- | --- | --- | --- |
+| 3 | 0 | 3 | 1 |
+| 4 | 1 | 3 | 3 |
+| 5 | 1 | 4 | 3 |
+| 7 | 2 | 5 | 5 |
+
+- Completed attempt: the `quorum` records must reach the cutover threshold.
+  If the `abort` records reach the rollback threshold instead, or neither
+  threshold is reached, the check fails. If neither is reached but a bucket was
+  unreadable, the result is inconclusive.
+- Failed attempt: the tool reports whether the `abort` records reach the
+  rollback threshold, then stops with "rolled back". `quorum` records reaching
+  the cutover threshold is a failure. Too few `abort` records is only a
+  warning.
+- A member with no record, or an unreadable bucket, is not a failure as long
+  as the threshold is reached.
+- On a completed attempt, `versioning.stack_version` must equal the proposal's
+  version.
+
+#### Misbehaving members
+
+The tool groups all valid records by signer, across all buckets, and reports:
+
+| Report | When | Effect |
+| --- | --- | --- |
+| `DISHONEST (proof)` | a member has a counted `quorum` record and a counted `abort` record for this attempt | both signed records are printed; exit code 5 unless a check failed |
+| `SUSPECT (no proof)` | a peer relays a member's record, but the member's own bucket serves nothing, an invalid object, or a different record | warning only; this can also be an outage |
+| `MISMATCH` | a member signed for another release or another member set | warning; the record is not counted |
+
+Limits of this check:
+
+- A member that never signed looks the same as a member that was down.
+- `seen.json` is not signed as a list. An operator can leave records out of
+  its own copy without a trace. One honest copy holding both records of a
+  member is enough for the proof.
+- An operator stops reading records once it cuts over or rolls back, so its
+  `seen.json` can hold fewer records than its peers'. Fewer records is not a
+  failure; conflicting records are.
+- A dishonest member counts in both tallies, as it does for the operators. The
+  thresholds tolerate up to `max_faulty` such members.
 
 ### Step 3: ciphertext consensus version (DB)
 
@@ -194,7 +243,6 @@ One anomaly is tolerated: on an output computed exactly at a chain's
 
 - An attempt that is still `in_progress` (including a stalled one) only gets
   its `upgrade_state` rows printed. The tool does not analyze why it stalled.
-- The fleet rule is "every registered member signed `quorum`".
 - S3 access uses a static access key and secret key with path-style
   addressing. Session tokens and role-based credentials are not supported.
 - Step 4 checks handles one at a time and downloads each object in full. Use

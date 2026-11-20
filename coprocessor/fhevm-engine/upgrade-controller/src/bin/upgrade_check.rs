@@ -20,12 +20,24 @@
 //!      the rows are printed and every later check is skipped. For a
 //!      completed attempt, `versioning.consensus_version` and the
 //!      `consensus_epoch_history` row must agree with the target.
-//!   2. Quorum (Gateway + S3 over HTTP): every member registered in
-//!      `GatewayConfig` (read at `gw_start_block`, or at the Gateway tip when
-//!      that block's state is no longer served) wrote a signed `quorum` record
-//!      for this attempt, all records name the registered member set, and each
-//!      signature recovers to its member. On a failed attempt the tool instead
-//!      looks for a signed `abort` record, reports "rolled back" and stops.
+//!   2. Decision records (Gateway + S3 over HTTP): for every member
+//!      registered in `GatewayConfig` (read at `gw_start_block`, or at the
+//!      Gateway tip when that block's state is no longer served), read its
+//!      signed record (`outcome.json`) and the records it republished
+//!      (`seen.json`). Each record is verified against its signer; invalid
+//!      ones are dropped and the serving bucket is named. The valid records
+//!      are counted against the fleet thresholds: with
+//!      `max_faulty = (members - 1) / 3`, a cutover needs `quorum` from
+//!      `members - max_faulty` members and a rollback needs `abort` from
+//!      `2 * max_faulty + 1`. A completed attempt must reach the cutover
+//!      threshold. On a failed attempt the tool instead looks for the
+//!      rollback threshold, reports "rolled back" and stops.
+//!      The same records expose misbehavior: a member with a valid `quorum`
+//!      AND a valid `abort` record is reported as dishonest with both signed
+//!      records as proof (exit code 5); a member whose record a peer relays
+//!      while its own bucket serves nothing or another record is a suspect
+//!      (no proof); a member that signed for another release or member set is
+//!      a mismatch and is not counted.
 //!   3. Ciphertext versions (DB): every allowed, completed output handle
 //!      computed at or after each chain's `start_block`, and every input
 //!      handle verified at or after `gw_start_block` (a Gateway block), carries
@@ -43,7 +55,8 @@
 //!      survived the merge), not as failures.
 //!
 //! Exit codes: 0 pass, 1 fail, 2 cutover not executed, 3 rolled back,
-//! 4 inconclusive (an endpoint was unreachable or data was missing).
+//! 4 inconclusive (an endpoint was unreachable or data was missing),
+//! 5 a member is proven dishonest (and no check failed).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::process::ExitCode;
@@ -136,6 +149,8 @@ enum Verdict {
     NotExecuted,
     RolledBack,
     Inconclusive,
+    /// A member provably signed both `quorum` and `abort` for this attempt.
+    DishonestMember,
 }
 
 impl Verdict {
@@ -146,6 +161,7 @@ impl Verdict {
             Verdict::NotExecuted => 2,
             Verdict::RolledBack => 3,
             Verdict::Inconclusive => 4,
+            Verdict::DishonestMember => 5,
         }
     }
 }
@@ -164,13 +180,42 @@ struct StateRow {
     gw_start_block: Option<i64>,
 }
 
-#[derive(Debug, Serialize)]
-struct MemberReport {
+/// What a member's own bucket served as its `outcome.json`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum OwnBucket {
+    /// A record that verifies as this member's.
+    Valid,
+    /// No object (HTTP 404).
+    #[default]
+    Absent,
+    /// Transport or HTTP error.
+    Unreadable,
+    /// An object that does not parse or does not verify.
+    Invalid,
+}
+
+/// Everything the buckets say about one member's vote.
+#[derive(Debug, Default, Serialize)]
+struct MemberVotes {
     address: String,
-    url: String,
-    decision: Option<String>,
-    target_stack_version: Option<String>,
-    error: Option<String>,
+    own_bucket: OwnBucket,
+    /// Where a counted `quorum` record of this member was served
+    /// (`<bucket owner>/<object>`). Empty = no counted `quorum` record.
+    quorum_sources: Vec<String>,
+    /// Same for `abort`.
+    abort_sources: Vec<String>,
+    /// Proof: counted `quorum` AND `abort` records, both signed by the member.
+    dishonest: bool,
+    /// No proof: a peer relays this member's record, but its own bucket serves
+    /// nothing or a different record. Can also be an outage.
+    suspect: Option<String>,
+    /// The member signed for another release or member set; not counted.
+    mismatch: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quorum_record: Option<Record>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    abort_record: Option<Record>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -206,7 +251,12 @@ struct Report {
     epoch_outcome: Option<String>,
     proposal_id: Option<String>,
     proposal_block: Option<i64>,
-    members: Vec<MemberReport>,
+    members: Vec<MemberVotes>,
+    quorum_votes: usize,
+    abort_votes: usize,
+    cutover_threshold: usize,
+    abort_threshold: usize,
+    dishonest_members: Vec<String>,
     /// Highest consensus anchor block per chain across the verified quorum
     /// records (host chains and the Gateway). Informational.
     anchors: BTreeMap<i64, i64>,
@@ -253,6 +303,11 @@ fn verify_record(
     proposal_id_hex: &str,
     proposal_block: i64,
 ) -> Result<(), String> {
+    // The signature does not cover the size, and the detector refuses a larger
+    // record, so a larger one never counted for any operator.
+    if serde_json::to_vec(record).map_or(true, |body| body.len() > MAX_RECORD_BYTES) {
+        return Err(format!("record is larger than {MAX_RECORD_BYTES} bytes"));
+    }
     let payload = &record.payload;
     let name = decision::name_of(expected);
     if payload.signer != name {
@@ -297,16 +352,204 @@ fn sorted_unique<I: IntoIterator<Item = String>>(values: I) -> Vec<String> {
     sorted
 }
 
-/// Abort wins; quorum needs every member. None means at least one member has
-/// no readable decision.
-fn fleet_outcome(decisions: &[Option<Decision>]) -> Option<Decision> {
-    if decisions.contains(&Some(Decision::Abort)) {
+/// The largest record the detector counts, as serialized.
+const MAX_RECORD_BYTES: usize = 16 * 1024;
+const OUTCOME_OBJECT: &str = "outcome.json";
+const RELAY_OBJECT: &str = "seen.json";
+
+/// The largest relay the detector accepts: two records per member.
+fn max_relay_bytes(members: usize) -> usize {
+    2 * members * (MAX_RECORD_BYTES + 1) + 2
+}
+
+/// How many of `members` may be faulty: `members > 3 * max_faulty`.
+/// 0 of 3, 1 of 4, 1 of 5, 2 of 7.
+fn max_faulty(members: usize) -> usize {
+    members.saturating_sub(1) / 3
+}
+
+/// `quorum` records needed to cut over: `members - max_faulty`.
+fn cutover_threshold(members: usize) -> usize {
+    members - max_faulty(members)
+}
+
+/// `abort` records needed to roll back: `2 * max_faulty + 1`.
+fn abort_threshold(members: usize) -> usize {
+    2 * max_faulty(members) + 1
+}
+
+/// The fleet decision from the number of members that signed each decision.
+/// Abort is checked first: if both thresholds are reached the fault assumption
+/// is broken and the fleet stays on blue. None = nothing decided.
+fn fleet_outcome(quorums: usize, aborts: usize, members: usize) -> Option<Decision> {
+    if members == 0 {
+        return None;
+    }
+    if aborts >= abort_threshold(members) {
         return Some(Decision::Abort);
     }
-    if !decisions.is_empty() && decisions.iter().all(|d| *d == Some(Decision::Quorum)) {
+    if quorums >= cutover_threshold(members) {
         return Some(Decision::Quorum);
     }
     None
+}
+
+/// One verified record and the bucket object that served it.
+#[derive(Debug, Clone)]
+struct Served {
+    record: Record,
+    /// The member whose bucket served the record.
+    bucket: String,
+    object: &'static str,
+}
+
+/// What a record must name to count for this attempt. The detector counts a
+/// record of another release, or of another member set, for neither decision.
+struct ExpectedVote<'a> {
+    /// None when `upgrade_state` does not name one version: not filtered then.
+    stack_version: Option<&'a str>,
+    consensus_version: i64,
+    /// Sorted registered member addresses.
+    member_set: &'a [String],
+}
+
+/// Group every verified record by its signer and classify each member.
+/// `served` holds only records whose signature was verified against a
+/// registered member, read from the signer's own `outcome.json` or from any
+/// member's `seen.json` relay.
+fn tally_votes(
+    own: &BTreeMap<String, OwnBucket>,
+    served: &[Served],
+    expected: &ExpectedVote,
+) -> Vec<MemberVotes> {
+    let mut votes: BTreeMap<&str, MemberVotes> = expected
+        .member_set
+        .iter()
+        .map(|address| {
+            let member = MemberVotes {
+                address: address.clone(),
+                own_bucket: own.get(address).copied().unwrap_or_default(),
+                ..Default::default()
+            };
+            (address.as_str(), member)
+        })
+        .collect();
+    for item in served {
+        let payload = &item.record.payload;
+        let Some(member) = votes.get_mut(payload.signer.as_str()) else {
+            continue;
+        };
+        let mut mismatch = Vec::new();
+        if expected
+            .stack_version
+            .is_some_and(|version| version != payload.target_stack_version)
+        {
+            mismatch.push(format!(
+                "target_stack_version '{}'",
+                payload.target_stack_version
+            ));
+        }
+        if payload.target_consensus_version != expected.consensus_version {
+            mismatch.push(format!(
+                "target_consensus_version {}",
+                payload.target_consensus_version
+            ));
+        }
+        let record_set = sorted_unique(payload.addresses().iter().map(|a| (*a).to_string()));
+        if record_set != expected.member_set {
+            mismatch.push(format!("member set {record_set:?}"));
+        }
+        if !mismatch.is_empty() {
+            for reason in mismatch {
+                if !member.mismatch.contains(&reason) {
+                    member.mismatch.push(reason);
+                }
+            }
+            continue;
+        }
+        let (sources, kept) = match payload.decision {
+            Decision::Quorum => (&mut member.quorum_sources, &mut member.quorum_record),
+            Decision::Abort => (&mut member.abort_sources, &mut member.abort_record),
+        };
+        let source = format!("{}/{}", item.bucket, item.object);
+        if !sources.contains(&source) {
+            sources.push(source);
+        }
+        if kept.is_none() {
+            *kept = Some(item.record.clone());
+        }
+    }
+    for member in votes.values_mut() {
+        member.dishonest = member.quorum_record.is_some() && member.abort_record.is_some();
+        if member.dishonest {
+            continue;
+        }
+        // Records of this member that a PEER relays.
+        let mut relayed = served
+            .iter()
+            .filter(|item| item.record.payload.signer == member.address)
+            .filter(|item| item.bucket != member.address)
+            .peekable();
+        if relayed.peek().is_none() {
+            continue;
+        }
+        let own_record = served
+            .iter()
+            .find(|item| item.bucket == member.address && item.object == OUTCOME_OBJECT)
+            .map(|item| &item.record);
+        member.suspect = match (member.own_bucket, own_record) {
+            (OwnBucket::Valid, Some(own_record)) => relayed
+                .any(|item| &item.record != own_record)
+                .then(|| "its own bucket serves a different record than a peer relays".to_string()),
+            (OwnBucket::Absent, _) => {
+                Some("a peer relays its record, but its own bucket serves none".to_string())
+            }
+            (OwnBucket::Unreadable, _) => {
+                Some("a peer relays its record, but its own bucket is unreadable".to_string())
+            }
+            _ => Some(
+                "a peer relays its record, but its own bucket serves an invalid one".to_string(),
+            ),
+        };
+    }
+    votes.into_values().collect()
+}
+
+/// What a GET of one decision object produced.
+enum Fetched {
+    Body(Vec<u8>),
+    /// HTTP 404.
+    Absent,
+    /// Transport or HTTP error, or a body over the cap.
+    Error(String),
+}
+
+/// GET `url`, reading at most `max_bytes`: a member serves these bodies, so a
+/// larger one is refused before it is buffered.
+async fn fetch_capped(http: &reqwest::Client, url: &str, max_bytes: usize) -> Fetched {
+    let mut response = match http.get(url).send().await {
+        Err(e) => return Fetched::Error(format!("transport error: {e}")),
+        Ok(response) if response.status() == reqwest::StatusCode::NOT_FOUND => {
+            return Fetched::Absent
+        }
+        Ok(response) if !response.status().is_success() => {
+            return Fetched::Error(format!("HTTP {}", response.status()))
+        }
+        Ok(response) => response,
+    };
+    let mut body = Vec::new();
+    loop {
+        match response.chunk().await {
+            Err(e) => return Fetched::Error(format!("body read error: {e}")),
+            Ok(None) => return Fetched::Body(body),
+            Ok(Some(chunk)) => {
+                if body.len() + chunk.len() > max_bytes {
+                    return Fetched::Error(format!("body is larger than {max_bytes} bytes"));
+                }
+                body.extend_from_slice(&chunk);
+            }
+        }
+    }
 }
 
 /// Split a verify_proofs.handles blob into its 32-byte handles.
@@ -713,161 +956,216 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
         .timeout(Duration::from_secs(15))
         .build()
         .context("building the HTTP client")?;
+    let member_addresses: BTreeMap<String, Address> = members
+        .iter()
+        .map(|(address, _)| (decision::name_of(*address), *address))
+        .collect();
     let record_key = decision::key(&proposal_id, proposal_block);
-    let mut decisions: Vec<Option<Decision>> = Vec::new();
-    let mut quorum_anchors: Vec<(i64, i64)> = Vec::new();
-    let mut transport_errors = 0usize;
+    let relay_key = decision::relay_key(&proposal_id, proposal_block);
+    // Every verified record, from a member's own outcome.json or from any
+    // member's seen.json relay. A record is signed, so one a peer passes on
+    // counts like one read from its signer.
+    let mut served: Vec<Served> = Vec::new();
+    let mut own_buckets: BTreeMap<String, OwnBucket> = BTreeMap::new();
+    let mut bucket_errors = 0usize;
     for (address, bucket_url) in &members {
-        let url = format!("{}/{}", bucket_url.trim_end_matches('/'), record_key);
+        let name = decision::name_of(*address);
+        let base = bucket_url.trim_end_matches('/');
+
+        let url = format!("{base}/{record_key}");
         println!("GET {url}");
-        let mut member_report = MemberReport {
-            address: decision::name_of(*address),
-            url: url.clone(),
-            decision: None,
-            target_stack_version: None,
-            error: None,
-        };
-        let outcome: Result<Option<Record>, String> = match http.get(&url).send().await {
-            Err(e) => Err(format!("transport error: {e}")),
-            Ok(response) if response.status() == reqwest::StatusCode::NOT_FOUND => Ok(None),
-            Ok(response) if !response.status().is_success() => {
-                Err(format!("HTTP {}", response.status()))
+        let own_bucket = match fetch_capped(&http, &url, MAX_RECORD_BYTES).await {
+            Fetched::Absent => OwnBucket::Absent,
+            Fetched::Error(e) => {
+                bucket_errors += 1;
+                report.warn(format!("{OUTCOME_OBJECT} of {name} unreadable ({e})"));
+                OwnBucket::Unreadable
             }
-            Ok(response) => match response.bytes().await {
-                Err(e) => Err(format!("body read error: {e}")),
-                Ok(bytes) => match serde_json::from_slice::<Record>(&bytes) {
-                    Err(e) => {
-                        member_report.error = Some(format!("record does not parse: {e}"));
-                        report.fail(format!(
-                            "record of {} does not parse: {e}",
-                            member_report.address
-                        ));
-                        Ok(None)
+            Fetched::Body(body) => {
+                let verified = serde_json::from_slice::<Record>(&body)
+                    .map_err(|e| format!("does not parse: {e}"))
+                    .and_then(|record| {
+                        verify_record(&record, *address, proposal_id_hex, proposal_block)
+                            .map(|()| record)
+                    });
+                match verified {
+                    Ok(record) => {
+                        served.push(Served {
+                            record,
+                            bucket: name.clone(),
+                            object: OUTCOME_OBJECT,
+                        });
+                        OwnBucket::Valid
                     }
-                    Ok(record) => Ok(Some(record)),
-                },
+                    Err(e) => {
+                        report.warn(format!(
+                            "the bucket of {name} serves an invalid {OUTCOME_OBJECT} ({e}); \
+                             record dropped"
+                        ));
+                        OwnBucket::Invalid
+                    }
+                }
+            }
+        };
+        own_buckets.insert(name.clone(), own_bucket);
+
+        let url = format!("{base}/{relay_key}");
+        println!("GET {url}");
+        match fetch_capped(&http, &url, max_relay_bytes(members.len())).await {
+            Fetched::Absent => println!("  no {RELAY_OBJECT}"),
+            Fetched::Error(e) => {
+                bucket_errors += 1;
+                report.warn(format!("{RELAY_OBJECT} of {name} unreadable ({e})"));
+            }
+            Fetched::Body(body) => match serde_json::from_slice::<Vec<Record>>(&body) {
+                Err(e) => report.warn(format!(
+                    "the bucket of {name} serves a {RELAY_OBJECT} that does not parse ({e}); \
+                     ignored"
+                )),
+                Ok(records) if records.len() > 2 * members.len() => report.warn(format!(
+                    "the bucket of {name} serves a {RELAY_OBJECT} with {} records, more than \
+                     two per member; ignored",
+                    records.len()
+                )),
+                Ok(records) => {
+                    let total = records.len();
+                    let mut dropped = 0usize;
+                    for record in records {
+                        let verified = member_addresses
+                            .get(&record.payload.signer)
+                            .ok_or_else(|| {
+                                format!(
+                                    "signer '{}' is not a registered member",
+                                    record.payload.signer
+                                )
+                            })
+                            .and_then(|signer| {
+                                verify_record(&record, *signer, proposal_id_hex, proposal_block)
+                            });
+                        match verified {
+                            Ok(()) => served.push(Served {
+                                record,
+                                bucket: name.clone(),
+                                object: RELAY_OBJECT,
+                            }),
+                            Err(e) => {
+                                dropped += 1;
+                                report.warn(format!(
+                                    "the bucket of {name} relays an invalid record ({e}); \
+                                     record dropped"
+                                ));
+                            }
+                        }
+                    }
+                    println!("  {total} relayed records, {dropped} dropped");
+                }
             },
-        };
-        match outcome {
-            Err(e) => {
-                transport_errors += 1;
-                member_report.error = Some(e.clone());
-                report.warn(format!(
-                    "record of {} unreadable ({e}); quorum check is inconclusive",
-                    member_report.address
-                ));
-                decisions.push(None);
-            }
-            Ok(None) => {
-                if member_report.error.is_none() {
-                    let msg = format!("{} wrote no decision record", member_report.address);
-                    if rolled_back {
-                        report.warn(msg);
-                    } else {
-                        report.fail(msg);
-                    }
-                }
-                decisions.push(None);
-            }
-            Ok(Some(record)) => {
-                match verify_record(&record, *address, proposal_id_hex, proposal_block) {
-                    Err(e) => {
-                        report.fail(format!(
-                            "record of {} fails verification: {e}",
-                            member_report.address
-                        ));
-                        member_report.error = Some(e);
-                        decisions.push(None);
-                    }
-                    Ok(()) => {
-                        let payload = &record.payload;
-                        println!(
-                            "  verified: decision={} target_stack_version={} \
-                             target_consensus_version={}",
-                            decision_name(payload.decision),
-                            payload.target_stack_version,
-                            payload.target_consensus_version,
-                        );
-                        if payload.target_consensus_version != target {
-                            report.fail(format!(
-                                "{} signed target_consensus_version {}, expected {target}",
-                                member_report.address, payload.target_consensus_version
-                            ));
-                        }
-                        if !rolled_back && payload.target_stack_version != live_stack_version {
-                            report.fail(format!(
-                                "{} signed target_stack_version '{}' but versioning says '{}'",
-                                member_report.address,
-                                payload.target_stack_version,
-                                live_stack_version
-                            ));
-                        }
-                        let record_set =
-                            sorted_unique(payload.addresses().iter().map(|a| (*a).to_string()));
-                        if record_set != gateway_set {
-                            report.fail(format!(
-                                "{} signed member set {record_set:?}, GatewayConfig says \
-                                 {gateway_set:?}",
-                                member_report.address
-                            ));
-                        }
-                        member_report.decision = Some(decision_name(payload.decision).to_string());
-                        member_report.target_stack_version =
-                            Some(payload.target_stack_version.clone());
-                        if payload.decision == Decision::Quorum {
-                            quorum_anchors.extend(payload.anchors.iter().copied());
-                        }
-                        decisions.push(Some(payload.decision));
-                    }
-                }
-            }
         }
-        report.members.push(member_report);
     }
 
-    let outcome = fleet_outcome(&decisions);
-    println!(
-        "fleet outcome: {}",
-        outcome.map_or("undecided", decision_name)
+    // The release the records must name: the proposal's version, as the
+    // detector reads it from upgrade_state.
+    let proposal_versions = sorted_unique(gcs.iter().filter_map(|r| r.version.clone()));
+    let expected_stack_version = match proposal_versions.as_slice() {
+        [version] => Some(version.as_str()),
+        _ => {
+            report.warn(format!(
+                "GCS rows do not name exactly one version ({proposal_versions:?}); records \
+                 are not filtered by target_stack_version"
+            ));
+            None
+        }
+    };
+    if let (false, Some(version)) = (rolled_back, expected_stack_version) {
+        if version != live_stack_version {
+            report.fail(format!(
+                "versioning.stack_version is '{live_stack_version}', the proposal's version \
+                 is '{version}'"
+            ));
+        }
+    }
+    let votes = tally_votes(
+        &own_buckets,
+        &served,
+        &ExpectedVote {
+            stack_version: expected_stack_version,
+            consensus_version: target,
+            member_set: &gateway_set,
+        },
     );
-    if rolled_back {
-        match outcome {
-            Some(Decision::Abort) => {
-                println!("rollback confirmed: a member signed abort for this attempt");
-            }
-            Some(Decision::Quorum) => {
-                report.fail("upgrade_state says failed but every member signed quorum".to_string())
-            }
-            None if transport_errors > 0 => {
-                report.warn("could not confirm an abort record; see transport errors".to_string());
-            }
-            None => report.warn(
-                "no member's record shows abort; the rollback was local (e.g. a deadline) \
-                 or records were cleaned up"
-                    .to_string(),
-            ),
+
+    let member_count = votes.len();
+    let quorums = votes.iter().filter(|m| m.quorum_record.is_some()).count();
+    let aborts = votes.iter().filter(|m| m.abort_record.is_some()).count();
+    report.quorum_votes = quorums;
+    report.abort_votes = aborts;
+    report.cutover_threshold = cutover_threshold(member_count);
+    report.abort_threshold = abort_threshold(member_count);
+    for member in &votes {
+        let decision = match (&member.quorum_record, &member.abort_record) {
+            (Some(_), Some(_)) => "quorum AND abort",
+            (Some(_), None) => "quorum",
+            (None, Some(_)) => "abort",
+            (None, None) => "no counted record",
+        };
+        println!(
+            "  {}: {decision} (own bucket: {:?})",
+            member.address, member.own_bucket
+        );
+        if let (true, Some(quorum), Some(abort)) = (
+            member.dishonest,
+            &member.quorum_record,
+            &member.abort_record,
+        ) {
+            println!(
+                "DISHONEST (proof): {} signed both decisions for this attempt",
+                member.address
+            );
+            println!(
+                "  quorum record, served by {:?}: {}",
+                member.quorum_sources,
+                serde_json::to_string(quorum)?
+            );
+            println!(
+                "  abort record, served by {:?}: {}",
+                member.abort_sources,
+                serde_json::to_string(abort)?
+            );
+            report.dishonest_members.push(member.address.clone());
         }
-        if !report.failures.is_empty() {
-            return Ok(Verdict::Fail);
+        if let Some(why) = &member.suspect {
+            report.warn(format!(
+                "SUSPECT (no proof, can be an outage): {}: {why}",
+                member.address
+            ));
         }
-        if transport_errors > 0 {
-            return Ok(Verdict::Inconclusive);
+        if !member.mismatch.is_empty() {
+            report.warn(format!(
+                "MISMATCH: {} signed for {}; that record is not counted",
+                member.address,
+                member.mismatch.join(", ")
+            ));
         }
-        return Ok(Verdict::RolledBack);
+        if member.quorum_record.is_none() && member.abort_record.is_none() {
+            println!(
+                "  note: {} has no counted record (it never signed, or it was down)",
+                member.address
+            );
+        }
     }
-    match outcome {
-        Some(Decision::Quorum) => {}
-        Some(Decision::Abort) => report.fail(
-            "a member signed abort although upgrade_state says the cutover completed".to_string(),
-        ),
-        None => {
-            if transport_errors == 0 {
-                report.fail("not every member signed quorum for this attempt".to_string());
-            }
-        }
-    }
+    println!(
+        "votes of {member_count} members (at most {} faulty): {quorums} quorum (cutover needs \
+         {}), {aborts} abort (rollback needs {})",
+        max_faulty(member_count),
+        report.cutover_threshold,
+        report.abort_threshold
+    );
     // Informational: where the fleet reached consensus. The cutover itself ran
     // later, at the cutover time printed in step 3.
+    let quorum_anchors = votes
+        .iter()
+        .filter_map(|m| m.quorum_record.as_ref())
+        .flat_map(|record| record.payload.anchors.iter().copied());
     for (chain_id, (low, high)) in anchor_ranges(quorum_anchors) {
         if low == high {
             println!("consensus anchor: chain {chain_id} block {high}");
@@ -875,6 +1173,71 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
             println!("consensus anchor: chain {chain_id} blocks {low}..{high} across members");
         }
         report.anchors.insert(chain_id, high);
+    }
+    let dishonest = !report.dishonest_members.is_empty();
+    report.members = votes;
+
+    let outcome = fleet_outcome(quorums, aborts, member_count);
+    println!(
+        "fleet outcome: {}",
+        outcome.map_or("undecided", decision_name)
+    );
+    if rolled_back {
+        match outcome {
+            Some(Decision::Abort) => {
+                println!("rollback confirmed: the abort records reach the rollback threshold");
+            }
+            Some(Decision::Quorum) => report.fail(
+                "upgrade_state says failed but the quorum records reach the cutover threshold"
+                    .to_string(),
+            ),
+            None if bucket_errors > 0 => {
+                report.warn(
+                    "could not confirm the rollback from the records; some buckets were \
+                     unreadable"
+                        .to_string(),
+                );
+            }
+            None => report.warn(
+                "the abort records are below the rollback threshold; the records were \
+                 cleaned up or never written"
+                    .to_string(),
+            ),
+        }
+        if !report.failures.is_empty() {
+            return Ok(Verdict::Fail);
+        }
+        if dishonest {
+            return Ok(Verdict::DishonestMember);
+        }
+        if outcome.is_none() && bucket_errors > 0 {
+            return Ok(Verdict::Inconclusive);
+        }
+        return Ok(Verdict::RolledBack);
+    }
+    // Set when the records do not decide and a bucket was unreadable: the
+    // missing records may exist, so this is not a failure.
+    let mut quorum_unknown = false;
+    match outcome {
+        Some(Decision::Quorum) => {}
+        Some(Decision::Abort) => report.fail(
+            "the abort records reach the rollback threshold although upgrade_state says the \
+             cutover completed"
+                .to_string(),
+        ),
+        None if bucket_errors > 0 => {
+            report.warn(
+                "the quorum records are below the cutover threshold, but some buckets were \
+                 unreadable"
+                    .to_string(),
+            );
+            quorum_unknown = true;
+        }
+        None => report.fail(
+            "the quorum records are below the cutover threshold although upgrade_state says \
+             the cutover completed"
+                .to_string(),
+        ),
     }
 
     // ---- Step 3: ciphertext consensus_version --------------------------
@@ -1265,7 +1628,10 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
     if !report.failures.is_empty() {
         return Ok(Verdict::Fail);
     }
-    if transport_errors > 0 || unreachable > 0 || coverage_incomplete {
+    if dishonest {
+        return Ok(Verdict::DishonestMember);
+    }
+    if quorum_unknown || unreachable > 0 || coverage_incomplete {
         return Ok(Verdict::Inconclusive);
     }
     Ok(Verdict::Pass)
@@ -1452,13 +1818,237 @@ mod tests {
     }
 
     #[test]
-    fn fleet_outcome_needs_every_member() {
+    fn thresholds_follow_members_greater_than_3_max_faulty() {
+        // (members, max faulty, cutover needs, rollback needs)
+        for (members, faulty, cutover, abort) in [
+            (1, 0, 1, 1),
+            (3, 0, 3, 1),
+            (4, 1, 3, 3),
+            (5, 1, 4, 3),
+            (7, 2, 5, 5),
+        ] {
+            assert_eq!(max_faulty(members), faulty, "{members} members");
+            assert_eq!(cutover_threshold(members), cutover, "{members} members");
+            assert_eq!(abort_threshold(members), abort, "{members} members");
+        }
+    }
+
+    #[test]
+    fn fleet_outcome_counts_records_against_both_thresholds() {
         use Decision::{Abort, Quorum};
-        assert_eq!(fleet_outcome(&[]), None);
-        assert_eq!(fleet_outcome(&[Some(Quorum), None]), None);
-        assert_eq!(fleet_outcome(&[Some(Quorum), Some(Quorum)]), Some(Quorum));
-        assert_eq!(fleet_outcome(&[Some(Quorum), Some(Abort)]), Some(Abort));
-        assert_eq!(fleet_outcome(&[None, Some(Abort)]), Some(Abort));
+        assert_eq!(fleet_outcome(0, 0, 0), None);
+        // 3 members tolerate no fault: every quorum, or one abort.
+        assert_eq!(fleet_outcome(3, 0, 3), Some(Quorum));
+        assert_eq!(fleet_outcome(2, 0, 3), None);
+        assert_eq!(fleet_outcome(2, 1, 3), Some(Abort));
+        // 5 members: 4 quorum cut over, 3 abort roll back.
+        assert_eq!(fleet_outcome(4, 0, 5), Some(Quorum));
+        assert_eq!(fleet_outcome(4, 1, 5), Some(Quorum));
+        assert_eq!(fleet_outcome(3, 2, 5), None);
+        assert_eq!(fleet_outcome(2, 3, 5), Some(Abort));
+        // Both reached (assumption broken): stay on blue.
+        assert_eq!(fleet_outcome(4, 3, 5), Some(Abort));
+    }
+
+    /// `count` members, their sorted names, and one signed record each.
+    fn fleet(count: usize) -> (Vec<PrivateKeySigner>, Vec<String>) {
+        let signers: Vec<PrivateKeySigner> =
+            (0..count).map(|_| PrivateKeySigner::random()).collect();
+        let names = sorted_unique(signers.iter().map(|s| decision::name_of(s.address())));
+        (signers, names)
+    }
+
+    fn record_of(
+        signer: &PrivateKeySigner,
+        fleet: &[PrivateKeySigner],
+        decision: Decision,
+    ) -> Record {
+        let peers: Vec<Address> = fleet
+            .iter()
+            .map(PrivateKeySigner::address)
+            .filter(|address| *address != signer.address())
+            .collect();
+        let mut payload = payload_for(signer, &peers);
+        payload.decision = decision;
+        signed_record(signer, payload)
+    }
+
+    fn served(record: &Record, bucket: &PrivateKeySigner, object: &'static str) -> Served {
+        Served {
+            record: record.clone(),
+            bucket: decision::name_of(bucket.address()),
+            object,
+        }
+    }
+
+    fn expected(names: &[String]) -> ExpectedVote<'_> {
+        ExpectedVote {
+            stack_version: Some("v0.15"),
+            consensus_version: 2,
+            member_set: names,
+        }
+    }
+
+    fn votes_of<'a>(votes: &'a [MemberVotes], signer: &PrivateKeySigner) -> &'a MemberVotes {
+        let name = decision::name_of(signer.address());
+        votes.iter().find(|m| m.address == name).unwrap()
+    }
+
+    #[test]
+    fn honest_fleet_has_one_decision_per_member() {
+        let (fleet, names) = fleet(4);
+        let mut items = Vec::new();
+        let mut own = BTreeMap::new();
+        for signer in &fleet {
+            let record = record_of(signer, &fleet, Decision::Quorum);
+            items.push(served(&record, signer, OUTCOME_OBJECT));
+            // Every peer relays it too.
+            for peer in &fleet {
+                items.push(served(&record, peer, RELAY_OBJECT));
+            }
+            own.insert(decision::name_of(signer.address()), OwnBucket::Valid);
+        }
+        let votes = tally_votes(&own, &items, &expected(&names));
+        assert_eq!(votes.len(), 4);
+        for member in &votes {
+            assert!(member.quorum_record.is_some() && member.abort_record.is_none());
+            assert!(!member.dishonest);
+            assert_eq!(member.suspect, None);
+            assert!(member.mismatch.is_empty());
+            // Own outcome.json plus four relays, each listed once.
+            assert_eq!(member.quorum_sources.len(), 5);
+        }
+    }
+
+    #[test]
+    fn member_signing_both_decisions_is_proven_dishonest() {
+        let (fleet, names) = fleet(4);
+        let liar = &fleet[0];
+        let quorum = record_of(liar, &fleet, Decision::Quorum);
+        let abort = record_of(liar, &fleet, Decision::Abort);
+        // Its own bucket serves quorum; one peer was shown abort and relays it.
+        let items = vec![
+            served(&quorum, liar, OUTCOME_OBJECT),
+            served(&abort, &fleet[1], RELAY_OBJECT),
+        ];
+        let own = BTreeMap::from([(decision::name_of(liar.address()), OwnBucket::Valid)]);
+        let votes = tally_votes(&own, &items, &expected(&names));
+        let member = votes_of(&votes, liar);
+        assert!(member.dishonest);
+        assert_eq!(member.quorum_record.as_ref(), Some(&quorum));
+        assert_eq!(member.abort_record.as_ref(), Some(&abort));
+        // It counts in both tallies, as in the detector.
+        assert_eq!(
+            votes.iter().filter(|m| m.quorum_record.is_some()).count(),
+            1
+        );
+        assert_eq!(votes.iter().filter(|m| m.abort_record.is_some()).count(), 1);
+        assert!(!votes_of(&votes, &fleet[1]).dishonest);
+    }
+
+    #[test]
+    fn relayed_record_with_a_silent_own_bucket_is_only_suspect() {
+        let (fleet, names) = fleet(4);
+        let quiet = &fleet[0];
+        let record = record_of(quiet, &fleet, Decision::Quorum);
+        let items = vec![served(&record, &fleet[1], RELAY_OBJECT)];
+        for status in [OwnBucket::Absent, OwnBucket::Unreadable, OwnBucket::Invalid] {
+            let own = BTreeMap::from([(decision::name_of(quiet.address()), status)]);
+            let votes = tally_votes(&own, &items, &expected(&names));
+            let member = votes_of(&votes, quiet);
+            assert!(member.suspect.is_some(), "{status:?}");
+            assert!(!member.dishonest);
+            // The relayed record is signed, so it still counts.
+            assert!(member.quorum_record.is_some());
+        }
+        // A member nobody has a record of is silent, not suspect.
+        let votes = tally_votes(&BTreeMap::new(), &items, &expected(&names));
+        let silent = votes_of(&votes, &fleet[2]);
+        assert_eq!(silent.suspect, None);
+        assert!(silent.quorum_record.is_none() && silent.abort_record.is_none());
+    }
+
+    #[test]
+    fn different_record_with_the_same_decision_is_only_suspect() {
+        let (fleet, names) = fleet(4);
+        let member = &fleet[0];
+        let record = record_of(member, &fleet, Decision::Quorum);
+        let mut other_payload = record.payload.clone();
+        other_payload.anchors = vec![(1, 999)];
+        let other = signed_record(member, other_payload);
+        let items = vec![
+            served(&record, member, OUTCOME_OBJECT),
+            served(&other, &fleet[1], RELAY_OBJECT),
+        ];
+        let own = BTreeMap::from([(decision::name_of(member.address()), OwnBucket::Valid)]);
+        let votes = tally_votes(&own, &items, &expected(&names));
+        let found = votes_of(&votes, member);
+        assert!(found
+            .suspect
+            .as_deref()
+            .unwrap()
+            .contains("different record"));
+        assert!(!found.dishonest);
+        // The same record relayed by a peer is not suspect.
+        let same = vec![
+            served(&record, member, OUTCOME_OBJECT),
+            served(&record, &fleet[1], RELAY_OBJECT),
+        ];
+        let votes = tally_votes(&own, &same, &expected(&names));
+        assert_eq!(votes_of(&votes, member).suspect, None);
+    }
+
+    #[test]
+    fn record_for_another_release_or_member_set_is_a_mismatch_and_not_counted() {
+        let (fleet, names) = fleet(4);
+        let own = BTreeMap::new();
+        let base = record_of(&fleet[0], &fleet, Decision::Quorum);
+
+        let mut stack = base.payload.clone();
+        stack.target_stack_version = "v0.14".to_string();
+        let mut consensus = base.payload.clone();
+        consensus.target_consensus_version = 3;
+        let mut set = base.payload.clone();
+        set.members.pop();
+        for (payload, needle) in [
+            (stack, "target_stack_version"),
+            (consensus, "target_consensus_version"),
+            (set, "member set"),
+        ] {
+            let record = signed_record(&fleet[0], payload);
+            let items = vec![served(&record, &fleet[0], OUTCOME_OBJECT)];
+            let votes = tally_votes(&own, &items, &expected(&names));
+            let member = votes_of(&votes, &fleet[0]);
+            assert!(
+                member.mismatch.iter().any(|m| m.contains(needle)),
+                "{needle}"
+            );
+            assert!(member.quorum_record.is_none(), "{needle}: must not count");
+        }
+        // A quorum for this release and an abort for another one is not a proof.
+        let mut abort_other = base.payload.clone();
+        abort_other.decision = Decision::Abort;
+        abort_other.target_stack_version = "v0.14".to_string();
+        let items = vec![
+            served(&base, &fleet[0], OUTCOME_OBJECT),
+            served(
+                &signed_record(&fleet[0], abort_other),
+                &fleet[1],
+                RELAY_OBJECT,
+            ),
+        ];
+        let votes = tally_votes(&own, &items, &expected(&names));
+        assert!(!votes_of(&votes, &fleet[0]).dishonest);
+    }
+
+    #[test]
+    fn oversized_record_fails_verification() {
+        let signer = PrivateKeySigner::random();
+        let mut payload = payload_for(&signer, &[]);
+        payload.members[0].url = "x".repeat(MAX_RECORD_BYTES);
+        let record = signed_record(&signer, payload);
+        let result = verify_record(&record, signer.address(), &"ab".repeat(32), 42);
+        assert!(result.unwrap_err().contains("larger than"));
     }
 
     #[test]
@@ -1550,6 +2140,7 @@ mod tests {
         assert_eq!(Verdict::NotExecuted.code(), 2);
         assert_eq!(Verdict::RolledBack.code(), 3);
         assert_eq!(Verdict::Inconclusive.code(), 4);
+        assert_eq!(Verdict::DishonestMember.code(), 5);
     }
 
     #[test]
