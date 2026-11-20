@@ -71,8 +71,8 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Emitted when the chain's capacity is set.
     event CapacitySet(uint48 maxHCU, uint48 decayPerBlock, address indexed setBy);
 
-    /// @notice Emitted when a tier's load threshold is set.
-    event TierSet(uint8 indexed tier, uint16 maxLoadBps, address indexed setBy);
+    /// @notice Emitted when a tier's threshold on the chain's load is set.
+    event TierThresholdSet(uint8 indexed tier, uint16 maxLoadBps, address indexed setBy);
 
     /// @notice Emitted when a quota is moved to a tier.
     event QuotaTierSet(uint16 indexed quotaId, uint8 indexed tier, address indexed setBy);
@@ -172,26 +172,27 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Sets the threshold of tier 1 to MAX_TIER, in basis points of the capacity's maximum. The tier's meter holds
-     *         the load of this tier and of the lower-priority tiers (higher numbers), and an operation that would take it
-     *         over the threshold is refused. 0 stops the tier. Reserved (tier 0) is fixed at 10,000. Thresholds apply
-     *         only while the capacity is metered.
-     * @dev Thresholds never increase with the tier number: a threshold is at most the tier above's and at least the tier
-     *      below's. So tiers are set from the top down, and stopped from the bottom up.
+     * @notice Sets the threshold of tier 1 to MAX_TIER, in basis points of the capacity's maximum. An operation of the
+     *         tier is refused once it would take the chain's load over the threshold, whatever tier made that load.
+     *         0 stops the tier. Reserved (tier 0) is fixed at 10,000. Thresholds apply only while the capacity is
+     *         metered.
+     * @dev Thresholds never increase with the tier number, or a lower tier would get room a higher one lacks: a
+     *      threshold is at most the tier above's and at least the tier below's. So tiers are set from the top down, and
+     *      stopped from the bottom up.
      */
-    function setTier(uint8 tier, uint16 maxLoadBps) external onlyACLOwner {
+    function setTierThreshold(uint8 tier, uint16 maxLoadBps) external onlyACLOwner {
         if (tier == RESERVED_TIER || tier > MAX_TIER) revert InvalidTier(tier);
-        if (maxLoadBps > _maxLoadBps(tier - 1)) revert InvalidTier(tier);
-        if (tier < MAX_TIER && maxLoadBps < _maxLoadBps(tier + 1)) revert InvalidTier(tier);
-        HCU_LIMIT.setTier(tier, maxLoadBps);
-        emit TierSet(tier, maxLoadBps, msg.sender);
+        if (maxLoadBps > HCU_LIMIT.getTierThreshold(tier - 1)) revert InvalidTier(tier);
+        if (tier < MAX_TIER && maxLoadBps < HCU_LIMIT.getTierThreshold(tier + 1)) revert InvalidTier(tier);
+        HCU_LIMIT.setTierThreshold(tier, maxLoadBps);
+        emit TierThresholdSet(tier, maxLoadBps, msg.sender);
     }
 
     /**
      * @notice Moves a quota to a tier. A tier whose threshold is 0 is refused, so a mistyped tier cannot stop a quota.
      */
     function setQuotaTier(uint16 quotaId, uint8 tier) external onlyACLOwner {
-        if (_maxLoadBps(tier) == 0) revert InvalidTier(tier);
+        if (HCU_LIMIT.getTierThreshold(tier) == 0) revert InvalidTier(tier);
         HCU_LIMIT.setQuotaTier(quotaId, tier);
         emit QuotaTierSet(quotaId, tier, msg.sender);
     }
@@ -341,10 +342,6 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     function _maxHCU(uint16 quotaId) private view returns (uint48 maxHCU) {
         (maxHCU, , ) = HCU_LIMIT.getQuota(quotaId);
-    }
-
-    function _maxLoadBps(uint8 tier) private view returns (uint16 maxLoadBps) {
-        (maxLoadBps, ) = HCU_LIMIT.getTier(tier);
     }
 
     /// @dev Every move goes through here, so a contract never lands in a stopped quota other than the default quota.

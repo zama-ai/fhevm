@@ -62,6 +62,5 @@ uint16 constant MAX_BPS = 10_000;
 /// @dev HCU tier of every quota never moved to another tier. Its threshold is fixed at MAX_BPS.
 uint8 constant RESERVED_TIER = 0;
 
-/// @dev Highest HCU tier. An operation charges the meter of its tier and of every tier above it, so this bounds the
-///      meters each operation reads and writes.
+/// @dev Highest HCU tier: the capacity's slot holds a 16-bit threshold for each of tiers 0 to MAX_TIER.
 uint8 constant MAX_TIER = 3;

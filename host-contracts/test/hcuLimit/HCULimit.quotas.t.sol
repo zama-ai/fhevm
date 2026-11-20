@@ -78,7 +78,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         assertEq(upgraded.getMaxHCUDepthPerTx(), 5_000_000);
         assertEq(upgraded.getContractQuota(DAPP), DEFAULT_QUOTA);
         assertEq(upgraded.getVersion(), "HCULimit v0.6.0");
-        (uint16 reservedBps, ) = upgraded.getTier(0);
+        uint16 reservedBps = upgraded.getTierThreshold(0);
         assertEq(reservedBps, 10_000);
         (uint48 maxCrossTxDepth, uint48 crossTxDecayPerBlock) = upgraded.getCrossTxDepthLimit();
         assertEq(maxCrossTxDepth, 0);
@@ -137,7 +137,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         _upgradeFromV050(true, _list(ALLOWED, ALLOWED_BLOCK_WHITELISTED), _list(ALLOWED_BLOCK_WHITELISTED));
         (uint48 capacityMax, , ) = hcuLimit.getCapacity();
         assertEq(capacityMax, type(uint48).max);
-        (uint16 reservedBps, ) = hcuLimit.getTier(0);
+        uint16 reservedBps = hcuLimit.getTierThreshold(0);
         assertEq(reservedBps, 10_000);
 
         vm.prank(OWNER);
@@ -184,7 +184,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         hcuConfigurator.setQuotaMaxStoredDepth(DEFAULT_QUOTA, 6_000_000);
         hcuConfigurator.assignQuota(DEFAULT_QUOTA, DAPP);
         hcuConfigurator.setCapacity(1_000_000, 100_000);
-        hcuConfigurator.setTier(1, 5_000);
+        hcuConfigurator.setTierThreshold(1, 5_000);
         hcuConfigurator.setQuotaTier(DAPP_QUOTA, 1);
 
         UnsafeUpgrades.upgradeProxy(proxy, address(new HCULimitV050TestDouble()), "");
@@ -207,7 +207,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         (uint48 capacityMax, uint48 capacityDecay, ) = hcuLimit.getCapacity();
         assertEq(capacityMax, 1_000_000);
         assertEq(capacityDecay, 100_000);
-        (uint16 tierBps, ) = hcuLimit.getTier(1);
+        uint16 tierBps = hcuLimit.getTierThreshold(1);
         assertEq(tierBps, 5_000);
         assertEq(hcuLimit.getQuotaTier(DAPP_QUOTA), 1);
     }

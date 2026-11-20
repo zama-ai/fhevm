@@ -47,7 +47,7 @@ contract HCULimitInvariantHandler is Test {
         vm.startPrank(owner);
         hcuConfigurator.setQuota(UNCAPPED_QUOTA, type(uint48).max, type(uint48).max);
         hcuConfigurator.assignQuota(UNCAPPED_QUOTA, UNCAPPED_CALLER);
-        hcuConfigurator.setTier(1, 5_000);
+        hcuConfigurator.setTierThreshold(1, 5_000);
         hcuConfigurator.setQuotaTier(UNCAPPED_QUOTA, 1);
         hcuConfigurator.setQuota(PARTNER_QUOTA, 1_000_000, 1_000_000);
         hcuConfigurator.setQuotaAdmin(PARTNER_QUOTA, PARTNER_ADMIN);
@@ -101,7 +101,7 @@ contract HCULimitInvariantHandler is Test {
             maxHCU = uint48(bound(uint256(maxHCU), CAST_HCU, uint256(NO_CAP) - 1));
             hcuConfigurator.setCapacity(maxHCU, maxHCU / 4 + 1);
         }
-        hcuConfigurator.setTier(1, uint16(bound(uint256(tierBps), 0, MAX_BPS)));
+        hcuConfigurator.setTierThreshold(1, uint16(bound(uint256(tierBps), 0, MAX_BPS)));
         vm.stopPrank();
     }
 
@@ -183,15 +183,11 @@ contract HCULimitInvariantHandler is Test {
         }
     }
 
-    /// @dev Whether the meter of Reserved or of any tier down to `tier` holds more than its threshold; false while the
-    ///      capacity is unmetered.
-    function _aMeterPassesItsThreshold(uint8 tier, uint48 capacityMax) internal view returns (bool) {
+    /// @dev Whether the chain's load is above `tier`'s threshold; false while the capacity is unmetered.
+    function _loadPassesTierThreshold(uint8 tier, uint48 capacityMax) internal view returns (bool) {
         if (capacityMax == NO_CAP) return false;
-        for (uint8 k = 0; k <= tier; ++k) {
-            (uint16 maxLoadBps, uint48 load) = hcuLimit.getTier(k);
-            if (load > (uint256(capacityMax) * maxLoadBps) / MAX_BPS) return true;
-        }
-        return false;
+        (, , uint48 load) = hcuLimit.getCapacity();
+        return load > (uint256(capacityMax) * hcuLimit.getTierThreshold(tier)) / MAX_BPS;
     }
 
     /// @dev Runs `ops` casts by `caller` and returns how many succeeded.
@@ -209,7 +205,7 @@ contract HCULimitInvariantHandler is Test {
                 continue;
             }
             successes++;
-            if (_aMeterPassesItsThreshold(tier, capacityMax)) tierViolation = true;
+            if (_loadPassesTierThreshold(tier, capacityMax)) tierViolation = true;
         }
         vm.stopPrank();
     }
@@ -243,7 +239,7 @@ contract HCULimitInvariantTest is StdInvariant, HostContractsDeployerTestUtils {
         // 3) usage decays by decayPerBlock for each mined block, floored at 0.
         // 4) no operation from a paused quota succeeds, metered or not.
         // 5) a quota admin only moves contracts between the default quota and its quota, never while it is paused.
-        // 6) after an operation succeeds, the meters of Reserved down to the caller's tier are within their thresholds.
+        // 6) after an operation succeeds, the chain's load is within the caller's tier threshold.
         // 7) the capacity grows by exactly the HCU of admitted operations, from every quota, paused or refused ones excluded.
         // This harness intentionally validates accounting invariants only, not cap-exhaustion behavior.
         _deployAndEtchACL();
