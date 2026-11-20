@@ -2,7 +2,7 @@
 
 use crate::core::event_processor::{
     AclCheck, DecryptionProcessor, ProcessingError, RequestCheckError, RequestCheckKind,
-    decryption::check_validity_window,
+    decryption::check_permit,
 };
 use alloy::{primitives::U256, providers::Provider, sol_types::SolStruct};
 use anyhow::anyhow;
@@ -26,15 +26,15 @@ where
     HP: Provider,
 {
     /// Checks `userAddress` is authorized to decrypt every pad of the request:
-    /// 1. the request validity window
+    /// 1. the request validity window, and `userAddress` not in `allowedContracts`
     /// 2. per pad: unexpired witness, label derived from the witness, `consumer` in
     ///    `allowedContracts` when non-empty, and `userAddress` being the `submitter` or one of the
     ///    `decryptors` of the witness
     /// 3. concurrent host chain reads:
     ///    - EIP-712 signature verification with `ecrecover` → ERC-1271 fallback
     ///    - signature invalidation
-    ///    - for each pad `userAddress` is not a member of: `userAddress` being a user decryption
-    ///      delegate of the `submitter` or of one of the `decryptors` for the `consumer`
+    ///    - for each pad where `userAddress` is neither the `submitter` nor a `decryptor`:
+    ///      `userAddress` is a user decryption delegate of one of them for the `consumer`
     #[tracing::instrument(skip_all)]
     pub async fn check_pad_decryption_request(
         &self,
@@ -44,7 +44,7 @@ where
         let user_address = payload.userAddress;
         let start = U256::from(payload.requestValidity.startTimestamp);
         let duration = U256::from(payload.requestValidity.durationSeconds);
-        check_validity_window(start, duration)?;
+        check_permit(user_address, &payload.allowedContracts, start, duration)?;
 
         let host_client = self.host_client(payload.chainId)?;
         let mut checks = vec![AclCheck::signature_not_invalidated(user_address, start)];
@@ -81,13 +81,16 @@ where
             if witness.submitter == user_address || witness.decryptors.contains(&user_address) {
                 continue;
             }
-            checks.push(AclCheck::AnyDelegated {
+            let check = AclCheck::AnyDelegated {
                 delegate: user_address,
                 contract: witness.consumer,
                 delegators: iter::once(witness.submitter)
                     .chain(witness.decryptors.iter().copied())
                     .collect(),
-            });
+            };
+            if !checks.contains(&check) {
+                checks.push(check);
+            }
         }
 
         let digest = UserDecryptRequestVerification {
@@ -214,6 +217,7 @@ mod tests {
         UserIsNotDelegate,
         SecondPadNotAuthorized,
         ConsumerInAllowedContracts,
+        UserInAllowedContracts,
         ConsumerNotInAllowedContracts,
         WitnessExpired,
         LabelNotFromWitness,
@@ -232,6 +236,10 @@ mod tests {
     #[case::second_pad_not_authorized(
         PadScenario::SecondPadNotAuthorized,
         Some((ProcessingErrorKind::Recoverable, ErrorCode::AclDenied))
+    )]
+    #[case::user_in_allowed_contracts(
+        PadScenario::UserInAllowedContracts,
+        Some((ProcessingErrorKind::Irrecoverable, ErrorCode::Unprocessable))
     )]
     #[case::consumer_not_in_allowed_contracts(
         PadScenario::ConsumerNotInAllowedContracts,
@@ -299,6 +307,10 @@ mod tests {
                     false.abi_encode(),
                     false.abi_encode(),
                 ]);
+            }
+            PadScenario::UserInAllowedContracts => {
+                witness.submitter = user.address();
+                allowed_contracts.extend([witness.consumer, user.address()]);
             }
             PadScenario::ConsumerNotInAllowedContracts => {
                 witness.submitter = user.address();

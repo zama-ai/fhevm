@@ -10,6 +10,7 @@ use fhevm_host_bindings::acl::ACL::{
 };
 use kms_connector_api::ErrorCode;
 
+#[derive(PartialEq)]
 pub enum AclCheck {
     /// Passes if `start_timestamp` is not before the user's signature invalidation timestamp.
     SignatureNotInvalidated {

@@ -8,7 +8,11 @@ use crate::core::{
     config::Config,
     event_processor::{CiphertextManager, HostRpcClient, RequestCheckError, RequestCheckKind},
 };
-use alloy::{primitives::U256, providers::Provider, sol_types::Eip712Domain};
+use alloy::{
+    primitives::{Address, U256},
+    providers::Provider,
+    sol_types::Eip712Domain,
+};
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use kms_connector_api::ErrorCode;
@@ -96,6 +100,10 @@ where
     }
 
     /// The EIP-712 domain of user decryption signatures for the host chain `chain_id`.
+    ///
+    /// Name, version and verifying contract are the Gateway `Decryption` ones of `self.domain`
+    /// (validated at startup), but the chain id is the host one: `self.domain` targets KMS gRPC
+    /// requests, while users sign for the host chain.
     fn user_decrypt_domain(&self, chain_id: u64) -> Eip712Domain {
         Eip712Domain {
             name: Some(self.domain.name.clone().into()),
@@ -107,8 +115,15 @@ where
     }
 }
 
-/// Checks the current time is within the user-signed validity window `[start, start + duration]`.
-fn check_validity_window(start: U256, duration: U256) -> Result<(), RequestCheckError> {
+/// Checks the user-signed permit fields shared by user decryption v2 and pad decryption:
+/// - the current time is within the validity window `[start, start + duration]`
+/// - `user_address` is not in `allowed_contracts`
+fn check_permit(
+    user_address: Address,
+    allowed_contracts: &[Address],
+    start: U256,
+    duration: U256,
+) -> Result<(), RequestCheckError> {
     let now = U256::from(Utc::now().timestamp() as u64);
     let end = start.saturating_add(duration);
     if now < start {
@@ -123,6 +138,13 @@ fn check_validity_window(start: U256, duration: U256) -> Result<(), RequestCheck
             RequestCheckKind::Signature,
             ErrorCode::UserDecryptionExpired,
             anyhow!("Request validity window expired: now {now} > end {end}"),
+        ));
+    }
+    if allowed_contracts.contains(&user_address) {
+        return Err(RequestCheckError::irrecoverable(
+            RequestCheckKind::Signature,
+            ErrorCode::Unprocessable,
+            anyhow!("userAddress {user_address} is listed in allowedContracts"),
         ));
     }
     Ok(())

@@ -1,7 +1,6 @@
 use crate::core::event_processor::{
     AclCheck, DecryptionProcessor, HostRpcClient, ProcessingError, RequestCheckError,
-    RequestCheckKind, SIGNING_SCHEMES, ciphertext::VerifiedCiphertexts,
-    decryption::check_validity_window,
+    RequestCheckKind, SIGNING_SCHEMES, ciphertext::VerifiedCiphertexts, decryption::check_permit,
 };
 use alloy::{
     consensus::Transaction,
@@ -162,19 +161,12 @@ where
         let payload = &request.payload;
 
         let start = payload.requestValidity.startTimestamp;
-        check_validity_window(start, payload.requestValidity.durationSeconds)?;
-
-        // `userAddress` must not appear in a non-empty `allowedContracts` list.
-        if payload.allowedContracts.contains(&payload.userAddress) {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Signature,
-                ErrorCode::Unprocessable,
-                anyhow!(
-                    "userAddress {} is listed in allowedContracts — request rejected",
-                    payload.userAddress
-                ),
-            ));
-        }
+        check_permit(
+            payload.userAddress,
+            &payload.allowedContracts,
+            start,
+            payload.requestValidity.durationSeconds,
+        )?;
 
         let host_client = self.host_client(chain_id)?;
 
