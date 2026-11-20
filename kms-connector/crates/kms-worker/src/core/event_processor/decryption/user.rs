@@ -1,15 +1,12 @@
-use crate::core::{
-    config::Config,
-    event_processor::{
-        AclCheck, CiphertextManager, HostRpcClient, ProcessingError, RequestCheckError,
-        RequestCheckKind, SIGNING_SCHEMES, ciphertext::VerifiedCiphertexts,
-    },
+use crate::core::event_processor::{
+    AclCheck, DecryptionProcessor, HostRpcClient, ProcessingError, RequestCheckError,
+    RequestCheckKind, SIGNING_SCHEMES, ciphertext::VerifiedCiphertexts, decryption::check_permit,
 };
 use alloy::{
     consensus::Transaction,
     primitives::{Address, B256, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
     providers::Provider,
-    sol_types::{Eip712Domain, SolCall},
+    sol_types::SolCall,
 };
 use anyhow::anyhow;
 use connector_utils::types::{
@@ -17,135 +14,21 @@ use connector_utils::types::{
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, UserDecryptionRequest_3 as UserDecryptionRequestV2,
-    delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
+    UserDecryptionRequest_3 as UserDecryptionRequestV2, delegatedUserDecryptionRequestCall,
+    userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
-use fhevm_host_bindings::acl::ACL::{
-    isAllowedCall, isAllowedForDecryptionCall, isHandleDelegatedForUserDecryptionCall,
-};
-use futures::future::try_join_all;
+use fhevm_host_bindings::acl::ACL::{isAllowedCall, isHandleDelegatedForUserDecryptionCall};
 use kms_connector_api::ErrorCode;
-use kms_grpc::kms::v1::{Eip712DomainMsg, PublicDecryptionRequest, UserDecryptionRequest};
-use sqlx::types::chrono::Utc;
+use kms_grpc::kms::v1::UserDecryptionRequest;
 use std::collections::HashMap;
 use tracing::info;
 use user_decryption_signature::compute_user_decrypt_digest;
-
-#[derive(Clone)]
-/// The struct responsible of processing incoming decryption requests.
-pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
-    /// The EIP712 domain of the `Decryption` contract.
-    domain: Eip712DomainMsg,
-
-    /// The instance of the `Decryption` contract used to check decryption were not already done.
-    decryption_contract: DecryptionInstance<GP>,
-
-    /// The instances of the host chains `ACL` contracts used to check the decryption ACL.
-    host_clients: HashMap<u64, HostRpcClient<HP>>,
-
-    /// The entity used to verify and collect the ciphertexts of decryption requests.
-    ciphertext_manager: CiphertextManager<GP>,
-
-    /// Gas cap for the `IERC1271.isValidSignature` static call (RFC-012).
-    erc1271_gas_limit: u64,
-
-    /// The maximum number of handles a single decryption request can contain.
-    max_handles_per_decryption: usize,
-}
 
 impl<GP, HP> DecryptionProcessor<GP, HP>
 where
     GP: Provider + Clone + 'static,
     HP: Provider,
 {
-    pub fn new(
-        config: &Config,
-        gateway_provider: GP,
-        host_clients: HashMap<u64, HostRpcClient<HP>>,
-        ciphertext_manager: CiphertextManager<GP>,
-    ) -> Self {
-        let domain = Eip712DomainMsg {
-            name: config.decryption_contract.domain_name.clone(),
-            version: config.decryption_contract.domain_version.clone(),
-            chain_id: U256::from(config.gateway_chain_id).to_be_bytes_vec(),
-            verifying_contract: config.decryption_contract.address.to_string(),
-            salt: None,
-        };
-        let decryption_contract =
-            Decryption::new(config.decryption_contract.address, gateway_provider);
-
-        Self {
-            domain,
-            decryption_contract,
-            host_clients,
-            ciphertext_manager,
-            erc1271_gas_limit: config.erc1271_gas_limit,
-            max_handles_per_decryption: config.max_handles_per_decryption.get(),
-        }
-    }
-
-    /// Rejects decryption requests containing more handles than the configured limit.
-    pub fn check_handle_count(&self, handle_count: usize) -> Result<(), RequestCheckError> {
-        if handle_count > self.max_handles_per_decryption {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::HandleLimit,
-                ErrorCode::Unprocessable,
-                anyhow!(
-                    "Request contains {handle_count} handles, exceeding the limit of {}",
-                    self.max_handles_per_decryption
-                ),
-            ));
-        }
-        Ok(())
-    }
-
-    /// Returns the client of the host chain `chain_id`.
-    fn host_client(&self, chain_id: u64) -> Result<&HostRpcClient<HP>, RequestCheckError> {
-        self.host_clients.get(&chain_id).ok_or_else(|| {
-            RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::UpstreamTransient,
-                anyhow!("No ACL contract config found for chain id {chain_id}"),
-            )
-        })
-    }
-
-    #[tracing::instrument(skip_all)]
-    pub async fn check_ciphertexts_allowed_for_public_decryption(
-        &self,
-        handles: &[B256],
-    ) -> Result<(), RequestCheckError> {
-        info!("Starting ACL check for {} handles...", handles.len());
-
-        // Public decryption handles can span multiple host chains: one multicall per chain
-        let mut checks_by_chain: HashMap<u64, Vec<AclCheck>> = HashMap::new();
-        for &handle in handles {
-            let chain_id = extract_chain_id_from_handle(&handle).map_err(|e| {
-                RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
-            })?;
-            checks_by_chain
-                .entry(chain_id)
-                .or_default()
-                .push(AclCheck::AllowedForDecryption(isAllowedForDecryptionCall {
-                    handle,
-                }));
-        }
-        try_join_all(
-            checks_by_chain
-                .into_iter()
-                .map(|(chain_id, checks)| async move {
-                    let host_client = self.host_client(chain_id)?;
-                    let calls = checks.iter().flat_map(AclCheck::abi_encode).collect();
-                    let results = host_client.acl_multicall(calls).await?;
-                    AclCheck::verify_all(&checks, &results)
-                }),
-        )
-        .await?;
-
-        info!("ACL check passed for {} handles!", handles.len());
-        Ok(())
-    }
-
     #[tracing::instrument(skip_all)]
     pub async fn check_ciphertexts_allowed_for_user_decryption(
         &self,
@@ -277,56 +160,18 @@ where
 
         let payload = &request.payload;
 
-        // Validity window
         let start = payload.requestValidity.startTimestamp;
-        let now = U256::from(Utc::now().timestamp() as u64);
-        let end = start.saturating_add(payload.requestValidity.durationSeconds);
-        if now < start {
-            return Err(RequestCheckError::recoverable(
-                RequestCheckKind::Signature,
-                ErrorCode::UserSignatureRejected,
-                anyhow!(
-                    "RFC016 user decryption request not yet valid: now {now} < startTimestamp {start}",
-                ),
-            ));
-        }
-        if now > end {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Signature,
-                ErrorCode::UserDecryptionExpired,
-                anyhow!(
-                    "RFC016 user decryption request validity window expired: now {now} > end {end}"
-                ),
-            ));
-        }
-
-        // `userAddress` must not appear in a non-empty `allowedContracts` list.
-        if payload.allowedContracts.contains(&payload.userAddress) {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Signature,
-                ErrorCode::Unprocessable,
-                anyhow!(
-                    "userAddress {} is listed in allowedContracts — request rejected",
-                    payload.userAddress
-                ),
-            ));
-        }
+        check_permit(
+            payload.userAddress,
+            &payload.allowedContracts,
+            start,
+            payload.requestValidity.durationSeconds,
+        )?;
 
         let host_client = self.host_client(chain_id)?;
 
         // RFC-012: EIP-712 signature verification with ecrecover → ERC-1271 fallback.
-        // The domain takes name/version/verifyingContract from `self.domain` (already validated
-        // at startup) but substitutes the host `contractsChainId` for the Gateway chain id —
-        // `self.domain` targets KMS gRPC requests, the user-decryption signature targets the
-        // host chain.
-        let domain = Eip712Domain {
-            name: Some(self.domain.name.clone().into()),
-            version: Some(self.domain.version.clone().into()),
-            chain_id: Some(U256::from(chain_id)),
-            verifying_contract: Some(*self.decryption_contract.address()),
-            salt: None,
-        };
-        let digest = compute_user_decrypt_digest(payload, &domain);
+        let digest = compute_user_decrypt_digest(payload, &self.user_decrypt_domain(chain_id));
 
         // The signature verification and the ACL reads are independent host-chain reads. Fire
         // them concurrently so the smart-account happy path is faster. `biased;` polls branches
@@ -394,60 +239,33 @@ where
         AclCheck::verify_all(&checks, &results)
     }
 
-    pub async fn prepare_decryption_request(
+    pub async fn prepare_user_decryption_request(
         &self,
         decryption_id: U256,
         handles: &[B256],
         extra_data: &Bytes,
-        user_decrypt_data: Option<UserDecryptionExtraData>,
+        user_address: Address,
+        public_key: &Bytes,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        if handles.is_empty() {
-            return Err(ProcessingError::irrecoverable(
-                ErrorCode::Unprocessable,
-                anyhow!("No handles found in the request, cannot proceed"),
-            ));
-        }
-
         let parsed_extra_data = parse_extra_data(extra_data)
             .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
-
         let VerifiedCiphertexts {
             ciphertexts,
             key_id,
         } = self.ciphertext_manager.verify_and_retrieve(handles).await?;
-
-        let request_id = Some(u256_to_request_id(decryption_id));
-
-        if let Some(user_decrypt_data) = user_decrypt_data {
-            let client_address = user_decrypt_data.user_address.to_checksum(None);
-            let enc_key = user_decrypt_data.public_key.to_vec();
-            let user_decryption_request = UserDecryptionRequest {
-                request_id,
-                client_address,
-                key_id: Some(u256_to_request_id(key_id)),
-                domain: Some(self.domain.clone()),
-                enc_key,
-                typed_ciphertexts: ciphertexts,
-                extra_data: extra_data.to_vec(),
-                epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-                context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
-                signing_schemes: SIGNING_SCHEMES.to_vec(),
-            };
-
-            Ok(user_decryption_request.into())
-        } else {
-            let public_decryption_request = PublicDecryptionRequest {
-                request_id,
-                ciphertexts,
-                key_id: Some(u256_to_request_id(key_id)),
-                domain: Some(self.domain.clone()),
-                extra_data: extra_data.to_vec(),
-                epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-                context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
-                signing_schemes: SIGNING_SCHEMES.to_vec(),
-            };
-            Ok(public_decryption_request.into())
-        }
+        let user_decryption_request = UserDecryptionRequest {
+            request_id: Some(u256_to_request_id(decryption_id)),
+            client_address: user_address.to_checksum(None),
+            key_id: Some(u256_to_request_id(key_id)),
+            domain: Some(self.domain.clone()),
+            enc_key: public_key.to_vec(),
+            typed_ciphertexts: ciphertexts,
+            extra_data: extra_data.to_vec(),
+            epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
+            context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
+            signing_schemes: SIGNING_SCHEMES.to_vec(),
+        };
+        Ok(user_decryption_request.into())
     }
 
     /// Fetches the calldata of a given transaction.
@@ -523,27 +341,22 @@ fn extract_single_chain_id<'a>(
     })
 }
 
-pub struct UserDecryptionExtraData {
-    pub user_address: Address,
-    pub public_key: Bytes,
-}
-
-impl UserDecryptionExtraData {
-    pub fn new(user_address: Address, public_key: Bytes) -> Self {
-        Self {
-            user_address,
-            public_key,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::event_processor::ProcessingErrorKind;
+    use crate::core::{
+        config::Config,
+        event_processor::{
+            ProcessingErrorKind,
+            decryption::tests::{
+                CHAIN_ID, ExpectedOutcome, assert_kind, setup_test_processor,
+                setup_test_processor_with_config,
+            },
+        },
+    };
     use alloy::{
         hex,
-        providers::{ProviderBuilder, mock::Asserter},
+        providers::mock::Asserter,
         rpc::types::Transaction as RpcTransaction,
         signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
@@ -559,208 +372,9 @@ mod tests {
             UserDecryptionRequestPayload,
         },
     };
-    use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
-    use std::num::NonZeroUsize;
-    use user_decryption_signature::{
-        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
-    };
-
-    enum ExpectedOutcome {
-        Ok,
-        Recoverable,
-        Irrecoverable,
-    }
-
-    fn assert_kind(result: &Result<(), ProcessingError>, expected: &ExpectedOutcome) {
-        match expected {
-            ExpectedOutcome::Ok => unreachable!(),
-            ExpectedOutcome::Recoverable => {
-                assert_eq!(
-                    result.as_ref().unwrap_err().kind,
-                    ProcessingErrorKind::Recoverable
-                )
-            }
-            ExpectedOutcome::Irrecoverable => {
-                assert_eq!(
-                    result.as_ref().unwrap_err().kind,
-                    ProcessingErrorKind::Irrecoverable
-                )
-            }
-        }
-    }
-
-    fn setup_test_processor(
-        asserter: Asserter,
-        handle: B256,
-    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>> {
-        setup_test_processor_with_config(asserter, handle, Config::default())
-    }
-
-    fn setup_test_processor_with_config(
-        asserter: Asserter,
-        handle: B256,
-        config: Config,
-    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>> {
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter);
-        let chain_id = extract_chain_id_from_handle(&handle).unwrap();
-        let host_clients = HashMap::from([(
-            chain_id,
-            HostRpcClient::new(
-                chain_id,
-                ACL::new(Address::default(), mock_provider.clone()),
-            ),
-        )]);
-        let ciphertext_manager = CiphertextManager::for_test(mock_provider.clone());
-        DecryptionProcessor::new(&config, mock_provider, host_clients, ciphertext_manager)
-    }
-
-    #[rstest]
-    #[case::below_limit(1, ExpectedOutcome::Ok)]
-    #[case::at_limit(2, ExpectedOutcome::Ok)]
-    #[case::above_limit(3, ExpectedOutcome::Irrecoverable)]
-    #[test]
-    fn check_handle_count(#[case] handle_count: usize, #[case] expected: ExpectedOutcome) {
-        let config = Config {
-            max_handles_per_decryption: NonZeroUsize::new(2).unwrap(),
-            ..Default::default()
-        };
-        let decryption_processor =
-            setup_test_processor_with_config(Asserter::new(), rand_handle(), config);
-
-        let result = decryption_processor
-            .check_handle_count(handle_count)
-            .map_err(RequestCheckError::record);
-
-        match expected {
-            ExpectedOutcome::Ok => result.unwrap(),
-            _ => assert_kind(&result, &expected),
-        }
-    }
-
-    enum PubDecryptACLMock {
-        Failure(&'static str),
-        Success(bool),
-    }
-
-    #[rstest]
-    #[case::transport_error(
-        PubDecryptACLMock::Failure("Transport Error"),
-        ExpectedOutcome::Recoverable
-    )]
-    #[case::allowed(PubDecryptACLMock::Success(true), ExpectedOutcome::Ok)]
-    #[case::not_allowed(PubDecryptACLMock::Success(false), ExpectedOutcome::Recoverable)]
-    #[tokio::test]
-    async fn check_ciphertexts_allowed_for_public_decryption(
-        #[case] mock_response: PubDecryptACLMock,
-        #[case] expected: ExpectedOutcome,
-    ) {
-        let asserter = Asserter::new();
-        let handle = rand_handle();
-        let decryption_processor = setup_test_processor(asserter.clone(), handle);
-        let handles = vec![handle];
-
-        match mock_response {
-            PubDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
-            PubDecryptACLMock::Success(val) => {
-                asserter.push_success(&acl_multicall_response(vec![val.abi_encode()]))
-            }
-        }
-
-        let result = decryption_processor
-            .check_ciphertexts_allowed_for_public_decryption(&handles)
-            .await
-            .map_err(RequestCheckError::record);
-
-        match expected {
-            ExpectedOutcome::Ok => {
-                result.unwrap();
-            }
-            _ => assert_kind(&result, &expected),
-        }
-    }
-
-    #[rstest]
-    #[case::all_allowed(true, ExpectedOutcome::Ok)]
-    #[case::other_chain_not_allowed(false, ExpectedOutcome::Recoverable)]
-    #[tokio::test]
-    async fn check_ciphertexts_allowed_for_public_decryption_multi_chain(
-        #[case] other_chain_allowed: bool,
-        #[case] expected: ExpectedOutcome,
-    ) {
-        let handle = rand_handle();
-        // Same handle with a different chain id (bytes 22..30).
-        let mut other_chain_handle = handle;
-        other_chain_handle[29] ^= 0xFF;
-
-        // Each host chain has its own mocked RPC node, and receives its own multicall.
-        let asserter = Asserter::new();
-        let other_asserter = Asserter::new();
-        let host_clients = [(handle, &asserter), (other_chain_handle, &other_asserter)]
-            .into_iter()
-            .map(|(handle, asserter)| {
-                let chain_id = extract_chain_id_from_handle(&handle).unwrap();
-                let provider = ProviderBuilder::new()
-                    .disable_recommended_fillers()
-                    .connect_mocked_client(asserter.clone());
-                let acl_contract = ACL::new(Address::default(), provider);
-                (chain_id, HostRpcClient::new(chain_id, acl_contract))
-            })
-            .collect();
-        let gateway_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(Asserter::new());
-        let decryption_processor = DecryptionProcessor::new(
-            &Config::default(),
-            gateway_provider.clone(),
-            host_clients,
-            CiphertextManager::for_test(gateway_provider),
-        );
-        asserter.push_success(&acl_multicall_response(vec![
-            true.abi_encode(),
-            true.abi_encode(),
-        ]));
-        other_asserter.push_success(&acl_multicall_response(vec![
-            other_chain_allowed.abi_encode(),
-        ]));
-
-        let result = decryption_processor
-            .check_ciphertexts_allowed_for_public_decryption(&[handle, other_chain_handle, handle])
-            .await
-            .map_err(RequestCheckError::record);
-
-        match expected {
-            ExpectedOutcome::Ok => {
-                result.unwrap();
-            }
-            _ => assert_kind(&result, &expected),
-        }
-    }
-
-    #[tokio::test]
-    async fn acl_errors_carry_host_chain_context() {
-        let asserter = Asserter::new();
-        let handle = rand_handle();
-        let decryption_processor = setup_test_processor(asserter.clone(), handle);
-        asserter.push_failure_msg("connection refused");
-
-        let err = decryption_processor
-            .check_ciphertexts_allowed_for_public_decryption(&[handle])
-            .await
-            .map_err(RequestCheckError::record)
-            .unwrap_err();
-
-        let chain_id = extract_chain_id_from_handle(&handle).unwrap();
-        let msg = err.to_string();
-        assert!(msg.contains(&chain_id.to_string()), "{msg}");
-        assert!(
-            msg.contains(&format!("ACL contract {}", Address::ZERO)),
-            "{msg}"
-        );
-        assert!(msg.contains("connection refused"), "{msg}");
-    }
+    use sqlx::types::chrono::Utc;
+    use user_decryption_signature::{ERC1271_MAGIC_VALUE, default_user_decrypt_domain};
 
     enum UserDecryptACLMock {
         Failure(&'static str),
@@ -1423,7 +1037,7 @@ mod tests {
         let decryption_address = rand_address();
         let mut config = Config::default();
         config.decryption_contract.address = decryption_address;
-        let processor = setup_test_processor_with_config(asserter.clone(), rand_handle(), config);
+        let processor = setup_test_processor_with_config(asserter.clone(), CHAIN_ID, config);
 
         let tx_hash = rand_digest();
         let calldata = legacy_request_calldata(rand_handle());

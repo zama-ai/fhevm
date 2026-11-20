@@ -78,6 +78,13 @@ where
         &self,
         handles: &[B256],
     ) -> Result<VerifiedCiphertexts, ProcessingError> {
+        if handles.is_empty() {
+            return Err(ProcessingError::irrecoverable(
+                ErrorCode::Unprocessable,
+                anyhow!("No handles found in the request, cannot proceed"),
+            ));
+        }
+
         let registry = self.registry.snapshot();
         info!(
             "Resolving {} handle(s) via off-chain attestation consensus...",
@@ -250,8 +257,24 @@ where
 mod tests {
     use super::*;
     use crate::core::event_processor::ProcessingErrorKind;
+    use alloy::providers::{ProviderBuilder, mock::Asserter};
     use std::cell::RefCell;
     use std::future;
+
+    #[tokio::test]
+    async fn verify_and_retrieve_rejects_empty_handles() {
+        let provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(Asserter::new());
+        let result = CiphertextManager::for_test(provider)
+            .verify_and_retrieve(&[])
+            .await;
+        assert!(matches!(
+            result,
+            Err(ref e) if e.kind == ProcessingErrorKind::Irrecoverable
+                && e.code == ErrorCode::Unprocessable
+        ));
+    }
 
     #[tokio::test]
     async fn duplicate_handles_resolve_once_and_keep_the_original_order() {

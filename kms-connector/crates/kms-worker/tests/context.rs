@@ -35,6 +35,8 @@ use tracing::{info, warn};
 
 /// Context ID neither in the DB nor valid on-chain → Recoverable error → retried until max
 /// attempts → failed.
+// TODO: add pad decryption cases to the context tests once pad decryptions reach the KMS Core.
+// For now, an authorized pad decrypt always fails, so a test would pass but for the wrong reason.
 #[rstest]
 #[case::public_decryption(TestEventType::PublicDecryption)]
 #[case::user_decryption(TestEventType::UserDecryption)]
