@@ -546,10 +546,9 @@ skips. `scripts/deploy/deploy-coprocessor.sh` provides what the chart does not:
 - **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,
   with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
 - **Per party**: the image tags (`coprocessor_proxy`, `coprocessor_prf_service` and
-  `coprocessor_pad_worker` in resolve-tags),
-  the signer (the derived coprocessor wallet) and the NetworkPolicy's
-  podSelector, which selects only that party's prf-service and lets test-suite pods
-  (`app: fhevm-test-suite`) reach its metrics port 9100 only.
+  `coprocessor_pad_worker` in resolve-tags), the signer (the derived coprocessor wallet) and the
+  NetworkPolicy's podSelector, which selects only that party's prf-service. Its `metricsFrom` lets
+  test-suite pods (`app: fhevm-test-suite`) reach the metrics port 9100 only.
 - **Test-suite wiring**: the ConfigMap **`coprocessor-proxy`** (`urls`,
   `signer-addresses`, `prf-service-metrics-urls`, `metrics-urls`, `ca.crt`), read `optional` by the
   `@fhevm/sdk` Argo Workflow, whose `coprocessor-proxy` task runs the
