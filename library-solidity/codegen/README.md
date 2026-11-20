@@ -72,7 +72,7 @@ npm install
 - `baseDir` (string, optional): The path the target directory used as the base directory. If the path is relative, the absolute path is resolved relatively to the config file. (default: config file directory)
 - `noLib` (boolean, optional): `true` to disable FHEVM library contracts generation (`FHE.sol`, `Impl.sol`, `FheType.sol`). (default: `false`)
 - `noTest` (boolean, optional): `true` to disable Tests generation (default: `false`)
-- `noHostContracts` (boolean, optional): `true` to disable host contracts generation (`HCULimit.sol`) (default: `false`)
+- `noHostContracts` (boolean, optional): `true` to disable host contracts generation (`HCULimitOperators.sol`) (default: `false`)
 - `tests.shuffle` (boolean, optional): `true` to shuffle the tests. (default: `false`)
 - `tests.shuffleWithPseuseRand` (boolean, optional): `true` to shuffle using a deterministic random sequence. (default: `false`)
 - `tests.publicDecrypt` (boolean, optional): `true` to generate tests with publicly decryptable handles, `false` to generate tests with user decryptable handles. (default: `false`)
@@ -82,7 +82,7 @@ npm install
 - `tests.typescript` contains all the parameters related to Typescript test code generation.
 - `lib.fheTypeDir` (string, optional): The path to the directory where `FheType.sol` is located. If not specified, use `lib.outDir`. If the path is relative, the absolute path is resolved relatively to `baseDir`. (default: `./lib`)
 - `lib.outDir` (string, optional): The path to the FHEVM lib directory where the `FHE.sol`, `Impl.sol` are generated (default: `lib`). If the path is relative, the absolute path is resolved relatively to `baseDir`. (default: `./lib`)
-- `hostContracts.outDir` (string, optional): The path to the contracts directory (where to save `HCULimit.sol`). If the path is relative, the absolute path is resolved relatively to the `baseDir`. (default: `./contracts`)
+- `hostContracts.outDir` (string, optional): The path to the contracts directory (where to save `HCULimitOperators.sol`). If the path is relative, the absolute path is resolved relatively to the `baseDir`. (default: `./contracts`)
 
 # Overloads generation
 
