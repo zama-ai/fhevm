@@ -32,6 +32,8 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
     address internal constant ALLOWED_BLOCK_WHITELISTED = address(0xC2);
     address internal constant UNKNOWN = address(0xC4);
     uint48 internal constant LEGACY_CAP = 100_000;
+    /// @dev Work of the 8-bit cast that `_compute` and the upgrade checks meter.
+    uint48 internal constant CAST_WORK = 6;
     address internal constant executor = fhevmExecutorAdd;
     bytes32 internal constant INPUT = bytes32(uint256(1));
     bytes32 internal constant RESULT = bytes32(uint256(2));
@@ -86,7 +88,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         vm.prank(executor);
         upgraded.checkHCUForCast(FheType.Uint8, INPUT, RESULT, DAPP);
         (, , usedHCU) = upgraded.getQuota(DEFAULT_QUOTA);
-        assertEq(usedHCU, 32);
+        assertEq(usedHCU, CAST_WORK);
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         upgraded.reinitializeV6();
     }
@@ -126,9 +128,9 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
             return;
         }
         _compute(DAPP);
-        assertEq(hcuLimit.getHCUForTransaction(), 32);
+        assertEq(hcuLimit.getHCUForTransaction(), CAST_WORK);
         (, , uint48 usedHCU) = hcuLimit.getQuota(expected);
-        assertEq(usedHCU, expected == BLOCK_WHITELIST_QUOTA ? 0 : 32);
+        assertEq(usedHCU, expected == BLOCK_WHITELIST_QUOTA ? 0 : CAST_WORK);
     }
 
     /// The upgrade leaves the capacity unmetered and every quota in Reserved at 10,000 basis points, so once the owner
@@ -145,7 +147,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         _compute(ALLOWED);
         _compute(ALLOWED_BLOCK_WHITELISTED);
         (, , uint48 load) = hcuLimit.getCapacity();
-        assertEq(load, 2 * 32);
+        assertEq(load, 2 * CAST_WORK);
     }
 
     /// HCUConfigurator is the only writer of the settings, so the upgrade waits until its empty proxy is upgraded.
@@ -232,7 +234,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         assertEq(hcuLimit.getContractQuota(ALLOWED), DAPP_QUOTA);
         _compute(ALLOWED);
         (, , uint48 used) = hcuLimit.getQuota(DAPP_QUOTA);
-        assertEq(used, 32);
+        assertEq(used, CAST_WORK);
 
         // Back in the default quota, it has left the allowlist and stays stopped.
         vm.prank(OWNER);
@@ -249,7 +251,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         assertEq(hcuLimit.getContractQuota(ALLOWED), DEFAULT_QUOTA);
         _compute(ALLOWED);
         (, , uint48 used) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        assertEq(used, 32);
+        assertEq(used, CAST_WORK);
 
         // Stopping it again routes the contracts nobody assigned back to the quotas that replaced the allowlist.
         vm.prank(OWNER);
@@ -258,7 +260,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         assertEq(hcuLimit.getContractQuota(ALLOWED_BLOCK_WHITELISTED), BLOCK_WHITELIST_QUOTA);
         _compute(ALLOWED);
         (, , used) = hcuLimit.getQuota(ALLOWLIST_QUOTA);
-        assertEq(used, 32);
+        assertEq(used, CAST_WORK);
     }
 
     function test_stoppingOrPausingTheAllowlistQuotaStopsTheContractsItRoutes() public {
@@ -311,7 +313,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
     function test_stoppedQuotaRefusesBeforeChargingAnything() public {
         _deployFresh();
         vm.startPrank(OWNER);
-        hcuConfigurator.setQuota(DEFAULT_QUOTA, 32, 32);
+        hcuConfigurator.setQuota(DEFAULT_QUOTA, CAST_WORK, CAST_WORK);
         hcuConfigurator.setQuota(DAPP_QUOTA, 1_000, 1_000);
         hcuConfigurator.assignQuota(DAPP_QUOTA, DAPP);
         hcuConfigurator.setQuota(DAPP_QUOTA, 0, 0);
@@ -321,8 +323,8 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
         vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaStopped.selector, DAPP, DAPP_QUOTA));
         _compute(DAPP);
         (, , uint48 usedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        assertEq(usedHCU, 32);
-        assertEq(hcuLimit.getHCUForTransaction(), 32);
+        assertEq(usedHCU, CAST_WORK);
+        assertEq(hcuLimit.getHCUForTransaction(), CAST_WORK);
     }
 
     function test_quotaMembersRemainSubjectToTransactionLimits(bool unmetered) public {
@@ -344,7 +346,7 @@ contract HCULimitQuotasTest is HostContractsDeployerTestUtils {
             _compute(DAPP);
         } else {
             vm.prank(OWNER);
-            hcuConfigurator.setQuota(DAPP_QUOTA, 31, 31);
+            hcuConfigurator.setQuota(DAPP_QUOTA, CAST_WORK - 1, CAST_WORK - 1);
             vm.expectRevert(
                 abi.encodeWithSelector(HCULimit.HCUQuotaExceeded.selector, DAPP, DAPP_QUOTA, type(uint256).max)
             );

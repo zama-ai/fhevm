@@ -186,9 +186,9 @@ describe('EncryptedERC20:HCU', function () {
       return;
     }
 
-    // Le euint64 (149000) +  TrivialEncrypt euint64 (32) + Select euint64 (55000) + Add euint64 (162000)
-    /// + TrivialEncrypt euint64(32) (Initialize balance to 0) + Sub euint euint64 (162000)
-    expect(HCUTransfer).to.eq(528_064, 'HCU incorrect');
+    // Work: Le euint64 (6624) + TrivialEncrypt euint64 (1) + Select euint64 (12913) + Add euint64 (13798)
+    /// + TrivialEncrypt euint64 (1) (Initialize balance to 0) + Sub euint64 (13649)
+    expect(HCUTransfer).to.eq(46_986, 'HCU incorrect');
 
     /// Le euint64 (149000) + Select euint64 (55000) + Sub euint64 (162000)
     expect(HCUMaxDepthTransfer).to.eq(366_000, 'HCU Depth incorrect');
@@ -237,9 +237,10 @@ describe('EncryptedERC20:HCU', function () {
       return;
     }
 
-    // Le euint64 (149000) + Le euint64 (149000) + And ebool (34000) + Sub euint64 (162000) + TrivialEncrypt (32) + Select euint64 (55000) +
-    // Select euint64 (55000) + Add ebool (25000) + TrivialEncrypt (Initialize balance to 0) (32) + Sub euint64 (162000)
-    expect(HCUTransferFrom).to.eq(919_064, 'HCU incorrect');
+    // Work: Le euint64 (6624) + Le euint64 (6624) + And ebool (132) + Sub euint64 (13649) + TrivialEncrypt (1) +
+    // Select euint64 (12913) + Select euint64 (12913) + Add euint64 (13798) + TrivialEncrypt (Initialize balance to 0) (1) +
+    // Sub euint64 (13649)
+    expect(HCUTransferFrom).to.eq(80_304, 'HCU incorrect');
 
     // Le euint64 (149000) + And ebool (25000) + Select euint64 (55000) + Sub euint64 (162000)
     expect(HCUMaxDepthTransferFrom).to.eq(391_000, 'HCU Depth incorrect');
@@ -341,9 +342,10 @@ describe('EncryptedERC20:HCU', function () {
     });
 
     describe('local deterministic coverage', function () {
+      // A transfer has 366,000 HCU of depth and 46,986 of work: these limits fit one transfer, not two.
       const TIGHT_DEPTH_PER_TX = 400_000;
-      const TIGHT_MAX_PER_TX = 600_000;
-      const TIGHT_PER_BLOCK = 600_000;
+      const TIGHT_MAX_PER_TX = 60_000;
+      const TIGHT_PER_BLOCK = 60_000;
       let savedDefaultMax: bigint;
       let savedDefaultDecay: bigint;
       let savedUncappedMax: bigint;
@@ -371,7 +373,6 @@ describe('EncryptedERC20:HCU', function () {
           hcuLimit.getMaxHCUPerTx(),
           hcuLimit.getMaxHCUDepthPerTx(),
         ]);
-        // Narrowest-first when lowering: maxHCUPerTx >= maxHCUDepthPerTx
         const ownerConfigurator = (await configuratorOf(hcuLimit)).connect(deployer);
         await (await ownerConfigurator.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
         await (await ownerConfigurator.setMaxHCUPerTx(TIGHT_MAX_PER_TX)).wait();

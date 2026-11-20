@@ -98,8 +98,10 @@ const ROOMY_QUOTA = 100_000_000_000n;
 const REVERTING_TX_GAS_LIMIT = 1_000_000;
 // Below the cost of a non-scalar euint64 addition.
 const TIGHT_DEPTH_PER_TX = 100_000;
-// Fits one trivial encryption (32 HCU), not two.
-const ONE_TRIVIAL_ENCRYPTION_HCU = 40;
+// A trivial encryption has 32 HCU of latency and 1 of work. The depth limit fits each of two independent
+// encryptions; the work limits fit one encryption, not two.
+const TRIVIAL_ENCRYPTION_DEPTH_LIMIT = 40;
+const ONE_TRIVIAL_ENCRYPTION_WORK = 1;
 // FheType.Uint64 in the host contracts.
 const FHE_TYPE_UINT64 = 5;
 
@@ -460,13 +462,13 @@ describe('HCU quotas', function () {
       await mined(dapp.trivialEncrypt(1));
 
       // Transaction limit: an unmetered quota leaves only the transaction limit to refuse a second encryption.
-      await mined(hcuConfigurator.setMaxHCUDepthPerTx(ONE_TRIVIAL_ENCRYPTION_HCU));
-      await mined(hcuConfigurator.setMaxHCUPerTx(ONE_TRIVIAL_ENCRYPTION_HCU));
+      await mined(hcuConfigurator.setMaxHCUDepthPerTx(TRIVIAL_ENCRYPTION_DEPTH_LIMIT));
+      await mined(hcuConfigurator.setMaxHCUPerTx(ONE_TRIVIAL_ENCRYPTION_WORK));
       await expectHcuRevert(dapp.trivialEncryptTwice.staticCall(1, 2), 'HCUTransactionLimitExceeded');
       await mined(dapp.trivialEncrypt(1));
 
       // Quota limit, checked before the transaction limit: the second encryption needs one block of decay.
-      await mined(hcuConfigurator.setQuota(DAPP_QUOTA, ONE_TRIVIAL_ENCRYPTION_HCU, ONE_TRIVIAL_ENCRYPTION_HCU));
+      await mined(hcuConfigurator.setQuota(DAPP_QUOTA, ONE_TRIVIAL_ENCRYPTION_WORK, ONE_TRIVIAL_ENCRYPTION_WORK));
       await expectHcuRevert(dapp.trivialEncryptTwice.staticCall(1, 2), 'HCUQuotaExceeded', [
         dappAddress,
         DAPP_QUOTA,
