@@ -41,8 +41,11 @@ interface IGatewayConfig {
     error AllGatewayContractsAlreadyPaused();
     error AllGatewayContractsAlreadyUnpaused();
     error ChainIdNotUint64(uint256 chainId);
+    error CoprocessorContextAlreadyRegistered(uint256 contextId, uint256 currentCoprocessorContextId);
+    error CoprocessorSetExceedsProofFormatLimit(uint256 coprocessorCount, uint256 maxAllowed);
     error CoprocessorSignerAlreadyRegistered(address coprocessorSignerAddress);
     error CoprocessorTxSenderAlreadyRegistered(address coprocessorTxSenderAddress);
+    error CurrentCoprocessorContextCannotBeDestroyed(uint256 currentCoprocessorContextId);
     error CurrentKmsContextCannotBeDestroyed(uint256 currentKmsContextId);
     error CustodianSignerAlreadyRegistered(address custodianSignerAddress);
     error CustodianTxSenderAlreadyRegistered(address custodianTxSenderAddress);
@@ -54,14 +57,15 @@ interface IGatewayConfig {
     error HostChainAlreadyRegistered(uint256 chainId);
     error HostChainNotDisabled(uint256 chainId);
     error HostChainNotRegistered(uint256 chainId);
-    error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCoprocessors);
+    error InvalidCoprocessorContext(uint256 coprocessorContextId);
+    error InvalidCoprocessorMajorityThreshold(uint256 majorityThreshold, uint256 coprocessorCount);
     error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
     error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
     error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, uint256 nKmsNodes);
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
     error InvalidKmsContext(uint256 kmsContextId);
     error InvalidNullChainId();
-    error InvalidNullCoprocessorThreshold();
+    error InvalidNullCoprocessorContextId();
     error InvalidNullKmsContextId();
     error InvalidNullKmsGenThreshold();
     error InvalidNullPublicDecryptionThreshold();
@@ -74,26 +78,30 @@ interface IGatewayConfig {
     error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
 
     event AddHostChain(uint256 indexed chainId, HostChain hostChain);
+    event DestroyCoprocessorContext(uint256 indexed coprocessorContextId);
     event DestroyKmsContext(uint256 indexed kmsContextId);
     event DisableHostChain(uint256 indexed chainId);
     event EnableHostChain(uint256 indexed chainId);
-    event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+    event InitializeGatewayConfig(uint256 indexed kmsContextId, uint256 indexed coprocessorContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
     event PauseAllGatewayContracts();
     event RemoveHostChain(uint256 indexed chainId);
     event UnpauseAllGatewayContracts();
-    event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
-    event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
+    event UpdateCoprocessors(uint256 indexed contextId, Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
     event UpdateCustodians(Custodian[] newCustodians);
     event UpdateKmsContext(uint256 indexed newContextId, KmsNode[] newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold);
 
     function addHostChain(HostChain memory hostChain) external;
+    function destroyCoprocessorContext(uint256 coprocessorContextId) external;
     function destroyKmsContext(uint256 kmsContextId) external;
     function disableHostChain(uint256 chainId) external;
     function enableHostChain(uint256 chainId) external;
     function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
+    function getCoprocessorForContext(uint256 contextId, address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
     function getCoprocessorMajorityThreshold() external view returns (uint256);
+    function getCoprocessorMajorityThresholdForContext(uint256 contextId) external view returns (uint256);
     function getCoprocessorSigners() external view returns (address[] memory);
     function getCoprocessorTxSenders() external view returns (address[] memory);
+    function getCurrentCoprocessorContextId() external view returns (uint256);
     function getCurrentKmsContextId() external view returns (uint256);
     function getCustodian(address custodianTxSender) external view returns (Custodian memory);
     function getCustodianSigners() external view returns (address[] memory);
@@ -113,7 +121,9 @@ interface IGatewayConfig {
     function getUserDecryptionThresholdForContext(uint256 contextId) external view returns (uint256);
     function getVersion() external pure returns (string memory);
     function isCoprocessorSigner(address signerAddress) external view returns (bool);
+    function isCoprocessorSignerForContext(uint256 contextId, address signerAddress) external view returns (bool);
     function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view returns (bool);
+    function isCoprocessorTxSenderForContext(uint256 contextId, address txSenderAddress) external view returns (bool);
     function isCustodianSigner(address signerAddress) external view returns (bool);
     function isCustodianTxSender(address txSenderAddress) external view returns (bool);
     function isHostChainDisabled(uint256 chainId) external view returns (bool);
@@ -123,12 +133,12 @@ interface IGatewayConfig {
     function isKmsTxSender(address kmsTxSenderAddress) external view returns (bool);
     function isKmsTxSenderForContext(uint256 contextId, address txSenderAddress) external view returns (bool);
     function isPauser(address account) external view returns (bool);
+    function isValidCoprocessorContext(uint256 contextId) external view returns (bool);
     function isValidKmsContext(uint256 contextId) external view returns (bool);
     function pauseAllGatewayContracts() external;
     function removeHostChain(uint256 chainId) external;
     function unpauseAllGatewayContracts() external;
-    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
-    function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCoprocessorThreshold) external;
+    function updateCoprocessors(uint256 newContextId, Coprocessor[] memory newCoprocessors, uint256 newCoprocessorThreshold) external;
     function updateCustodians(Custodian[] memory newCustodians) external;
     function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, uint256 newMpcThreshold, uint256 newPublicDecryptionThreshold, uint256 newUserDecryptionThreshold, uint256 newKmsGenThreshold) external;
 }
@@ -172,6 +182,19 @@ interface IGatewayConfig {
             "internalType": "string"
           }
         ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "destroyCoprocessorContext",
+    "inputs": [
+      {
+        "name": "coprocessorContextId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -254,8 +277,68 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
+    "name": "getCoprocessorForContext",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "coprocessorTxSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Coprocessor",
+        "components": [
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "s3BucketUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getCoprocessorMajorityThreshold",
     "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCoprocessorMajorityThresholdForContext",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -287,6 +370,19 @@ interface IGatewayConfig {
         "name": "",
         "type": "address[]",
         "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCurrentCoprocessorContextId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -726,10 +822,58 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
+    "name": "isCoprocessorSignerForContext",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "signerAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isCoprocessorTxSender",
     "inputs": [
       {
         "name": "coprocessorTxSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isCoprocessorTxSenderForContext",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "txSenderAddress",
         "type": "address",
         "internalType": "address"
       }
@@ -926,6 +1070,25 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
+    "name": "isValidCoprocessorContext",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isValidKmsContext",
     "inputs": [
       {
@@ -972,21 +1135,13 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
-    "name": "updateCoprocessorThreshold",
-    "inputs": [
-      {
-        "name": "newCoprocessorThreshold",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "updateCoprocessors",
     "inputs": [
+      {
+        "name": "newContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
       {
         "name": "newCoprocessors",
         "type": "tuple[]",
@@ -1156,6 +1311,19 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
+    "name": "DestroyCoprocessorContext",
+    "inputs": [
+      {
+        "name": "coprocessorContextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "DestroyKmsContext",
     "inputs": [
       {
@@ -1199,6 +1367,12 @@ interface IGatewayConfig {
     "inputs": [
       {
         "name": "kmsContextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "coprocessorContextId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -1358,21 +1532,14 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
-    "name": "UpdateCoprocessorThreshold",
-    "inputs": [
-      {
-        "name": "newCoprocessorThreshold",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "UpdateCoprocessors",
     "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
       {
         "name": "newCoprocessors",
         "type": "tuple[]",
@@ -1523,6 +1690,38 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
+    "name": "CoprocessorContextAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "currentCoprocessorContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CoprocessorSetExceedsProofFormatLimit",
+    "inputs": [
+      {
+        "name": "coprocessorCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxAllowed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "CoprocessorSignerAlreadyRegistered",
     "inputs": [
       {
@@ -1540,6 +1739,17 @@ interface IGatewayConfig {
         "name": "coprocessorTxSenderAddress",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CurrentCoprocessorContextCannotBeDestroyed",
+    "inputs": [
+      {
+        "name": "currentCoprocessorContextId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -1648,15 +1858,26 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
-    "name": "InvalidHighCoprocessorThreshold",
+    "name": "InvalidCoprocessorContext",
     "inputs": [
       {
-        "name": "coprocessorThreshold",
+        "name": "coprocessorContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidCoprocessorMajorityThreshold",
+    "inputs": [
+      {
+        "name": "majorityThreshold",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "nCoprocessors",
+        "name": "coprocessorCount",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1744,7 +1965,7 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
-    "name": "InvalidNullCoprocessorThreshold",
+    "name": "InvalidNullCoprocessorContextId",
     "inputs": []
   },
   {
@@ -3691,6 +3912,202 @@ error ChainIdNotUint64(uint256 chainId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorContextAlreadyRegistered(uint256,uint256)` and selector `0xb472cd5a`.
+```solidity
+error CoprocessorContextAlreadyRegistered(uint256 contextId, uint256 currentCoprocessorContextId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorContextAlreadyRegistered {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub currentCoprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorContextAlreadyRegistered>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorContextAlreadyRegistered) -> Self {
+                (value.contextId, value.currentCoprocessorContextId)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorContextAlreadyRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    contextId: tuple.0,
+                    currentCoprocessorContextId: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorContextAlreadyRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorContextAlreadyRegistered(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [180u8, 114u8, 205u8, 90u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.currentCoprocessorContextId,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorSetExceedsProofFormatLimit(uint256,uint256)` and selector `0x4f5114bb`.
+```solidity
+error CoprocessorSetExceedsProofFormatLimit(uint256 coprocessorCount, uint256 maxAllowed);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorSetExceedsProofFormatLimit {
+        #[allow(missing_docs)]
+        pub coprocessorCount: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub maxAllowed: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorSetExceedsProofFormatLimit>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorSetExceedsProofFormatLimit) -> Self {
+                (value.coprocessorCount, value.maxAllowed)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorSetExceedsProofFormatLimit {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    coprocessorCount: tuple.0,
+                    maxAllowed: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorSetExceedsProofFormatLimit {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorSetExceedsProofFormatLimit(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [79u8, 81u8, 20u8, 187u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorCount),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxAllowed),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorSignerAlreadyRegistered(address)` and selector `0x0131b5e9`.
 ```solidity
 error CoprocessorSignerAlreadyRegistered(address coprocessorSignerAddress);
@@ -3847,6 +4264,95 @@ error CoprocessorTxSenderAlreadyRegistered(address coprocessorTxSenderAddress);
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.coprocessorTxSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CurrentCoprocessorContextCannotBeDestroyed(uint256)` and selector `0x6893bff6`.
+```solidity
+error CurrentCoprocessorContextCannotBeDestroyed(uint256 currentCoprocessorContextId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CurrentCoprocessorContextCannotBeDestroyed {
+        #[allow(missing_docs)]
+        pub currentCoprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CurrentCoprocessorContextCannotBeDestroyed>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CurrentCoprocessorContextCannotBeDestroyed) -> Self {
+                (value.currentCoprocessorContextId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CurrentCoprocessorContextCannotBeDestroyed {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    currentCoprocessorContextId: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CurrentCoprocessorContextCannotBeDestroyed {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CurrentCoprocessorContextCannotBeDestroyed(uint256)";
+            const SELECTOR: [u8; 4] = [104u8, 147u8, 191u8, 246u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.currentCoprocessorContextId,
                     ),
                 )
             }
@@ -4759,17 +5265,104 @@ error HostChainNotRegistered(uint256 chainId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidHighCoprocessorThreshold(uint256,uint256)` and selector `0x97beabad`.
+    /**Custom error with signature `InvalidCoprocessorContext(uint256)` and selector `0x9797c3ff`.
 ```solidity
-error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCoprocessors);
+error InvalidCoprocessorContext(uint256 coprocessorContextId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct InvalidHighCoprocessorThreshold {
+    pub struct InvalidCoprocessorContext {
         #[allow(missing_docs)]
-        pub coprocessorThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidCoprocessorContext>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidCoprocessorContext) -> Self {
+                (value.coprocessorContextId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for InvalidCoprocessorContext {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    coprocessorContextId: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidCoprocessorContext {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidCoprocessorContext(uint256)";
+            const SELECTOR: [u8; 4] = [151u8, 151u8, 195u8, 255u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorContextId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidCoprocessorMajorityThreshold(uint256,uint256)` and selector `0x76af0774`.
+```solidity
+error InvalidCoprocessorMajorityThreshold(uint256 majorityThreshold, uint256 coprocessorCount);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidCoprocessorMajorityThreshold {
         #[allow(missing_docs)]
-        pub nCoprocessors: alloy::sol_types::private::primitives::aliases::U256,
+        pub majorityThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessorCount: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -4803,31 +5396,31 @@ error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCop
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<InvalidHighCoprocessorThreshold>
+        impl ::core::convert::From<InvalidCoprocessorMajorityThreshold>
         for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidHighCoprocessorThreshold) -> Self {
-                (value.coprocessorThreshold, value.nCoprocessors)
+            fn from(value: InvalidCoprocessorMajorityThreshold) -> Self {
+                (value.majorityThreshold, value.coprocessorCount)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for InvalidHighCoprocessorThreshold {
+        for InvalidCoprocessorMajorityThreshold {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    coprocessorThreshold: tuple.0,
-                    nCoprocessors: tuple.1,
+                    majorityThreshold: tuple.0,
+                    coprocessorCount: tuple.1,
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidHighCoprocessorThreshold {
+        impl alloy_sol_types::SolError for InvalidCoprocessorMajorityThreshold {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidHighCoprocessorThreshold(uint256,uint256)";
-            const SELECTOR: [u8; 4] = [151u8, 190u8, 171u8, 173u8];
+            const SIGNATURE: &'static str = "InvalidCoprocessorMajorityThreshold(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [118u8, 175u8, 7u8, 116u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4839,10 +5432,10 @@ error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCop
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorThreshold),
+                    > as alloy_sol_types::SolType>::tokenize(&self.majorityThreshold),
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.nCoprocessors),
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorCount),
                 )
             }
             #[inline]
@@ -5403,13 +5996,13 @@ error InvalidNullChainId();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidNullCoprocessorThreshold()` and selector `0xb60d2441`.
+    /**Custom error with signature `InvalidNullCoprocessorContextId()` and selector `0x0d42e1c8`.
 ```solidity
-error InvalidNullCoprocessorThreshold();
+error InvalidNullCoprocessorContextId();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct InvalidNullCoprocessorThreshold;
+    pub struct InvalidNullCoprocessorContextId;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5436,28 +6029,28 @@ error InvalidNullCoprocessorThreshold();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<InvalidNullCoprocessorThreshold>
+        impl ::core::convert::From<InvalidNullCoprocessorContextId>
         for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidNullCoprocessorThreshold) -> Self {
+            fn from(value: InvalidNullCoprocessorContextId) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for InvalidNullCoprocessorThreshold {
+        for InvalidNullCoprocessorContextId {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidNullCoprocessorThreshold {
+        impl alloy_sol_types::SolError for InvalidNullCoprocessorContextId {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidNullCoprocessorThreshold()";
-            const SELECTOR: [u8; 4] = [182u8, 13u8, 36u8, 65u8];
+            const SIGNATURE: &'static str = "InvalidNullCoprocessorContextId()";
+            const SELECTOR: [u8; 4] = [13u8, 66u8, 225u8, 200u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -6441,6 +7034,119 @@ event AddHostChain(uint256 indexed chainId, HostChain hostChain);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `DestroyCoprocessorContext(uint256)` and selector `0xf20b299804c9c1d6da3b82414c7aa0a845cdbabae2d90e46e360a379a77b7be5`.
+```solidity
+event DestroyCoprocessorContext(uint256 indexed coprocessorContextId);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct DestroyCoprocessorContext {
+        #[allow(missing_docs)]
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for DestroyCoprocessorContext {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "DestroyCoprocessorContext(uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                242u8, 11u8, 41u8, 152u8, 4u8, 201u8, 193u8, 214u8, 218u8, 59u8, 130u8,
+                65u8, 76u8, 122u8, 160u8, 168u8, 69u8, 205u8, 186u8, 186u8, 226u8, 217u8,
+                14u8, 70u8, 227u8, 96u8, 163u8, 121u8, 167u8, 123u8, 123u8, 229u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    coprocessorContextId: topics.1,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.coprocessorContextId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.coprocessorContextId,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for DestroyCoprocessorContext {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&DestroyCoprocessorContext> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &DestroyCoprocessorContext,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DestroyKmsContext(uint256)` and selector `0x3e8f02dc7af6e3a67f3af0bc99bcf11b4deb46105e9ba7f1ac6da82322e9025e`.
 ```solidity
 event DestroyKmsContext(uint256 indexed kmsContextId);
@@ -6762,9 +7468,9 @@ event EnableHostChain(uint256 indexed chainId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `InitializeGatewayConfig(uint256,(string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0xf5d9541a4bf6bf4b48fc79d7a8d6bd49eb3435da57dccbea6e525ac86bbf43fe`.
+    /**Event with signature `InitializeGatewayConfig(uint256,uint256,(string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0xd171c3b57f6bd4103df14df40b8f7dc678631ca7e91bf4edca050a04e649fa58`.
 ```solidity
-event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+event InitializeGatewayConfig(uint256 indexed kmsContextId, uint256 indexed coprocessorContextId, ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -6776,6 +7482,8 @@ event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata met
     pub struct InitializeGatewayConfig {
         #[allow(missing_docs)]
         pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub metadata: <ProtocolMetadata as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
@@ -6816,12 +7524,13 @@ event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata met
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "InitializeGatewayConfig(uint256,(string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])";
+            const SIGNATURE: &'static str = "InitializeGatewayConfig(uint256,uint256,(string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                245u8, 217u8, 84u8, 26u8, 75u8, 246u8, 191u8, 75u8, 72u8, 252u8, 121u8,
-                215u8, 168u8, 214u8, 189u8, 73u8, 235u8, 52u8, 53u8, 218u8, 87u8, 220u8,
-                203u8, 234u8, 110u8, 82u8, 90u8, 200u8, 107u8, 191u8, 67u8, 254u8,
+                209u8, 113u8, 195u8, 181u8, 127u8, 107u8, 212u8, 16u8, 61u8, 241u8, 77u8,
+                244u8, 11u8, 143u8, 125u8, 198u8, 120u8, 99u8, 28u8, 167u8, 233u8, 27u8,
+                244u8, 237u8, 202u8, 5u8, 10u8, 4u8, 230u8, 73u8, 250u8, 88u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -6832,6 +7541,7 @@ event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata met
             ) -> Self {
                 Self {
                     kmsContextId: topics.1,
+                    coprocessorContextId: topics.2,
                     metadata: data.0,
                     thresholds: data.1,
                     kmsNodes: data.2,
@@ -6874,7 +7584,11 @@ event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata met
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.kmsContextId.clone())
+                (
+                    Self::SIGNATURE_HASH.into(),
+                    self.kmsContextId.clone(),
+                    self.coprocessorContextId.clone(),
+                )
             }
             #[inline]
             fn encode_topics_raw(
@@ -6890,6 +7604,11 @@ event InitializeGatewayConfig(uint256 indexed kmsContextId, ProtocolMetadata met
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.kmsContextId);
+                out[2usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.coprocessorContextId,
+                );
                 Ok(())
             }
         }
@@ -7222,120 +7941,9 @@ event UnpauseAllGatewayContracts();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UpdateCoprocessorThreshold(uint256)` and selector `0x7a2ef7dc89400a8ad92bb4ccf44d482624b40fe76b66977e85ed6a618e2e2fc7`.
+    /**Event with signature `UpdateCoprocessors(uint256,(address,address,string)[],uint256)` and selector `0x3bfcc8a4c07b826d3a37e3df1ccd87a3a4d6b858687a698fe52e2541b1a8fb21`.
 ```solidity
-event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct UpdateCoprocessorThreshold {
-        #[allow(missing_docs)]
-        pub newCoprocessorThreshold: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for UpdateCoprocessorThreshold {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "UpdateCoprocessorThreshold(uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                122u8, 46u8, 247u8, 220u8, 137u8, 64u8, 10u8, 138u8, 217u8, 43u8, 180u8,
-                204u8, 244u8, 77u8, 72u8, 38u8, 36u8, 180u8, 15u8, 231u8, 107u8, 102u8,
-                151u8, 126u8, 133u8, 237u8, 106u8, 97u8, 142u8, 46u8, 47u8, 199u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    newCoprocessorThreshold: data.0,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.newCoprocessorThreshold,
-                    ),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for UpdateCoprocessorThreshold {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&UpdateCoprocessorThreshold> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(
-                this: &UpdateCoprocessorThreshold,
-            ) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UpdateCoprocessors((address,address,string)[],uint256)` and selector `0xffe20bdb855e514e94147702922690cf1da10bdd18bf1f6215027c93ac05d455`.
-```solidity
-event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
+event UpdateCoprocessors(uint256 indexed contextId, Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -7345,6 +7953,8 @@ event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorTh
     )]
     #[derive(Clone)]
     pub struct UpdateCoprocessors {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub newCoprocessors: alloy::sol_types::private::Vec<
             <Coprocessor as alloy::sol_types::SolType>::RustType,
@@ -7369,12 +7979,15 @@ event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorTh
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "UpdateCoprocessors((address,address,string)[],uint256)";
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "UpdateCoprocessors(uint256,(address,address,string)[],uint256)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                255u8, 226u8, 11u8, 219u8, 133u8, 94u8, 81u8, 78u8, 148u8, 20u8, 119u8,
-                2u8, 146u8, 38u8, 144u8, 207u8, 29u8, 161u8, 11u8, 221u8, 24u8, 191u8,
-                31u8, 98u8, 21u8, 2u8, 124u8, 147u8, 172u8, 5u8, 212u8, 85u8,
+                59u8, 252u8, 200u8, 164u8, 192u8, 123u8, 130u8, 109u8, 58u8, 55u8, 227u8,
+                223u8, 28u8, 205u8, 135u8, 163u8, 164u8, 214u8, 184u8, 88u8, 104u8,
+                122u8, 105u8, 143u8, 229u8, 46u8, 37u8, 65u8, 177u8, 168u8, 251u8, 33u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -7384,6 +7997,7 @@ event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorTh
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
+                    contextId: topics.1,
                     newCoprocessors: data.0,
                     newCoprocessorThreshold: data.1,
                 }
@@ -7418,7 +8032,7 @@ event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorTh
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
+                (Self::SIGNATURE_HASH.into(), self.contextId.clone())
             }
             #[inline]
             fn encode_topics_raw(
@@ -7431,6 +8045,9 @@ event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorTh
                 out[0usize] = alloy_sol_types::abi::token::WordToken(
                     Self::SIGNATURE_HASH,
                 );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
                 Ok(())
             }
         }
@@ -7833,6 +8450,160 @@ function addHostChain(HostChain memory hostChain) external;
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 addHostChainReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `destroyCoprocessorContext(uint256)` and selector `0xd740e402`.
+```solidity
+function destroyCoprocessorContext(uint256 coprocessorContextId) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct destroyCoprocessorContextCall {
+        #[allow(missing_docs)]
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`destroyCoprocessorContext(uint256)`](destroyCoprocessorContextCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct destroyCoprocessorContextReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<destroyCoprocessorContextCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: destroyCoprocessorContextCall) -> Self {
+                    (value.coprocessorContextId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for destroyCoprocessorContextCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        coprocessorContextId: tuple.0,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<destroyCoprocessorContextReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: destroyCoprocessorContextReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for destroyCoprocessorContextReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl destroyCoprocessorContextReturn {
+            fn _tokenize(
+                &self,
+            ) -> <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for destroyCoprocessorContextCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = destroyCoprocessorContextReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "destroyCoprocessorContext(uint256)";
+            const SELECTOR: [u8; 4] = [215u8, 64u8, 228u8, 2u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorContextId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                destroyCoprocessorContextReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -8456,6 +9227,177 @@ function getCoprocessor(address coprocessorTxSenderAddress) external view return
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getCoprocessorForContext(uint256,address)` and selector `0x6cbf9712`.
+```solidity
+function getCoprocessorForContext(uint256 contextId, address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCoprocessorForContextCall {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessorTxSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getCoprocessorForContext(uint256,address)`](getCoprocessorForContextCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCoprocessorForContextReturn {
+        #[allow(missing_docs)]
+        pub _0: <Coprocessor as alloy::sol_types::SolType>::RustType,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                alloy::sol_types::private::Address,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCoprocessorForContextCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorForContextCall) -> Self {
+                    (value.contextId, value.coprocessorTxSenderAddress)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCoprocessorForContextCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        contextId: tuple.0,
+                        coprocessorTxSenderAddress: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (Coprocessor,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                <Coprocessor as alloy::sol_types::SolType>::RustType,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCoprocessorForContextReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorForContextReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCoprocessorForContextReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getCoprocessorForContextCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = <Coprocessor as alloy::sol_types::SolType>::RustType;
+            type ReturnTuple<'a> = (Coprocessor,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getCoprocessorForContext(uint256,address)";
+            const SELECTOR: [u8; 4] = [108u8, 191u8, 151u8, 18u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.coprocessorTxSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (<Coprocessor as alloy_sol_types::SolType>::tokenize(ret),)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getCoprocessorForContextReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getCoprocessorForContextReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessorMajorityThreshold()` and selector `0x6799ef52`.
 ```solidity
 function getCoprocessorMajorityThreshold() external view returns (uint256);
@@ -8600,6 +9542,168 @@ function getCoprocessorMajorityThreshold() external view returns (uint256);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: getCoprocessorMajorityThresholdReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getCoprocessorMajorityThresholdForContext(uint256)` and selector `0xf67de37c`.
+```solidity
+function getCoprocessorMajorityThresholdForContext(uint256 contextId) external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCoprocessorMajorityThresholdForContextCall {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getCoprocessorMajorityThresholdForContext(uint256)`](getCoprocessorMajorityThresholdForContextCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCoprocessorMajorityThresholdForContextReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCoprocessorMajorityThresholdForContextCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorMajorityThresholdForContextCall) -> Self {
+                    (value.contextId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCoprocessorMajorityThresholdForContextCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { contextId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCoprocessorMajorityThresholdForContextReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCoprocessorMajorityThresholdForContextReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCoprocessorMajorityThresholdForContextReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getCoprocessorMajorityThresholdForContextCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::primitives::aliases::U256;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getCoprocessorMajorityThresholdForContext(uint256)";
+            const SELECTOR: [u8; 4] = [246u8, 125u8, 227u8, 124u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getCoprocessorMajorityThresholdForContextReturn = r
+                            .into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getCoprocessorMajorityThresholdForContextReturn = r
+                            .into();
                         r._0
                     })
             }
@@ -8914,6 +10018,157 @@ function getCoprocessorTxSenders() external view returns (address[] memory);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: getCoprocessorTxSendersReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getCurrentCoprocessorContextId()` and selector `0x170a2981`.
+```solidity
+function getCurrentCoprocessorContextId() external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCurrentCoprocessorContextIdCall;
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getCurrentCoprocessorContextId()`](getCurrentCoprocessorContextIdCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCurrentCoprocessorContextIdReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCurrentCoprocessorContextIdCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCurrentCoprocessorContextIdCall) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCurrentCoprocessorContextIdCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCurrentCoprocessorContextIdReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCurrentCoprocessorContextIdReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCurrentCoprocessorContextIdReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getCurrentCoprocessorContextIdCall {
+            type Parameters<'a> = ();
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::primitives::aliases::U256;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getCurrentCoprocessorContextId()";
+            const SELECTOR: [u8; 4] = [23u8, 10u8, 41u8, 129u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getCurrentCoprocessorContextIdReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getCurrentCoprocessorContextIdReturn = r.into();
                         r._0
                     })
             }
@@ -11874,6 +13129,179 @@ function isCoprocessorSigner(address signerAddress) external view returns (bool)
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isCoprocessorSignerForContext(uint256,address)` and selector `0x609adb72`.
+```solidity
+function isCoprocessorSignerForContext(uint256 contextId, address signerAddress) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isCoprocessorSignerForContextCall {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub signerAddress: alloy::sol_types::private::Address,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isCoprocessorSignerForContext(uint256,address)`](isCoprocessorSignerForContextCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isCoprocessorSignerForContextReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                alloy::sol_types::private::Address,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isCoprocessorSignerForContextCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isCoprocessorSignerForContextCall) -> Self {
+                    (value.contextId, value.signerAddress)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isCoprocessorSignerForContextCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        contextId: tuple.0,
+                        signerAddress: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isCoprocessorSignerForContextReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isCoprocessorSignerForContextReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isCoprocessorSignerForContextReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isCoprocessorSignerForContextCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isCoprocessorSignerForContext(uint256,address)";
+            const SELECTOR: [u8; 4] = [96u8, 154u8, 219u8, 114u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.signerAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isCoprocessorSignerForContextReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isCoprocessorSignerForContextReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isCoprocessorTxSender(address)` and selector `0x2dd3edfe`.
 ```solidity
 function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view returns (bool);
@@ -12025,6 +13453,179 @@ function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: isCoprocessorTxSenderReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isCoprocessorTxSenderForContext(uint256,address)` and selector `0xeb0f7764`.
+```solidity
+function isCoprocessorTxSenderForContext(uint256 contextId, address txSenderAddress) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isCoprocessorTxSenderForContextCall {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub txSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isCoprocessorTxSenderForContext(uint256,address)`](isCoprocessorTxSenderForContextCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isCoprocessorTxSenderForContextReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                alloy::sol_types::private::Address,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isCoprocessorTxSenderForContextCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isCoprocessorTxSenderForContextCall) -> Self {
+                    (value.contextId, value.txSenderAddress)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isCoprocessorTxSenderForContextCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        contextId: tuple.0,
+                        txSenderAddress: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isCoprocessorTxSenderForContextReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isCoprocessorTxSenderForContextReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isCoprocessorTxSenderForContextReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isCoprocessorTxSenderForContextCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isCoprocessorTxSenderForContext(uint256,address)";
+            const SELECTOR: [u8; 4] = [235u8, 15u8, 119u8, 100u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isCoprocessorTxSenderForContextReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isCoprocessorTxSenderForContextReturn = r.into();
                         r._0
                     })
             }
@@ -13464,6 +15065,164 @@ function isPauser(address account) external view returns (bool);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isValidCoprocessorContext(uint256)` and selector `0x0e1887c9`.
+```solidity
+function isValidCoprocessorContext(uint256 contextId) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isValidCoprocessorContextCall {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isValidCoprocessorContext(uint256)`](isValidCoprocessorContextCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isValidCoprocessorContextReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isValidCoprocessorContextCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isValidCoprocessorContextCall) -> Self {
+                    (value.contextId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidCoprocessorContextCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { contextId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isValidCoprocessorContextReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isValidCoprocessorContextReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isValidCoprocessorContextReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isValidCoprocessorContextCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isValidCoprocessorContext(uint256)";
+            const SELECTOR: [u8; 4] = [14u8, 24u8, 135u8, 201u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isValidCoprocessorContextReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isValidCoprocessorContextReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isValidKmsContext(uint256)` and selector `0xbf9b16c8`.
 ```solidity
 function isValidKmsContext(uint256 contextId) external view returns (bool);
@@ -14056,169 +15815,15 @@ function unpauseAllGatewayContracts() external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `updateCoprocessorThreshold(uint256)` and selector `0xd5e16b7d`.
+    /**Function with signature `updateCoprocessors(uint256,(address,address,string)[],uint256)` and selector `0xf1295053`.
 ```solidity
-function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct updateCoprocessorThresholdCall {
-        #[allow(missing_docs)]
-        pub newCoprocessorThreshold: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    ///Container type for the return parameters of the [`updateCoprocessorThreshold(uint256)`](updateCoprocessorThresholdCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct updateCoprocessorThresholdReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<updateCoprocessorThresholdCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: updateCoprocessorThresholdCall) -> Self {
-                    (value.newCoprocessorThreshold,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for updateCoprocessorThresholdCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        newCoprocessorThreshold: tuple.0,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<updateCoprocessorThresholdReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: updateCoprocessorThresholdReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for updateCoprocessorThresholdReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl updateCoprocessorThresholdReturn {
-            fn _tokenize(
-                &self,
-            ) -> <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for updateCoprocessorThresholdCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = updateCoprocessorThresholdReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "updateCoprocessorThreshold(uint256)";
-            const SELECTOR: [u8; 4] = [213u8, 225u8, 107u8, 125u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.newCoprocessorThreshold,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                updateCoprocessorThresholdReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `updateCoprocessors((address,address,string)[],uint256)` and selector `0x83bb2e57`.
-```solidity
-function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCoprocessorThreshold) external;
+function updateCoprocessors(uint256 newContextId, Coprocessor[] memory newCoprocessors, uint256 newCoprocessorThreshold) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct updateCoprocessorsCall {
+        #[allow(missing_docs)]
+        pub newContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub newCoprocessors: alloy::sol_types::private::Vec<
             <Coprocessor as alloy::sol_types::SolType>::RustType,
@@ -14226,7 +15831,7 @@ function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCop
         #[allow(missing_docs)]
         pub newCoprocessorThreshold: alloy::sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the [`updateCoprocessors((address,address,string)[],uint256)`](updateCoprocessorsCall) function.
+    ///Container type for the return parameters of the [`updateCoprocessors(uint256,(address,address,string)[],uint256)`](updateCoprocessorsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct updateCoprocessorsReturn {}
@@ -14242,11 +15847,13 @@ function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCop
             #[doc(hidden)]
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<Coprocessor>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
                 alloy::sol_types::private::Vec<
                     <Coprocessor as alloy::sol_types::SolType>::RustType,
                 >,
@@ -14268,7 +15875,11 @@ function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCop
             impl ::core::convert::From<updateCoprocessorsCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: updateCoprocessorsCall) -> Self {
-                    (value.newCoprocessors, value.newCoprocessorThreshold)
+                    (
+                        value.newContextId,
+                        value.newCoprocessors,
+                        value.newCoprocessorThreshold,
+                    )
                 }
             }
             #[automatically_derived]
@@ -14277,8 +15888,9 @@ function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCop
             for updateCoprocessorsCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        newCoprocessors: tuple.0,
-                        newCoprocessorThreshold: tuple.1,
+                        newContextId: tuple.0,
+                        newCoprocessors: tuple.1,
+                        newCoprocessorThreshold: tuple.2,
                     }
                 }
             }
@@ -14327,6 +15939,7 @@ function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCop
         #[automatically_derived]
         impl alloy_sol_types::SolCall for updateCoprocessorsCall {
             type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<Coprocessor>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
@@ -14338,8 +15951,8 @@ function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCop
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "updateCoprocessors((address,address,string)[],uint256)";
-            const SELECTOR: [u8; 4] = [131u8, 187u8, 46u8, 87u8];
+            const SIGNATURE: &'static str = "updateCoprocessors(uint256,(address,address,string)[],uint256)";
+            const SELECTOR: [u8; 4] = [241u8, 41u8, 80u8, 83u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -14349,6 +15962,9 @@ function updateCoprocessors(Coprocessor[] memory newCoprocessors, uint256 newCop
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.newContextId),
                     <alloy::sol_types::sol_data::Array<
                         Coprocessor,
                     > as alloy_sol_types::SolType>::tokenize(&self.newCoprocessors),
@@ -14761,6 +16377,8 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         #[allow(missing_docs)]
         addHostChain(addHostChainCall),
         #[allow(missing_docs)]
+        destroyCoprocessorContext(destroyCoprocessorContextCall),
+        #[allow(missing_docs)]
         destroyKmsContext(destroyKmsContextCall),
         #[allow(missing_docs)]
         disableHostChain(disableHostChainCall),
@@ -14769,11 +16387,19 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         #[allow(missing_docs)]
         getCoprocessor(getCoprocessorCall),
         #[allow(missing_docs)]
+        getCoprocessorForContext(getCoprocessorForContextCall),
+        #[allow(missing_docs)]
         getCoprocessorMajorityThreshold(getCoprocessorMajorityThresholdCall),
+        #[allow(missing_docs)]
+        getCoprocessorMajorityThresholdForContext(
+            getCoprocessorMajorityThresholdForContextCall,
+        ),
         #[allow(missing_docs)]
         getCoprocessorSigners(getCoprocessorSignersCall),
         #[allow(missing_docs)]
         getCoprocessorTxSenders(getCoprocessorTxSendersCall),
+        #[allow(missing_docs)]
+        getCurrentCoprocessorContextId(getCurrentCoprocessorContextIdCall),
         #[allow(missing_docs)]
         getCurrentKmsContextId(getCurrentKmsContextIdCall),
         #[allow(missing_docs)]
@@ -14815,7 +16441,11 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         #[allow(missing_docs)]
         isCoprocessorSigner(isCoprocessorSignerCall),
         #[allow(missing_docs)]
+        isCoprocessorSignerForContext(isCoprocessorSignerForContextCall),
+        #[allow(missing_docs)]
         isCoprocessorTxSender(isCoprocessorTxSenderCall),
+        #[allow(missing_docs)]
+        isCoprocessorTxSenderForContext(isCoprocessorTxSenderForContextCall),
         #[allow(missing_docs)]
         isCustodianSigner(isCustodianSignerCall),
         #[allow(missing_docs)]
@@ -14835,6 +16465,8 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         #[allow(missing_docs)]
         isPauser(isPauserCall),
         #[allow(missing_docs)]
+        isValidCoprocessorContext(isValidCoprocessorContextCall),
+        #[allow(missing_docs)]
         isValidKmsContext(isValidKmsContextCall),
         #[allow(missing_docs)]
         pauseAllGatewayContracts(pauseAllGatewayContractsCall),
@@ -14842,8 +16474,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         removeHostChain(removeHostChainCall),
         #[allow(missing_docs)]
         unpauseAllGatewayContracts(unpauseAllGatewayContractsCall),
-        #[allow(missing_docs)]
-        updateCoprocessorThreshold(updateCoprocessorThresholdCall),
         #[allow(missing_docs)]
         updateCoprocessors(updateCoprocessorsCall),
         #[allow(missing_docs)]
@@ -14861,6 +16491,8 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [1u8, 61u8, 194u8, 30u8],
             [13u8, 142u8, 110u8, 44u8],
+            [14u8, 24u8, 135u8, 201u8],
+            [23u8, 10u8, 41u8, 129u8],
             [30u8, 165u8, 189u8, 66u8],
             [32u8, 61u8, 1u8, 20u8],
             [37u8, 133u8, 187u8, 101u8],
@@ -14876,12 +16508,13 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             [72u8, 20u8, 76u8, 97u8],
             [91u8, 172u8, 231u8, 255u8],
             [91u8, 255u8, 118u8, 217u8],
+            [96u8, 154u8, 219u8, 114u8],
             [103u8, 153u8, 239u8, 82u8],
+            [108u8, 191u8, 151u8, 18u8],
             [116u8, 32u8, 243u8, 212u8],
             [121u8, 139u8, 88u8, 166u8],
             [124u8, 121u8, 126u8, 116u8],
             [126u8, 170u8, 200u8, 242u8],
-            [131u8, 187u8, 46u8, 87u8],
             [136u8, 45u8, 125u8, 211u8],
             [145u8, 100u8, 208u8, 174u8],
             [148u8, 71u8, 207u8, 212u8],
@@ -14899,16 +16532,21 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             [203u8, 90u8, 167u8, 233u8],
             [204u8, 197u8, 13u8, 186u8],
             [209u8, 15u8, 127u8, 249u8],
-            [213u8, 225u8, 107u8, 125u8],
+            [215u8, 64u8, 228u8, 2u8],
             [221u8, 144u8, 133u8, 30u8],
             [227u8, 178u8, 168u8, 116u8],
             [229u8, 39u8, 94u8, 175u8],
+            [235u8, 15u8, 119u8, 100u8],
             [239u8, 105u8, 151u8, 249u8],
+            [241u8, 41u8, 80u8, 83u8],
+            [246u8, 125u8, 227u8, 124u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(updateCustodians),
             ::core::stringify!(getVersion),
+            ::core::stringify!(isValidCoprocessorContext),
+            ::core::stringify!(getCurrentCoprocessorContextId),
             ::core::stringify!(getCoprocessorTxSenders),
             ::core::stringify!(isKmsSigner),
             ::core::stringify!(getHostChains),
@@ -14924,12 +16562,13 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             ::core::stringify!(getProtocolMetadata),
             ::core::stringify!(isCustodianTxSender),
             ::core::stringify!(getKmsSignersForContext),
+            ::core::stringify!(isCoprocessorSignerForContext),
             ::core::stringify!(getCoprocessorMajorityThreshold),
+            ::core::stringify!(getCoprocessorForContext),
             ::core::stringify!(getKmsTxSenders),
             ::core::stringify!(unpauseAllGatewayContracts),
             ::core::stringify!(disableHostChain),
             ::core::stringify!(getKmsSigners),
-            ::core::stringify!(updateCoprocessors),
             ::core::stringify!(isCustodianSigner),
             ::core::stringify!(getCoprocessorSigners),
             ::core::stringify!(isKmsSignerForContext),
@@ -14947,16 +16586,21 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             ::core::stringify!(getCustodian),
             ::core::stringify!(isHostChainDisabled),
             ::core::stringify!(getHostChain),
-            ::core::stringify!(updateCoprocessorThreshold),
+            ::core::stringify!(destroyCoprocessorContext),
             ::core::stringify!(removeHostChain),
             ::core::stringify!(getKmsNode),
             ::core::stringify!(isKmsTxSender),
+            ::core::stringify!(isCoprocessorTxSenderForContext),
             ::core::stringify!(getCoprocessor),
+            ::core::stringify!(updateCoprocessors),
+            ::core::stringify!(getCoprocessorMajorityThresholdForContext),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <updateCustodiansCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <isValidCoprocessorContextCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isKmsSignerCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getHostChainsCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -14972,12 +16616,13 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             <getProtocolMetadataCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isCustodianTxSenderCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsSignersForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <isCoprocessorSignerForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCoprocessorMajorityThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getCoprocessorForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsTxSendersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::SIGNATURE,
             <disableHostChainCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsSignersCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <updateCoprocessorsCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isCustodianSignerCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCoprocessorSignersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isKmsSignerForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -14995,11 +16640,14 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             <getCustodianCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isHostChainDisabledCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getHostChainCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <removeHostChainCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsNodeCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isKmsTxSenderCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <isCoprocessorTxSenderForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCoprocessorCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <updateCoprocessorsCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getCoprocessorMajorityThresholdForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -15026,12 +16674,15 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 45usize;
+        const COUNT: usize = 51usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::addHostChain(_) => {
                     <addHostChainCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::destroyCoprocessorContext(_) => {
+                    <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::destroyKmsContext(_) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
@@ -15045,14 +16696,23 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 Self::getCoprocessor(_) => {
                     <getCoprocessorCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getCoprocessorForContext(_) => {
+                    <getCoprocessorForContextCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getCoprocessorMajorityThreshold(_) => {
                     <getCoprocessorMajorityThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getCoprocessorMajorityThresholdForContext(_) => {
+                    <getCoprocessorMajorityThresholdForContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCoprocessorSigners(_) => {
                     <getCoprocessorSignersCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCoprocessorTxSenders(_) => {
                     <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getCurrentCoprocessorContextId(_) => {
+                    <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCurrentKmsContextId(_) => {
                     <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::SELECTOR
@@ -15111,8 +16771,14 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 Self::isCoprocessorSigner(_) => {
                     <isCoprocessorSignerCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::isCoprocessorSignerForContext(_) => {
+                    <isCoprocessorSignerForContextCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::isCoprocessorTxSender(_) => {
                     <isCoprocessorTxSenderCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::isCoprocessorTxSenderForContext(_) => {
+                    <isCoprocessorTxSenderForContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::isCustodianSigner(_) => {
                     <isCustodianSignerCall as alloy_sol_types::SolCall>::SELECTOR
@@ -15139,6 +16805,9 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     <isKmsTxSenderForContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::isPauser(_) => <isPauserCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::isValidCoprocessorContext(_) => {
+                    <isValidCoprocessorContextCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::isValidKmsContext(_) => {
                     <isValidKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -15150,9 +16819,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 }
                 Self::unpauseAllGatewayContracts(_) => {
                     <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::updateCoprocessorThreshold(_) => {
-                    <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::updateCoprocessors(_) => {
                     <updateCoprocessorsCall as alloy_sol_types::SolCall>::SELECTOR
@@ -15203,6 +16869,28 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             .map(IGatewayConfigCalls::getVersion)
                     }
                     getVersion
+                },
+                {
+                    fn isValidCoprocessorContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isValidCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isValidCoprocessorContext)
+                    }
+                    isValidCoprocessorContext
+                },
+                {
+                    fn getCurrentCoprocessorContextId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::getCurrentCoprocessorContextId)
+                    }
+                    getCurrentCoprocessorContextId
                 },
                 {
                     fn getCoprocessorTxSenders(
@@ -15370,6 +17058,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     getKmsSignersForContext
                 },
                 {
+                    fn isCoprocessorSignerForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isCoprocessorSignerForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isCoprocessorSignerForContext)
+                    }
+                    isCoprocessorSignerForContext
+                },
+                {
                     fn getCoprocessorMajorityThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -15379,6 +17078,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             .map(IGatewayConfigCalls::getCoprocessorMajorityThreshold)
                     }
                     getCoprocessorMajorityThreshold
+                },
+                {
+                    fn getCoprocessorForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getCoprocessorForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::getCoprocessorForContext)
+                    }
+                    getCoprocessorForContext
                 },
                 {
                     fn getKmsTxSenders(
@@ -15423,17 +17133,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             .map(IGatewayConfigCalls::getKmsSigners)
                     }
                     getKmsSigners
-                },
-                {
-                    fn updateCoprocessors(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCoprocessorsCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateCoprocessors)
-                    }
-                    updateCoprocessors
                 },
                 {
                     fn isCustodianSigner(
@@ -15625,15 +17324,15 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     getHostChain
                 },
                 {
-                    fn updateCoprocessorThreshold(
+                    fn destroyCoprocessorContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(IGatewayConfigCalls::updateCoprocessorThreshold)
+                            .map(IGatewayConfigCalls::destroyCoprocessorContext)
                     }
-                    updateCoprocessorThreshold
+                    destroyCoprocessorContext
                 },
                 {
                     fn removeHostChain(
@@ -15669,6 +17368,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     isKmsTxSender
                 },
                 {
+                    fn isCoprocessorTxSenderForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isCoprocessorTxSenderForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isCoprocessorTxSenderForContext)
+                    }
+                    isCoprocessorTxSenderForContext
+                },
+                {
                     fn getCoprocessor(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -15678,6 +17388,30 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             .map(IGatewayConfigCalls::getCoprocessor)
                     }
                     getCoprocessor
+                },
+                {
+                    fn updateCoprocessors(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <updateCoprocessorsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::updateCoprocessors)
+                    }
+                    updateCoprocessors
+                },
+                {
+                    fn getCoprocessorMajorityThresholdForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getCoprocessorMajorityThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigCalls::getCoprocessorMajorityThresholdForContext,
+                            )
+                    }
+                    getCoprocessorMajorityThresholdForContext
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -15720,6 +17454,28 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             .map(IGatewayConfigCalls::getVersion)
                     }
                     getVersion
+                },
+                {
+                    fn isValidCoprocessorContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isValidCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isValidCoprocessorContext)
+                    }
+                    isValidCoprocessorContext
+                },
+                {
+                    fn getCurrentCoprocessorContextId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::getCurrentCoprocessorContextId)
+                    }
+                    getCurrentCoprocessorContextId
                 },
                 {
                     fn getCoprocessorTxSenders(
@@ -15889,6 +17645,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     getKmsSignersForContext
                 },
                 {
+                    fn isCoprocessorSignerForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isCoprocessorSignerForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isCoprocessorSignerForContext)
+                    }
+                    isCoprocessorSignerForContext
+                },
+                {
                     fn getCoprocessorMajorityThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -15898,6 +17665,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             .map(IGatewayConfigCalls::getCoprocessorMajorityThreshold)
                     }
                     getCoprocessorMajorityThreshold
+                },
+                {
+                    fn getCoprocessorForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getCoprocessorForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::getCoprocessorForContext)
+                    }
+                    getCoprocessorForContext
                 },
                 {
                     fn getKmsTxSenders(
@@ -15942,17 +17720,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             .map(IGatewayConfigCalls::getKmsSigners)
                     }
                     getKmsSigners
-                },
-                {
-                    fn updateCoprocessors(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCoprocessorsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateCoprocessors)
-                    }
-                    updateCoprocessors
                 },
                 {
                     fn isCustodianSigner(
@@ -16144,15 +17911,15 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     getHostChain
                 },
                 {
-                    fn updateCoprocessorThreshold(
+                    fn destroyCoprocessorContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(IGatewayConfigCalls::updateCoprocessorThreshold)
+                            .map(IGatewayConfigCalls::destroyCoprocessorContext)
                     }
-                    updateCoprocessorThreshold
+                    destroyCoprocessorContext
                 },
                 {
                     fn removeHostChain(
@@ -16188,6 +17955,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     isKmsTxSender
                 },
                 {
+                    fn isCoprocessorTxSenderForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isCoprocessorTxSenderForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isCoprocessorTxSenderForContext)
+                    }
+                    isCoprocessorTxSenderForContext
+                },
+                {
                     fn getCoprocessor(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -16197,6 +17975,30 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             .map(IGatewayConfigCalls::getCoprocessor)
                     }
                     getCoprocessor
+                },
+                {
+                    fn updateCoprocessors(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <updateCoprocessorsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::updateCoprocessors)
+                    }
+                    updateCoprocessors
+                },
+                {
+                    fn getCoprocessorMajorityThresholdForContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <getCoprocessorMajorityThresholdForContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigCalls::getCoprocessorMajorityThresholdForContext,
+                            )
+                    }
+                    getCoprocessorMajorityThresholdForContext
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -16214,6 +18016,11 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             match self {
                 Self::addHostChain(inner) => {
                     <addHostChainCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::destroyCoprocessorContext(inner) => {
+                    <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -16237,8 +18044,18 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         inner,
                     )
                 }
+                Self::getCoprocessorForContext(inner) => {
+                    <getCoprocessorForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getCoprocessorMajorityThreshold(inner) => {
                     <getCoprocessorMajorityThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getCoprocessorMajorityThresholdForContext(inner) => {
+                    <getCoprocessorMajorityThresholdForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -16249,6 +18066,11 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 }
                 Self::getCoprocessorTxSenders(inner) => {
                     <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getCurrentCoprocessorContextId(inner) => {
+                    <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -16343,8 +18165,18 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         inner,
                     )
                 }
+                Self::isCoprocessorSignerForContext(inner) => {
+                    <isCoprocessorSignerForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::isCoprocessorTxSender(inner) => {
                     <isCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::isCoprocessorTxSenderForContext(inner) => {
+                    <isCoprocessorTxSenderForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -16391,6 +18223,11 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 Self::isPauser(inner) => {
                     <isPauserCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
+                Self::isValidCoprocessorContext(inner) => {
+                    <isValidCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::isValidKmsContext(inner) => {
                     <isValidKmsContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -16408,11 +18245,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 }
                 Self::unpauseAllGatewayContracts(inner) => {
                     <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::updateCoprocessorThreshold(inner) => {
-                    <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -16442,6 +18274,12 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         out,
                     )
                 }
+                Self::destroyCoprocessorContext(inner) => {
+                    <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::destroyKmsContext(inner) => {
                     <destroyKmsContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -16466,8 +18304,20 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         out,
                     )
                 }
+                Self::getCoprocessorForContext(inner) => {
+                    <getCoprocessorForContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getCoprocessorMajorityThreshold(inner) => {
                     <getCoprocessorMajorityThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getCoprocessorMajorityThresholdForContext(inner) => {
+                    <getCoprocessorMajorityThresholdForContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -16480,6 +18330,12 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 }
                 Self::getCoprocessorTxSenders(inner) => {
                     <getCoprocessorTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getCurrentCoprocessorContextId(inner) => {
+                    <getCurrentCoprocessorContextIdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -16598,8 +18454,20 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         out,
                     )
                 }
+                Self::isCoprocessorSignerForContext(inner) => {
+                    <isCoprocessorSignerForContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::isCoprocessorTxSender(inner) => {
                     <isCoprocessorTxSenderCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::isCoprocessorTxSenderForContext(inner) => {
+                    <isCoprocessorTxSenderForContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -16658,6 +18526,12 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         out,
                     )
                 }
+                Self::isValidCoprocessorContext(inner) => {
+                    <isValidCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::isValidKmsContext(inner) => {
                     <isValidKmsContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -16678,12 +18552,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 }
                 Self::unpauseAllGatewayContracts(inner) => {
                     <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::updateCoprocessorThreshold(inner) => {
-                    <updateCoprocessorThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -16721,9 +18589,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         #[allow(missing_docs)]
         ChainIdNotUint64(ChainIdNotUint64),
         #[allow(missing_docs)]
+        CoprocessorContextAlreadyRegistered(CoprocessorContextAlreadyRegistered),
+        #[allow(missing_docs)]
+        CoprocessorSetExceedsProofFormatLimit(CoprocessorSetExceedsProofFormatLimit),
+        #[allow(missing_docs)]
         CoprocessorSignerAlreadyRegistered(CoprocessorSignerAlreadyRegistered),
         #[allow(missing_docs)]
         CoprocessorTxSenderAlreadyRegistered(CoprocessorTxSenderAlreadyRegistered),
+        #[allow(missing_docs)]
+        CurrentCoprocessorContextCannotBeDestroyed(
+            CurrentCoprocessorContextCannotBeDestroyed,
+        ),
         #[allow(missing_docs)]
         CurrentKmsContextCannotBeDestroyed(CurrentKmsContextCannotBeDestroyed),
         #[allow(missing_docs)]
@@ -16747,7 +18623,9 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         #[allow(missing_docs)]
         HostChainNotRegistered(HostChainNotRegistered),
         #[allow(missing_docs)]
-        InvalidHighCoprocessorThreshold(InvalidHighCoprocessorThreshold),
+        InvalidCoprocessorContext(InvalidCoprocessorContext),
+        #[allow(missing_docs)]
+        InvalidCoprocessorMajorityThreshold(InvalidCoprocessorMajorityThreshold),
         #[allow(missing_docs)]
         InvalidHighKmsGenThreshold(InvalidHighKmsGenThreshold),
         #[allow(missing_docs)]
@@ -16761,7 +18639,7 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         #[allow(missing_docs)]
         InvalidNullChainId(InvalidNullChainId),
         #[allow(missing_docs)]
-        InvalidNullCoprocessorThreshold(InvalidNullCoprocessorThreshold),
+        InvalidNullCoprocessorContextId(InvalidNullCoprocessorContextId),
         #[allow(missing_docs)]
         InvalidNullKmsContextId(InvalidNullKmsContextId),
         #[allow(missing_docs)]
@@ -16793,6 +18671,7 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [1u8, 49u8, 181u8, 233u8],
             [6u8, 140u8, 141u8, 64u8],
+            [13u8, 66u8, 225u8, 200u8],
             [15u8, 105u8, 203u8, 252u8],
             [20u8, 238u8, 189u8, 73u8],
             [22u8, 167u8, 39u8, 120u8],
@@ -16803,20 +18682,23 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             [62u8, 229u8, 7u8, 116u8],
             [65u8, 120u8, 222u8, 66u8],
             [69u8, 149u8, 252u8, 226u8],
+            [79u8, 81u8, 20u8, 187u8],
             [84u8, 123u8, 142u8, 75u8],
             [90u8, 115u8, 227u8, 131u8],
+            [104u8, 147u8, 191u8, 246u8],
             [109u8, 165u8, 127u8, 153u8],
+            [118u8, 175u8, 7u8, 116u8],
             [119u8, 221u8, 190u8, 129u8],
             [122u8, 162u8, 109u8, 16u8],
             [132u8, 32u8, 143u8, 35u8],
             [138u8, 240u8, 130u8, 239u8],
             [144u8, 126u8, 102u8, 129u8],
             [150u8, 165u8, 104u8, 40u8],
-            [151u8, 190u8, 171u8, 173u8],
+            [151u8, 151u8, 195u8, 255u8],
             [166u8, 254u8, 248u8, 183u8],
             [171u8, 27u8, 156u8, 169u8],
             [177u8, 174u8, 146u8, 234u8],
-            [182u8, 13u8, 36u8, 65u8],
+            [180u8, 114u8, 205u8, 90u8],
             [182u8, 103u8, 156u8, 59u8],
             [189u8, 124u8, 184u8, 129u8],
             [202u8, 209u8, 213u8, 52u8],
@@ -16830,6 +18712,7 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(CoprocessorSignerAlreadyRegistered),
             ::core::stringify!(EmptyKmsNodes),
+            ::core::stringify!(InvalidNullCoprocessorContextId),
             ::core::stringify!(InvalidHighKmsGenThreshold),
             ::core::stringify!(InvalidNullKmsContextId),
             ::core::stringify!(KmsSignerSetExceedsProofFormatLimit),
@@ -16840,20 +18723,23 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             ::core::stringify!(InvalidNullKmsGenThreshold),
             ::core::stringify!(ChainIdNotUint64),
             ::core::stringify!(CurrentKmsContextCannotBeDestroyed),
+            ::core::stringify!(CoprocessorSetExceedsProofFormatLimit),
             ::core::stringify!(AllGatewayContractsAlreadyPaused),
             ::core::stringify!(HostChainAlreadyEnabled),
+            ::core::stringify!(CurrentCoprocessorContextCannotBeDestroyed),
             ::core::stringify!(CustodianTxSenderAlreadyRegistered),
+            ::core::stringify!(InvalidCoprocessorMajorityThreshold),
             ::core::stringify!(InvalidKmsContext),
             ::core::stringify!(AllGatewayContractsAlreadyUnpaused),
             ::core::stringify!(InvalidHighPublicDecryptionThreshold),
             ::core::stringify!(EmptyCoprocessors),
             ::core::stringify!(InvalidHighMpcThreshold),
             ::core::stringify!(HostChainAlreadyRegistered),
-            ::core::stringify!(InvalidHighCoprocessorThreshold),
+            ::core::stringify!(InvalidCoprocessorContext),
             ::core::stringify!(HostChainAlreadyDisabled),
             ::core::stringify!(HostChainNotDisabled),
             ::core::stringify!(InvalidNullPublicDecryptionThreshold),
-            ::core::stringify!(InvalidNullCoprocessorThreshold),
+            ::core::stringify!(CoprocessorContextAlreadyRegistered),
             ::core::stringify!(HostChainNotRegistered),
             ::core::stringify!(CoprocessorTxSenderAlreadyRegistered),
             ::core::stringify!(EmptyCustodians),
@@ -16867,6 +18753,7 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         pub const SIGNATURES: &'static [&'static str] = &[
             <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyKmsNodes as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidNullCoprocessorContextId as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidNullKmsContextId as alloy_sol_types::SolError>::SIGNATURE,
             <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SIGNATURE,
@@ -16877,20 +18764,23 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
             <InvalidNullKmsGenThreshold as alloy_sol_types::SolError>::SIGNATURE,
             <ChainIdNotUint64 as alloy_sol_types::SolError>::SIGNATURE,
             <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SIGNATURE,
+            <CoprocessorSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SIGNATURE,
             <AllGatewayContractsAlreadyPaused as alloy_sol_types::SolError>::SIGNATURE,
             <HostChainAlreadyEnabled as alloy_sol_types::SolError>::SIGNATURE,
+            <CurrentCoprocessorContextCannotBeDestroyed as alloy_sol_types::SolError>::SIGNATURE,
             <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidCoprocessorMajorityThreshold as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidKmsContext as alloy_sol_types::SolError>::SIGNATURE,
             <AllGatewayContractsAlreadyUnpaused as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidHighPublicDecryptionThreshold as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyCoprocessors as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidHighMpcThreshold as alloy_sol_types::SolError>::SIGNATURE,
             <HostChainAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
-            <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidCoprocessorContext as alloy_sol_types::SolError>::SIGNATURE,
             <HostChainAlreadyDisabled as alloy_sol_types::SolError>::SIGNATURE,
             <HostChainNotDisabled as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::SIGNATURE,
-            <InvalidNullCoprocessorThreshold as alloy_sol_types::SolError>::SIGNATURE,
+            <CoprocessorContextAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
             <HostChainNotRegistered as alloy_sol_types::SolError>::SIGNATURE,
             <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyCustodians as alloy_sol_types::SolError>::SIGNATURE,
@@ -16925,7 +18815,7 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 34usize;
+        const COUNT: usize = 38usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -16938,11 +18828,20 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 Self::ChainIdNotUint64(_) => {
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::CoprocessorContextAlreadyRegistered(_) => {
+                    <CoprocessorContextAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CoprocessorSetExceedsProofFormatLimit(_) => {
+                    <CoprocessorSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::CoprocessorSignerAlreadyRegistered(_) => {
                     <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::CoprocessorTxSenderAlreadyRegistered(_) => {
                     <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CurrentCoprocessorContextCannotBeDestroyed(_) => {
+                    <CurrentCoprocessorContextCannotBeDestroyed as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::CurrentKmsContextCannotBeDestroyed(_) => {
                     <CurrentKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SELECTOR
@@ -16977,8 +18876,11 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 Self::HostChainNotRegistered(_) => {
                     <HostChainNotRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidHighCoprocessorThreshold(_) => {
-                    <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::SELECTOR
+                Self::InvalidCoprocessorContext(_) => {
+                    <InvalidCoprocessorContext as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidCoprocessorMajorityThreshold(_) => {
+                    <InvalidCoprocessorMajorityThreshold as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidHighKmsGenThreshold(_) => {
                     <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::SELECTOR
@@ -16998,8 +18900,8 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 Self::InvalidNullChainId(_) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidNullCoprocessorThreshold(_) => {
-                    <InvalidNullCoprocessorThreshold as alloy_sol_types::SolError>::SELECTOR
+                Self::InvalidNullCoprocessorContextId(_) => {
+                    <InvalidNullCoprocessorContextId as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidNullKmsContextId(_) => {
                     <InvalidNullKmsContextId as alloy_sol_types::SolError>::SELECTOR
@@ -17071,6 +18973,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             .map(IGatewayConfigErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
+                },
+                {
+                    fn InvalidNullCoprocessorContextId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidNullCoprocessorContextId as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::InvalidNullCoprocessorContextId)
+                    }
+                    InvalidNullCoprocessorContextId
                 },
                 {
                     fn InvalidHighKmsGenThreshold(
@@ -17185,6 +19098,19 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     CurrentKmsContextCannotBeDestroyed
                 },
                 {
+                    fn CoprocessorSetExceedsProofFormatLimit(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CoprocessorSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CoprocessorSetExceedsProofFormatLimit,
+                            )
+                    }
+                    CoprocessorSetExceedsProofFormatLimit
+                },
+                {
                     fn AllGatewayContractsAlreadyPaused(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -17207,6 +19133,19 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     HostChainAlreadyEnabled
                 },
                 {
+                    fn CurrentCoprocessorContextCannotBeDestroyed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CurrentCoprocessorContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CurrentCoprocessorContextCannotBeDestroyed,
+                            )
+                    }
+                    CurrentCoprocessorContextCannotBeDestroyed
+                },
+                {
                     fn CustodianTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -17218,6 +19157,19 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             )
                     }
                     CustodianTxSenderAlreadyRegistered
+                },
+                {
+                    fn InvalidCoprocessorMajorityThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidCoprocessorMajorityThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::InvalidCoprocessorMajorityThreshold,
+                            )
+                    }
+                    InvalidCoprocessorMajorityThreshold
                 },
                 {
                     fn InvalidKmsContext(
@@ -17290,15 +19242,15 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     HostChainAlreadyRegistered
                 },
                 {
-                    fn InvalidHighCoprocessorThreshold(
+                    fn InvalidCoprocessorContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <InvalidCoprocessorContext as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                             )
-                            .map(IGatewayConfigErrors::InvalidHighCoprocessorThreshold)
+                            .map(IGatewayConfigErrors::InvalidCoprocessorContext)
                     }
-                    InvalidHighCoprocessorThreshold
+                    InvalidCoprocessorContext
                 },
                 {
                     fn HostChainAlreadyDisabled(
@@ -17336,15 +19288,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     InvalidNullPublicDecryptionThreshold
                 },
                 {
-                    fn InvalidNullCoprocessorThreshold(
+                    fn CoprocessorContextAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CoprocessorContextAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                             )
-                            .map(IGatewayConfigErrors::InvalidNullCoprocessorThreshold)
+                            .map(
+                                IGatewayConfigErrors::CoprocessorContextAlreadyRegistered,
+                            )
                     }
-                    InvalidNullCoprocessorThreshold
+                    CoprocessorContextAlreadyRegistered
                 },
                 {
                     fn HostChainNotRegistered(
@@ -17485,6 +19439,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     EmptyKmsNodes
                 },
                 {
+                    fn InvalidNullCoprocessorContextId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidNullCoprocessorContextId as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::InvalidNullCoprocessorContextId)
+                    }
+                    InvalidNullCoprocessorContextId
+                },
+                {
                     fn InvalidHighKmsGenThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -17599,6 +19564,19 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     CurrentKmsContextCannotBeDestroyed
                 },
                 {
+                    fn CoprocessorSetExceedsProofFormatLimit(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CoprocessorSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CoprocessorSetExceedsProofFormatLimit,
+                            )
+                    }
+                    CoprocessorSetExceedsProofFormatLimit
+                },
+                {
                     fn AllGatewayContractsAlreadyPaused(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -17621,6 +19599,19 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     HostChainAlreadyEnabled
                 },
                 {
+                    fn CurrentCoprocessorContextCannotBeDestroyed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CurrentCoprocessorContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CurrentCoprocessorContextCannotBeDestroyed,
+                            )
+                    }
+                    CurrentCoprocessorContextCannotBeDestroyed
+                },
+                {
                     fn CustodianTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -17632,6 +19623,19 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             )
                     }
                     CustodianTxSenderAlreadyRegistered
+                },
+                {
+                    fn InvalidCoprocessorMajorityThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidCoprocessorMajorityThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::InvalidCoprocessorMajorityThreshold,
+                            )
+                    }
+                    InvalidCoprocessorMajorityThreshold
                 },
                 {
                     fn InvalidKmsContext(
@@ -17704,15 +19708,15 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     HostChainAlreadyRegistered
                 },
                 {
-                    fn InvalidHighCoprocessorThreshold(
+                    fn InvalidCoprocessorContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                        <InvalidCoprocessorContext as alloy_sol_types::SolError>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(IGatewayConfigErrors::InvalidHighCoprocessorThreshold)
+                            .map(IGatewayConfigErrors::InvalidCoprocessorContext)
                     }
-                    InvalidHighCoprocessorThreshold
+                    InvalidCoprocessorContext
                 },
                 {
                     fn HostChainAlreadyDisabled(
@@ -17750,15 +19754,17 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     InvalidNullPublicDecryptionThreshold
                 },
                 {
-                    fn InvalidNullCoprocessorThreshold(
+                    fn CoprocessorContextAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullCoprocessorThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                        <CoprocessorContextAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(IGatewayConfigErrors::InvalidNullCoprocessorThreshold)
+                            .map(
+                                IGatewayConfigErrors::CoprocessorContextAlreadyRegistered,
+                            )
                     }
-                    InvalidNullCoprocessorThreshold
+                    CoprocessorContextAlreadyRegistered
                 },
                 {
                     fn HostChainNotRegistered(
@@ -17883,6 +19889,16 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         inner,
                     )
                 }
+                Self::CoprocessorContextAlreadyRegistered(inner) => {
+                    <CoprocessorContextAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::CoprocessorSetExceedsProofFormatLimit(inner) => {
+                    <CoprocessorSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::CoprocessorSignerAlreadyRegistered(inner) => {
                     <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -17890,6 +19906,11 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 }
                 Self::CoprocessorTxSenderAlreadyRegistered(inner) => {
                     <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::CurrentCoprocessorContextCannotBeDestroyed(inner) => {
+                    <CurrentCoprocessorContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -17946,8 +19967,13 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         inner,
                     )
                 }
-                Self::InvalidHighCoprocessorThreshold(inner) => {
-                    <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::InvalidCoprocessorContext(inner) => {
+                    <InvalidCoprocessorContext as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::InvalidCoprocessorMajorityThreshold(inner) => {
+                    <InvalidCoprocessorMajorityThreshold as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -17981,8 +20007,8 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         inner,
                     )
                 }
-                Self::InvalidNullCoprocessorThreshold(inner) => {
-                    <InvalidNullCoprocessorThreshold as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::InvalidNullCoprocessorContextId(inner) => {
+                    <InvalidNullCoprocessorContextId as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -18057,6 +20083,18 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         out,
                     )
                 }
+                Self::CoprocessorContextAlreadyRegistered(inner) => {
+                    <CoprocessorContextAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CoprocessorSetExceedsProofFormatLimit(inner) => {
+                    <CoprocessorSetExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::CoprocessorSignerAlreadyRegistered(inner) => {
                     <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -18065,6 +20103,12 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 }
                 Self::CoprocessorTxSenderAlreadyRegistered(inner) => {
                     <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CurrentCoprocessorContextCannotBeDestroyed(inner) => {
+                    <CurrentCoprocessorContextCannotBeDestroyed as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -18135,8 +20179,14 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         out,
                     )
                 }
-                Self::InvalidHighCoprocessorThreshold(inner) => {
-                    <InvalidHighCoprocessorThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::InvalidCoprocessorContext(inner) => {
+                    <InvalidCoprocessorContext as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidCoprocessorMajorityThreshold(inner) => {
+                    <InvalidCoprocessorMajorityThreshold as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -18177,8 +20227,8 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         out,
                     )
                 }
-                Self::InvalidNullCoprocessorThreshold(inner) => {
-                    <InvalidNullCoprocessorThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::InvalidNullCoprocessorContextId(inner) => {
+                    <InvalidNullCoprocessorContextId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -18251,6 +20301,8 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         #[allow(missing_docs)]
         AddHostChain(AddHostChain),
         #[allow(missing_docs)]
+        DestroyCoprocessorContext(DestroyCoprocessorContext),
+        #[allow(missing_docs)]
         DestroyKmsContext(DestroyKmsContext),
         #[allow(missing_docs)]
         DisableHostChain(DisableHostChain),
@@ -18264,8 +20316,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
         RemoveHostChain(RemoveHostChain),
         #[allow(missing_docs)]
         UnpauseAllGatewayContracts(UnpauseAllGatewayContracts),
-        #[allow(missing_docs)]
-        UpdateCoprocessorThreshold(UpdateCoprocessorThreshold),
         #[allow(missing_docs)]
         UpdateCoprocessors(UpdateCoprocessors),
         #[allow(missing_docs)]
@@ -18288,6 +20338,11 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 166u8,
             ],
             [
+                59u8, 252u8, 200u8, 164u8, 192u8, 123u8, 130u8, 109u8, 58u8, 55u8, 227u8,
+                223u8, 28u8, 205u8, 135u8, 163u8, 164u8, 214u8, 184u8, 88u8, 104u8,
+                122u8, 105u8, 143u8, 229u8, 46u8, 37u8, 65u8, 177u8, 168u8, 251u8, 33u8,
+            ],
+            [
                 62u8, 143u8, 2u8, 220u8, 122u8, 246u8, 227u8, 166u8, 127u8, 58u8, 240u8,
                 188u8, 153u8, 188u8, 241u8, 27u8, 77u8, 235u8, 70u8, 16u8, 94u8, 155u8,
                 167u8, 241u8, 172u8, 109u8, 168u8, 35u8, 34u8, 233u8, 2u8, 94u8,
@@ -18308,11 +20363,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 171u8, 33u8, 65u8, 20u8, 172u8, 181u8, 54u8, 241u8, 16u8, 104u8,
             ],
             [
-                122u8, 46u8, 247u8, 220u8, 137u8, 64u8, 10u8, 138u8, 217u8, 43u8, 180u8,
-                204u8, 244u8, 77u8, 72u8, 38u8, 36u8, 180u8, 15u8, 231u8, 107u8, 102u8,
-                151u8, 126u8, 133u8, 237u8, 106u8, 97u8, 142u8, 46u8, 47u8, 199u8,
-            ],
-            [
                 146u8, 164u8, 147u8, 94u8, 197u8, 249u8, 198u8, 109u8, 152u8, 139u8,
                 165u8, 118u8, 48u8, 33u8, 144u8, 168u8, 196u8, 247u8, 78u8, 169u8, 121u8,
                 193u8, 213u8, 19u8, 12u8, 27u8, 252u8, 205u8, 251u8, 113u8, 98u8, 105u8,
@@ -18328,50 +20378,50 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 131u8, 75u8, 36u8, 17u8, 55u8, 205u8, 254u8, 115u8, 165u8, 176u8,
             ],
             [
+                209u8, 113u8, 195u8, 181u8, 127u8, 107u8, 212u8, 16u8, 61u8, 241u8, 77u8,
+                244u8, 11u8, 143u8, 125u8, 198u8, 120u8, 99u8, 28u8, 167u8, 233u8, 27u8,
+                244u8, 237u8, 202u8, 5u8, 10u8, 4u8, 230u8, 73u8, 250u8, 88u8,
+            ],
+            [
                 232u8, 4u8, 117u8, 127u8, 239u8, 148u8, 18u8, 64u8, 136u8, 16u8, 159u8,
                 119u8, 235u8, 73u8, 233u8, 28u8, 177u8, 160u8, 145u8, 198u8, 123u8,
                 109u8, 122u8, 100u8, 74u8, 158u8, 58u8, 238u8, 66u8, 57u8, 181u8, 167u8,
             ],
             [
-                245u8, 217u8, 84u8, 26u8, 75u8, 246u8, 191u8, 75u8, 72u8, 252u8, 121u8,
-                215u8, 168u8, 214u8, 189u8, 73u8, 235u8, 52u8, 53u8, 218u8, 87u8, 220u8,
-                203u8, 234u8, 110u8, 82u8, 90u8, 200u8, 107u8, 191u8, 67u8, 254u8,
-            ],
-            [
-                255u8, 226u8, 11u8, 219u8, 133u8, 94u8, 81u8, 78u8, 148u8, 20u8, 119u8,
-                2u8, 146u8, 38u8, 144u8, 207u8, 29u8, 161u8, 11u8, 221u8, 24u8, 191u8,
-                31u8, 98u8, 21u8, 2u8, 124u8, 147u8, 172u8, 5u8, 212u8, 85u8,
+                242u8, 11u8, 41u8, 152u8, 4u8, 201u8, 193u8, 214u8, 218u8, 59u8, 130u8,
+                65u8, 76u8, 122u8, 160u8, 168u8, 69u8, 205u8, 186u8, 186u8, 226u8, 217u8,
+                14u8, 70u8, 227u8, 96u8, 163u8, 121u8, 167u8, 123u8, 123u8, 229u8,
             ],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(PauseAllGatewayContracts),
+            ::core::stringify!(UpdateCoprocessors),
             ::core::stringify!(DestroyKmsContext),
             ::core::stringify!(EnableHostChain),
             ::core::stringify!(DisableHostChain),
             ::core::stringify!(UpdateCustodians),
-            ::core::stringify!(UpdateCoprocessorThreshold),
             ::core::stringify!(AddHostChain),
             ::core::stringify!(RemoveHostChain),
             ::core::stringify!(UnpauseAllGatewayContracts),
-            ::core::stringify!(UpdateKmsContext),
             ::core::stringify!(InitializeGatewayConfig),
-            ::core::stringify!(UpdateCoprocessors),
+            ::core::stringify!(UpdateKmsContext),
+            ::core::stringify!(DestroyCoprocessorContext),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <PauseAllGatewayContracts as alloy_sol_types::SolEvent>::SIGNATURE,
+            <UpdateCoprocessors as alloy_sol_types::SolEvent>::SIGNATURE,
             <DestroyKmsContext as alloy_sol_types::SolEvent>::SIGNATURE,
             <EnableHostChain as alloy_sol_types::SolEvent>::SIGNATURE,
             <DisableHostChain as alloy_sol_types::SolEvent>::SIGNATURE,
             <UpdateCustodians as alloy_sol_types::SolEvent>::SIGNATURE,
-            <UpdateCoprocessorThreshold as alloy_sol_types::SolEvent>::SIGNATURE,
             <AddHostChain as alloy_sol_types::SolEvent>::SIGNATURE,
             <RemoveHostChain as alloy_sol_types::SolEvent>::SIGNATURE,
             <UnpauseAllGatewayContracts as alloy_sol_types::SolEvent>::SIGNATURE,
-            <UpdateKmsContext as alloy_sol_types::SolEvent>::SIGNATURE,
             <InitializeGatewayConfig as alloy_sol_types::SolEvent>::SIGNATURE,
-            <UpdateCoprocessors as alloy_sol_types::SolEvent>::SIGNATURE,
+            <UpdateKmsContext as alloy_sol_types::SolEvent>::SIGNATURE,
+            <DestroyCoprocessorContext as alloy_sol_types::SolEvent>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -18409,6 +20459,15 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                             data,
                         )
                         .map(Self::AddHostChain)
+                }
+                Some(
+                    <DestroyCoprocessorContext as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <DestroyCoprocessorContext as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::DestroyCoprocessorContext)
                 }
                 Some(
                     <DestroyKmsContext as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -18468,15 +20527,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                         .map(Self::UnpauseAllGatewayContracts)
                 }
                 Some(
-                    <UpdateCoprocessorThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <UpdateCoprocessorThreshold as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::UpdateCoprocessorThreshold)
-                }
-                Some(
                     <UpdateCoprocessors as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
                     <UpdateCoprocessors as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -18520,6 +20570,9 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 Self::AddHostChain(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::DestroyCoprocessorContext(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::DestroyKmsContext(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -18539,9 +20592,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UnpauseAllGatewayContracts(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::UpdateCoprocessorThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UpdateCoprocessors(inner) => {
@@ -18560,6 +20610,9 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                 Self::AddHostChain(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
+                Self::DestroyCoprocessorContext(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
                 Self::DestroyKmsContext(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
@@ -18579,9 +20632,6 @@ function updateKmsContext(uint256 newContextId, KmsNode[] memory newKmsNodes, ui
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UnpauseAllGatewayContracts(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::UpdateCoprocessorThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdateCoprocessors(inner) => {
@@ -18760,6 +20810,17 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, addHostChainCall, N> {
             self.call_builder(&addHostChainCall { hostChain })
         }
+        ///Creates a new call builder for the [`destroyCoprocessorContext`] function.
+        pub fn destroyCoprocessorContext(
+            &self,
+            coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, destroyCoprocessorContextCall, N> {
+            self.call_builder(
+                &destroyCoprocessorContextCall {
+                    coprocessorContextId,
+                },
+            )
+        }
         ///Creates a new call builder for the [`destroyKmsContext`] function.
         pub fn destroyKmsContext(
             &self,
@@ -18796,11 +20857,39 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`getCoprocessorForContext`] function.
+        pub fn getCoprocessorForContext(
+            &self,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
+            coprocessorTxSenderAddress: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, getCoprocessorForContextCall, N> {
+            self.call_builder(
+                &getCoprocessorForContextCall {
+                    contextId,
+                    coprocessorTxSenderAddress,
+                },
+            )
+        }
         ///Creates a new call builder for the [`getCoprocessorMajorityThreshold`] function.
         pub fn getCoprocessorMajorityThreshold(
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, getCoprocessorMajorityThresholdCall, N> {
             self.call_builder(&getCoprocessorMajorityThresholdCall)
+        }
+        ///Creates a new call builder for the [`getCoprocessorMajorityThresholdForContext`] function.
+        pub fn getCoprocessorMajorityThresholdForContext(
+            &self,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            getCoprocessorMajorityThresholdForContextCall,
+            N,
+        > {
+            self.call_builder(
+                &getCoprocessorMajorityThresholdForContextCall {
+                    contextId,
+                },
+            )
         }
         ///Creates a new call builder for the [`getCoprocessorSigners`] function.
         pub fn getCoprocessorSigners(
@@ -18813,6 +20902,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, getCoprocessorTxSendersCall, N> {
             self.call_builder(&getCoprocessorTxSendersCall)
+        }
+        ///Creates a new call builder for the [`getCurrentCoprocessorContextId`] function.
+        pub fn getCurrentCoprocessorContextId(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getCurrentCoprocessorContextIdCall, N> {
+            self.call_builder(&getCurrentCoprocessorContextIdCall)
         }
         ///Creates a new call builder for the [`getCurrentKmsContextId`] function.
         pub fn getCurrentKmsContextId(
@@ -18979,6 +21074,19 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`isCoprocessorSignerForContext`] function.
+        pub fn isCoprocessorSignerForContext(
+            &self,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
+            signerAddress: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, isCoprocessorSignerForContextCall, N> {
+            self.call_builder(
+                &isCoprocessorSignerForContextCall {
+                    contextId,
+                    signerAddress,
+                },
+            )
+        }
         ///Creates a new call builder for the [`isCoprocessorTxSender`] function.
         pub fn isCoprocessorTxSender(
             &self,
@@ -18987,6 +21095,19 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.call_builder(
                 &isCoprocessorTxSenderCall {
                     coprocessorTxSenderAddress,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`isCoprocessorTxSenderForContext`] function.
+        pub fn isCoprocessorTxSenderForContext(
+            &self,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
+            txSenderAddress: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, isCoprocessorTxSenderForContextCall, N> {
+            self.call_builder(
+                &isCoprocessorTxSenderForContextCall {
+                    contextId,
+                    txSenderAddress,
                 },
             )
         }
@@ -19081,6 +21202,17 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, isPauserCall, N> {
             self.call_builder(&isPauserCall { account })
         }
+        ///Creates a new call builder for the [`isValidCoprocessorContext`] function.
+        pub fn isValidCoprocessorContext(
+            &self,
+            contextId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, isValidCoprocessorContextCall, N> {
+            self.call_builder(
+                &isValidCoprocessorContextCall {
+                    contextId,
+                },
+            )
+        }
         ///Creates a new call builder for the [`isValidKmsContext`] function.
         pub fn isValidKmsContext(
             &self,
@@ -19107,20 +21239,10 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, unpauseAllGatewayContractsCall, N> {
             self.call_builder(&unpauseAllGatewayContractsCall)
         }
-        ///Creates a new call builder for the [`updateCoprocessorThreshold`] function.
-        pub fn updateCoprocessorThreshold(
-            &self,
-            newCoprocessorThreshold: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, updateCoprocessorThresholdCall, N> {
-            self.call_builder(
-                &updateCoprocessorThresholdCall {
-                    newCoprocessorThreshold,
-                },
-            )
-        }
         ///Creates a new call builder for the [`updateCoprocessors`] function.
         pub fn updateCoprocessors(
             &self,
+            newContextId: alloy::sol_types::private::primitives::aliases::U256,
             newCoprocessors: alloy::sol_types::private::Vec<
                 <Coprocessor as alloy::sol_types::SolType>::RustType,
             >,
@@ -19128,6 +21250,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, updateCoprocessorsCall, N> {
             self.call_builder(
                 &updateCoprocessorsCall {
+                    newContextId,
                     newCoprocessors,
                     newCoprocessorThreshold,
                 },
@@ -19188,6 +21311,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn AddHostChain_filter(&self) -> alloy_contract::Event<&P, AddHostChain, N> {
             self.event_filter::<AddHostChain>()
         }
+        ///Creates a new event filter for the [`DestroyCoprocessorContext`] event.
+        pub fn DestroyCoprocessorContext_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, DestroyCoprocessorContext, N> {
+            self.event_filter::<DestroyCoprocessorContext>()
+        }
         ///Creates a new event filter for the [`DestroyKmsContext`] event.
         pub fn DestroyKmsContext_filter(
             &self,
@@ -19229,12 +21358,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, UnpauseAllGatewayContracts, N> {
             self.event_filter::<UnpauseAllGatewayContracts>()
-        }
-        ///Creates a new event filter for the [`UpdateCoprocessorThreshold`] event.
-        pub fn UpdateCoprocessorThreshold_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, UpdateCoprocessorThreshold, N> {
-            self.event_filter::<UpdateCoprocessorThreshold>()
         }
         ///Creates a new event filter for the [`UpdateCoprocessors`] event.
         pub fn UpdateCoprocessors_filter(

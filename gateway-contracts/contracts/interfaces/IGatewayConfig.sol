@@ -38,6 +38,7 @@ interface IGatewayConfig {
     /**
      * @notice Emitted when the GatewayConfig initialization is completed.
      * @param kmsContextId The KMS context ID.
+     * @param coprocessorContextId The coprocessor context ID.
      * @param metadata Metadata of the protocol.
      * @param thresholds The operator's thresholds.
      * @param kmsNodes List of KMS nodes.
@@ -46,6 +47,7 @@ interface IGatewayConfig {
      */
     event InitializeGatewayConfig(
         uint256 indexed kmsContextId,
+        uint256 indexed coprocessorContextId,
         ProtocolMetadata metadata,
         Thresholds thresholds,
         KmsNode[] kmsNodes,
@@ -81,23 +83,24 @@ interface IGatewayConfig {
     event DestroyKmsContext(uint256 indexed kmsContextId);
 
     /**
-     * @notice Emitted when the coprocessors have been updated.
-     * @param newCoprocessors The new coprocessors.
-     * @param newCoprocessorThreshold The new coprocessor threshold.
+     * @notice Emitted when a coprocessor context has been stored and made current.
+     * @param contextId The coprocessor context ID, as assigned by `CoprocessorConfig`.
+     * @param newCoprocessors The coprocessors of the context.
+     * @param newCoprocessorThreshold The majority threshold of the context.
      */
-    event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
+    event UpdateCoprocessors(uint256 indexed contextId, Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
+
+    /**
+     * @notice Emitted when a coprocessor context has been destroyed.
+     * @param coprocessorContextId The destroyed coprocessor context ID.
+     */
+    event DestroyCoprocessorContext(uint256 indexed coprocessorContextId);
 
     /**
      * @notice Emitted when the custodians have been updated.
      * @param newCustodians The new custodians.
      */
     event UpdateCustodians(Custodian[] newCustodians);
-
-    /**
-     * @notice Emitted when the coprocessor threshold has been updated.
-     * @param newCoprocessorThreshold The new coprocessor threshold.
-     */
-    event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
 
     /**
      * @notice Emitted when a new host chain has been registered.
@@ -227,16 +230,19 @@ interface IGatewayConfig {
     error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
 
     /**
-     * @notice Error emitted when the coprocessor threshold is null.
+     * @notice Error emitted when the coprocessor set is larger than an input proof can carry (`uint8` signature count).
+     * @param coprocessorCount The number of coprocessors.
+     * @param maxAllowed The maximum number of coprocessors an input proof can carry.
      */
-    error InvalidNullCoprocessorThreshold();
+    error CoprocessorSetExceedsProofFormatLimit(uint256 coprocessorCount, uint256 maxAllowed);
 
     /**
-     * @notice Error emitted when the coprocessor threshold is strictly greater than the number of coprocessors.
-     * @param coprocessorThreshold The coprocessor threshold.
-     * @param nCoprocessors The number of coprocessors.
+     * @notice Error emitted when the coprocessor majority threshold is not more than half the number of
+     * coprocessors, or exceeds it.
+     * @param majorityThreshold The coprocessor majority threshold.
+     * @param coprocessorCount The number of coprocessors.
      */
-    error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCoprocessors);
+    error InvalidCoprocessorMajorityThreshold(uint256 majorityThreshold, uint256 coprocessorCount);
 
     /**
      * @notice Emitted when all the pausable gateway contracts are paused.
@@ -286,6 +292,11 @@ interface IGatewayConfig {
     error InvalidNullKmsContextId();
 
     /**
+     * @notice Error indicating that a null coprocessor context ID is not allowed.
+     */
+    error InvalidNullCoprocessorContextId();
+
+    /**
      * @notice Error emitted when the KMS signer set exceeds the proof format limit (`uint8`
      *         signature count in the `decryptionProof` payload consumed by `KMSVerifier`).
      * @param signerCount The number of signers in the rejected set.
@@ -320,6 +331,25 @@ interface IGatewayConfig {
      * @param kmsContextId The invalid KMS context ID.
      */
     error InvalidKmsContext(uint256 kmsContextId);
+
+    /**
+     * @notice Error emitted when the coprocessor context ID is not strictly greater than the current one.
+     * @param contextId The provided context ID.
+     * @param currentCoprocessorContextId The current coprocessor context ID.
+     */
+    error CoprocessorContextAlreadyRegistered(uint256 contextId, uint256 currentCoprocessorContextId);
+
+    /**
+     * @notice Error emitted when an attempt is made to destroy the current coprocessor context.
+     * @param currentCoprocessorContextId The current coprocessor context ID, which cannot be destroyed.
+     */
+    error CurrentCoprocessorContextCannotBeDestroyed(uint256 currentCoprocessorContextId);
+
+    /**
+     * @notice Error emitted when targeting a coprocessor context that does not exist or has already been destroyed.
+     * @param coprocessorContextId The invalid coprocessor context ID.
+     */
+    error InvalidCoprocessorContext(uint256 coprocessorContextId);
 
     /**
      * @notice Error indicating that a null chain ID is not allowed.
@@ -377,18 +407,28 @@ interface IGatewayConfig {
     function destroyKmsContext(uint256 kmsContextId) external;
 
     /**
-     * @notice Update the list of coprocessors and their threshold.
-     * @dev Applied live — `InputVerification` no longer has to be paused first (the pause coupling was
-     *      removed, see fhevm-internal#1487). This rewrites the coprocessor set and threshold that input
-     *      verification reads on every call, so any in-flight per-proof tally sees the new values
-     *      mid-flight; that is the accepted trade-off, managed by ordering the coprocessor-set changes
-     *      rather than by a pause. Per host chain the ordering invariant must hold at every step: the host
-     *      signer set must be a superset of the gateway's signers, and the host threshold must not exceed
-     *      the number of signatures the gateway emits.
+     * @notice Update the coprocessor context: coprocessors and majority threshold for a given context ID.
+     * @dev Applies a context defined on `CoprocessorConfig` under the same ID, with each coprocessor's
+     *      Gateway transaction sender. It becomes the current one, and earlier contexts stay readable.
+     *      New input verification requests use this context, and requests in progress complete under the
+     *      context they recorded.
+     * @param newContextId The coprocessor context ID, as assigned by `CoprocessorConfig`.
      * @param newCoprocessors The new coprocessors.
-     * @param newCoprocessorThreshold The new coprocessor threshold.
+     * @param newCoprocessorThreshold The new majority threshold.
      */
-    function updateCoprocessors(Coprocessor[] calldata newCoprocessors, uint256 newCoprocessorThreshold) external;
+    function updateCoprocessors(
+        uint256 newContextId,
+        Coprocessor[] calldata newCoprocessors,
+        uint256 newCoprocessorThreshold
+    ) external;
+
+    /**
+     * @notice Destroy a non-current coprocessor context, preventing it from being used for verification.
+     * @dev Input verification requests tied to a destroyed context can no longer complete. Reverts for the
+     *      current context, an unknown ID or an already destroyed one.
+     * @param coprocessorContextId The coprocessor context to destroy.
+     */
+    function destroyCoprocessorContext(uint256 coprocessorContextId) external;
 
     /**
      * @notice Update the list of custodians.
@@ -396,18 +436,6 @@ interface IGatewayConfig {
      * @param newCustodians The new custodians.
      */
     function updateCustodians(Custodian[] calldata newCustodians) external;
-
-    /**
-     * @notice Update the coprocessor threshold.
-     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of coprocessors currently registered.
-     *      Applied live — `InputVerification` no longer has to be paused first (the pause coupling was removed,
-     *      see fhevm-internal#1487); `InputVerification` reads the threshold each time a coprocessor
-     *      responds. For a proof that is still pending, the next response is compared against the new
-     *      threshold. Raise each host chain threshold only after this one. If you raise a host chain
-     *      threshold first, the host reverts with `SignatureThresholdNotReached`.
-     * @param newCoprocessorThreshold The new coprocessor threshold.
-     */
-    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
 
     /**
      * @notice Add a new host chain metadata to the GatewayConfig contract.
@@ -459,13 +487,13 @@ interface IGatewayConfig {
     function isKmsSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Indicates if an address is a registered coprocessor transaction sender.
+     * @notice Indicates if an address is a coprocessor transaction sender in the current coprocessor context.
      * @param coprocessorTxSenderAddress The address to check.
      */
     function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view returns (bool);
 
     /**
-     * @notice Indicates if an address is a registered coprocessor signer.
+     * @notice Indicates if an address is a coprocessor signer in the current coprocessor context.
      * @param signerAddress The address to check.
      */
     function isCoprocessorSigner(address signerAddress) external view returns (bool);
@@ -521,7 +549,7 @@ interface IGatewayConfig {
     function getKmsGenThreshold() external view returns (uint256);
 
     /**
-     * @notice Get the coprocessor majority threshold
+     * @notice Get the majority threshold of the current coprocessor context.
      * @return The coprocessor majority threshold.
      */
     function getCoprocessorMajorityThreshold() external view returns (uint256);
@@ -545,19 +573,19 @@ interface IGatewayConfig {
     function getKmsSigners() external view returns (address[] memory);
 
     /**
-     * @notice Get the metadata of the coprocessor with the given transaction sender address.
+     * @notice Get the metadata of a coprocessor of the current coprocessor context, by transaction sender address.
      * @return The coprocessor's metadata.
      */
     function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
 
     /**
-     * @notice Get the list of all coprocessors' transaction sender addresses currently registered.
+     * @notice Get the transaction sender addresses of the current coprocessor context.
      * @return The list of coprocessors' transaction sender addresses.
      */
     function getCoprocessorTxSenders() external view returns (address[] memory);
 
     /**
-     * @notice Get the list of all coprocessors' signer addresses currently registered.
+     * @notice Get the signer addresses of the current coprocessor context.
      * @return The list of coprocessors' signer addresses.
      */
     function getCoprocessorSigners() external view returns (address[] memory);
@@ -664,4 +692,49 @@ interface IGatewayConfig {
      * @dev This is conventionally used for upgrade features.
      */
     function getVersion() external pure returns (string memory);
+
+    /**
+     * @notice Get the current coprocessor context ID.
+     */
+    function getCurrentCoprocessorContextId() external view returns (uint256);
+
+    /**
+     * @notice Indicates whether a coprocessor context has been stored and not destroyed.
+     * @param contextId The coprocessor context ID.
+     */
+    function isValidCoprocessorContext(uint256 contextId) external view returns (bool);
+
+    /**
+     * @notice Indicates if an address is a coprocessor transaction sender in a coprocessor context.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     * @param contextId The coprocessor context ID.
+     * @param txSenderAddress The address to check.
+     */
+    function isCoprocessorTxSenderForContext(uint256 contextId, address txSenderAddress) external view returns (bool);
+
+    /**
+     * @notice Indicates if an address is a coprocessor signer in a coprocessor context.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     * @param contextId The coprocessor context ID.
+     * @param signerAddress The address to check.
+     */
+    function isCoprocessorSignerForContext(uint256 contextId, address signerAddress) external view returns (bool);
+
+    /**
+     * @notice Get a coprocessor's metadata in a coprocessor context.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     * @param contextId The coprocessor context ID.
+     * @param coprocessorTxSenderAddress The coprocessor's transaction sender address.
+     */
+    function getCoprocessorForContext(
+        uint256 contextId,
+        address coprocessorTxSenderAddress
+    ) external view returns (Coprocessor memory);
+
+    /**
+     * @notice Get the majority threshold of a coprocessor context.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     * @param contextId The coprocessor context ID.
+     */
+    function getCoprocessorMajorityThresholdForContext(uint256 contextId) external view returns (uint256);
 }

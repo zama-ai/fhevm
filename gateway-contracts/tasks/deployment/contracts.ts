@@ -63,6 +63,9 @@ task('task:deployGatewayConfig').setAction(async function (_, hre) {
   // Parse the initial KMS context ID
   const initialKmsContextId = getRequiredEnvVar('KMS_CONTEXT_ID');
 
+  // Parse the initial coprocessor context ID
+  const initialCoprocessorContextId = getRequiredEnvVar('COPROCESSOR_CONTEXT_ID');
+
   // Parse the MPC threshold
   const mpcThreshold = getRequiredEnvVar('MPC_THRESHOLD');
 
@@ -110,6 +113,7 @@ task('task:deployGatewayConfig').setAction(async function (_, hre) {
     });
   }
   console.log('Initial KMS context ID:', initialKmsContextId);
+  console.log('Initial coprocessor context ID:', initialCoprocessorContextId);
   console.log('Protocol metadata:', protocolMetadata);
   console.log('MPC threshold:', mpcThreshold);
   console.log('Public decryption threshold:', publicDecryptionThreshold);
@@ -131,6 +135,7 @@ task('task:deployGatewayConfig').setAction(async function (_, hre) {
   // as it is made ownable
   await deployContractImplementation('GatewayConfig', hre, GATEWAY_CONFIG_EMPTY_PROXY_NAME, true, [
     initialKmsContextId,
+    initialCoprocessorContextId,
     protocolMetadata,
     thresholds,
     kmsNodes,

@@ -87,8 +87,7 @@ The snapshot contains:
 `gw-listener` refreshes this snapshot:
 
 - at startup;
-- after `UpdateCoprocessors`;
-- after `UpdateCoprocessorThreshold`; and
+- after `UpdateCoprocessors`, which a threshold change also emits; and
 - periodically, every 30 minutes by default.
 
 An event-triggered refresh first verifies that the event block number still has the

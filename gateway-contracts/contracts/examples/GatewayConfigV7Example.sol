@@ -18,7 +18,18 @@ contract GatewayConfigV7Example is GatewayConfig {
         uint256 initialCoprocessorThreshold
     ) public virtual reinitializer(8) {
         __Ownable_init(initialOwner);
-        _setCoprocessors(initialCoprocessors, initialCoprocessorThreshold);
+
+        // The coprocessor set as GatewayConfig stored it before coprocessor contexts.
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        for (uint256 i = 0; i < initialCoprocessors.length; i++) {
+            Coprocessor calldata coprocessor = initialCoprocessors[i];
+            $.isCoprocessorTxSender[coprocessor.txSenderAddress] = true;
+            $.isCoprocessorSigner[coprocessor.signerAddress] = true;
+            $.coprocessors[coprocessor.txSenderAddress] = coprocessor;
+            $.coprocessorTxSenderAddresses.push(coprocessor.txSenderAddress);
+            $.coprocessorSignerAddresses.push(coprocessor.signerAddress);
+        }
+        $.coprocessorThreshold = initialCoprocessorThreshold;
     }
 
     function getVersion() external pure virtual override returns (string memory) {
