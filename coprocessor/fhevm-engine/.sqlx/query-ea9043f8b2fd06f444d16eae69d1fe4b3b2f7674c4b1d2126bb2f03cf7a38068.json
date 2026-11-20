@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM pad_consensus\n              WHERE COALESCE(done_at, created_at) < NOW() - make_interval(secs => $1)\n                AND outcome IS DISTINCT FROM 'drift'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ea9043f8b2fd06f444d16eae69d1fe4b3b2f7674c4b1d2126bb2f03cf7a38068"
+}

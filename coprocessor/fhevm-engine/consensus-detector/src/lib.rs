@@ -77,6 +77,7 @@ use tracing::{debug, error, info, warn, Level};
 
 mod decision;
 pub mod manifest_consensus;
+pub mod pad_consensus;
 pub mod s3;
 pub mod state_hash;
 
@@ -145,6 +146,8 @@ pub struct Config {
     pub manifest_consensus: manifest_consensus::Config,
     /// Signer used for this consensus_epoch's immutable manifests.
     pub manifest_signer: Option<fhevm_engine_common::types::CoproSigner>,
+    /// The comparison of the pad outputs with the other coprocessors.
+    pub pad_consensus: pad_consensus::Config,
 }
 
 impl Default for Config {
@@ -166,6 +169,7 @@ impl Default for Config {
             state_hash_batch_limit: 256,
             manifest_consensus: manifest_consensus::Config::default(),
             manifest_signer: None,
+            pad_consensus: pad_consensus::Config::default(),
         }
     }
 }
@@ -1167,6 +1171,13 @@ where
         .build()?;
 
     let s3_client = Arc::new(build_s3_client(&config).await);
+
+    tokio::spawn(pad_consensus::run(
+        pool.clone(),
+        http.clone(),
+        config.pad_consensus.clone(),
+        cancel.child_token(),
+    ));
 
     // GCS upload only when --my-bucket names a real bucket.
     let s3 = if config.my_bucket.is_none() {

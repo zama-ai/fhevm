@@ -1,6 +1,7 @@
 //! The `pads` rows of one PRF instance: claim, output, failure, upload and GC.
 
 use alloy::primitives::{Address, B256};
+use bytes::Bytes;
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
 use sqlx::{types::Uuid, PgPool};
 use std::time::Duration;
@@ -150,7 +151,8 @@ pub async fn fail(pool: &PgPool, claim: &Claim, message: &str) -> sqlx::Result<(
 }
 
 /// After a temporary error: holds the claim for a backoff that grows with each attempt. Never fails
-/// the row: a row that keeps failing expires. Changes only a row with the token of `claim`.
+/// the row: a row that keeps failing expires. Changes only a row with the token of `claim`. Clears
+/// the token, so that a late renewal or release does not change the backoff.
 pub async fn retry(
     pool: &PgPool,
     claim: &Claim,
@@ -161,7 +163,8 @@ pub async fn retry(
         "UPDATE pads
             SET attempts = attempts + 1, error_message = $4,
                 claimed_at = NOW() - make_interval(secs => $5)
-                             + make_interval(secs => LEAST((attempts + 1) * $6, $7))
+                             + make_interval(secs => LEAST((attempts + 1) * $6, $7)),
+                claim_token = NULL
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3
             AND signature IS NULL AND NOT is_error AND claim_token = $8",
         i32::from(claim.prf_instance),
@@ -172,6 +175,30 @@ pub async fn retry(
         RETRY_BACKOFF_STEP_SECS,
         RETRY_BACKOFF_MAX_SECS,
         claim.token,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Renews the claims of running evaluations. Skips the rows claimed again. Skips locked rows: the
+/// next tick renews them.
+pub async fn renew(pool: &PgPool, prf_instance: u16, claims: &[Claim]) -> sqlx::Result<()> {
+    let labels: Vec<Vec<u8>> = claims.iter().map(|c| c.label.to_vec()).collect();
+    let lengths: Vec<i32> = claims.iter().map(|c| i32::from(c.pad_length)).collect();
+    let tokens: Vec<Uuid> = claims.iter().map(|c| c.token).collect();
+    sqlx::query!(
+        "UPDATE pads SET claimed_at = NOW() WHERE ctid IN (
+             SELECT ctid FROM pads
+              WHERE prf_instance = $1
+                AND (label, pad_length, claim_token)
+                    IN (SELECT * FROM UNNEST($2::BYTEA[], $3::INTEGER[], $4::UUID[]))
+                AND signature IS NULL AND NOT is_error
+                FOR UPDATE SKIP LOCKED)",
+        i32::from(prf_instance),
+        &labels,
+        &lengths,
+        &tokens,
     )
     .execute(pool)
     .await?;
@@ -204,11 +231,13 @@ pub async fn release(pool: &PgPool, prf_instance: u16, claims: &[Claim]) -> sqlx
 /// A complete row to upload to S3.
 pub struct Output {
     pub claim: Claim,
-    pub ct128: Vec<u8>,
+    /// `None` when the GC of the ct64 deleted it first.
+    pub ct64: Option<Bytes>,
+    pub ct128: Bytes,
     pub attestation: PrfOutputAttestation,
 }
 
-/// Claims up to `limit` complete rows that have no S3 copy and no live claim.
+/// Claims up to `limit` complete rows that have no S3 copy and no live claim, with their ct64.
 pub async fn claim_uploads(
     pool: &PgPool,
     prf_instance: u16,
@@ -229,7 +258,10 @@ pub async fn claim_uploads(
                   ciphertext_digest AS "ciphertext_digest!",
                   ciphertext128_digest AS "ciphertext128_digest!", signer AS "signer!",
                   signature AS "signature!", attestation_version AS "attestation_version!",
-                  claim_token AS "claim_token!""#,
+                  claim_token AS "claim_token!",
+                  (SELECT c.ciphertext64 FROM pad_ct64 c
+                    WHERE c.prf_instance = pads.prf_instance AND c.label = pads.label
+                      AND c.pad_length = pads.pad_length) AS ciphertext64"#,
         i32::from(prf_instance),
         claim_timeout.as_secs_f64(),
         limit,
@@ -249,7 +281,8 @@ pub async fn claim_uploads(
                     pad_length: u16::try_from(row.pad_length).expect("pad_length is in range"),
                     token: row.claim_token,
                 },
-                ct128: row.ciphertext128,
+                ct64: row.ciphertext64.map(Bytes::from),
+                ct128: Bytes::from(row.ciphertext128),
                 attestation: PrfOutputAttestation {
                     version,
                     ciphertext_digest: B256::try_from(row.ciphertext_digest.as_slice())

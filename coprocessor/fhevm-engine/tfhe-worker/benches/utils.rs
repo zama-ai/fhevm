@@ -1137,8 +1137,8 @@ pub mod shortint_utils {
     use tfhe::shortint::parameters::list_compression::CompressionParameters;
     use tfhe::shortint::parameters::ShortintKeySwitchingParameters;
     use tfhe::shortint::{
-        AtomicPatternParameters, CarryModulus, ClassicPBSParameters, MessageModulus,
-        MultiBitPBSParameters, PBSParameters, ShortintParameterSet,
+        AtomicPatternParameters, CarryModulus, ClassicPBSParameters, EncryptionKeyChoice,
+        MessageModulus, MultiBitPBSParameters, PBSParameters,
     };
 
     impl From<PBSParameters> for CryptoParametersRecord<u64> {
@@ -1207,8 +1207,11 @@ pub mod shortint_utils {
 
     impl From<(CompressionParameters, PBSParameters)> for CryptoParametersRecord<u64> {
         fn from((comp_params, pbs_params): (CompressionParameters, PBSParameters)) -> Self {
-            let pbs_params = ShortintParameterSet::new_pbs_param_set(pbs_params);
             let lwe_dimension = pbs_params.encryption_lwe_dimension();
+            let lwe_noise_distribution = match pbs_params.encryption_key_choice() {
+                EncryptionKeyChoice::Big => pbs_params.glwe_noise_distribution(),
+                EncryptionKeyChoice::Small => pbs_params.lwe_noise_distribution(),
+            };
             CryptoParametersRecord {
                 lwe_dimension: Some(lwe_dimension),
                 br_level: Some(comp_params.br_level()),
@@ -1219,7 +1222,7 @@ pub mod shortint_utils {
                 packing_ks_glwe_dimension: Some(comp_params.packing_ks_glwe_dimension()),
                 lwe_per_glwe: Some(comp_params.lwe_per_glwe()),
                 storage_log_modulus: Some(comp_params.storage_log_modulus()),
-                lwe_noise_distribution: Some(pbs_params.encryption_noise_distribution()),
+                lwe_noise_distribution: Some(lwe_noise_distribution),
                 packing_ks_key_noise_distribution: Some(
                     comp_params.packing_ks_key_noise_distribution(),
                 ),

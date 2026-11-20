@@ -225,7 +225,10 @@ deletes two forms of each output, with separate ages:
 - The ct128 GC does not delete a complete row without an S3 copy. The pad-worker uploads it again.
 - A request after the ct128 GC adds the row again, and the pad-worker computes it again. The stored
   ct64 stays, and its age starts again.
-- Set an S3 lifecycle rule on `pads/` that expires objects after the number of days at or above
-  `ct128MaxAgeSeconds`: S3 counts whole days (1 day for the default). The chart does not set it.
+- The pad-worker uploads the ct128 to `pads/ct128/{prf}/{label}/{padLength}` and the ct64 to
+  `pads/ct64/{prf}/{label}/{padLength}`. Set an S3 lifecycle rule on the prefix `pads/ct128/` that
+  expires objects after the number of days at or above `ct128MaxAgeSeconds`: S3 counts whole days
+  (1 day for the default). Do not expire `pads/ct64/`, or expire it only after `ct64MaxAgeSeconds`
+  if you set it. The chart does not set the rules.
 - With the ct64 GC off, `pad_ct64` only grows. Monitor `coprocessor_pad_worker_stored_ct64_bytes`
   (see `docs/metrics/metrics.md`).

@@ -1379,6 +1379,19 @@ jobs:
         if: env.KEYGEN == 'insecure'
         run: bash ci/preview-env/scripts/deploy/bypass-kms-keygen-redirect.sh
 
+      # A pad-worker is ready only after it loads the key of this keygen. Stacks without pads skip.
+      - name: Wait for the pad-workers
+        run: |
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            deploy="deploy/coprocessor-${i}-pads-pad-worker-0"
+            kubectl get "${deploy}" -n "${NAMESPACE}" >/dev/null 2>&1 || continue
+            if ! kubectl rollout status "${deploy}" -n "${NAMESPACE}" --timeout=15m; then
+              kubectl logs "${deploy}" -n "${NAMESPACE}" --tail=50 || true
+              echo "::error::the pad-worker of party ${i} is not ready after 15 min"
+              exit 1
+            fi
+          done
+
       ######################################################################
       # RELAYER + TEST-SUITE: generic `common` chart + published images.
       ######################################################################

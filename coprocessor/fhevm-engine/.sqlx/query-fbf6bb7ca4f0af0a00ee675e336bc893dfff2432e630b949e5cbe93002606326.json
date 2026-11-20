@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pad_consensus SET outcome = $4, local_result = $5, done_at = NOW()\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3 AND done_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fbf6bb7ca4f0af0a00ee675e336bc893dfff2432e630b949e5cbe93002606326"
+}

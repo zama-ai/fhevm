@@ -41,7 +41,6 @@ prfService:
   limits:
     maxConcurrentPerConnector: 2048
     maxInFlightPerConnector: 8
-    padPendingMaxAgeSeconds: 60
   nodeSelector:
     karpenter.sh/nodepool: zws-pool
   tolerations:

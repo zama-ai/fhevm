@@ -21,13 +21,13 @@ use fhevm_engine_common::{
 use rows::{Claim, Output};
 use sqlx::{postgres::PgListener, PgPool};
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     num::NonZeroUsize,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{
     sync::{Notify, OwnedSemaphorePermit, Semaphore},
@@ -36,7 +36,37 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
-use upload::{s3_key, Uploader};
+use upload::Uploader;
+
+/// Waits until each row of the key of `key_id` has its compressed key set: the key load reads all
+/// of them. The host-listener can store the row of a key first, and its compressed key set later.
+/// Returns false on a stop.
+pub async fn wait_for_key(
+    pool: &PgPool,
+    key_id: &[u8],
+    interval: Duration,
+    cancel: &CancellationToken,
+) -> anyhow::Result<bool> {
+    loop {
+        // `bool_and` gives NULL when the key has no row, and `COALESCE` makes it false.
+        let stored: bool = sqlx::query_scalar(
+            "SELECT COALESCE(bool_and(compressed_xof_keyset IS NOT NULL), FALSE)
+               FROM keys WHERE key_id = $1",
+        )
+        .bind(key_id)
+        .fetch_one(pool)
+        .await
+        .context("look for the key of --prf-key-id")?;
+        if stored {
+            return Ok(true);
+        }
+        info!(key_id = %hex::encode(key_id), "Waiting for the compressed key set of --prf-key-id");
+        tokio::select! {
+            () = cancel.cancelled() => return Ok(false),
+            () = sleep(interval) => {}
+        }
+    }
+}
 
 /// The same limit as the database check of `HealthStatus`.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -87,17 +117,35 @@ pub struct PadWorker {
     /// Set once the pad-worker listens for rows: until then, a rollout keeps the old pod.
     ready: Arc<AtomicBool>,
     /// The claims that a task of this pod holds.
-    running: Mutex<HashSet<Claim>>,
+    running: Mutex<HashMap<Claim, RunningClaim>>,
     /// Wakes the claim loop when an evaluation slot is free, before the upload ends.
     slot_free: Notify,
 }
 
+/// A claim that a task of this pod holds.
+struct RunningClaim {
+    /// True for an evaluation, false for an upload. Only an evaluation renews its claim.
+    evaluation: bool,
+    started: Instant,
+    /// Set when the renewal stops, because the evaluation is older than `pending_max_age`.
+    renewal_stopped: bool,
+}
+
 /// Adds a claim to `running` until its task ends.
-struct Running<'a>(&'a Mutex<HashSet<Claim>>, Claim);
+struct Running<'a>(&'a Mutex<HashMap<Claim, RunningClaim>>, Claim);
 
 impl<'a> Running<'a> {
-    fn new(running: &'a Mutex<HashSet<Claim>>, claim: Claim) -> Self {
-        running.lock().expect("running claims").insert(claim);
+    fn new(
+        running: &'a Mutex<HashMap<Claim, RunningClaim>>,
+        claim: Claim,
+        evaluation: bool,
+    ) -> Self {
+        let task = RunningClaim {
+            evaluation,
+            started: Instant::now(),
+            renewal_stopped: false,
+        };
+        running.lock().expect("running claims").insert(claim, task);
         Self(running, claim)
     }
 }
@@ -135,6 +183,12 @@ impl PadWorker {
         self
     }
 
+    /// Sets `health` ready once this pad-worker listens for rows.
+    pub fn with_health(mut self, health: &Health) -> Self {
+        self.ready = health.ready.clone();
+        self
+    }
+
     pub fn health(&self) -> Health {
         Health {
             pool: self.pool.clone(),
@@ -153,6 +207,7 @@ impl PadWorker {
         let slots = Arc::new(Semaphore::new(worker.config.max_concurrent.get()));
         let mut tasks = JoinSet::new();
         tasks.spawn(worker.clone().gc());
+        tasks.spawn(worker.clone().renew_claims());
         if let Some(uploader) = worker.uploader.clone() {
             tasks.spawn(worker.clone().resubmit(uploader));
         }
@@ -204,7 +259,7 @@ impl PadWorker {
             .running
             .lock()
             .expect("running claims")
-            .iter()
+            .keys()
             .copied()
             .collect();
         tasks.shutdown().await;
@@ -221,8 +276,8 @@ impl PadWorker {
         Ok(())
     }
 
-    /// Evaluates and signs the output of `claim`. Also returns the ct64.
-    async fn compute(&self, claim: Claim) -> Result<(Output, Vec<u8>), OutputError> {
+    /// Evaluates and signs the output of `claim`, with both forms.
+    async fn compute(&self, claim: Claim) -> Result<Output, OutputError> {
         let evaluator = self.evaluator.clone();
         let outputs = tokio::task::spawn_blocking(move || {
             evaluator.evaluate(claim.prf_instance, claim.label, claim.pad_length)
@@ -246,7 +301,8 @@ impl PadWorker {
             .map_err(|e| OutputError::Signing(format!("signing: {e}")))?;
         let output = Output {
             claim,
-            ct128: outputs.ct128,
+            ct64: Some(outputs.ct64.into()),
+            ct128: outputs.ct128.into(),
             attestation: PrfOutputAttestation {
                 version: payload.version,
                 ciphertext_digest: payload.ciphertext_digest,
@@ -255,7 +311,7 @@ impl PadWorker {
                 signature: signature.as_bytes().to_vec(),
             },
         };
-        Ok((output, outputs.ct64))
+        Ok(output)
     }
 
     /// Computes, signs and writes one claimed row. Fails only on a lost database connection.
@@ -270,8 +326,8 @@ impl PadWorker {
                 .or_else(non_fatal);
         }
         metrics::count_evaluation(claim.prf_instance);
-        let _running = Running::new(&self.running, claim);
-        let (output, ct64) = match self.compute(claim).await {
+        let _running = Running::new(&self.running, claim, true);
+        let output = match self.compute(claim).await {
             Ok(computed) => computed,
             Err(OutputError::Evaluation(message)) => {
                 warn!(?claim, message, "PRF evaluation failed");
@@ -281,14 +337,11 @@ impl PadWorker {
             }
             Err(OutputError::Signing(message)) => return self.retry(&claim, &message).await,
         };
-        match rows::write_output(
-            &self.pool,
-            &claim,
-            &ct64,
-            &output.ct128,
-            &output.attestation,
-        )
-        .await
+        let ct64 = output
+            .ct64
+            .as_deref()
+            .expect("a computed output has its ct64");
+        match rows::write_output(&self.pool, &claim, ct64, &output.ct128, &output.attestation).await
         {
             Ok(true) => {}
             // Another pod claimed or completed the row, or the GC deleted it: do not upload.
@@ -310,13 +363,42 @@ impl PadWorker {
         let Some(_slot) = uploader.slot(wait).await else {
             return Ok(());
         };
-        if let Err(e) = uploader.upload(&s3_key(&output.claim), &output).await {
+        if let Err(e) = uploader.upload(&output).await {
             warn!(claim = ?output.claim, error = %e, "S3 upload failed");
             return Ok(());
         }
         rows::set_uploaded(&self.pool, &output.claim)
             .await
             .or_else(non_fatal)
+    }
+
+    /// Renews the claims of the running evaluations 3 times in each `claim_timeout`, so no pod
+    /// computes a row again. Stops the renewal of an evaluation older than `pending_max_age`: a
+    /// stuck evaluation then frees its row for another pod and for the GC.
+    async fn renew_claims(self: Arc<Self>) -> anyhow::Result<()> {
+        loop {
+            tokio::select! {
+                () = self.cancel_token.cancelled() => return Ok(()),
+                () = sleep(self.config.claim_timeout / 3) => {}
+            }
+            let mut running = Vec::new();
+            for (claim, task) in self.running.lock().expect("running claims").iter_mut() {
+                if !task.evaluation {
+                    continue;
+                }
+                if task.started.elapsed() < self.config.pending_max_age {
+                    running.push(*claim);
+                } else if !task.renewal_stopped {
+                    task.renewal_stopped = true;
+                    warn!(?claim, "The evaluation runs longer than the pending age: its claim is no longer renewed");
+                }
+            }
+            if !running.is_empty() {
+                rows::renew(&self.pool, self.config.prf_instance, &running)
+                    .await
+                    .or_else(non_fatal)?;
+            }
+        }
     }
 
     /// Deletes old and expired rows, and sets the row age metrics.
@@ -369,7 +451,7 @@ impl PadWorker {
                 Ok(outputs) => {
                     let worker = &*self;
                     futures_util::future::try_join_all(outputs.into_iter().map(|output| {
-                        let running = Running::new(&worker.running, output.claim);
+                        let running = Running::new(&worker.running, output.claim, false);
                         async move {
                             let _running = running;
                             worker.upload(output, true).await
@@ -406,6 +488,16 @@ fn non_fatal(e: sqlx::Error) -> anyhow::Result<()> {
 pub struct Health {
     pool: PgPool,
     ready: Arc<AtomicBool>,
+}
+
+impl Health {
+    /// Not ready until a pad-worker built `with_health` listens for rows.
+    pub fn new(pool: PgPool) -> Self {
+        Self {
+            pool,
+            ready: Arc::default(),
+        }
+    }
 }
 
 impl HealthCheckService for Health {

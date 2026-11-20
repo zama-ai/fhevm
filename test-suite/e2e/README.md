@@ -199,9 +199,10 @@ land and replace it. It signs `FhevmSig` requests with KMS party 1's
 ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
 Behind each proxy runs prf-service, logged in as the `prf_service` database
 role, and a pad-worker for PRF instance 0, logged in as `pad_worker`, which
-computes the output the suite requests with the mock evaluator. The pad-worker signs
-it with the coprocessor's `TX_SENDER_PRIVATE_KEY`, as its sns-worker signs. The
-suite reads how many PRF requests prf-service answered from its metric
+computes the output the suite requests with the one-time pad of tfhe-rs and the
+key of the bootstrap keygen. The pad-worker signs it with the coprocessor's
+`TX_SENDER_PRIVATE_KEY`, as its sns-worker signs. The suite reads how many PRF
+requests prf-service answered from its metric
 `coprocessor_prf_service_requests_total`, at `PRF_SERVICE_METRICS_URLS`. It
 checks that a signed request reaches prf-service once and comes back as a KMS
 connector accepts it: the attestation's signature recovers the coprocessor's
@@ -235,9 +236,25 @@ dropped node with `401 auth_unknown_signer`. Without the key they skip.
 "Coprocessor proxy" suite. It signs as each connector of the KMS committee, from
 `KMS_CONNECTOR_PRIVATE_KEYS`. It checks:
 
-- Outputs: every pad length is served, and all coprocessors attest the same digests.
-- One evaluation for many requests: `coprocessor_pad_worker_evaluations_total`, at
-  `PAD_WORKER_METRICS_URLS`, goes up by 1 for each path.
+- Connector retrieval, as the KMS connector does it: a `GET` to one coprocessor and
+  a `HEAD` to each other, at once. The connector keeps the attestations of registered signers with
+  a valid signature, and takes the first digest with `COPROCESSOR_THRESHOLD` of them as the quorum.
+  It uses the body of the chosen coprocessor, or else a `GET` to a quorum member. It does not
+  retry: a failed request is a missing attestation. The tests check:
+  - quorum for each pad length, with all coprocessors on the same digests;
+  - one evaluation of a label on each coprocessor, for all connectors
+    (`coprocessor_pad_worker_evaluations_total`, at `PAD_WORKER_METRICS_URLS`);
+  - the body from a quorum member when the chosen coprocessor fails;
+  - quorum without a coprocessor that answers `429`, and its attestation on a resend;
+  - a resend served from storage, with no new evaluation;
+  - no quorum for an unknown `prf` instance;
+  - the S3 copies: each coprocessor uploads the `ct128` and the `ct64` (its Keccak-256 is
+    `ciphertext_digest`) to its bucket in `COPROCESSOR_BUCKET_URLS`, with its attestation. With two
+    coprocessors or more, the `pad_consensus` check of each consensus-detector, in
+    `COPROCESSOR_DATABASE_URLS`, ends with `consensus` and `matches_quorum`. The test skips without
+    these variables.
+- Each coprocessor: a complete output answers at once to `GET` and `HEAD`, and an unknown `prf` or a
+  non-canonical path is refused.
 - Budgets of prf-service: pending bits, requests in progress, joins, fairness between
   connectors, and the place of a request whose client disconnects.
 - Refusals at the proxy: query strings, other methods, unknown routes, and
@@ -245,8 +262,9 @@ dropped node with `401 auth_unknown_signer`. Without the key they skip.
 
 The suite reads the e2e limits of the compose file: 2,048 pending bits and 8 requests
 in progress for each connector, 20 requests per second for each signer, a pad-worker that
-computes 4 rows at once, and a mock evaluation of at least 2 s. It skips when
-`COPROCESSOR_PROXY_URLS` is empty.
+computes 4 rows at once. A 2,048-bit pad takes about 2 s on a large CPU machine, more on a loaded CI
+runner. Without `COPROCESSOR_THRESHOLD`, the quorum is a majority of the coprocessors. The suite
+skips when `COPROCESSOR_PROXY_URLS` is empty.
 
 Run via the fhevm-cli profile `prf-endpoint` (part of `standard`), or directly with
 `npx hardhat test --grep "PRF endpoint" --network staging`.

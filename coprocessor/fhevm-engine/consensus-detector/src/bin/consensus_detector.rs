@@ -165,6 +165,24 @@ struct Args {
     #[arg(long, default_value_t = 3)]
     incomplete_manifest_max_lag: u32,
 
+    /// Time between two passes of the pad output comparison.
+    #[arg(long, default_value = "10s", value_parser = parse_duration)]
+    pad_consensus_interval: Duration,
+
+    /// Time after its start until the comparison of a pad output ends without the missing
+    /// coprocessors. The default is the window of the manifest verification.
+    #[arg(long, default_value = "10m", value_parser = parse_duration)]
+    pad_consensus_deadline: Duration,
+
+    /// Time after its computation until a pad output is too old to compare, and after its end
+    /// until a comparison that is not drift is deleted.
+    #[arg(long, default_value = "24h", value_parser = parse_duration)]
+    pad_consensus_retention: Duration,
+
+    /// Pad outputs compared in each pass.
+    #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(i64).range(1..))]
+    pad_consensus_batch: i64,
+
     /// Manifest signer implementation.
     #[arg(long, value_enum, default_value = "private-key")]
     signer_type: SignerType,
@@ -299,6 +317,12 @@ async fn main() -> anyhow::Result<()> {
                 .map_err(anyhow::Error::msg)?,
         },
         manifest_signer,
+        pad_consensus: consensus_detector::pad_consensus::Config {
+            interval: args.pad_consensus_interval,
+            deadline: args.pad_consensus_deadline,
+            retention: args.pad_consensus_retention,
+            batch: args.pad_consensus_batch,
+        },
     };
 
     info!(

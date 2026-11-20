@@ -71,16 +71,6 @@ SELECT format('ALTER ROLE %I PASSWORD %L', :'user', :'password') \gexec
 SQL
 }
 
-# Waits until the pad-worker of PRF instance 0 of party i is ready.
-wait_pad_worker() {
-  local i="$1" deploy="deploy/coprocessor-${1}-pads-pad-worker-0"
-  if ! kubectl rollout status "${deploy}" -n "${NAMESPACE}" --timeout=5m; then
-    kubectl logs "${deploy}" -n "${NAMESPACE}" --tail=50 || true
-    echo "::error::the pad-worker of party ${i} is not ready after 5 min"
-    exit 1
-  fi
-}
-
 # One self-signed certificate for every party's proxy, as for the kms-connector proxies.
 if [[ "${with_proxy}" == "true" ]] && ! kubectl get secret "${proxy_tls_secret}" -n "${NAMESPACE}" >/dev/null 2>&1; then
   sans=""
@@ -271,9 +261,6 @@ if [[ "${with_proxy}" == "true" ]]; then
       --set-string "padWorkerShared.serviceAccountName=coprocessor-${i}" \
       --set "padWorkerShared.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${i}" \
       --set-string "padWorkerShared.wallet.secret.value=$(coproc_key "${i}")"
-  done
-  for i in $(seq 1 "${NB_COPROCESSOR}"); do
-    wait_pad_worker "${i}"
   done
   urls="" signers="" prf_metrics_urls="" pad_metrics_urls="" metrics_urls=""
   for i in $(seq 1 "${NB_COPROCESSOR}"); do

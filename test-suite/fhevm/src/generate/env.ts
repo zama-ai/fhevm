@@ -506,6 +506,8 @@ const buildPadWorkerEnvs = (
     padWorkerEnvs[coprocessorServiceEnvName("coprocessor-pad-worker", index)] = {
       ...coprocessor,
       DATABASE_URL: `postgresql://${credentials}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`,
+      // Without `0x`, the pad-worker reads the ID as decimal.
+      PRF_KEY_ID: `0x${coprocessor.FHE_KEY_ID}`,
     };
   }
   return padWorkerEnvs;
@@ -602,6 +604,18 @@ const applyCoprocessorProxyTestSuiteEnv = (
   envs["test-suite"].COPROCESSOR_PROXY_METRICS_URLS = indices
     .map((index) => `http://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_METRICS_PORT}/metrics`)
     .join(",");
+  // The "PRF endpoint" suite reads the S3 copies of the pad outputs and the pad_consensus results.
+  envs["test-suite"].COPROCESSOR_BUCKET_URLS = indices
+    .map((index) => envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`])
+    .join(",");
+  envs["test-suite"].COPROCESSOR_DATABASE_URLS = indices
+    .map(
+      (index) =>
+        `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`,
+    )
+    .join(",");
+  // The "PRF endpoint" suite uses the GatewayConfig coprocessor threshold as its quorum.
+  envs["test-suite"].COPROCESSOR_THRESHOLD = supported ? String(plan.topology.threshold) : "";
   // The suite signs as party 1's connector, a KMS tx-sender of the active context.
   envs["test-suite"].KMS_CONNECTOR_PRIVATE_KEY = supported ? envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY : "";
   // The "PRF endpoint" suite signs as each committee connector. Spares are not tx-senders yet.

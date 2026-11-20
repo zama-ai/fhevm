@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT peer_signer, ciphertext_digest, ciphertext128_digest FROM pad_consensus_answer\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "peer_signer",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext128_digest",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "ab06fbb41d2beb7d46705acc13620aa2be4573720620882e6b84612788da80ec"
+}

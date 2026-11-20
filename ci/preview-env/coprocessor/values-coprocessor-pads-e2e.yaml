@@ -10,10 +10,10 @@ dbMigration:
 tfheWorker:
   enabled: false
 
-# The instance of the "Coprocessor proxy" suite. Mock evaluator: the key ID is a placeholder.
+# The first key of a fresh KMSGeneration: `(Keygen << 248) + 1`.
 padWorkers:
   - prfId: 0
-    keyId: "0x01"
+    keyId: "0x0400000000000000000000000000000000000000000000000000000000000001"
 
 padWorkerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/pad-worker, tag: latest}
@@ -21,18 +21,15 @@ padWorkerShared:
   # its rights.
   databaseUser: {value: pad_worker}
   databasePassword: {value: pad_worker}
-  # e2e limits, short so the "PRF endpoint" suite reaches them; the same ages as prf-service.
+  # e2e limits, short so the "PRF endpoint" suite reaches them.
   config:
     s3BucketName:
       valueFrom: {configMapKeyRef: {name: coprocessor, key: S3_BUCKET_NAME}}
-    pendingMaxAgeSeconds: 60
     ct128MaxAgeSeconds: 300
-  # Keeps a row pending for 2 s, so the suite can test the budgets.
-  env:
-    - {name: PAD_MOCK_EXTRA_LATENCY, value: 2s}
   extraArgs:
+    - --key-poll-interval=5s
     - --gc-interval=5s
   nodeSelector:
-    karpenter.sh/nodepool: zws-pool
+    karpenter.sh/nodepool: coprocessor
   tolerations:
-    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
+    - {key: karpenter.sh/nodepool, operator: Equal, value: coprocessor, effect: NoSchedule}

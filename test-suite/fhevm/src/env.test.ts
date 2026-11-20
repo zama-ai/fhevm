@@ -183,7 +183,9 @@ describe("env", () => {
     expect(pair.instanceEnvs["coprocessor-pad-worker.1"]).toEqual({
       ...pair.instanceEnvs["coprocessor.1"],
       DATABASE_URL: "postgresql://pad_worker:pad_worker@db:5432/coprocessor_1",
+      PRF_KEY_ID: `0x${pair.instanceEnvs["coprocessor.1"].FHE_KEY_ID}`,
     });
+    expect(pair.instanceEnvs["coprocessor-pad-worker"].PRF_KEY_ID).toMatch(/^0x[0-9a-f]{64}$/);
     expect(pair.instanceEnvs["coprocessor-pad-worker"].TX_SENDER_PRIVATE_KEY).toBe(
       pair.componentEnvs.coprocessor.TX_SENDER_PRIVATE_KEY,
     );
@@ -231,6 +233,19 @@ describe("env", () => {
     expect(suite.COPROCESSOR_PROXY_METRICS_URLS).toBe(
       "http://coprocessor-proxy:9100/metrics,http://coprocessor1-proxy:9100/metrics",
     );
+    expect(suite.COPROCESSOR_BUCKET_URLS).toBe(
+      [
+        pair.componentEnvs["gateway-sc"].COPROCESSOR_S3_BUCKET_URL_0,
+        pair.componentEnvs["gateway-sc"].COPROCESSOR_S3_BUCKET_URL_1,
+      ].join(","),
+    );
+    expect(suite.COPROCESSOR_DATABASE_URLS).toBe(
+      [
+        pair.componentEnvs.coprocessor.DATABASE_URL,
+        pair.instanceEnvs["coprocessor.1"].DATABASE_URL,
+      ].join(","),
+    );
+    expect(suite.COPROCESSOR_THRESHOLD).toBe(pair.componentEnvs["gateway-sc"].COPROCESSOR_THRESHOLD);
     expect(suite.COPROCESSOR_PROXY_CA_CERT).toBe("/etc/coprocessor-proxy/tls.crt");
     // Party 1's connector key, whose address the host ProtocolConfig deploy lists as a KMS tx-sender.
     expect(suite.KMS_CONNECTOR_PRIVATE_KEY).not.toBe("");
@@ -260,6 +275,9 @@ describe("env", () => {
         "PRF_SERVICE_METRICS_URLS",
         "PAD_WORKER_METRICS_URLS",
         "COPROCESSOR_PROXY_METRICS_URLS",
+        "COPROCESSOR_BUCKET_URLS",
+        "COPROCESSOR_DATABASE_URLS",
+        "COPROCESSOR_THRESHOLD",
         "KMS_CONNECTOR_PRIVATE_KEY",
         "KMS_CONNECTOR_PRIVATE_KEYS",
       ]) {

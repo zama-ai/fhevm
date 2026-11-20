@@ -23,7 +23,8 @@ export function request(
   opts: { signal?: AbortSignal } = {},
 ): Promise<Reply> {
   const ca = readFileSync(process.env.COPROCESSOR_PROXY_CA_CERT!);
-  const timeout = AbortSignal.timeout(30_000);
+  // Above the 300 s timeout of the compose proxy, so a slow evaluation gets its `504`.
+  const timeout = AbortSignal.timeout(330_000);
   const signal = opts.signal ? AbortSignal.any([timeout, opts.signal]) : timeout;
   return new Promise((resolve, reject) => {
     const req = https

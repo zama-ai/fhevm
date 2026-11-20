@@ -145,6 +145,7 @@ import {
   waitForCoprocessor,
   waitForCoprocessorServices,
   waitForKmsConnector,
+  waitForPadWorkers,
   waitForKmsConnectorParty,
   waitForLog,
   waitForRelayerProxyRoute,
@@ -1207,6 +1208,7 @@ export const runStep = async (state: State, step: StepName) => {
       // ingested it. Without the second wait `up` reports ready while operators
       // hold no key rows, and everything downstream races the ingest (F-1).
       await timed("[bootstrap] wait-for-key-material", () => waitForCoprocessorKeyMaterial(state));
+      await timed("[bootstrap] wait-for-pad-workers", () => waitForPadWorkers(state));
       await completeBootstrap(state);
       break;
     }
@@ -1968,6 +1970,8 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
       await waitForStableChainListeners(state, target.chainKey);
     }
     await waitForCoprocessor(state);
+    // The key exists after the bootstrap: the recreated pad-workers only load it again.
+    await waitForPadWorkers(state);
     await postBootHealthGate([...coprocessorHealthContainers(state), ...extraTargets.flatMap((target) => target.services)]);
     return;
   }
