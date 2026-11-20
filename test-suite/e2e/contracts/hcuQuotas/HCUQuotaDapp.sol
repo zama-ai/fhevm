@@ -7,7 +7,7 @@ import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 
 /// @notice Dapp exposing one function per kind of HCU-charged operation, plus
 /// functions that only verify inputs and manage ACL permissions.
-contract HCUAllowlistDapp is E2ECoprocessorConfig {
+contract HCUQuotaDapp is E2ECoprocessorConfig {
     euint64 public result;
     euint32 public result32;
     ebool public resultBool;
@@ -110,7 +110,7 @@ contract HCUAllowlistDapp is E2ECoprocessorConfig {
 }
 
 /// @notice Dapp that computes in its constructor.
-contract HCUAllowlistConstructorDapp is E2ECoprocessorConfig {
+contract HCUQuotaConstructorDapp is E2ECoprocessorConfig {
     euint64 public value;
 
     constructor(uint64 initialValue) {
@@ -121,7 +121,7 @@ contract HCUAllowlistConstructorDapp is E2ECoprocessorConfig {
 }
 
 /// @notice Factory that computes itself and deploys dapps.
-contract HCUAllowlistFactory is E2ECoprocessorConfig {
+contract HCUQuotaFactory is E2ECoprocessorConfig {
     euint64 public result;
 
     event DappDeployed(address dapp);
@@ -133,16 +133,16 @@ contract HCUAllowlistFactory is E2ECoprocessorConfig {
     }
 
     function deployDapp() external {
-        emit DappDeployed(address(new HCUAllowlistDapp()));
+        emit DappDeployed(address(new HCUQuotaDapp()));
     }
 
     function deployConstructorDapp(bytes32 salt, uint64 initialValue) external {
-        emit DappDeployed(address(new HCUAllowlistConstructorDapp{salt: salt}(initialValue)));
+        emit DappDeployed(address(new HCUQuotaConstructorDapp{salt: salt}(initialValue)));
     }
 
     function predictConstructorDapp(bytes32 salt, uint64 initialValue) external view returns (address) {
         bytes32 initCodeHash = keccak256(
-            abi.encodePacked(type(HCUAllowlistConstructorDapp).creationCode, abi.encode(initialValue))
+            abi.encodePacked(type(HCUQuotaConstructorDapp).creationCode, abi.encode(initialValue))
         );
         return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash)))));
     }

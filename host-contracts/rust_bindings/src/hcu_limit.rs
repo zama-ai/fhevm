@@ -6,59 +6,53 @@ interface HCULimit {
     type FheType is uint8;
 
     error AddressEmptyCode(address target);
-    error AlreadyBlockHCUWhitelisted(address account);
     error CallerMustBeACLContract();
     error CallerMustBeFHEVMExecutorContract();
-    error CallerNotACLOwnerOrAllowlister(address caller);
-    error CallerNotAllowlisted(address caller);
+    error ContractNotInQuota(address account, uint16 quotaId);
     error CrossTxDepthBelowMaxDepthPerTx();
+    error DefaultQuotaNotStopped();
     error ERC1967InvalidImplementation(address implementation);
     error ERC1967NonPayable();
-    error EmptyBatch();
     error FailedCall();
-    error HCUBlockLimitExceeded();
     error HCUCrossTxDepthLimitExceeded(uint256 retryAfterBlocks);
-    error HCUPerBlockBelowMaxPerTx();
+    error HCUQuotaExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
+    error HCUQuotaPaused(address account, uint16 quotaId);
+    error HCUQuotaStopped(address account, uint16 quotaId);
+    error HCUStoredDepthExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
     error HCUTransactionDepthLimitExceeded();
     error HCUTransactionLimitExceeded();
-    error InvalidAllowlisterDeadline(uint256 deadline);
     error InvalidCrossTxDepthLimit();
     error InvalidInitialization();
-    error InvalidZeroAddress();
+    error InvalidMaxStoredDepth(uint16 quotaId);
+    error InvalidQuota(uint16 quotaId);
     error InvalidZeroHandle();
-    error NotAllowlisted(address account);
-    error NotAllowlister(address account);
-    error NotBlockHCUWhitelisted(address account);
     error NotHostOwner(address sender);
     error NotInitializing();
     error NotInitializingFromEmptyProxy();
+    error NotPauser(address sender);
+    error NotQuotaAdmin(uint16 quotaId, address sender);
     error OnlyScalarOperationsAreSupported();
+    error QuotaMembershipPaused(uint16 quotaId);
     error UUPSUnauthorizedCallContext();
     error UUPSUnsupportedProxiableUUID(bytes32 slot);
     error UnsupportedOperation();
 
-    event AllowlistActivationChanged(bool activated);
-    event AllowlistAdded(address indexed account, address indexed addedBy);
-    event AllowlistRemoved(address indexed account);
-    event AllowlisterAdded(address indexed account, uint256 deadline);
-    event AllowlisterRemoved(address indexed account);
-    event BlockHCUWhitelistAdded(address indexed account);
-    event BlockHCUWhitelistRemoved(address indexed account);
+    event ContractQuotaAssigned(uint16 indexed quotaId, address indexed account, address indexed setBy);
     event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
-    event HCUPerBlockSet(uint48 hcuPerBlock);
     event Initialized(uint64 version);
     event MaxHCUDepthPerTxSet(uint48 maxHCUDepthPerTx);
     event MaxHCUPerTxSet(uint48 maxHCUPerTx);
+    event QuotaAdminSet(uint16 indexed quotaId, address indexed admin);
+    event QuotaMaxStoredDepthSet(uint16 indexed quotaId, uint48 maxStoredDepth, address indexed setBy);
+    event QuotaPauseSet(uint16 indexed quotaId, bool paused, address indexed setBy);
+    event QuotaSet(uint16 indexed quotaId, uint48 maxHCU, uint48 decayPerBlock, address indexed setBy);
     event Upgraded(address indexed implementation);
 
     constructor();
 
     function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
-    function addAllowlister(address account, uint256 deadline) external;
-    function addToAllowlist(address[] memory accounts) external;
-    function addToBlockHCUWhitelist(address account) external;
-    function allowlisterDeadline(address account) external view returns (uint256);
-    function cacheDepth(bytes32 handle, address holder) external returns (uint48);
+    function assignQuota(uint16 quotaId, address account) external;
+    function cacheDepth(bytes32 handle, address holder) external returns (uint48 depth);
     function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result, address caller) external;
     function checkHCUForFheAdd(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
     function checkHCUForFheBitAnd(FheType resultType, bytes1 scalarByte, bytes32 lhs, bytes32 rhs, bytes32 result, address caller) external;
@@ -89,29 +83,29 @@ interface HCULimit {
     function checkHCUForFheSum(FheType resultType, bytes32[] memory values, bytes32 result, address caller) external;
     function checkHCUForIfThenElse(FheType resultType, bytes32 lhs, bytes32 middle, bytes32 rhs, bytes32 result, address caller) external;
     function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address caller) external;
-    function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedHCU);
+    function getContractQuota(address account) external view returns (uint16);
     function getCrossTxDepthLimit() external view returns (uint48 maxDepth, uint48 decayPerBlock);
     function getFHEVMExecutorAddress() external view returns (address);
-    function getGlobalHCUCapPerBlock() external view returns (uint48);
     function getMaxHCUDepthPerTx() external view returns (uint48);
     function getMaxHCUPerTx() external view returns (uint48);
+    function getQuota(uint16 quotaId) external view returns (uint48 maxHCU, uint48 decayPerBlock, uint48 usedHCU);
+    function getQuotaAdmin(uint16 quotaId) external view returns (address);
+    function getQuotaMaxStoredDepth(uint16 quotaId) external view returns (uint48);
     function getVersion() external pure returns (string memory);
-    function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) external;
-    function isAllowlistActivated() external view returns (bool);
-    function isAllowlisted(address account) external view returns (bool);
-    function isAllowlister(address account) external view returns (bool);
-    function isBlockHCUWhitelisted(address account) external view returns (bool);
+    function grantQuota(uint16 quotaId, address account) external;
+    function initializeFromEmptyProxy(uint48 defaultQuotaHCUPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) external;
+    function isQuotaPaused(uint16 quotaId) external view returns (bool);
+    function pauseQuota(uint16 quotaId) external;
     function proxiableUUID() external view returns (bytes32);
     function reinitializeV6() external;
-    function removeAllowlister(address account) external;
-    function removeFromAllowlist(address[] memory accounts) external;
-    function removeFromBlockHCUWhitelist(address account) external;
-    function renounceAllowlister() external;
-    function setAllowlistActivated(bool activated) external;
+    function revokeQuota(uint16 quotaId, address account) external;
     function setCrossTxDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external;
-    function setHCUPerBlock(uint48 hcuPerBlock) external;
     function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external;
     function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
+    function setQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) external;
+    function setQuotaAdmin(uint16 quotaId, address admin) external;
+    function setQuotaMaxStoredDepth(uint16 quotaId, uint48 maxStoredDepth) external;
+    function unpauseQuota(uint16 quotaId) external;
     function upgradeToAndCall(address newImplementation, bytes memory data) external payable;
 }
 ```
@@ -139,40 +133,14 @@ interface HCULimit {
   },
   {
     "type": "function",
-    "name": "addAllowlister",
+    "name": "assignQuota",
     "inputs": [
       {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
       },
       {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "addToAllowlist",
-    "inputs": [
-      {
-        "name": "accounts",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "addToBlockHCUWhitelist",
-    "inputs": [
-      {
         "name": "account",
         "type": "address",
         "internalType": "address"
@@ -180,25 +148,6 @@ interface HCULimit {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "allowlisterDeadline",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -217,7 +166,7 @@ interface HCULimit {
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "depth",
         "type": "uint48",
         "internalType": "uint48"
       }
@@ -1276,18 +1225,19 @@ interface HCULimit {
   },
   {
     "type": "function",
-    "name": "getBlockMeter",
-    "inputs": [],
+    "name": "getContractQuota",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [
       {
-        "name": "blockNumber",
-        "type": "uint48",
-        "internalType": "uint48"
-      },
-      {
-        "name": "usedHCU",
-        "type": "uint48",
-        "internalType": "uint48"
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "stateMutability": "view"
@@ -1325,19 +1275,6 @@ interface HCULimit {
   },
   {
     "type": "function",
-    "name": "getGlobalHCUCapPerBlock",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint48",
-        "internalType": "uint48"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getMaxHCUDepthPerTx",
     "inputs": [],
     "outputs": [
@@ -1364,6 +1301,73 @@ interface HCULimit {
   },
   {
     "type": "function",
+    "name": "getQuota",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "maxHCU",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "decayPerBlock",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "usedHCU",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getQuotaAdmin",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getQuotaMaxStoredDepth",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getVersion",
     "inputs": [],
     "outputs": [
@@ -1377,10 +1381,28 @@ interface HCULimit {
   },
   {
     "type": "function",
+    "name": "grantQuota",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "initializeFromEmptyProxy",
     "inputs": [
       {
-        "name": "hcuCapPerBlock",
+        "name": "defaultQuotaHCUPerBlock",
         "type": "uint48",
         "internalType": "uint48"
       },
@@ -1400,25 +1422,12 @@ interface HCULimit {
   },
   {
     "type": "function",
-    "name": "isAllowlistActivated",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isAllowlisted",
+    "name": "isQuotaPaused",
     "inputs": [
       {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
     "outputs": [
@@ -1432,41 +1441,16 @@ interface HCULimit {
   },
   {
     "type": "function",
-    "name": "isAllowlister",
+    "name": "pauseQuota",
     "inputs": [
       {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isBlockHCUWhitelisted",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -1490,58 +1474,17 @@ interface HCULimit {
   },
   {
     "type": "function",
-    "name": "removeAllowlister",
+    "name": "revokeQuota",
     "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
       {
         "name": "account",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "removeFromAllowlist",
-    "inputs": [
-      {
-        "name": "accounts",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "removeFromBlockHCUWhitelist",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "renounceAllowlister",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setAllowlistActivated",
-    "inputs": [
-      {
-        "name": "activated",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -1558,19 +1501,6 @@ interface HCULimit {
       },
       {
         "name": "decayPerBlock",
-        "type": "uint48",
-        "internalType": "uint48"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setHCUPerBlock",
-    "inputs": [
-      {
-        "name": "hcuPerBlock",
         "type": "uint48",
         "internalType": "uint48"
       }
@@ -1606,6 +1536,78 @@ interface HCULimit {
   },
   {
     "type": "function",
+    "name": "setQuota",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "maxHCU",
+        "type": "uint48",
+        "internalType": "uint48"
+      },
+      {
+        "name": "decayPerBlock",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setQuotaAdmin",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "admin",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setQuotaMaxStoredDepth",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "maxStoredDepth",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "unpauseQuota",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "upgradeToAndCall",
     "inputs": [
       {
@@ -1624,21 +1626,14 @@ interface HCULimit {
   },
   {
     "type": "event",
-    "name": "AllowlistActivationChanged",
+    "name": "ContractQuotaAssigned",
     "inputs": [
       {
-        "name": "activated",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "AllowlistAdded",
-    "inputs": [
+        "name": "quotaId",
+        "type": "uint16",
+        "indexed": true,
+        "internalType": "uint16"
+      },
       {
         "name": "account",
         "type": "address",
@@ -1646,78 +1641,7 @@ interface HCULimit {
         "internalType": "address"
       },
       {
-        "name": "addedBy",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "AllowlistRemoved",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "AllowlisterAdded",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "AllowlisterRemoved",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "BlockHCUWhitelistAdded",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "BlockHCUWhitelistRemoved",
-    "inputs": [
-      {
-        "name": "account",
+        "name": "setBy",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -1737,19 +1661,6 @@ interface HCULimit {
       },
       {
         "name": "decayPerBlock",
-        "type": "uint48",
-        "indexed": false,
-        "internalType": "uint48"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "HCUPerBlockSet",
-    "inputs": [
-      {
-        "name": "hcuPerBlock",
         "type": "uint48",
         "indexed": false,
         "internalType": "uint48"
@@ -1798,6 +1709,106 @@ interface HCULimit {
   },
   {
     "type": "event",
+    "name": "QuotaAdminSet",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "indexed": true,
+        "internalType": "uint16"
+      },
+      {
+        "name": "admin",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "QuotaMaxStoredDepthSet",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "indexed": true,
+        "internalType": "uint16"
+      },
+      {
+        "name": "maxStoredDepth",
+        "type": "uint48",
+        "indexed": false,
+        "internalType": "uint48"
+      },
+      {
+        "name": "setBy",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "QuotaPauseSet",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "indexed": true,
+        "internalType": "uint16"
+      },
+      {
+        "name": "paused",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "setBy",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "QuotaSet",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "indexed": true,
+        "internalType": "uint16"
+      },
+      {
+        "name": "maxHCU",
+        "type": "uint48",
+        "indexed": false,
+        "internalType": "uint48"
+      },
+      {
+        "name": "decayPerBlock",
+        "type": "uint48",
+        "indexed": false,
+        "internalType": "uint48"
+      },
+      {
+        "name": "setBy",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Upgraded",
     "inputs": [
       {
@@ -1822,17 +1833,6 @@ interface HCULimit {
   },
   {
     "type": "error",
-    "name": "AlreadyBlockHCUWhitelisted",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "CallerMustBeACLContract",
     "inputs": []
   },
@@ -1843,29 +1843,28 @@ interface HCULimit {
   },
   {
     "type": "error",
-    "name": "CallerNotACLOwnerOrAllowlister",
+    "name": "ContractNotInQuota",
     "inputs": [
       {
-        "name": "caller",
+        "name": "account",
         "type": "address",
         "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "CallerNotAllowlisted",
-    "inputs": [
+      },
       {
-        "name": "caller",
-        "type": "address",
-        "internalType": "address"
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
       }
     ]
   },
   {
     "type": "error",
     "name": "CrossTxDepthBelowMaxDepthPerTx",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DefaultQuotaNotStopped",
     "inputs": []
   },
   {
@@ -1886,17 +1885,7 @@ interface HCULimit {
   },
   {
     "type": "error",
-    "name": "EmptyBatch",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "FailedCall",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "HCUBlockLimitExceeded",
     "inputs": []
   },
   {
@@ -1912,8 +1901,77 @@ interface HCULimit {
   },
   {
     "type": "error",
-    "name": "HCUPerBlockBelowMaxPerTx",
-    "inputs": []
+    "name": "HCUQuotaExceeded",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "retryAfterBlocks",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "HCUQuotaPaused",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "HCUQuotaStopped",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "HCUStoredDepthExceeded",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "retryAfterBlocks",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1927,17 +1985,6 @@ interface HCULimit {
   },
   {
     "type": "error",
-    "name": "InvalidAllowlisterDeadline",
-    "inputs": [
-      {
-        "name": "deadline",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "InvalidCrossTxDepthLimit",
     "inputs": []
   },
@@ -1948,46 +1995,30 @@ interface HCULimit {
   },
   {
     "type": "error",
-    "name": "InvalidZeroAddress",
-    "inputs": []
+    "name": "InvalidMaxStoredDepth",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidQuota",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
   },
   {
     "type": "error",
     "name": "InvalidZeroHandle",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotAllowlisted",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotAllowlister",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotBlockHCUWhitelisted",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
   },
   {
     "type": "error",
@@ -2012,8 +2043,46 @@ interface HCULimit {
   },
   {
     "type": "error",
+    "name": "NotPauser",
+    "inputs": [
+      {
+        "name": "sender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotQuotaAdmin",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "sender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "OnlyScalarOperationsAreSupported",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "QuotaMembershipPaused",
+    "inputs": [
+      {
+        "name": "quotaId",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ]
   },
   {
     "type": "error",
@@ -2051,22 +2120,22 @@ pub mod HCULimit {
     /// The creation / init bytecode of the contract.
     ///
     /// ```text
-    ///0x60a06040523060805234801562000014575f80fd5b506200001f62000025565b620000d9565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805468010000000000000000900460ff1615620000765760405163f92ee8a960e01b815260040160405180910390fd5b80546001600160401b0390811614620000d65780546001600160401b0319166001600160401b0390811782556040519081527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15b50565b608051614a73620001005f395f8181613929015281816139520152613b2e0152614a735ff3fe608060405260043610610387575f3560e01c80636bad18b6116101d3578063b78bef59116100fd578063c8de43521161009d578063ede8776e1161006d578063ede8776e14610a65578063f1c4e4ed14610a84578063f5d0b2d514610aa3578063f7d198f814610ab7575f80fd5b8063c8de4352146109f4578063d1f31d1514610a13578063d5b8b8f314610a27578063d633c96b14610a46575f80fd5b8063c1390c34116100d8578063c1390c341461098e578063c13c1971146109ad578063c277a936146109c1578063c5c1610c146109e0575f80fd5b8063b78bef5914610931578063b966255414610950578063c0c5df7c1461096f575f80fd5b80639b3f781a11610173578063aa1ffa3911610143578063aa1ffa39146108af578063ab394755146108ce578063ad3cb1cc146108ed578063b59547b81461091d575f80fd5b80639b3f781a1461083e5780639f4b99371461085d5780639f9259bb14610871578063a036ea2e14610890575f80fd5b80637de4d40d116101ae5780637de4d40d146107c2578063818f4d69146107e15780638629f54514610800578063968302d71461081f575f80fd5b80636bad18b6146107655780636cf0bd25146107845780636fd65e4d146107a3575f80fd5b806338bd17e5116102b4578063497c22c5116102545780635c414b57116102245780635c414b57146106e95780635f76eb301461070857806360e121891461072757806369931afb14610746575f80fd5b8063497c22c5146106845780634f1ef286146106a35780635207c273146106b657806352d1902d146106d5575f80fd5b80633d044b9e1161028f5780633d044b9e146105fa57806342300aaa146106195780634391568c14610638578063458fb27714610665575f80fd5b806338bd17e51461059d5780633bb7d5a3146105bc5780633bbcc4b2146105db575f80fd5b8063196a456d1161032a5780632d690548116102fa5780632d6905481461050d5780632dcbc5d1146105405780632e3c39061461055f5780633311b1bc1461057e575f80fd5b8063196a456d1461047d5780631e24aa491461049c578063268d6d31146104c757806328677ca7146104ee575f80fd5b80630d81a3f1116103655780630d81a3f1146103ff5780630d8e6e2c1461041e578063104b6cb71461043f57806315e2cfd31461045e575f80fd5b806304553fb61461038b57806305a3b809146103ac57806307ccdf61146103e0575b5f80fd5b348015610396575f80fd5b506103aa6103a536600461436a565b610ad6565b005b3480156103b7575f80fd5b506103cb6103c63660046143d7565b610bb6565b60405190151581526020015b60405180910390f35b3480156103eb575f80fd5b506103aa6103fa36600461436a565b610be3565b34801561040a575f80fd5b506103aa61041936600461436a565b610c9f565b348015610429575f80fd5b50610432610d7d565b6040516103d79190614414565b34801561044a575f80fd5b506103aa61045936600461448d565b610de3565b348015610469575f80fd5b506103cb6104783660046143d7565b610f84565b348015610488575f80fd5b506103aa6104973660046144de565b610fbb565b3480156104a7575f80fd5b506104b0611100565b60405165ffffffffffff90911681526020016103d7565b3480156104d2575f80fd5b506040515f80516020614a5383398151915281526020016103d7565b3480156104f9575f80fd5b506103aa6105083660046143d7565b61111e565b348015610518575f80fd5b5061052161125a565b6040805165ffffffffffff9384168152929091166020830152016103d7565b34801561054b575f80fd5b506103aa61055a366004614526565b611288565b34801561056a575f80fd5b506103aa61057936600461456b565b611310565b348015610589575f80fd5b506103aa61059836600461436a565b611396565b3480156105a8575f80fd5b506103aa6105b736600461436a565b611439565b3480156105c7575f80fd5b506103aa6105d636600461436a565b6114ee565b3480156105e6575f80fd5b506103aa6105f53660046145b5565b6115a3565b348015610605575f80fd5b506103aa61061436600461461b565b61188a565b348015610624575f80fd5b506103aa6106333660046143d7565b6119da565b348015610643575f80fd5b506106576106523660046143d7565b611a86565b6040519081526020016103d7565b348015610670575f80fd5b506103aa61067f36600461436a565b611ab0565b34801561068f575f80fd5b506103aa61069e366004614526565b611b5f565b6103aa6106b1366004614659565b611bd6565b3480156106c1575f80fd5b506103aa6106d036600461448d565b611bf5565b3480156106e0575f80fd5b50610657611db8565b3480156106f4575f80fd5b506103aa610703366004614716565b611dd3565b348015610713575f80fd5b506103aa61072236600461436a565b611e7c565b348015610732575f80fd5b506103aa61074136600461436a565b611f39565b348015610751575f80fd5b506103aa610760366004614526565b61200e565b348015610770575f80fd5b506103aa61077f36600461436a565b612081565b34801561078f575f80fd5b506103aa61079e366004614731565b612156565b3480156107ae575f80fd5b506103aa6107bd3660046143d7565b6121d8565b3480156107cd575f80fd5b506103aa6107dc366004614763565b61231a565b3480156107ec575f80fd5b506103aa6107fb36600461436a565b61240d565b34801561080b575f80fd5b506103aa61081a36600461436a565b6124c2565b34801561082a575f80fd5b506103aa61083936600461436a565b612590565b348015610849575f80fd5b506103aa61085836600461436a565b612645565b348015610868575f80fd5b506105216126da565b34801561087c575f80fd5b506103aa61088b36600461436a565b612727565b34801561089b575f80fd5b506103aa6108aa366004614716565b6127ee565b3480156108ba575f80fd5b506103aa6108c9366004614782565b612897565b3480156108d9575f80fd5b506103aa6108e8366004614716565b612aad565b3480156108f8575f80fd5b50610432604051806040016040528060058152602001640352e302e360dc1b81525081565b348015610928575f80fd5b506104b0612b56565b34801561093c575f80fd5b506103aa61094b366004614731565b612b6f565b34801561095b575f80fd5b506103aa61096a3660046147b9565b612bc5565b34801561097a575f80fd5b506103aa61098936600461436a565b612dde565b348015610999575f80fd5b506103aa6109a836600461436a565b612e8d565b3480156109b8575f80fd5b506104b0612f3c565b3480156109cc575f80fd5b506103aa6109db36600461436a565b612f5a565b3480156109eb575f80fd5b506103aa613009565b3480156109ff575f80fd5b506103aa610a0e36600461436a565b613050565b348015610a1e575f80fd5b506103cb6130ff565b348015610a32575f80fd5b506103aa610a41366004614731565b613114565b348015610a51575f80fd5b506103aa610a6036600461436a565b613189565b348015610a70575f80fd5b506103cb610a7f3660046143d7565b613238565b348015610a8f575f80fd5b506104b0610a9e366004614825565b613266565b348015610aae575f80fd5b506103aa6132d0565b348015610ac2575f80fd5b506103aa610ad136600461436a565b613399565b335f80516020614a5383398151915214610b03576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03610b6557610b527e01c9080001c908000157c0000157c0000148200001482000000000000000006e02d6900002d690000249f0000249f08961345d565b9050610b6081838786613514565b610bad565b610b9e7e02c6f00002c6f000023a5000023a500001d0d80001d0d800000000000000006e0468e8000468e800035778000357788961345d565b9050610bad8183878787613541565b50505050505050565b5f610bbf61357b565b6001600160a01b039092165f90815260029290920160205250604090205460ff1690565b335f80516020614a5383398151915214610c10576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03610c5657610b52747d0000007d0000007d0000007d0000007d0000007d60481b5f805160206149f38339815191528961345d565b610b9e7e027cb800027cb80001e0780001e078000163780001637800000000000000007e05a1680005a1680000000000000000000426800004268000033068000330688961345d565b335f80516020614a5383398151915214610ccc576040516331a81a8160e01b815260040160405180910390fd5b5f60fd60f81b6001600160f81b0319871601610d1357610b527e107ac000107ac0000aba18000aba1800078d9800078d980000000000000000661d4fe8001d4fe88961345d565b6001600160f81b031986811601610d6457610d557e14011800140118000bb030000bb0300007fee00007fee00000000000000000662c6b18002c6b188961345d565b9050610b608183878787613541565b604051636aa9eb0560e01b815260040160405180910390fd5b6060604051806040016040528060088152602001671210d5531a5b5a5d60c21b815250610da95f61359f565b610db3600661359f565b610dbc5f61359f565b604051602001610dcf9493929190614848565b604051602081830303815290604052905090565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015610e2c573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190610e5091906148c5565b6001600160a01b0316336001600160a01b031614610e885760405163021bfda160e41b81523360048201526024015b60405180910390fd5b5f819003610ea95760405163c2e5347d60e01b815260040160405180910390fd5b5f610eb261357b565b90505f5b82811015610f7e575f848483818110610ed157610ed16148e0565b9050602002016020810190610ee691906143d7565b6001600160a01b0381165f90815260028501602052604090205490915060ff16610f2e57604051636f7a527560e01b81526001600160a01b0382166004820152602401610e7f565b6001600160a01b0381165f818152600285016020526040808220805460ff19169055517f458680f79aa9de0ae06344287a3bd8ec6179faa05252e9af81ae734d6b4dc6ba9190a250600101610eb6565b50505050565b5f42610f8e61357b565b6003015f846001600160a01b03166001600160a01b031681526020019081526020015f2054119050919050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00546001600160401b03166001600160401b031660011461100f57604051636f4f731f60e01b815260040160405180910390fd5b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805460079190600160401b900460ff1680611058575080546001600160401b03808416911610155b156110765760405163f92ee8a960e01b815260040160405180910390fd5b805468ffffffffffffffffff19166001600160401b03831617600160401b1781556110a08561362e565b6110a9836136b8565b6110b284613746565b805460ff60401b191681556040516001600160401b03831681527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15050505050565b5f61110961357b565b54600160901b900465ffffffffffff16919050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611167573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061118b91906148c5565b6001600160a01b0316336001600160a01b0316146111be5760405163021bfda160e41b8152336004820152602401610e7f565b5f6111c761357b565b6001600160a01b0383165f90815260018201602052604090205490915060ff1661120f57604051631c79868360e31b81526001600160a01b0383166004820152602401610e7f565b6001600160a01b0382165f818152600183016020526040808220805460ff19169055517f92fc97af15002646cea63c7633bb375b82db7cde7b480c75fe6341dacc292c819190a25050565b5f805f61126561357b565b6004015465ffffffffffff6101008204811695600160381b909204169350915050565b335f80516020614a53833981519152146112b5576040516331a81a8160e01b815260040160405180910390fd5b5f6112fb7c20000000200000001000000010000000090000000900000002000000027c8200000082000000000000000000000082000000820000003f0000003f8761345d565b905061130981838686613514565b5050505050565b335f80516020614a538339815191521461133d576040516331a81a8160e01b815260040160405180910390fd5b5f6113867dd6d80000d6d80000d6d80000d6d80000d6d80000d6d80000d6d80000d6d87e01a5e00001a5e000014438000144380000dea80000dea80000d6d80000d6d88961345d565b9050610bad8183888888886137f8565b335f80516020614a53833981519152146113c3576040516331a81a8160e01b815260040160405180910390fd5b5f600160f81b6001600160f81b03198716146113f257604051636aa9eb0560e01b815260040160405180910390fd5b61142b7e0c15c0000c15c00008d9a00008d9a00006b6c00006b6c000000000000000006e1da5d8001da5d8001197e8001197e88961345d565b9050610bad81838786613514565b335f80516020614a5383398151915214611466576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036114b557610b527e014820000148200000e2900000e2900000e2900000e29000000000000000006e0249f0000249f00001d0d80001d0d88961345d565b610b9e7e01c9080001c90800014438000144380000e2900000e29000000000000000006e0353900003539000024608000246088961345d565b335f80516020614a538339815191521461151b576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361156a57610b527e014438000144380000e2900000e2900000cb200000cb2000000000000000006e024608000246080001ccf00001ccf08961345d565b610b9e7e01c9080001c90800014820000148200000e6780000e67800000000000000006e0347d8000347d800023a5000023a508961345d565b335f80516020614a53833981519152146115d0576040516331a81a8160e01b815260040160405180910390fd5b825f60028860538111156115e6576115e66148f4565b0361163b57600a821161160157506601168400011684611872565b601e821161161757506602422000024220611872565b603c821161162d57506603c4d80003c4d8611872565b506605b4f00005b4f0611872565b600388605381111561164f5761164f6148f4565b036116a457600a821161166a57506601925800019258611872565b601e821161168057506603539000035390611872565b603c821161169657506605c4900005c490611872565b5066093b4800093b48611872565b60048860538111156116b8576116b86148f4565b0361170d57600a82116116d357506602172800021728611872565b601e82116116e95750660493e0000493e0611872565b603c82116116ff575066081a3800081a38611872565b50660c9e78000c9e78611872565b6005886053811115611721576117216148f4565b0361176057600a821161173c57506603539000035390611872565b601e82116117525750660781e0000781e0611872565b50660d6998000d6998611872565b6006886053811115611774576117746148f4565b036117b357600a821161178f57506603e8000003e800611872565b601e82116117a55750660829d8000829d8611872565b50660e0da8000e0da8611872565b60078860538111156117c7576117c76148f4565b0361180657600a82116117e2575066045d3000045d30611872565b601e82116117f857506608e9400008e940611872565b50660d8108000d8108611872565b600888605381111561181a5761181a6148f4565b0361185957600a821161183557506604e5e80004e5e8611872565b601e821161184b57506608f1100008f110611872565b50660e6398000e6398611872565b604051639ba6061b60e01b815260040160405180910390fd5b611880818489898989613842565b5050505050505050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156118d3573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906118f791906148c5565b6001600160a01b0316336001600160a01b03161461192a5760405163021bfda160e41b8152336004820152602401610e7f565b6001600160a01b0382166119515760405163f6b2911f60e01b815260040160405180910390fd5b42811161197457604051633ad4a7f160e11b815260048101829052602401610e7f565b8061197d61357b565b6001600160a01b0384165f81815260039290920160205260409182902092909255517f702308f307104d2cb94599ca9d733f059c22460a3bbdd48ccccec249f7b75eb2906119ce9084815260200190565b60405180910390a25050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611a23573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611a4791906148c5565b6001600160a01b0316336001600160a01b031614611a7a5760405163021bfda160e41b8152336004820152602401610e7f565b611a83816138a9565b50565b5f611a8f61357b565b6001600160a01b039092165f90815260039290920160205250604090205490565b335f80516020614a5383398151915214611add576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611b2657610b52750a4100000a41000006b6c00006b6c00006590000065960451b6e0249f0000249f00001c9080001c9088961345d565b610b9e7e01ccf00001ccf000014820000148200000e6780000e67800000000000000006e03539000035390000251c0000251c08961345d565b335f80516020614a5383398151915214611b8c576040516331a81a8160e01b815260040160405180910390fd5b5f6112fb7e0173180001731800016b4800016b48000134980001349800000000000000007e041ac800041ac8000000000000000000029040000290400001ffb80001ffb88761345d565b611bde61391e565b611be7826139c2565b611bf18282613a62565b5050565b5f611bfe61357b565b90505f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611c49573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611c6d91906148c5565b6001600160a01b0316336001600160a01b031614158015611c9e5750335f9081526003820160205260409020544210155b15611cbe5760405163743466a760e11b8152336004820152602401610e7f565b5f829003611cdf5760405163c2e5347d60e01b815260040160405180910390fd5b5f5b82811015610f7e575f848483818110611cfc57611cfc6148e0565b9050602002016020810190611d1191906143d7565b90506001600160a01b038116611d3a5760405163f6b2911f60e01b815260040160405180910390fd5b6001600160a01b0381165f90815260028401602052604090205460ff1615611d625750611db0565b6001600160a01b0381165f818152600285016020526040808220805460ff19166001179055513392917f3a1d7975c5faf5b51fd037a8d3de977f33ee55b9e8fd42c82fc1a9a260226a4191a3505b600101611ce1565b5f611dc1613b23565b505f80516020614a3383398151915290565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611e1c573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611e4091906148c5565b6001600160a01b0316336001600160a01b031614611e735760405163021bfda160e41b8152336004820152602401610e7f565b611a8381613746565b335f80516020614a5383398151915214611ea9576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611ef057610b52750fa000000fa000000f2300000f2300000f2300000f2360431b5f805160206149f38339815191528961345d565b610b9e7e027cb800027cb80001e8480001e848000163780001637800000000000000007e05c4900005c490000000000000000000043df000043df000033068000330688961345d565b335f80516020614a5383398151915214611f66576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611fc557610b527e014050000140500000d6d80000d6d80000d6d80000d6d8000061a8000061a87e01ccf00001ccf00001c9080001c9080001c9080001c90800014438000144388961345d565b610b9e7e014ff000014ff000014438000144380000d6d80000d6d800006590000065907e0251c0000251c000021728000217280001dc900001dc900001d4c00001d4c08961345d565b335f80516020614a538339815191521461203b576040516331a81a8160e01b815260040160405180910390fd5b5f6112fb7c20000000200000002000000020000000200000002000000020000000207c20000000200000000000000000000000200000002000000020000000208761345d565b335f80516020614a53833981519152146120ae576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361210d57610b527e014438000144380000d6d80000d6d80000d6d80000d6d8000059d8000059d87e01c9080001c9080001c9080001c9080001c9080001c90800014820000148208961345d565b610b9e7e014c0800014c0800014438000144380000d6d80000d6d8000059d8000059d87e0249f0000249f000021340000213400001dc900001dc900001ccf00001ccf08961345d565b335f80516020614a5383398151915214612183576040516331a81a8160e01b815260040160405180910390fd5b5f6121cb7d5dc000005dc0000059d8000059d8000059d8000059d800000000000000007d7530000075300000000000000000000061a8000061a800005dc000005dc08661345d565b9050610f7e818385613b6c565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612221573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061224591906148c5565b6001600160a01b0316336001600160a01b0316146122785760405163021bfda160e41b8152336004820152602401610e7f565b5f61228161357b565b6001600160a01b0383165f90815260018201602052604090205490915060ff16156122ca5760405163f99c4fd160e01b81526001600160a01b0383166004820152602401610e7f565b6001600160a01b0382165f81815260018381016020526040808320805460ff1916909217909155517fcca1d46384cdbbeef2f9daddb76db138101c9905f818d867b630195c128d3c669190a25050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612363573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061238791906148c5565b6001600160a01b0316336001600160a01b0316146123ba5760405163021bfda160e41b8152336004820152602401610e7f565b806123c361357b565b600401805460ff191691151591909117905560405181151581527fad553b60ca37b0efb5444e26b0e05a21044896bc327ac810edcadbdd0218c2cd9060200160405180910390a150565b335f80516020614a538339815191521461243a576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361248957610b527e040b2800040b280002f1e80002f1e80001dc900001dc9000000000000000006e0a9ec0000a9ec0000591c8000591c88961345d565b610b9e7e050140000501400003633000036330000249f0000249f000000000000000006e19b9f00019b9f000091820000918208961345d565b335f80516020614a53833981519152146124ef576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361254757610b52750fa000000fa000000f2300000f2300000f2300000f2360431b7d9c4000009c4000000000000000000000908800009088000084d0000084d08961345d565b610b9e7e027100000271000001e8480001e84800016b4800016b4800000000000000007e05b8d80005b8d80000000000000000000451780004517800033068000330688961345d565b335f80516020614a53833981519152146125bd576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361260c57610b527e01c9080001c90800015ba800015ba800015ba800015ba800000000000000006e02bf200002bf2000024608000246088961345d565b610b9e7e02bf200002bf2000023668000236680001d8a80001d8a800000000000000006e046cd000046cd000035390000353908961345d565b335f80516020614a5383398151915214612672576040516331a81a8160e01b815260040160405180910390fd5b5f600160f81b6001600160f81b03198716146126a157604051636aa9eb0560e01b815260040160405180910390fd5b61142b7e06aef00006aef000049bb000049bb0000334500003345000000000000000006e12b1280012b128000ae8f8000ae8f88961345d565b5f805f6126e561357b565b8054909150439065ffffffffffff808316600160601b909204161461270d57935f9350915050565b90549093600160301b90910465ffffffffffff1692509050565b335f80516020614a5383398151915214612754576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036127ac57610b527d7d0000007d0000007918000079180000791800007918000055f0000055f06d908800009088000084d0000084d065130b0000130b60c31b018961345d565b610b9e7d7d0000007d0000007918000079180000791800007918000055f0000055f06d908800009088000084d0000084d065130b0000130b60c31b018961345d565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612837573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061285b91906148c5565b6001600160a01b0316336001600160a01b03161461288e5760405163021bfda160e41b8152336004820152602401610e7f565b611a838161362e565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156128e0573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061290491906148c5565b6001600160a01b0316336001600160a01b0316146129375760405163021bfda160e41b8152336004820152602401610e7f565b65ffffffffffff82811615908216151461296457604051630bf827ab60e31b815260040160405180910390fd5b5f61296d61357b565b905065ffffffffffff831615612a2557805465ffffffffffff600160901b909104811690841610156129b257604051634f357d2560e11b815260040160405180910390fd5b60405163778e2fef60e01b81525f6004820181905260248201525f80516020614a138339815191529063778e2fef906044016040805180830381865afa1580156129fe573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190612a229190614908565b50505b6004810180546cffffffffffffffffffffffff00191661010065ffffffffffff8681169182026cffffffffffff00000000000000191692909217600160381b928616928302179092556040805192835260208301919091527fdd4061cdc8ba27460cad47a90d55961fbbfcf71eeaf788556a9ad36b68292ab2910160405180910390a1505050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612af6573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190612b1a91906148c5565b6001600160a01b0316336001600160a01b031614612b4d5760405163021bfda160e41b8152336004820152602401610e7f565b611a83816136b8565b5f80612b6061357b565b5465ffffffffffff1692915050565b335f80516020614a5383398151915214612b9c576040516331a81a8160e01b815260040160405180910390fd5b5f6121cb7c2000000020000000200000002000000020000000200000002000000020808661345d565b335f80516020614a5383398151915214612bf2576040516331a81a8160e01b815260040160405180910390fd5b825f6002876053811115612c0857612c086148f4565b03612c5d57600a8211612c2357506601631400016314612dd1565b601e8211612c3957506601f0180001f018612dd1565b603c8211612c4f57506602422000024220612dd1565b5066026d1800026d18612dd1565b6003876053811115612c7157612c716148f4565b03612cc657600a8211612c8c57506601731800017318612dd1565b601e8211612ca257506602134000021340612dd1565b603c8211612cb85750660278d0000278d0612dd1565b506602cec00002cec0612dd1565b6004876053811115612cda57612cda6148f4565b03612d2f57600a8211612cf557506601c5200001c520612dd1565b601e8211612d0b5750660280a0000280a0612dd1565b603c8211612d215750660320c8000320c8612dd1565b50660449a8000449a8612dd1565b6005876053811115612d4357612d436148f4565b03612d8257600a8211612d5e575066021ef800021ef8612dd1565b601e8211612d74575066034bc000034bc0612dd1565b506604ab500004ab50612dd1565b6006876053811115612d9657612d966148f4565b0361185957600a8211612db157506603577800035778612dd1565b601e8211612dc7575066056ab800056ab8612dd1565b5066086c4000086c405b610bad8184888888613b90565b335f80516020614a5383398151915214612e0b576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612e5757610b527d7d0000007d0000007530000075300000753000007530000055f0000055f05f805160206149f38339815191528961345d565b610b9e7d7d0000007d000000791800007918000075300000753000005dc000005dc05f805160206149f38339815191528961345d565b335f80516020614a5383398151915214612eba576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612f0357610b52750b98c0000b98c0000b5a40000b5a40000a4100000a4160451b6e029fe000029fe000020788000207888961345d565b610b9e7e01e8480001e84800016b4800016b48000157c0000157c000000000000000006e03f3b80003f3b8000278d0000278d08961345d565b5f612f4561357b565b54600160c01b900465ffffffffffff16919050565b335f80516020614a5383398151915214612f87576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612fd057610b52750a4100000a41000006b6c00006b6c00006590000065960451b6e024608000246080001c5200001c5208961345d565b610b9e7e01ccf00001ccf000014820000148200000f6180000f61800000000000000006e03345000033450000251c0000251c08961345d565b61301161357b565b335f908152600391909101602052604081205490036130455760405163803c647d60e01b8152336004820152602401610e7f565b61304e336138a9565b565b335f80516020614a538339815191521461307d576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036130c957610b527d7d0000007d0000007918000079180000791800007918000055f0000055f05f805160206149f38339815191528961345d565b610b9e7d7d0000007d0000007918000079180000791800007918000061a8000061a85f805160206149f38339815191528961345d565b5f61310861357b565b6004015460ff16919050565b335f80516020614a5383398151915214613141576040516331a81a8160e01b815260040160405180910390fd5b5f6121cb7d5dc000005dc0000059d8000059d8000059d8000059d800004a3800004a387d7530000075300000000000000000000061a8000061a800005dc000005dc08661345d565b335f80516020614a53833981519152146131b6576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036131ff57610b52750b98c0000b98c0000b5a40000b5a40000a4100000a4160451b6e029fe000029fe000020788000207888961345d565b610b9e7e01e8480001e84800016b4800016b48000163780001637800000000000000006e03f7a00003f7a0000278d0000278d08961345d565b5f8061324261357b565b6001600160a01b039093165f90815260019093016020525050604090205460ff1690565b5f335f80516020614a13833981519152146132935760405162916b8b60e51b815260040160405180910390fd5b61329b61357b565b60040154610100900465ffffffffffff165f036132b957505f6132ca565b60806132c58484613be9565b901c90505b92915050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805460079190600160401b900460ff1680613319575080546001600160401b03808416911610155b156133375760405163f92ee8a960e01b815260040160405180910390fd5b805468ffffffffffffffffff19166001600160401b038316908117600160401b1760ff60401b191682556040519081527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2906020015b60405180910390a15050565b335f80516020614a53833981519152146133c6576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361341857610b52747d0000007d0000007d0000007d0000007d0000007d60481b6d908800009088000084d0000084d065130b0000130b60c31b018961345d565b610b9e7e0278d0000278d00001e8480001e848000167600001676000000000000000007e05c4900005c4900000000000000000000426800004268000032c8000032c80895b5f80826053811115613471576134716148f4565b61347f9060ff166004614949565b640876543201901c600f169050805f036134ac57604051639ba6061b60e01b815260040160405180910390fd5b6134b7600182614960565b90506001600160401b036134cc600483614987565b6134d7906040614949565b600483106134e557856134e7565b865b901c169150815f0361350c57604051639ba6061b60e01b815260040160405180910390fd5b509392505050565b6135276135218560201c90565b84613cec565b610f7e8163ffffffff861661353c8587613be9565b613da2565b61355461354e8660201c90565b85613cec565b6113098163ffffffff871661353c61356c8789613be9565b613576878a613be9565b613e71565b7fc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad650090565b60605f6135ab83613ed0565b60010190505f816001600160401b038111156135c9576135c9614645565b6040519080825280601f01601f1916602001820160405280156135f3576020820181803683370190505b5090508181016020015b5f19016f181899199a1a9b1b9c1cb0b131b232b360811b600a86061a8153600a85049450846135fd57509392505050565b5f61363761357b565b805490915065ffffffffffff600160c01b9091048116908316101561366f576040516304acca2f60e01b815260040160405180910390fd5b805465ffffffffffff191665ffffffffffff831690811782556040519081527fc1f1fcaa898aae2263dded712e1798083fca9272ff803ee4150ce48f8619891a9060200161338d565b5f6136c161357b565b805490915065ffffffffffff808416911610156136f1576040516304acca2f60e01b815260040160405180910390fd5b805465ffffffffffff60c01b1916600160c01b65ffffffffffff84169081029190911782556040519081527f64cb9e7ae6497c59080cdbc048552e123d52aa4240e137758a173582786961ca9060200161338d565b5f61374f61357b565b6004810154909150610100900465ffffffffffff16158015906137855750600481015465ffffffffffff80841661010090920416105b156137a357604051634f357d2560e11b815260040160405180910390fd5b805465ffffffffffff60901b1916600160901b65ffffffffffff84169081029190911782556040519081527f5511b1851fc40a2629c855bab7adce3276c470d8190eb01431e418dc2af13e8e9060200161338d565b61380b6138058760201c90565b86613cec565b61383a8163ffffffff881661353c613823888a613be9565b613576613830898c613be9565b613576898d613be9565b505050505050565b61384f6138058760201c90565b5f61385a8587613be9565b90505f5b838110156138965761388c8261357687878581811061387f5761387f6148e0565b905060200201358a613be9565b915060010161385e565b50610bad8263ffffffff89165b83613da2565b5f6138b261357b565b6001600160a01b0383165f908152600382016020526040812054919250036138d8575050565b6001600160a01b0382165f818152600383016020526040808220829055517fb3b168c75fe5d57ce3ad098ab4f89eaabb290b7354c67d13c048f985328bb0179190a25050565b306001600160a01b037f00000000000000000000000000000000000000000000000000000000000000001614806139a457507f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03166139985f80516020614a33833981519152546001600160a01b031690565b6001600160a01b031614155b1561304e5760405163703e46dd60e11b815260040160405180910390fd5b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015613a0b573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190613a2f91906148c5565b6001600160a01b0316336001600160a01b031614611a835760405163021bfda160e41b8152336004820152602401610e7f565b816001600160a01b03166352d1902d6040518163ffffffff1660e01b8152600401602060405180830381865afa925050508015613abc575060408051601f3d908101601f19168201909252613ab99181019061499a565b60015b613ae457604051634c9c8ce360e01b81526001600160a01b0383166004820152602401610e7f565b5f80516020614a338339815191528114613b1457604051632a87526960e21b815260048101829052602401610e7f565b613b1e8383613fa7565b505050565b306001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000161461304e5760405163703e46dd60e11b815260040160405180910390fd5b613b7f613b798460201c90565b83613cec565b613b1e8163ffffffff85165f613da2565b613b9d61354e8660201c90565b5f805b83811015613bd857613bce82613576878785818110613bc157613bc16148e0565b9050602002013589613be9565b9150600101613ba0565b5061383a8263ffffffff88166138a3565b5f80613bf484613ffc565b90925090508015613c0557506132ca565b613c0d61357b565b60040154610100900465ffffffffffff165f03613c2d575f9150506132ca565b60405163778e2fef60e01b8152600481018590526001600160a01b03841660248201525f9081905f80516020614a138339815191529063778e2fef906044016040805180830381865afa158015613c86573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190613caa9190614908565b915091506080613cd58383613cbd61357b565b60040154600160381b900465ffffffffffff16614037565b901b9350613ce3868561408c565b50505092915050565b5f613cf561357b565b600481015490915060ff168015613d2657506001600160a01b0382165f90815260028201602052604090205460ff16155b15613d4f576040516306966e1560e21b81526001600160a01b0383166004820152602401610e7f565b613d5983836140b9565b5f613d65815c856149b1565b8254909150600160c01b900465ffffffffffff16811115613d99576040516377e3c29360e01b815260040160405180910390fd5b610f7e816141a2565b5f613db382608085901b85176149b1565b90505f613dbe61357b565b8054909150600160901b900465ffffffffffff166001600160801b0383161115613dfb57604051630fc3448760e41b815260040160405180910390fd5b6004810154610100900465ffffffffffff16608083901c8115801590613e2057508181115b15613e6757613e4b613e328383614960565b6004850154600160381b900465ffffffffffff166141a8565b60405163134d433960e31b8152600401610e7f91815260200190565b610bad878561408c565b5f80826001600160801b0316846001600160801b03161015613e935782613e95565b835b6001600160801b031690505f608084901c608086901c1015613ebb57608084901c613ec1565b608085901c5b60801b91909117949350505050565b5f8072184f03e93ff9f4daa797ed6e38ed64bf6a1f0160401b8310613f0e5772184f03e93ff9f4daa797ed6e38ed64bf6a1f0160401b830492506040015b6d04ee2d6d415b85acef81000000008310613f3a576d04ee2d6d415b85acef8100000000830492506020015b662386f26fc100008310613f5857662386f26fc10000830492506010015b6305f5e1008310613f70576305f5e100830492506008015b6127108310613f8457612710830492506004015b60648310613f96576064830492506002015b600a83106132ca5760010192915050565b613fb0826141ca565b6040516001600160a01b038316907fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b905f90a2805115613ff457613b1e828261422d565b611bf161429f565b5f808261401c576040516334e45d7b60e01b815260040160405180910390fd5b50505c6001600160ff1b03811691600160ff1b909116151590565b5f808261404c65ffffffffffff861643614960565b6140569190614949565b90508465ffffffffffff1681101561407f5761407a8165ffffffffffff8716614960565b614081565b5f5b9150505b9392505050565b816140aa576040516334e45d7b60e01b815260040160405180910390fd5b600160ff1b811780835d505050565b5f6140c261357b565b6001600160a01b0383165f90815260018201602052604090205490915060ff16156140ec57505050565b8054439065ffffffffffff600160301b8204811691600160601b900481169083161461411557505f5b5f6141288665ffffffffffff84166149b1565b845490915065ffffffffffff1681111561415557604051632b49445d60e21b815260040160405180910390fd5b835471ffffffffffffffffffffffff0000000000001916600160301b65ffffffffffff9283160265ffffffffffff60601b191617600160601b939091169290920291909117909155505050565b805f5d50565b5f8160016141b682866149b1565b6141c09190614960565b61408591906149c4565b806001600160a01b03163b5f036141ff57604051634c9c8ce360e01b81526001600160a01b0382166004820152602401610e7f565b5f80516020614a3383398151915280546001600160a01b0319166001600160a01b0392909216919091179055565b60605f80846001600160a01b03168460405161424991906149d7565b5f60405180830381855af49150503d805f8114614281576040519150601f19603f3d011682016040523d82523d5f602084013e614286565b606091505b50915091506142968583836142be565b95945050505050565b341561304e5760405163b398979f60e01b815260040160405180910390fd5b6060826142d3576142ce8261431a565b614085565b81511580156142ea57506001600160a01b0384163b155b1561431357604051639996b31560e01b81526001600160a01b0385166004820152602401610e7f565b5080614085565b80511561432a5780518082602001fd5b60405163d6bda27560e01b815260040160405180910390fd5b803560548110614351575f80fd5b919050565b6001600160a01b0381168114611a83575f80fd5b5f805f805f8060c0878903121561437f575f80fd5b61438887614343565b955060208701356001600160f81b0319811681146143a4575f80fd5b945060408701359350606087013592506080870135915060a08701356143c981614356565b809150509295509295509295565b5f602082840312156143e7575f80fd5b813561408581614356565b5f5b8381101561440c5781810151838201526020016143f4565b50505f910152565b602081525f82518060208401526144328160408501602087016143f2565b601f01601f19169190910160400192915050565b5f8083601f840112614456575f80fd5b5081356001600160401b0381111561446c575f80fd5b6020830191508360208260051b8501011115614486575f80fd5b9250929050565b5f806020838503121561449e575f80fd5b82356001600160401b038111156144b3575f80fd5b6144bf85828601614446565b90969095509350505050565b65ffffffffffff81168114611a83575f80fd5b5f805f606084860312156144f0575f80fd5b83356144fb816144cb565b9250602084013561450b816144cb565b9150604084013561451b816144cb565b809150509250925092565b5f805f8060808587031215614539575f80fd5b61454285614343565b93506020850135925060408501359150606085013561456081614356565b939692955090935050565b5f805f805f8060c08789031215614580575f80fd5b61458987614343565b95506020870135945060408701359350606087013592506080870135915060a08701356143c981614356565b5f805f805f8060a087890312156145ca575f80fd5b6145d387614343565b95506020870135945060408701356001600160401b038111156145f4575f80fd5b61460089828a01614446565b9095509350506060870135915060808701356143c981614356565b5f806040838503121561462c575f80fd5b823561463781614356565b946020939093013593505050565b634e487b7160e01b5f52604160045260245ffd5b5f806040838503121561466a575f80fd5b823561467581614356565b915060208301356001600160401b0380821115614690575f80fd5b818501915085601f8301126146a3575f80fd5b8135818111156146b5576146b5614645565b604051601f8201601f19908116603f011681019083821181831017156146dd576146dd614645565b816040528281528860208487010111156146f5575f80fd5b826020860160208301375f6020848301015280955050505050509250929050565b5f60208284031215614726575f80fd5b8135614085816144cb565b5f805f60608486031215614743575f80fd5b61474c84614343565b925060208401359150604084013561451b81614356565b5f60208284031215614773575f80fd5b81358015158114614085575f80fd5b5f8060408385031215614793575f80fd5b823561479e816144cb565b915060208301356147ae816144cb565b809150509250929050565b5f805f805f608086880312156147cd575f80fd5b6147d686614343565b945060208601356001600160401b038111156147f0575f80fd5b6147fc88828901614446565b90955093505060408601359150606086013561481781614356565b809150509295509295909350565b5f8060408385031215614836575f80fd5b8235915060208301356147ae81614356565b5f8551614859818460208a016143f2565b61103b60f11b9083019081528551614878816002840160208a016143f2565b808201915050601760f91b806002830152855161489c816003850160208a016143f2565b600392019182015283516148b78160048401602088016143f2565b016004019695505050505050565b5f602082840312156148d5575f80fd5b815161408581614356565b634e487b7160e01b5f52603260045260245ffd5b634e487b7160e01b5f52602160045260245ffd5b5f8060408385031215614919575f80fd5b8251614924816144cb565b60208401519092506147ae816144cb565b634e487b7160e01b5f52601160045260245ffd5b80820281158282048414176132ca576132ca614935565b818103818111156132ca576132ca614935565b634e487b7160e01b5f52601260045260245ffd5b5f8261499557614995614973565b500690565b5f602082840312156149aa575f80fd5b5051919050565b808201808211156132ca576132ca614935565b5f826149d2576149d2614973565b500490565b5f82516149e88184602087016143f2565b919091019291505056fe000094700000947000000000000000000000908800009088000084d0000084d000000000000000000000000050157cffd6bbfa2dece204a89ec419c23ef5755d360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc000000000000000000000000e3a9105a3a932253a70f126eb1e3b589c643dd24
+    ///0x60a06040523060805234801562000014575f80fd5b506200001f62000025565b620000d9565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805468010000000000000000900460ff1615620000765760405163f92ee8a960e01b815260040160405180910390fd5b80546001600160401b0390811614620000d65780546001600160401b0319166001600160401b0390811782556040519081527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15b50565b608051614d52620001005f395f8181613ac101528181613aea0152613cc30152614d525ff3fe608060405260043610610366575f3560e01c806376e944ec116101c8578063b9662554116100fd578063c8de43521161009d578063f1c4e4ed1161006d578063f1c4e4ed14610a4c578063f5d0b2d514610a6b578063f7d198f814610a7f578063f8e4d1ec14610a9e575f80fd5b8063c8de4352146109a7578063d07476c6146109c6578063d5b8b8f314610a0e578063d633c96b14610a2d575f80fd5b8063c1390c34116100d8578063c1390c3414610936578063c13c197114610955578063c277a93614610969578063c7a7faee14610988575f80fd5b8063b9662554146108d9578063bd219476146108f8578063c0c5df7c14610917575f80fd5b8063968302d711610168578063aa1ffa3911610143578063aa1ffa391461084c578063ab3947551461086b578063ad3cb1cc1461088a578063b78bef59146108ba575f80fd5b8063968302d7146107ef5780639b3f781a1461080e5780639f9259bb1461082d575f80fd5b80638629f545116101a35780638629f5451461077357806389abb839146107925780638a1e6de5146107b15780638dc33c17146107d0575f80fd5b806376e944ec146107065780637eefeb6314610735578063818f4d6914610754575f80fd5b806339dde4431161029e5780635c414b571161023e57806360e121891161021957806360e121891461068a57806369931afb146106a95780636bad18b6146106c85780636cf0bd25146106e7575f80fd5b80635c414b571461062d5780635e60ef2b1461064c5780635f76eb301461066b575f80fd5b8063458fb27711610279578063458fb277146105ba578063497c22c5146105d95780634f1ef286146105f857806352d1902d1461060b575f80fd5b806339dde4431461055d5780633bb7d5a31461057c5780633bbcc4b21461059b575f80fd5b8063268d6d31116103095780632e3c3906116102e45780632e3c3906146104e15780633311b1bc1461050057806338bd17e51461051f5780633951e5061461053e575f80fd5b8063268d6d311461045c5780632d6905481461048f5780632dcbc5d1146104c2575f80fd5b80630d81a3f1116103445780630d81a3f1146103c95780630d8e6e2c146103e8578063196a456d146104125780631e24aa4914610431575f80fd5b806304553fb61461036a57806306180d001461038b57806307ccdf61146103aa575b5f80fd5b348015610375575f80fd5b50610389610384366004614602565b610ad0565b005b348015610396575f80fd5b506103896103a5366004614680565b610bb0565b3480156103b5575f80fd5b506103896103c4366004614602565b610ce8565b3480156103d4575f80fd5b506103896103e3366004614602565b610da4565b3480156103f3575f80fd5b506103fc610e82565b60405161040991906146d7565b60405180910390f35b34801561041d575f80fd5b5061038961042c36600461471c565b610ee8565b34801561043c575f80fd5b5061044561102f565b60405165ffffffffffff9091168152602001610409565b348015610467575f80fd5b505f80516020614d328339815191525b6040516001600160a01b039091168152602001610409565b34801561049a575f80fd5b506104a361104d565b6040805165ffffffffffff938416815292909116602083015201610409565b3480156104cd575f80fd5b506103896104dc366004614764565b61107b565b3480156104ec575f80fd5b506103896104fb3660046147a9565b611103565b34801561050b575f80fd5b5061038961051a366004614602565b611189565b34801561052a575f80fd5b50610389610539366004614602565b61122c565b348015610549575f80fd5b50610389610558366004614680565b6112e1565b348015610568575f80fd5b50610389610577366004614680565b6113ea565b348015610587575f80fd5b50610389610596366004614602565b61150a565b3480156105a6575f80fd5b506103896105b536600461483a565b6115bf565b3480156105c5575f80fd5b506103896105d4366004614602565b6118a6565b3480156105e4575f80fd5b506103896105f3366004614764565b611955565b6103896106063660046148b4565b6119cc565b348015610616575f80fd5b5061061f6119eb565b604051908152602001610409565b348015610638575f80fd5b50610389610647366004614971565b611a06565b348015610657575f80fd5b5061038961066636600461498c565b611ab2565b348015610676575f80fd5b50610389610685366004614602565b611b5c565b348015610695575f80fd5b506103896106a4366004614602565b611c19565b3480156106b4575f80fd5b506103896106c3366004614764565b611cee565b3480156106d3575f80fd5b506103896106e2366004614602565b611d61565b3480156106f2575f80fd5b506103896107013660046149a5565b611e36565b348015610711575f80fd5b5061072561072036600461498c565b611eb8565b6040519015158152602001610409565b348015610740575f80fd5b5061038961074f366004614680565b611ee7565b34801561075f575f80fd5b5061038961076e366004614602565b611f91565b34801561077e575f80fd5b5061038961078d366004614602565b612046565b34801561079d575f80fd5b506104456107ac36600461498c565b612114565b3480156107bc575f80fd5b506104776107cb36600461498c565b612148565b3480156107db575f80fd5b506103896107ea3660046149d7565b612176565b3480156107fa575f80fd5b50610389610809366004614602565b612226565b348015610819575f80fd5b50610389610828366004614602565b6122db565b348015610838575f80fd5b50610389610847366004614602565b612370565b348015610857575f80fd5b506103896108663660046149f2565b612437565b348015610876575f80fd5b50610389610885366004614971565b61264e565b348015610895575f80fd5b506103fc604051806040016040528060058152602001640352e302e360dc1b81525081565b3480156108c5575f80fd5b506103896108d43660046149a5565b6126f7565b3480156108e4575f80fd5b506103896108f3366004614a1e565b61274d565b348015610903575f80fd5b5061038961091236600461498c565b612966565b348015610922575f80fd5b50610389610931366004614602565b612a86565b348015610941575f80fd5b50610389610950366004614602565b612b35565b348015610960575f80fd5b50610445612be4565b348015610974575f80fd5b50610389610983366004614602565b612c02565b348015610993575f80fd5b506103896109a2366004614a8a565b612cb1565b3480156109b2575f80fd5b506103896109c1366004614602565b612ee0565b3480156109d1575f80fd5b506109e56109e036600461498c565b612f8f565b6040805165ffffffffffff94851681529284166020840152921691810191909152606001610409565b348015610a19575f80fd5b50610389610a283660046149a5565b612ff6565b348015610a38575f80fd5b50610389610a47366004614602565b61306b565b348015610a57575f80fd5b50610445610a66366004614aa4565b61311a565b348015610a76575f80fd5b50610389613244565b348015610a8a575f80fd5b50610389610a99366004614602565b613376565b348015610aa9575f80fd5b50610abd610ab8366004614ac7565b61343e565b60405161ffff9091168152602001610409565b335f80516020614d3283398151915214610afd576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03610b5f57610b4c7e01c9080001c908000157c0000157c0000148200001482000000000000000006e02d6900002d690000249f0000249f089613448565b9050610b5a818387866134ff565b610ba7565b610b987e02c6f00002c6f000023a5000023a500001d0d80001d0d800000000000000006e0468e8000468e8000357780003577889613448565b9050610ba7818387878761352c565b50505050505050565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015610bf9573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190610c1d9190614ae2565b6001600160a01b0316336001600160a01b031614610c555760405163021bfda160e41b81523360048201526024015b60405180910390fd5b600261ffff831611610c80576040516324427a5d60e01b815261ffff83166004820152602401610c4c565b80610c89613566565b61ffff84165f818152600792909201602052604080832080546001600160a01b0319166001600160a01b03958616179055519284169290917f9a6341776ec886f635576aafe3759f09cef019b264dfa6a27debb4855415ff3e91a35050565b335f80516020614d3283398151915214610d15576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03610d5b57610b4c747d0000007d0000007d0000007d0000007d0000007d60481b5f80516020614cd283398151915289613448565b610b987e027cb800027cb80001e0780001e078000163780001637800000000000000007e05a1680005a16800000000000000000004268000042680000330680003306889613448565b335f80516020614d3283398151915214610dd1576040516331a81a8160e01b815260040160405180910390fd5b5f60fd60f81b6001600160f81b0319871601610e1857610b4c7e107ac000107ac0000aba18000aba1800078d9800078d980000000000000000661d4fe8001d4fe889613448565b6001600160f81b031986811601610e6957610e5a7e14011800140118000bb030000bb0300007fee00007fee00000000000000000662c6b18002c6b1889613448565b9050610b5a818387878761352c565b604051636aa9eb0560e01b815260040160405180910390fd5b6060604051806040016040528060088152602001671210d5531a5b5a5d60c21b815250610eae5f61358a565b610eb8600661358a565b610ec15f61358a565b604051602001610ed49493929190614afd565b604051602081830303815290604052905090565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00546001600160401b03166001600160401b0316600114610f3c57604051636f4f731f60e01b815260040160405180910390fd5b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805460079190600160401b900460ff1680610f85575080546001600160401b03808416911610155b15610fa35760405163f92ee8a960e01b815260040160405180910390fd5b805468ffffffffffffffffff19166001600160401b03831617600160401b178155610fcf5f8680613619565b610fd8836136dd565b610fe18461373f565b805460ff60401b191681556040516001600160401b03831681527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15050505050565b5f611038613566565b54600160901b900465ffffffffffff16919050565b5f805f611058613566565b6004015465ffffffffffff6101008204811695600160381b909204169350915050565b335f80516020614d32833981519152146110a8576040516331a81a8160e01b815260040160405180910390fd5b5f6110ee7c20000000200000001000000010000000090000000900000002000000027c8200000082000000000000000000000082000000820000003f0000003f87613448565b90506110fc818386866134ff565b5050505050565b335f80516020614d3283398151915214611130576040516331a81a8160e01b815260040160405180910390fd5b5f6111797dd6d80000d6d80000d6d80000d6d80000d6d80000d6d80000d6d80000d6d87e01a5e00001a5e000014438000144380000dea80000dea80000d6d80000d6d889613448565b9050610ba781838888888861384e565b335f80516020614d32833981519152146111b6576040516331a81a8160e01b815260040160405180910390fd5b5f600160f81b6001600160f81b03198716146111e557604051636aa9eb0560e01b815260040160405180910390fd5b61121e7e0c15c0000c15c00008d9a00008d9a00006b6c00006b6c000000000000000006e1da5d8001da5d8001197e8001197e889613448565b9050610ba7818387866134ff565b335f80516020614d3283398151915214611259576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036112a857610b4c7e014820000148200000e2900000e2900000e2900000e29000000000000000006e0249f0000249f00001d0d80001d0d889613448565b610b987e01c9080001c90800014438000144380000e2900000e29000000000000000006e03539000035390000246080002460889613448565b815f6112eb613566565b61ffff83165f9081526007820160205260409020549091506001600160a01b0316331461133757604051630273872560e01b815261ffff83166004820152336024820152604401610c4c565b61ffff82165f908152600582016020526040902054600160c01b900460ff161561137a5760405163183a50d560e11b815261ffff83166004820152602401610c4c565b8361ffff16611387613566565b6001600160a01b0385165f908152600691909101602052604090205461ffff16146113da5760405163aa42e78560e01b81526001600160a01b038416600482015261ffff85166024820152604401610c4c565b6113e45f84613898565b50505050565b815f6113f4613566565b61ffff83165f9081526007820160205260409020549091506001600160a01b0316331461144057604051630273872560e01b815261ffff83166004820152336024820152604401610c4c565b61ffff82165f908152600582016020526040902054600160c01b900460ff16156114835760405163183a50d560e11b815261ffff83166004820152602401610c4c565b61148b613566565b5f808052600591909101602052604090205465ffffffffffff16156114c35760405163ca34efb160e01b815260040160405180910390fd5b5f6114cd84613985565b61ffff16146115005760405163aa42e78560e01b81526001600160a01b03841660048201525f6024820152604401610c4c565b6113e48484613898565b335f80516020614d3283398151915214611537576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361158657610b4c7e014438000144380000e2900000e2900000cb200000cb2000000000000000006e024608000246080001ccf00001ccf089613448565b610b987e01c9080001c90800014820000148200000e6780000e67800000000000000006e0347d8000347d800023a5000023a5089613448565b335f80516020614d32833981519152146115ec576040516331a81a8160e01b815260040160405180910390fd5b825f600288605381111561160257611602614b7a565b0361165757600a821161161d5750660116840001168461188e565b601e82116116335750660242200002422061188e565b603c821161164957506603c4d80003c4d861188e565b506605b4f00005b4f061188e565b600388605381111561166b5761166b614b7a565b036116c057600a82116116865750660192580001925861188e565b601e821161169c5750660353900003539061188e565b603c82116116b257506605c4900005c49061188e565b5066093b4800093b4861188e565b60048860538111156116d4576116d4614b7a565b0361172957600a82116116ef5750660217280002172861188e565b601e82116117055750660493e0000493e061188e565b603c821161171b575066081a3800081a3861188e565b50660c9e78000c9e7861188e565b600588605381111561173d5761173d614b7a565b0361177c57600a82116117585750660353900003539061188e565b601e821161176e5750660781e0000781e061188e565b50660d6998000d699861188e565b600688605381111561179057611790614b7a565b036117cf57600a82116117ab57506603e8000003e80061188e565b601e82116117c15750660829d8000829d861188e565b50660e0da8000e0da861188e565b60078860538111156117e3576117e3614b7a565b0361182257600a82116117fe575066045d3000045d3061188e565b601e821161181457506608e9400008e94061188e565b50660d8108000d810861188e565b600888605381111561183657611836614b7a565b0361187557600a821161185157506604e5e80004e5e861188e565b601e821161186757506608f1100008f11061188e565b50660e6398000e639861188e565b604051639ba6061b60e01b815260040160405180910390fd5b61189c818489898989613a4f565b5050505050505050565b335f80516020614d32833981519152146118d3576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361191c57610b4c750a4100000a41000006b6c00006b6c00006590000065960451b6e0249f0000249f00001c9080001c90889613448565b610b987e01ccf00001ccf000014820000148200000e6780000e67800000000000000006e03539000035390000251c0000251c089613448565b335f80516020614d3283398151915214611982576040516331a81a8160e01b815260040160405180910390fd5b5f6110ee7e0173180001731800016b4800016b48000134980001349800000000000000007e041ac800041ac8000000000000000000029040000290400001ffb80001ffb887613448565b6119d4613ab6565b6119dd82613b5c565b6119e78282613bfc565b5050565b5f6119f4613cb8565b505f80516020614d1283398151915290565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611a4f573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611a739190614ae2565b6001600160a01b0316336001600160a01b031614611aa65760405163021bfda160e41b8152336004820152602401610c4c565b611aaf8161373f565b50565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611afb573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611b1f9190614ae2565b6001600160a01b0316336001600160a01b031614611b525760405163021bfda160e41b8152336004820152602401610c4c565b611aaf815f613d01565b335f80516020614d3283398151915214611b89576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611bd057610b4c750fa000000fa000000f2300000f2300000f2300000f2360431b5f80516020614cd283398151915289613448565b610b987e027cb800027cb80001e8480001e848000163780001637800000000000000007e05c4900005c490000000000000000000043df000043df0000330680003306889613448565b335f80516020614d3283398151915214611c46576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611ca557610b4c7e014050000140500000d6d80000d6d80000d6d80000d6d8000061a8000061a87e01ccf00001ccf00001c9080001c9080001c9080001c908000144380001443889613448565b610b987e014ff000014ff000014438000144380000d6d80000d6d800006590000065907e0251c0000251c000021728000217280001dc900001dc900001d4c00001d4c089613448565b335f80516020614d3283398151915214611d1b576040516331a81a8160e01b815260040160405180910390fd5b5f6110ee7c20000000200000002000000020000000200000002000000020000000207c200000002000000000000000000000002000000020000000200000002087613448565b335f80516020614d3283398151915214611d8e576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611ded57610b4c7e014438000144380000d6d80000d6d80000d6d80000d6d8000059d8000059d87e01c9080001c9080001c9080001c9080001c9080001c908000148200001482089613448565b610b987e014c0800014c0800014438000144380000d6d80000d6d8000059d8000059d87e0249f0000249f000021340000213400001dc900001dc900001ccf00001ccf089613448565b335f80516020614d3283398151915214611e63576040516331a81a8160e01b815260040160405180910390fd5b5f611eab7d5dc000005dc0000059d8000059d8000059d8000059d800000000000000007d7530000075300000000000000000000061a8000061a800005dc000005dc086613448565b90506113e4818385613d7e565b5f611ec1613566565b61ffff929092165f9081526005909201602052506040902054600160c01b900460ff1690565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611f30573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611f549190614ae2565b6001600160a01b0316336001600160a01b031614611f875760405163021bfda160e41b8152336004820152602401610c4c565b6119e78282613898565b335f80516020614d3283398151915214611fbe576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361200d57610b4c7e040b2800040b280002f1e80002f1e80001dc900001dc9000000000000000006e0a9ec0000a9ec0000591c8000591c889613448565b610b987e050140000501400003633000036330000249f0000249f000000000000000006e19b9f00019b9f0000918200009182089613448565b335f80516020614d3283398151915214612073576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036120cb57610b4c750fa000000fa000000f2300000f2300000f2300000f2360431b7d9c4000009c4000000000000000000000908800009088000084d0000084d089613448565b610b987e027100000271000001e8480001e84800016b4800016b4800000000000000007e05b8d80005b8d800000000000000000004517800045178000330680003306889613448565b5f61211d613566565b61ffff929092165f9081526005909201602052506040902054600160c81b900465ffffffffffff1690565b5f612151613566565b61ffff9092165f9081526007929092016020525060409020546001600160a01b031690565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156121bf573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906121e39190614ae2565b6001600160a01b0316336001600160a01b0316146122165760405163021bfda160e41b8152336004820152602401610c4c565b612221838383613619565b505050565b335f80516020614d3283398151915214612253576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036122a257610b4c7e01c9080001c90800015ba800015ba800015ba800015ba800000000000000006e02bf200002bf20000246080002460889613448565b610b987e02bf200002bf2000023668000236680001d8a80001d8a800000000000000006e046cd000046cd0000353900003539089613448565b335f80516020614d3283398151915214612308576040516331a81a8160e01b815260040160405180910390fd5b5f600160f81b6001600160f81b031987161461233757604051636aa9eb0560e01b815260040160405180910390fd5b61121e7e06aef00006aef000049bb000049bb0000334500003345000000000000000006e12b1280012b128000ae8f8000ae8f889613448565b335f80516020614d328339815191521461239d576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036123f557610b4c7d7d0000007d0000007918000079180000791800007918000055f0000055f06d908800009088000084d0000084d065130b0000130b60c31b0189613448565b610b987d7d0000007d0000007918000079180000791800007918000055f0000055f06d908800009088000084d0000084d065130b0000130b60c31b0189613448565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612480573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906124a49190614ae2565b6001600160a01b0316336001600160a01b0316146124d75760405163021bfda160e41b8152336004820152602401610c4c565b65ffffffffffff82811615908216151461250457604051630bf827ab60e31b815260040160405180910390fd5b5f61250d613566565b905065ffffffffffff8316156125c557805465ffffffffffff600160901b9091048116908416101561255257604051634f357d2560e11b815260040160405180910390fd5b60405163778e2fef60e01b81525f6004820181905260248201525f80516020614cf28339815191529063778e2fef906044016040805180830381865afa15801561259e573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906125c29190614b8e565b50505b6004810180546cffffffffffffffffffffffff00191661010065ffffffffffff8681169182026cffffffffffff00000000000000191692909217600160381b928616928302179092556040805192835260208301919091527fdd4061cdc8ba27460cad47a90d55961fbbfcf71eeaf788556a9ad36b68292ab291015b60405180910390a1505050565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612697573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906126bb9190614ae2565b6001600160a01b0316336001600160a01b0316146126ee5760405163021bfda160e41b8152336004820152602401610c4c565b611aaf816136dd565b335f80516020614d3283398151915214612724576040516331a81a8160e01b815260040160405180910390fd5b5f611eab7c20000000200000002000000020000000200000002000000020000000208086613448565b335f80516020614d328339815191521461277a576040516331a81a8160e01b815260040160405180910390fd5b825f600287605381111561279057612790614b7a565b036127e557600a82116127ab57506601631400016314612959565b601e82116127c157506601f0180001f018612959565b603c82116127d757506602422000024220612959565b5066026d1800026d18612959565b60038760538111156127f9576127f9614b7a565b0361284e57600a821161281457506601731800017318612959565b601e821161282a57506602134000021340612959565b603c82116128405750660278d0000278d0612959565b506602cec00002cec0612959565b600487605381111561286257612862614b7a565b036128b757600a821161287d57506601c5200001c520612959565b601e82116128935750660280a0000280a0612959565b603c82116128a95750660320c8000320c8612959565b50660449a8000449a8612959565b60058760538111156128cb576128cb614b7a565b0361290a57600a82116128e6575066021ef800021ef8612959565b601e82116128fc575066034bc000034bc0612959565b506604ab500004ab50612959565b600687605381111561291e5761291e614b7a565b0361187557600a821161293957506603577800035778612959565b601e821161294f575066056ab800056ab8612959565b5066086c4000086c405b610ba78184888888613da2565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156129af573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906129d39190614ae2565b6001600160a01b0316336001600160a01b031614158015612a5b575060405163237dfb4760e11b81523360048201525f80516020614cf2833981519152906346fbf68e90602401602060405180830381865afa158015612a35573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190612a599190614bbb565b155b15612a7b576040516310351a3760e11b8152336004820152602401610c4c565b611aaf816001613d01565b335f80516020614d3283398151915214612ab3576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612aff57610b4c7d7d0000007d0000007530000075300000753000007530000055f0000055f05f80516020614cd283398151915289613448565b610b987d7d0000007d000000791800007918000075300000753000005dc000005dc05f80516020614cd283398151915289613448565b335f80516020614d3283398151915214612b62576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612bab57610b4c750b98c0000b98c0000b5a40000b5a40000a4100000a4160451b6e029fe000029fe0000207880002078889613448565b610b987e01e8480001e84800016b4800016b48000157c0000157c000000000000000006e03f3b80003f3b8000278d0000278d089613448565b5f612bed613566565b54600160c01b900465ffffffffffff16919050565b335f80516020614d3283398151915214612c2f576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612c7857610b4c750a4100000a41000006b6c00006b6c00006590000065960451b6e024608000246080001c5200001c52089613448565b610b987e01ccf00001ccf000014820000148200000f6180000f61800000000000000006e03345000033450000251c0000251c089613448565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612cfa573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190612d1e9190614ae2565b6001600160a01b0316336001600160a01b031614612d515760405163021bfda160e41b8152336004820152602401610c4c565b61ffff821660011480612d68575061ffff82166002145b15612d8c57604051630a5d45a760e31b815261ffff83166004820152602401610c4c565b5f612d95613566565b905065ffffffffffff821615612e6a57805465ffffffffffff600160901b90910481169083161080612ddb5750600481015465ffffffffffff6101009091048116908316115b15612dff57604051630a5d45a760e31b815261ffff84166004820152602401610c4c565b61ffff831615612e6a575f808052600582016020526040902054600160c81b900465ffffffffffff16801580612e4457508065ffffffffffff168365ffffffffffff16105b15612e6857604051630a5d45a760e31b815261ffff85166004820152602401610c4c565b505b61ffff83165f818152600583016020908152604091829020805465ffffffffffff60c81b1916600160c81b65ffffffffffff88169081029190911790915591519182523392917fe99cc7cd230a5b07193d61d97eb5c597da4ea602bd4e4779ce7e0d866109fdd0910160405180910390a3505050565b335f80516020614d3283398151915214612f0d576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612f5957610b4c7d7d0000007d0000007918000079180000791800007918000055f0000055f05f80516020614cd283398151915289613448565b610b987d7d0000007d0000007918000079180000791800007918000061a8000061a85f80516020614cd283398151915289613448565b5f805f80612f9b613566565b61ffff86165f90815260059190910160205260409020805490915065ffffffffffff80821691600160301b8104821691612fe891600160601b8104821691600160901b9091041683613dfb565b935093509350509193909250565b335f80516020614d3283398151915214613023576040516331a81a8160e01b815260040160405180910390fd5b5f611eab7d5dc000005dc0000059d8000059d8000059d8000059d800004a3800004a387d7530000075300000000000000000000061a8000061a800005dc000005dc086613448565b335f80516020614d3283398151915214613098576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036130e157610b4c750b98c0000b98c0000b5a40000b5a40000a4100000a4160451b6e029fe000029fe0000207880002078889613448565b610b987e01e8480001e84800016b4800016b48000163780001637800000000000000006e03f7a00003f7a0000278d0000278d089613448565b5f335f80516020614cf2833981519152146131475760405162916b8b60e51b815260040160405180910390fd5b5f613150613566565b6004810154909150610100900465ffffffffffff165f03613174575f91505061323e565b60806131808585613e50565b901c91505f61318e84613985565b61ffff81165f908152600584016020526040902054909150600160c81b900465ffffffffffff1680158015906131d357508065ffffffffffff168465ffffffffffff16115b1561323a5784826132056131e78488614bee565b600487015465ffffffffffff91821691600160381b90910416613f4a565b604051631996618560e11b81526001600160a01b03909316600484015261ffff90911660248301526044820152606401610c4c565b5050505b92915050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805460079190600160401b900460ff168061328d575080546001600160401b03808416911610155b156132ab5760405163f92ee8a960e01b815260040160405180910390fd5b805468ffffffffffffffffff19166001600160401b03831617600160401b1781555f6132d5613566565b8054600482015491925065ffffffffffff169060ff161561331e576132fb5f805f613619565b61330760018283613619565b613319600265ffffffffffff80613619565b613329565b6133295f8283613619565b5050805460ff60401b191681556040516001600160401b03831681527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15050565b335f80516020614d32833981519152146133a3576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036133f557610b4c747d0000007d0000007d0000007d0000007d0000007d60481b6d908800009088000084d0000084d065130b0000130b60c31b0189613448565b610b987e0278d0000278d00001e8480001e848000167600001676000000000000000007e05c4900005c4900000000000000000000426800004268000032c8000032c8089613448565b5f61323e82613985565b5f8082605381111561345c5761345c614b7a565b61346a9060ff166004614c14565b640876543201901c600f169050805f0361349757604051639ba6061b60e01b815260040160405180910390fd5b6134a2600182614c2b565b90506001600160401b036134b7600483614c52565b6134c2906040614c14565b600483106134d057856134d2565b865b901c169150815f036134f757604051639ba6061b60e01b815260040160405180910390fd5b509392505050565b61351261350c8560201c90565b84613f6c565b6113e48163ffffffff86166135278587613e50565b613fc5565b61353f6135398660201c90565b85613f6c565b6110fc8163ffffffff87166135276135578789613e50565b613561878a613e50565b614094565b7fc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad650090565b60605f613596836140f3565b60010190505f816001600160401b038111156135b4576135b46148a0565b6040519080825280601f01601f1916602001820160405280156135de576020820181803683370190505b5090508181016020015b5f19016f181899199a1a9b1b9c1cb0b131b232b360811b600a86061a8153600a85049450846135e857509392505050565b65ffffffffffff82811615908216151461364c576040516324427a5d60e01b815261ffff84166004820152602401610c4c565b5f613655613566565b61ffff85165f8181526005929092016020908152604092839020805465ffffffffffff8881166bffffffffffffffffffffffff199092168217600160301b918916918202178355855191825292810192909252935033927f0b07f4d29c11f9ec86026bcfde08527e11718be2bffcd10a33a246ec30dc5066910160405180910390a350505050565b806136e6613566565b805465ffffffffffff60c01b1916600160c01b65ffffffffffff9384160217905560405190821681527f64cb9e7ae6497c59080cdbc048552e123d52aa4240e137758a173582786961ca9060200160405180910390a150565b5f613748613566565b6004810154909150610100900465ffffffffffff161580159061377e5750600481015465ffffffffffff80841661010090920416105b1561379c57604051634f357d2560e11b815260040160405180910390fd5b5f808052600582016020526040902054600160c81b900465ffffffffffff1680158015906137d957508265ffffffffffff168165ffffffffffff16105b156137f957604051630a5d45a760e31b81525f6004820152602401610c4c565b815465ffffffffffff60901b1916600160901b65ffffffffffff85169081029190911783556040519081527f5511b1851fc40a2629c855bab7adce3276c470d8190eb01431e418dc2af13e8e90602001612641565b61386161385b8760201c90565b86613f6c565b6138908163ffffffff8816613527613879888a613e50565b613561613886898c613e50565b613561898d613e50565b505050505050565b5f6138a1613566565b905061ffff8316158015906138d0575061ffff83165f90815260058201602052604090205465ffffffffffff16155b156138f4576040516324427a5d60e01b815261ffff84166004820152602401610c4c565b6001600160a01b0382165f9081526006820160205260409020805461ffff191661ffff8516908117909155613945576001600160a01b0382165f9081526002820160205260409020805460ff191690555b60405133906001600160a01b0384169061ffff8616907f831ec39671abea4e554515afd140ced2d423f3a8028d1d9d0d140020514ece79905f90a4505050565b5f8061398f613566565b6001600160a01b0384165f90815260068201602052604090205490915061ffff16801515806139d457505f80805260058301602052604090205465ffffffffffff1615155b156139e0579392505050565b600482015460ff161580613a0e57506001600160a01b0384165f90815260028301602052604090205460ff16155b15613a1c57505f9392505050565b6001600160a01b0384165f90815260018301602052604090205460ff16613a44576001613a47565b60025b949350505050565b613a5c61385b8760201c90565b5f613a678587613e50565b90505f5b83811015613aa357613a9982613561878785818110613a8c57613a8c614c65565b905060200201358a613e50565b9150600101613a6b565b50610ba78263ffffffff89165b83613fc5565b306001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000161480613b3c57507f00000000000000000000000000000000000000000000000000000000000000006001600160a01b0316613b305f80516020614d12833981519152546001600160a01b031690565b6001600160a01b031614155b15613b5a5760405163703e46dd60e11b815260040160405180910390fd5b565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015613ba5573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190613bc99190614ae2565b6001600160a01b0316336001600160a01b031614611aaf5760405163021bfda160e41b8152336004820152602401610c4c565b816001600160a01b03166352d1902d6040518163ffffffff1660e01b8152600401602060405180830381865afa925050508015613c56575060408051601f3d908101601f19168201909252613c5391810190614c79565b60015b613c7e57604051634c9c8ce360e01b81526001600160a01b0383166004820152602401610c4c565b5f80516020614d128339815191528114613cae57604051632a87526960e21b815260048101829052602401610c4c565b61222183836141ca565b306001600160a01b037f00000000000000000000000000000000000000000000000000000000000000001614613b5a5760405163703e46dd60e11b815260040160405180910390fd5b80613d0a613566565b61ffff84165f8181526005929092016020526040918290208054931515600160c01b0260ff60c01b1990941693909317909255513391907f5308112c4b58b572b05ad603d316ed470621c607b785e3bb8018d6a51b524d8e90613d7290851515815260200190565b60405180910390a35050565b613d91613d8b8460201c90565b83613f6c565b6122218163ffffffff85165f613fc5565b613daf6135398660201c90565b5f805b83811015613dea57613de082613561878785818110613dd357613dd3614c65565b9050602002013589613e50565b9150600101613db2565b506138908263ffffffff8816613ab0565b5f8082613e1065ffffffffffff861643614c2b565b613e1a9190614c14565b90508465ffffffffffff16811015613e4357613e3e8165ffffffffffff8716614c2b565b613e45565b5f5b9150505b9392505050565b5f80613e5b8461421f565b90925090508015613e6c575061323e565b613e74613566565b60040154610100900465ffffffffffff165f03613e94575f91505061323e565b60405163778e2fef60e01b8152600481018590526001600160a01b03841660248201525f9081905f80516020614cf28339815191529063778e2fef906044016040805180830381865afa158015613eed573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190613f119190614b8e565b915091506080613f3c8383613f24613566565b60040154600160381b900465ffffffffffff16613dfb565b901b935061323a868561425a565b5f816001613f588286614c90565b613f629190614c2b565b613e499190614ca3565b613f768282614287565b5f613f82815c84614c90565b9050613f8c613566565b54600160c01b900465ffffffffffff16811115613fbc576040516377e3c29360e01b815260040160405180910390fd5b6122218161445c565b5f613fd682608085901b8517614c90565b90505f613fe1613566565b8054909150600160901b900465ffffffffffff166001600160801b038316111561401e57604051630fc3448760e41b815260040160405180910390fd5b6004810154610100900465ffffffffffff16608083901c811580159061404357508181115b1561408a5761406e6140558383614c2b565b6004850154600160381b900465ffffffffffff16613f4a565b60405163134d433960e31b8152600401610c4c91815260200190565b610ba7878561425a565b5f80826001600160801b0316846001600160801b031610156140b657826140b8565b835b6001600160801b031690505f608084901c608086901c10156140de57608084901c6140e4565b608085901c5b60801b91909117949350505050565b5f8072184f03e93ff9f4daa797ed6e38ed64bf6a1f0160401b83106141315772184f03e93ff9f4daa797ed6e38ed64bf6a1f0160401b830492506040015b6d04ee2d6d415b85acef8100000000831061415d576d04ee2d6d415b85acef8100000000830492506020015b662386f26fc10000831061417b57662386f26fc10000830492506010015b6305f5e1008310614193576305f5e100830492506008015b61271083106141a757612710830492506004015b606483106141b9576064830492506002015b600a831061323e5760010192915050565b6141d382614462565b6040516001600160a01b038316907fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b905f90a28051156142175761222182826144c5565b6119e7614537565b5f808261423f576040516334e45d7b60e01b815260040160405180910390fd5b50505c6001600160ff1b03811691600160ff1b909116151590565b81614278576040516334e45d7b60e01b815260040160405180910390fd5b600160ff1b811780835d505050565b5f61429182613985565b90505f61429c613566565b61ffff83165f908152600591909101602052604090208054909150600160c01b900460ff16156142f45760405163260d268160e21b81526001600160a01b038416600482015261ffff83166024820152604401610c4c565b805465ffffffffffff165f8190036143345760405163b474cba960e01b81526001600160a01b038516600482015261ffff84166024820152604401610c4c565b65fffffffffffe1965ffffffffffff821601614351575050505050565b815465ffffffffffff600160301b82048116915f91889161438491600160601b8204811691600160901b90041685613dfb565b61438e9190614c90565b90508265ffffffffffff16811115614413575f8365ffffffffffff1688116143d8576143d36143c565ffffffffffff861684614c2b565b8465ffffffffffff16613f4a565b6143db565b5f195b604051637383eee560e01b81526001600160a01b038916600482015261ffff8816602482015260448101829052909150606401610c4c565b83544365ffffffffffff908116600160901b0265ffffffffffff60901b1991909316600160601b02166bffffffffffffffffffffffff60601b1990911617179092555050505050565b805f5d50565b806001600160a01b03163b5f0361449757604051634c9c8ce360e01b81526001600160a01b0382166004820152602401610c4c565b5f80516020614d1283398151915280546001600160a01b0319166001600160a01b0392909216919091179055565b60605f80846001600160a01b0316846040516144e19190614cb6565b5f60405180830381855af49150503d805f8114614519576040519150601f19603f3d011682016040523d82523d5f602084013e61451e565b606091505b509150915061452e858383614556565b95945050505050565b3415613b5a5760405163b398979f60e01b815260040160405180910390fd5b60608261456b57614566826145b2565b613e49565b815115801561458257506001600160a01b0384163b155b156145ab57604051639996b31560e01b81526001600160a01b0385166004820152602401610c4c565b5080613e49565b8051156145c25780518082602001fd5b60405163d6bda27560e01b815260040160405180910390fd5b8035605481106145e9575f80fd5b919050565b6001600160a01b0381168114611aaf575f80fd5b5f805f805f8060c08789031215614617575f80fd5b614620876145db565b955060208701356001600160f81b03198116811461463c575f80fd5b945060408701359350606087013592506080870135915060a0870135614661816145ee565b809150509295509295509295565b803561ffff811681146145e9575f80fd5b5f8060408385031215614691575f80fd5b61469a8361466f565b915060208301356146aa816145ee565b809150509250929050565b5f5b838110156146cf5781810151838201526020016146b7565b50505f910152565b602081525f82518060208401526146f58160408501602087016146b5565b601f01601f19169190910160400192915050565b65ffffffffffff81168114611aaf575f80fd5b5f805f6060848603121561472e575f80fd5b833561473981614709565b9250602084013561474981614709565b9150604084013561475981614709565b809150509250925092565b5f805f8060808587031215614777575f80fd5b614780856145db565b93506020850135925060408501359150606085013561479e816145ee565b939692955090935050565b5f805f805f8060c087890312156147be575f80fd5b6147c7876145db565b95506020870135945060408701359350606087013592506080870135915060a0870135614661816145ee565b5f8083601f840112614803575f80fd5b5081356001600160401b03811115614819575f80fd5b6020830191508360208260051b8501011115614833575f80fd5b9250929050565b5f805f805f8060a0878903121561484f575f80fd5b614858876145db565b95506020870135945060408701356001600160401b03811115614879575f80fd5b61488589828a016147f3565b909550935050606087013591506080870135614661816145ee565b634e487b7160e01b5f52604160045260245ffd5b5f80604083850312156148c5575f80fd5b82356148d0816145ee565b915060208301356001600160401b03808211156148eb575f80fd5b818501915085601f8301126148fe575f80fd5b813581811115614910576149106148a0565b604051601f8201601f19908116603f01168101908382118183101715614938576149386148a0565b81604052828152886020848701011115614950575f80fd5b826020860160208301375f6020848301015280955050505050509250929050565b5f60208284031215614981575f80fd5b8135613e4981614709565b5f6020828403121561499c575f80fd5b613e498261466f565b5f805f606084860312156149b7575f80fd5b6149c0846145db565b9250602084013591506040840135614759816145ee565b5f805f606084860312156149e9575f80fd5b6147398461466f565b5f8060408385031215614a03575f80fd5b8235614a0e81614709565b915060208301356146aa81614709565b5f805f805f60808688031215614a32575f80fd5b614a3b866145db565b945060208601356001600160401b03811115614a55575f80fd5b614a61888289016147f3565b909550935050604086013591506060860135614a7c816145ee565b809150509295509295909350565b5f8060408385031215614a9b575f80fd5b614a0e8361466f565b5f8060408385031215614ab5575f80fd5b8235915060208301356146aa816145ee565b5f60208284031215614ad7575f80fd5b8135613e49816145ee565b5f60208284031215614af2575f80fd5b8151613e49816145ee565b5f8551614b0e818460208a016146b5565b61103b60f11b9083019081528551614b2d816002840160208a016146b5565b808201915050601760f91b8060028301528551614b51816003850160208a016146b5565b60039201918201528351614b6c8160048401602088016146b5565b016004019695505050505050565b634e487b7160e01b5f52602160045260245ffd5b5f8060408385031215614b9f575f80fd5b8251614baa81614709565b60208401519092506146aa81614709565b5f60208284031215614bcb575f80fd5b81518015158114613e49575f80fd5b634e487b7160e01b5f52601160045260245ffd5b65ffffffffffff828116828216039080821115614c0d57614c0d614bda565b5092915050565b808202811582820484141761323e5761323e614bda565b8181038181111561323e5761323e614bda565b634e487b7160e01b5f52601260045260245ffd5b5f82614c6057614c60614c3e565b500690565b634e487b7160e01b5f52603260045260245ffd5b5f60208284031215614c89575f80fd5b5051919050565b8082018082111561323e5761323e614bda565b5f82614cb157614cb1614c3e565b500490565b5f8251614cc78184602087016146b5565b919091019291505056fe000094700000947000000000000000000000908800009088000084d0000084d000000000000000000000000050157cffd6bbfa2dece204a89ec419c23ef5755d360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc000000000000000000000000e3a9105a3a932253a70f126eb1e3b589c643dd24
     /// ```
     #[rustfmt::skip]
     #[allow(clippy::all)]
     pub static BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\xA0`@R0`\x80R4\x80\x15b\0\0\x14W_\x80\xFD[Pb\0\0\x1Fb\0\0%V[b\0\0\xD9V[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80Th\x01\0\0\0\0\0\0\0\0\x90\x04`\xFF\x16\x15b\0\0vW`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80T`\x01`\x01`@\x1B\x03\x90\x81\x16\x14b\0\0\xD6W\x80T`\x01`\x01`@\x1B\x03\x19\x16`\x01`\x01`@\x1B\x03\x90\x81\x17\x82U`@Q\x90\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1[PV[`\x80QaJsb\0\x01\0_9_\x81\x81a9)\x01R\x81\x81a9R\x01Ra;.\x01RaJs_\xF3\xFE`\x80`@R`\x046\x10a\x03\x87W_5`\xE0\x1C\x80ck\xAD\x18\xB6\x11a\x01\xD3W\x80c\xB7\x8B\xEFY\x11a\0\xFDW\x80c\xC8\xDECR\x11a\0\x9DW\x80c\xED\xE8wn\x11a\0mW\x80c\xED\xE8wn\x14a\neW\x80c\xF1\xC4\xE4\xED\x14a\n\x84W\x80c\xF5\xD0\xB2\xD5\x14a\n\xA3W\x80c\xF7\xD1\x98\xF8\x14a\n\xB7W_\x80\xFD[\x80c\xC8\xDECR\x14a\t\xF4W\x80c\xD1\xF3\x1D\x15\x14a\n\x13W\x80c\xD5\xB8\xB8\xF3\x14a\n'W\x80c\xD63\xC9k\x14a\nFW_\x80\xFD[\x80c\xC19\x0C4\x11a\0\xD8W\x80c\xC19\x0C4\x14a\t\x8EW\x80c\xC1<\x19q\x14a\t\xADW\x80c\xC2w\xA96\x14a\t\xC1W\x80c\xC5\xC1a\x0C\x14a\t\xE0W_\x80\xFD[\x80c\xB7\x8B\xEFY\x14a\t1W\x80c\xB9f%T\x14a\tPW\x80c\xC0\xC5\xDF|\x14a\toW_\x80\xFD[\x80c\x9B?x\x1A\x11a\x01sW\x80c\xAA\x1F\xFA9\x11a\x01CW\x80c\xAA\x1F\xFA9\x14a\x08\xAFW\x80c\xAB9GU\x14a\x08\xCEW\x80c\xAD<\xB1\xCC\x14a\x08\xEDW\x80c\xB5\x95G\xB8\x14a\t\x1DW_\x80\xFD[\x80c\x9B?x\x1A\x14a\x08>W\x80c\x9FK\x997\x14a\x08]W\x80c\x9F\x92Y\xBB\x14a\x08qW\x80c\xA06\xEA.\x14a\x08\x90W_\x80\xFD[\x80c}\xE4\xD4\r\x11a\x01\xAEW\x80c}\xE4\xD4\r\x14a\x07\xC2W\x80c\x81\x8FMi\x14a\x07\xE1W\x80c\x86)\xF5E\x14a\x08\0W\x80c\x96\x83\x02\xD7\x14a\x08\x1FW_\x80\xFD[\x80ck\xAD\x18\xB6\x14a\x07eW\x80cl\xF0\xBD%\x14a\x07\x84W\x80co\xD6^M\x14a\x07\xA3W_\x80\xFD[\x80c8\xBD\x17\xE5\x11a\x02\xB4W\x80cI|\"\xC5\x11a\x02TW\x80c\\AKW\x11a\x02$W\x80c\\AKW\x14a\x06\xE9W\x80c_v\xEB0\x14a\x07\x08W\x80c`\xE1!\x89\x14a\x07'W\x80ci\x93\x1A\xFB\x14a\x07FW_\x80\xFD[\x80cI|\"\xC5\x14a\x06\x84W\x80cO\x1E\xF2\x86\x14a\x06\xA3W\x80cR\x07\xC2s\x14a\x06\xB6W\x80cR\xD1\x90-\x14a\x06\xD5W_\x80\xFD[\x80c=\x04K\x9E\x11a\x02\x8FW\x80c=\x04K\x9E\x14a\x05\xFAW\x80cB0\n\xAA\x14a\x06\x19W\x80cC\x91V\x8C\x14a\x068W\x80cE\x8F\xB2w\x14a\x06eW_\x80\xFD[\x80c8\xBD\x17\xE5\x14a\x05\x9DW\x80c;\xB7\xD5\xA3\x14a\x05\xBCW\x80c;\xBC\xC4\xB2\x14a\x05\xDBW_\x80\xFD[\x80c\x19jEm\x11a\x03*W\x80c-i\x05H\x11a\x02\xFAW\x80c-i\x05H\x14a\x05\rW\x80c-\xCB\xC5\xD1\x14a\x05@W\x80c.<9\x06\x14a\x05_W\x80c3\x11\xB1\xBC\x14a\x05~W_\x80\xFD[\x80c\x19jEm\x14a\x04}W\x80c\x1E$\xAAI\x14a\x04\x9CW\x80c&\x8Dm1\x14a\x04\xC7W\x80c(g|\xA7\x14a\x04\xEEW_\x80\xFD[\x80c\r\x81\xA3\xF1\x11a\x03eW\x80c\r\x81\xA3\xF1\x14a\x03\xFFW\x80c\r\x8En,\x14a\x04\x1EW\x80c\x10Kl\xB7\x14a\x04?W\x80c\x15\xE2\xCF\xD3\x14a\x04^W_\x80\xFD[\x80c\x04U?\xB6\x14a\x03\x8BW\x80c\x05\xA3\xB8\t\x14a\x03\xACW\x80c\x07\xCC\xDFa\x14a\x03\xE0W[_\x80\xFD[4\x80\x15a\x03\x96W_\x80\xFD[Pa\x03\xAAa\x03\xA56`\x04aCjV[a\n\xD6V[\0[4\x80\x15a\x03\xB7W_\x80\xFD[Pa\x03\xCBa\x03\xC66`\x04aC\xD7V[a\x0B\xB6V[`@Q\x90\x15\x15\x81R` \x01[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x03\xEBW_\x80\xFD[Pa\x03\xAAa\x03\xFA6`\x04aCjV[a\x0B\xE3V[4\x80\x15a\x04\nW_\x80\xFD[Pa\x03\xAAa\x04\x196`\x04aCjV[a\x0C\x9FV[4\x80\x15a\x04)W_\x80\xFD[Pa\x042a\r}V[`@Qa\x03\xD7\x91\x90aD\x14V[4\x80\x15a\x04JW_\x80\xFD[Pa\x03\xAAa\x04Y6`\x04aD\x8DV[a\r\xE3V[4\x80\x15a\x04iW_\x80\xFD[Pa\x03\xCBa\x04x6`\x04aC\xD7V[a\x0F\x84V[4\x80\x15a\x04\x88W_\x80\xFD[Pa\x03\xAAa\x04\x976`\x04aD\xDEV[a\x0F\xBBV[4\x80\x15a\x04\xA7W_\x80\xFD[Pa\x04\xB0a\x11\0V[`@Qe\xFF\xFF\xFF\xFF\xFF\xFF\x90\x91\x16\x81R` \x01a\x03\xD7V[4\x80\x15a\x04\xD2W_\x80\xFD[P`@Q_\x80Q` aJS\x839\x81Q\x91R\x81R` \x01a\x03\xD7V[4\x80\x15a\x04\xF9W_\x80\xFD[Pa\x03\xAAa\x05\x086`\x04aC\xD7V[a\x11\x1EV[4\x80\x15a\x05\x18W_\x80\xFD[Pa\x05!a\x12ZV[`@\x80Qe\xFF\xFF\xFF\xFF\xFF\xFF\x93\x84\x16\x81R\x92\x90\x91\x16` \x83\x01R\x01a\x03\xD7V[4\x80\x15a\x05KW_\x80\xFD[Pa\x03\xAAa\x05Z6`\x04aE&V[a\x12\x88V[4\x80\x15a\x05jW_\x80\xFD[Pa\x03\xAAa\x05y6`\x04aEkV[a\x13\x10V[4\x80\x15a\x05\x89W_\x80\xFD[Pa\x03\xAAa\x05\x986`\x04aCjV[a\x13\x96V[4\x80\x15a\x05\xA8W_\x80\xFD[Pa\x03\xAAa\x05\xB76`\x04aCjV[a\x149V[4\x80\x15a\x05\xC7W_\x80\xFD[Pa\x03\xAAa\x05\xD66`\x04aCjV[a\x14\xEEV[4\x80\x15a\x05\xE6W_\x80\xFD[Pa\x03\xAAa\x05\xF56`\x04aE\xB5V[a\x15\xA3V[4\x80\x15a\x06\x05W_\x80\xFD[Pa\x03\xAAa\x06\x146`\x04aF\x1BV[a\x18\x8AV[4\x80\x15a\x06$W_\x80\xFD[Pa\x03\xAAa\x0636`\x04aC\xD7V[a\x19\xDAV[4\x80\x15a\x06CW_\x80\xFD[Pa\x06Wa\x06R6`\x04aC\xD7V[a\x1A\x86V[`@Q\x90\x81R` \x01a\x03\xD7V[4\x80\x15a\x06pW_\x80\xFD[Pa\x03\xAAa\x06\x7F6`\x04aCjV[a\x1A\xB0V[4\x80\x15a\x06\x8FW_\x80\xFD[Pa\x03\xAAa\x06\x9E6`\x04aE&V[a\x1B_V[a\x03\xAAa\x06\xB16`\x04aFYV[a\x1B\xD6V[4\x80\x15a\x06\xC1W_\x80\xFD[Pa\x03\xAAa\x06\xD06`\x04aD\x8DV[a\x1B\xF5V[4\x80\x15a\x06\xE0W_\x80\xFD[Pa\x06Wa\x1D\xB8V[4\x80\x15a\x06\xF4W_\x80\xFD[Pa\x03\xAAa\x07\x036`\x04aG\x16V[a\x1D\xD3V[4\x80\x15a\x07\x13W_\x80\xFD[Pa\x03\xAAa\x07\"6`\x04aCjV[a\x1E|V[4\x80\x15a\x072W_\x80\xFD[Pa\x03\xAAa\x07A6`\x04aCjV[a\x1F9V[4\x80\x15a\x07QW_\x80\xFD[Pa\x03\xAAa\x07`6`\x04aE&V[a \x0EV[4\x80\x15a\x07pW_\x80\xFD[Pa\x03\xAAa\x07\x7F6`\x04aCjV[a \x81V[4\x80\x15a\x07\x8FW_\x80\xFD[Pa\x03\xAAa\x07\x9E6`\x04aG1V[a!VV[4\x80\x15a\x07\xAEW_\x80\xFD[Pa\x03\xAAa\x07\xBD6`\x04aC\xD7V[a!\xD8V[4\x80\x15a\x07\xCDW_\x80\xFD[Pa\x03\xAAa\x07\xDC6`\x04aGcV[a#\x1AV[4\x80\x15a\x07\xECW_\x80\xFD[Pa\x03\xAAa\x07\xFB6`\x04aCjV[a$\rV[4\x80\x15a\x08\x0BW_\x80\xFD[Pa\x03\xAAa\x08\x1A6`\x04aCjV[a$\xC2V[4\x80\x15a\x08*W_\x80\xFD[Pa\x03\xAAa\x0896`\x04aCjV[a%\x90V[4\x80\x15a\x08IW_\x80\xFD[Pa\x03\xAAa\x08X6`\x04aCjV[a&EV[4\x80\x15a\x08hW_\x80\xFD[Pa\x05!a&\xDAV[4\x80\x15a\x08|W_\x80\xFD[Pa\x03\xAAa\x08\x8B6`\x04aCjV[a''V[4\x80\x15a\x08\x9BW_\x80\xFD[Pa\x03\xAAa\x08\xAA6`\x04aG\x16V[a'\xEEV[4\x80\x15a\x08\xBAW_\x80\xFD[Pa\x03\xAAa\x08\xC96`\x04aG\x82V[a(\x97V[4\x80\x15a\x08\xD9W_\x80\xFD[Pa\x03\xAAa\x08\xE86`\x04aG\x16V[a*\xADV[4\x80\x15a\x08\xF8W_\x80\xFD[Pa\x042`@Q\x80`@\x01`@R\x80`\x05\x81R` \x01d\x03R\xE3\x02\xE3`\xDC\x1B\x81RP\x81V[4\x80\x15a\t(W_\x80\xFD[Pa\x04\xB0a+VV[4\x80\x15a\t<W_\x80\xFD[Pa\x03\xAAa\tK6`\x04aG1V[a+oV[4\x80\x15a\t[W_\x80\xFD[Pa\x03\xAAa\tj6`\x04aG\xB9V[a+\xC5V[4\x80\x15a\tzW_\x80\xFD[Pa\x03\xAAa\t\x896`\x04aCjV[a-\xDEV[4\x80\x15a\t\x99W_\x80\xFD[Pa\x03\xAAa\t\xA86`\x04aCjV[a.\x8DV[4\x80\x15a\t\xB8W_\x80\xFD[Pa\x04\xB0a/<V[4\x80\x15a\t\xCCW_\x80\xFD[Pa\x03\xAAa\t\xDB6`\x04aCjV[a/ZV[4\x80\x15a\t\xEBW_\x80\xFD[Pa\x03\xAAa0\tV[4\x80\x15a\t\xFFW_\x80\xFD[Pa\x03\xAAa\n\x0E6`\x04aCjV[a0PV[4\x80\x15a\n\x1EW_\x80\xFD[Pa\x03\xCBa0\xFFV[4\x80\x15a\n2W_\x80\xFD[Pa\x03\xAAa\nA6`\x04aG1V[a1\x14V[4\x80\x15a\nQW_\x80\xFD[Pa\x03\xAAa\n`6`\x04aCjV[a1\x89V[4\x80\x15a\npW_\x80\xFD[Pa\x03\xCBa\n\x7F6`\x04aC\xD7V[a28V[4\x80\x15a\n\x8FW_\x80\xFD[Pa\x04\xB0a\n\x9E6`\x04aH%V[a2fV[4\x80\x15a\n\xAEW_\x80\xFD[Pa\x03\xAAa2\xD0V[4\x80\x15a\n\xC2W_\x80\xFD[Pa\x03\xAAa\n\xD16`\x04aCjV[a3\x99V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x0B\x03W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x0BeWa\x0BR~\x01\xC9\x08\0\x01\xC9\x08\0\x01W\xC0\0\x01W\xC0\0\x01H \0\x01H \0\0\0\0\0\0\0\0n\x02\xD6\x90\0\x02\xD6\x90\0\x02I\xF0\0\x02I\xF0\x89a4]V[\x90Pa\x0B`\x81\x83\x87\x86a5\x14V[a\x0B\xADV[a\x0B\x9E~\x02\xC6\xF0\0\x02\xC6\xF0\0\x02:P\0\x02:P\0\x01\xD0\xD8\0\x01\xD0\xD8\0\0\0\0\0\0\0\0n\x04h\xE8\0\x04h\xE8\0\x03Wx\0\x03Wx\x89a4]V[\x90Pa\x0B\xAD\x81\x83\x87\x87\x87a5AV[PPPPPPPV[_a\x0B\xBFa5{V[`\x01`\x01`\xA0\x1B\x03\x90\x92\x16_\x90\x81R`\x02\x92\x90\x92\x01` RP`@\x90 T`\xFF\x16\x90V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x0C\x10W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x0CVWa\x0BRt}\0\0\0}\0\0\0}\0\0\0}\0\0\0}\0\0\0}`H\x1B_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[a\x0B\x9E~\x02|\xB8\0\x02|\xB8\0\x01\xE0x\0\x01\xE0x\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0~\x05\xA1h\0\x05\xA1h\0\0\0\0\0\0\0\0\0\x04&\x80\0\x04&\x80\0\x030h\0\x030h\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x0C\xCCW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\xFD`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x01a\r\x13Wa\x0BR~\x10z\xC0\0\x10z\xC0\0\n\xBA\x18\0\n\xBA\x18\0\x07\x8D\x98\0\x07\x8D\x98\0\0\0\0\0\0\0\0f\x1DO\xE8\0\x1DO\xE8\x89a4]V[`\x01`\x01`\xF8\x1B\x03\x19\x86\x81\x16\x01a\rdWa\rU~\x14\x01\x18\0\x14\x01\x18\0\x0B\xB00\0\x0B\xB00\0\x07\xFE\xE0\0\x07\xFE\xE0\0\0\0\0\0\0\0\0f,k\x18\0,k\x18\x89a4]V[\x90Pa\x0B`\x81\x83\x87\x87\x87a5AV[`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[```@Q\x80`@\x01`@R\x80`\x08\x81R` \x01g\x12\x10\xD5S\x1A[Z]`\xC2\x1B\x81RPa\r\xA9_a5\x9FV[a\r\xB3`\x06a5\x9FV[a\r\xBC_a5\x9FV[`@Q` \x01a\r\xCF\x94\x93\x92\x91\x90aHHV[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x90P\x90V[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x0E,W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x0EP\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x0E\x88W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01[`@Q\x80\x91\x03\x90\xFD[_\x81\x90\x03a\x0E\xA9W`@Qc\xC2\xE54}`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x0E\xB2a5{V[\x90P_[\x82\x81\x10\x15a\x0F~W_\x84\x84\x83\x81\x81\x10a\x0E\xD1Wa\x0E\xD1aH\xE0V[\x90P` \x02\x01` \x81\x01\x90a\x0E\xE6\x91\x90aC\xD7V[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x90\x81R`\x02\x85\x01` R`@\x90 T\x90\x91P`\xFF\x16a\x0F.W`@QcozRu`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x81\x81R`\x02\x85\x01` R`@\x80\x82 \x80T`\xFF\x19\x16\x90UQ\x7FE\x86\x80\xF7\x9A\xA9\xDE\n\xE0cD(z;\xD8\xECay\xFA\xA0RR\xE9\xAF\x81\xAEsMkM\xC6\xBA\x91\x90\xA2P`\x01\x01a\x0E\xB6V[PPPPV[_Ba\x0F\x8Ea5{V[`\x03\x01_\x84`\x01`\x01`\xA0\x1B\x03\x16`\x01`\x01`\xA0\x1B\x03\x16\x81R` \x01\x90\x81R` \x01_ T\x11\x90P\x91\x90PV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0T`\x01`\x01`@\x1B\x03\x16`\x01`\x01`@\x1B\x03\x16`\x01\x14a\x10\x0FW`@QcoOs\x1F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x07\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a\x10XWP\x80T`\x01`\x01`@\x1B\x03\x80\x84\x16\x91\x16\x10\x15[\x15a\x10vW`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01`\x01`@\x1B\x03\x83\x16\x17`\x01`@\x1B\x17\x81Ua\x10\xA0\x85a6.V[a\x10\xA9\x83a6\xB8V[a\x10\xB2\x84a7FV[\x80T`\xFF`@\x1B\x19\x16\x81U`@Q`\x01`\x01`@\x1B\x03\x83\x16\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1PPPPPV[_a\x11\ta5{V[T`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91\x90PV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x11gW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x11\x8B\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x11\xBEW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[_a\x11\xC7a5{V[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R`\x01\x82\x01` R`@\x90 T\x90\x91P`\xFF\x16a\x12\x0FW`@Qc\x1Cy\x86\x83`\xE3\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x81\x81R`\x01\x83\x01` R`@\x80\x82 \x80T`\xFF\x19\x16\x90UQ\x7F\x92\xFC\x97\xAF\x15\0&F\xCE\xA6<v3\xBB7[\x82\xDB|\xDE{H\x0Cu\xFEcA\xDA\xCC),\x81\x91\x90\xA2PPV[_\x80_a\x12ea5{V[`\x04\x01Te\xFF\xFF\xFF\xFF\xFF\xFFa\x01\0\x82\x04\x81\x16\x95`\x01`8\x1B\x90\x92\x04\x16\x93P\x91PPV[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x12\xB5W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x12\xFB| \0\0\0 \0\0\0\x10\0\0\0\x10\0\0\0\t\0\0\0\t\0\0\0\x02\0\0\0\x02|\x82\0\0\0\x82\0\0\0\0\0\0\0\0\0\0\0\x82\0\0\0\x82\0\0\0?\0\0\0?\x87a4]V[\x90Pa\x13\t\x81\x83\x86\x86a5\x14V[PPPPPV[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x13=W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x13\x86}\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8~\x01\xA5\xE0\0\x01\xA5\xE0\0\x01D8\0\x01D8\0\0\xDE\xA8\0\0\xDE\xA8\0\0\xD6\xD8\0\0\xD6\xD8\x89a4]V[\x90Pa\x0B\xAD\x81\x83\x88\x88\x88\x88a7\xF8V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x13\xC3W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a\x13\xF2W`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x14+~\x0C\x15\xC0\0\x0C\x15\xC0\0\x08\xD9\xA0\0\x08\xD9\xA0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\0\0\0\0\0\0\0n\x1D\xA5\xD8\0\x1D\xA5\xD8\0\x11\x97\xE8\0\x11\x97\xE8\x89a4]V[\x90Pa\x0B\xAD\x81\x83\x87\x86a5\x14V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x14fW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x14\xB5Wa\x0BR~\x01H \0\x01H \0\0\xE2\x90\0\0\xE2\x90\0\0\xE2\x90\0\0\xE2\x90\0\0\0\0\0\0\0\0n\x02I\xF0\0\x02I\xF0\0\x01\xD0\xD8\0\x01\xD0\xD8\x89a4]V[a\x0B\x9E~\x01\xC9\x08\0\x01\xC9\x08\0\x01D8\0\x01D8\0\0\xE2\x90\0\0\xE2\x90\0\0\0\0\0\0\0\0n\x03S\x90\0\x03S\x90\0\x02F\x08\0\x02F\x08\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x15\x1BW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x15jWa\x0BR~\x01D8\0\x01D8\0\0\xE2\x90\0\0\xE2\x90\0\0\xCB \0\0\xCB \0\0\0\0\0\0\0\0n\x02F\x08\0\x02F\x08\0\x01\xCC\xF0\0\x01\xCC\xF0\x89a4]V[a\x0B\x9E~\x01\xC9\x08\0\x01\xC9\x08\0\x01H \0\x01H \0\0\xE6x\0\0\xE6x\0\0\0\0\0\0\0\0n\x03G\xD8\0\x03G\xD8\0\x02:P\0\x02:P\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x15\xD0W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x88`S\x81\x11\x15a\x15\xE6Wa\x15\xE6aH\xF4V[\x03a\x16;W`\n\x82\x11a\x16\x01WPf\x01\x16\x84\0\x01\x16\x84a\x18rV[`\x1E\x82\x11a\x16\x17WPf\x02B \0\x02B a\x18rV[`<\x82\x11a\x16-WPf\x03\xC4\xD8\0\x03\xC4\xD8a\x18rV[Pf\x05\xB4\xF0\0\x05\xB4\xF0a\x18rV[`\x03\x88`S\x81\x11\x15a\x16OWa\x16OaH\xF4V[\x03a\x16\xA4W`\n\x82\x11a\x16jWPf\x01\x92X\0\x01\x92Xa\x18rV[`\x1E\x82\x11a\x16\x80WPf\x03S\x90\0\x03S\x90a\x18rV[`<\x82\x11a\x16\x96WPf\x05\xC4\x90\0\x05\xC4\x90a\x18rV[Pf\t;H\0\t;Ha\x18rV[`\x04\x88`S\x81\x11\x15a\x16\xB8Wa\x16\xB8aH\xF4V[\x03a\x17\rW`\n\x82\x11a\x16\xD3WPf\x02\x17(\0\x02\x17(a\x18rV[`\x1E\x82\x11a\x16\xE9WPf\x04\x93\xE0\0\x04\x93\xE0a\x18rV[`<\x82\x11a\x16\xFFWPf\x08\x1A8\0\x08\x1A8a\x18rV[Pf\x0C\x9Ex\0\x0C\x9Exa\x18rV[`\x05\x88`S\x81\x11\x15a\x17!Wa\x17!aH\xF4V[\x03a\x17`W`\n\x82\x11a\x17<WPf\x03S\x90\0\x03S\x90a\x18rV[`\x1E\x82\x11a\x17RWPf\x07\x81\xE0\0\x07\x81\xE0a\x18rV[Pf\ri\x98\0\ri\x98a\x18rV[`\x06\x88`S\x81\x11\x15a\x17tWa\x17taH\xF4V[\x03a\x17\xB3W`\n\x82\x11a\x17\x8FWPf\x03\xE8\0\0\x03\xE8\0a\x18rV[`\x1E\x82\x11a\x17\xA5WPf\x08)\xD8\0\x08)\xD8a\x18rV[Pf\x0E\r\xA8\0\x0E\r\xA8a\x18rV[`\x07\x88`S\x81\x11\x15a\x17\xC7Wa\x17\xC7aH\xF4V[\x03a\x18\x06W`\n\x82\x11a\x17\xE2WPf\x04]0\0\x04]0a\x18rV[`\x1E\x82\x11a\x17\xF8WPf\x08\xE9@\0\x08\xE9@a\x18rV[Pf\r\x81\x08\0\r\x81\x08a\x18rV[`\x08\x88`S\x81\x11\x15a\x18\x1AWa\x18\x1AaH\xF4V[\x03a\x18YW`\n\x82\x11a\x185WPf\x04\xE5\xE8\0\x04\xE5\xE8a\x18rV[`\x1E\x82\x11a\x18KWPf\x08\xF1\x10\0\x08\xF1\x10a\x18rV[Pf\x0Ec\x98\0\x0Ec\x98a\x18rV[`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x18\x80\x81\x84\x89\x89\x89\x89a8BV[PPPPPPPPV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x18\xD3W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x18\xF7\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x19*W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[`\x01`\x01`\xA0\x1B\x03\x82\x16a\x19QW`@Qc\xF6\xB2\x91\x1F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[B\x81\x11a\x19tW`@Qc:\xD4\xA7\xF1`\xE1\x1B\x81R`\x04\x81\x01\x82\x90R`$\x01a\x0E\x7FV[\x80a\x19}a5{V[`\x01`\x01`\xA0\x1B\x03\x84\x16_\x81\x81R`\x03\x92\x90\x92\x01` R`@\x91\x82\x90 \x92\x90\x92UQ\x7Fp#\x08\xF3\x07\x10M,\xB9E\x99\xCA\x9Ds?\x05\x9C\"F\n;\xBD\xD4\x8C\xCC\xCE\xC2I\xF7\xB7^\xB2\x90a\x19\xCE\x90\x84\x81R` \x01\x90V[`@Q\x80\x91\x03\x90\xA2PPV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1A#W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1AG\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1AzW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a\x1A\x83\x81a8\xA9V[PV[_a\x1A\x8Fa5{V[`\x01`\x01`\xA0\x1B\x03\x90\x92\x16_\x90\x81R`\x03\x92\x90\x92\x01` RP`@\x90 T\x90V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x1A\xDDW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1B&Wa\x0BRu\nA\0\0\nA\0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\x06Y\0\0\x06Y`E\x1Bn\x02I\xF0\0\x02I\xF0\0\x01\xC9\x08\0\x01\xC9\x08\x89a4]V[a\x0B\x9E~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01H \0\x01H \0\0\xE6x\0\0\xE6x\0\0\0\0\0\0\0\0n\x03S\x90\0\x03S\x90\0\x02Q\xC0\0\x02Q\xC0\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x1B\x8CW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x12\xFB~\x01s\x18\0\x01s\x18\0\x01kH\0\x01kH\0\x014\x98\0\x014\x98\0\0\0\0\0\0\0\0~\x04\x1A\xC8\0\x04\x1A\xC8\0\0\0\0\0\0\0\0\0\x02\x90@\0\x02\x90@\0\x01\xFF\xB8\0\x01\xFF\xB8\x87a4]V[a\x1B\xDEa9\x1EV[a\x1B\xE7\x82a9\xC2V[a\x1B\xF1\x82\x82a:bV[PPV[_a\x1B\xFEa5{V[\x90P_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1CIW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1Cm\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14\x15\x80\x15a\x1C\x9EWP3_\x90\x81R`\x03\x82\x01` R`@\x90 TB\x10\x15[\x15a\x1C\xBEW`@Qct4f\xA7`\xE1\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[_\x82\x90\x03a\x1C\xDFW`@Qc\xC2\xE54}`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_[\x82\x81\x10\x15a\x0F~W_\x84\x84\x83\x81\x81\x10a\x1C\xFCWa\x1C\xFCaH\xE0V[\x90P` \x02\x01` \x81\x01\x90a\x1D\x11\x91\x90aC\xD7V[\x90P`\x01`\x01`\xA0\x1B\x03\x81\x16a\x1D:W`@Qc\xF6\xB2\x91\x1F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x90\x81R`\x02\x84\x01` R`@\x90 T`\xFF\x16\x15a\x1DbWPa\x1D\xB0V[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x81\x81R`\x02\x85\x01` R`@\x80\x82 \x80T`\xFF\x19\x16`\x01\x17\x90UQ3\x92\x91\x7F:\x1Dyu\xC5\xFA\xF5\xB5\x1F\xD07\xA8\xD3\xDE\x97\x7F3\xEEU\xB9\xE8\xFDB\xC8/\xC1\xA9\xA2`\"jA\x91\xA3P[`\x01\x01a\x1C\xE1V[_a\x1D\xC1a;#V[P_\x80Q` aJ3\x839\x81Q\x91R\x90V[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1E\x1CW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1E@\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1EsW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a\x1A\x83\x81a7FV[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x1E\xA9W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1E\xF0Wa\x0BRu\x0F\xA0\0\0\x0F\xA0\0\0\x0F#\0\0\x0F#\0\0\x0F#\0\0\x0F#`C\x1B_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[a\x0B\x9E~\x02|\xB8\0\x02|\xB8\0\x01\xE8H\0\x01\xE8H\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0~\x05\xC4\x90\0\x05\xC4\x90\0\0\0\0\0\0\0\0\0\x04=\xF0\0\x04=\xF0\0\x030h\0\x030h\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x1FfW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1F\xC5Wa\x0BR~\x01@P\0\x01@P\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0a\xA8\0\0a\xA8~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01D8\0\x01D8\x89a4]V[a\x0B\x9E~\x01O\xF0\0\x01O\xF0\0\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0e\x90\0\0e\x90~\x02Q\xC0\0\x02Q\xC0\0\x02\x17(\0\x02\x17(\0\x01\xDC\x90\0\x01\xDC\x90\0\x01\xD4\xC0\0\x01\xD4\xC0\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a ;W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x12\xFB| \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 | \0\0\0 \0\0\0\0\0\0\0\0\0\0\0 \0\0\0 \0\0\0 \0\0\0 \x87a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a \xAEW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a!\rWa\x0BR~\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0Y\xD8\0\0Y\xD8~\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01H \0\x01H \x89a4]V[a\x0B\x9E~\x01L\x08\0\x01L\x08\0\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0Y\xD8\0\0Y\xD8~\x02I\xF0\0\x02I\xF0\0\x02\x13@\0\x02\x13@\0\x01\xDC\x90\0\x01\xDC\x90\0\x01\xCC\xF0\0\x01\xCC\xF0\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a!\x83W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a!\xCB}]\xC0\0\0]\xC0\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0\0\0\0\0\0\0}u0\0\0u0\0\0\0\0\0\0\0\0\0\0a\xA8\0\0a\xA8\0\0]\xC0\0\0]\xC0\x86a4]V[\x90Pa\x0F~\x81\x83\x85a;lV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\"!W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\"E\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\"xW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[_a\"\x81a5{V[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R`\x01\x82\x01` R`@\x90 T\x90\x91P`\xFF\x16\x15a\"\xCAW`@Qc\xF9\x9CO\xD1`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x81\x81R`\x01\x83\x81\x01` R`@\x80\x83 \x80T`\xFF\x19\x16\x90\x92\x17\x90\x91UQ\x7F\xCC\xA1\xD4c\x84\xCD\xBB\xEE\xF2\xF9\xDA\xDD\xB7m\xB18\x10\x1C\x99\x05\xF8\x18\xD8g\xB60\x19\\\x12\x8D<f\x91\x90\xA2PPV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a#cW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a#\x87\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a#\xBAW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[\x80a#\xC3a5{V[`\x04\x01\x80T`\xFF\x19\x16\x91\x15\x15\x91\x90\x91\x17\x90U`@Q\x81\x15\x15\x81R\x7F\xADU;`\xCA7\xB0\xEF\xB5DN&\xB0\xE0Z!\x04H\x96\xBC2z\xC8\x10\xED\xCA\xDB\xDD\x02\x18\xC2\xCD\x90` \x01`@Q\x80\x91\x03\x90\xA1PV[3_\x80Q` aJS\x839\x81Q\x91R\x14a$:W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a$\x89Wa\x0BR~\x04\x0B(\0\x04\x0B(\0\x02\xF1\xE8\0\x02\xF1\xE8\0\x01\xDC\x90\0\x01\xDC\x90\0\0\0\0\0\0\0\0n\n\x9E\xC0\0\n\x9E\xC0\0\x05\x91\xC8\0\x05\x91\xC8\x89a4]V[a\x0B\x9E~\x05\x01@\0\x05\x01@\0\x03c0\0\x03c0\0\x02I\xF0\0\x02I\xF0\0\0\0\0\0\0\0\0n\x19\xB9\xF0\0\x19\xB9\xF0\0\t\x18 \0\t\x18 \x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a$\xEFW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a%GWa\x0BRu\x0F\xA0\0\0\x0F\xA0\0\0\x0F#\0\0\x0F#\0\0\x0F#\0\0\x0F#`C\x1B}\x9C@\0\0\x9C@\0\0\0\0\0\0\0\0\0\0\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0\x89a4]V[a\x0B\x9E~\x02q\0\0\x02q\0\0\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\0\0\0\0\0\0\0~\x05\xB8\xD8\0\x05\xB8\xD8\0\0\0\0\0\0\0\0\0\x04Qx\0\x04Qx\0\x030h\0\x030h\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a%\xBDW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a&\x0CWa\x0BR~\x01\xC9\x08\0\x01\xC9\x08\0\x01[\xA8\0\x01[\xA8\0\x01[\xA8\0\x01[\xA8\0\0\0\0\0\0\0\0n\x02\xBF \0\x02\xBF \0\x02F\x08\0\x02F\x08\x89a4]V[a\x0B\x9E~\x02\xBF \0\x02\xBF \0\x026h\0\x026h\0\x01\xD8\xA8\0\x01\xD8\xA8\0\0\0\0\0\0\0\0n\x04l\xD0\0\x04l\xD0\0\x03S\x90\0\x03S\x90\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a&rW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a&\xA1W`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x14+~\x06\xAE\xF0\0\x06\xAE\xF0\0\x04\x9B\xB0\0\x04\x9B\xB0\0\x034P\0\x034P\0\0\0\0\0\0\0\0n\x12\xB1(\0\x12\xB1(\0\n\xE8\xF8\0\n\xE8\xF8\x89a4]V[_\x80_a&\xE5a5{V[\x80T\x90\x91PC\x90e\xFF\xFF\xFF\xFF\xFF\xFF\x80\x83\x16`\x01``\x1B\x90\x92\x04\x16\x14a'\rW\x93_\x93P\x91PPV[\x90T\x90\x93`\x01`0\x1B\x90\x91\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x92P\x90PV[3_\x80Q` aJS\x839\x81Q\x91R\x14a'TW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a'\xACWa\x0BR}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0m\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4]V[a\x0B\x9E}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0m\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4]V[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a(7W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a([\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a(\x8EW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a\x1A\x83\x81a6.V[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a(\xE0W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a)\x04\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a)7W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x81\x16\x15\x90\x82\x16\x15\x14a)dW`@Qc\x0B\xF8'\xAB`\xE3\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a)ma5{V[\x90Pe\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x15a*%W\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x01`\x90\x1B\x90\x91\x04\x81\x16\x90\x84\x16\x10\x15a)\xB2W`@QcO5}%`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`@Qcw\x8E/\xEF`\xE0\x1B\x81R_`\x04\x82\x01\x81\x90R`$\x82\x01R_\x80Q` aJ\x13\x839\x81Q\x91R\x90cw\x8E/\xEF\x90`D\x01`@\x80Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a)\xFEW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a*\"\x91\x90aI\x08V[PP[`\x04\x81\x01\x80Tl\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\x19\x16a\x01\0e\xFF\xFF\xFF\xFF\xFF\xFF\x86\x81\x16\x91\x82\x02l\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\x19\x16\x92\x90\x92\x17`\x01`8\x1B\x92\x86\x16\x92\x83\x02\x17\x90\x92U`@\x80Q\x92\x83R` \x83\x01\x91\x90\x91R\x7F\xDD@a\xCD\xC8\xBA'F\x0C\xADG\xA9\rU\x96\x1F\xBB\xFC\xF7\x1E\xEA\xF7\x88Uj\x9A\xD3kh)*\xB2\x91\x01`@Q\x80\x91\x03\x90\xA1PPPV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a*\xF6W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a+\x1A\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a+MW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a\x1A\x83\x81a6\xB8V[_\x80a+`a5{V[Te\xFF\xFF\xFF\xFF\xFF\xFF\x16\x92\x91PPV[3_\x80Q` aJS\x839\x81Q\x91R\x14a+\x9CW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a!\xCB| \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \x80\x86a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a+\xF2W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x87`S\x81\x11\x15a,\x08Wa,\x08aH\xF4V[\x03a,]W`\n\x82\x11a,#WPf\x01c\x14\0\x01c\x14a-\xD1V[`\x1E\x82\x11a,9WPf\x01\xF0\x18\0\x01\xF0\x18a-\xD1V[`<\x82\x11a,OWPf\x02B \0\x02B a-\xD1V[Pf\x02m\x18\0\x02m\x18a-\xD1V[`\x03\x87`S\x81\x11\x15a,qWa,qaH\xF4V[\x03a,\xC6W`\n\x82\x11a,\x8CWPf\x01s\x18\0\x01s\x18a-\xD1V[`\x1E\x82\x11a,\xA2WPf\x02\x13@\0\x02\x13@a-\xD1V[`<\x82\x11a,\xB8WPf\x02x\xD0\0\x02x\xD0a-\xD1V[Pf\x02\xCE\xC0\0\x02\xCE\xC0a-\xD1V[`\x04\x87`S\x81\x11\x15a,\xDAWa,\xDAaH\xF4V[\x03a-/W`\n\x82\x11a,\xF5WPf\x01\xC5 \0\x01\xC5 a-\xD1V[`\x1E\x82\x11a-\x0BWPf\x02\x80\xA0\0\x02\x80\xA0a-\xD1V[`<\x82\x11a-!WPf\x03 \xC8\0\x03 \xC8a-\xD1V[Pf\x04I\xA8\0\x04I\xA8a-\xD1V[`\x05\x87`S\x81\x11\x15a-CWa-CaH\xF4V[\x03a-\x82W`\n\x82\x11a-^WPf\x02\x1E\xF8\0\x02\x1E\xF8a-\xD1V[`\x1E\x82\x11a-tWPf\x03K\xC0\0\x03K\xC0a-\xD1V[Pf\x04\xABP\0\x04\xABPa-\xD1V[`\x06\x87`S\x81\x11\x15a-\x96Wa-\x96aH\xF4V[\x03a\x18YW`\n\x82\x11a-\xB1WPf\x03Wx\0\x03Wxa-\xD1V[`\x1E\x82\x11a-\xC7WPf\x05j\xB8\0\x05j\xB8a-\xD1V[Pf\x08l@\0\x08l@[a\x0B\xAD\x81\x84\x88\x88\x88a;\x90V[3_\x80Q` aJS\x839\x81Q\x91R\x14a.\x0BW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a.WWa\x0BR}}\0\0\0}\0\0\0u0\0\0u0\0\0u0\0\0u0\0\0U\xF0\0\0U\xF0_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[a\x0B\x9E}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0u0\0\0u0\0\0]\xC0\0\0]\xC0_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a.\xBAW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a/\x03Wa\x0BRu\x0B\x98\xC0\0\x0B\x98\xC0\0\x0BZ@\0\x0BZ@\0\nA\0\0\nA`E\x1Bn\x02\x9F\xE0\0\x02\x9F\xE0\0\x02\x07\x88\0\x02\x07\x88\x89a4]V[a\x0B\x9E~\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\x01W\xC0\0\x01W\xC0\0\0\0\0\0\0\0\0n\x03\xF3\xB8\0\x03\xF3\xB8\0\x02x\xD0\0\x02x\xD0\x89a4]V[_a/Ea5{V[T`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91\x90PV[3_\x80Q` aJS\x839\x81Q\x91R\x14a/\x87W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a/\xD0Wa\x0BRu\nA\0\0\nA\0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\x06Y\0\0\x06Y`E\x1Bn\x02F\x08\0\x02F\x08\0\x01\xC5 \0\x01\xC5 \x89a4]V[a\x0B\x9E~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01H \0\x01H \0\0\xF6\x18\0\0\xF6\x18\0\0\0\0\0\0\0\0n\x034P\0\x034P\0\x02Q\xC0\0\x02Q\xC0\x89a4]V[a0\x11a5{V[3_\x90\x81R`\x03\x91\x90\x91\x01` R`@\x81 T\x90\x03a0EW`@Qc\x80<d}`\xE0\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a0N3a8\xA9V[V[3_\x80Q` aJS\x839\x81Q\x91R\x14a0}W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a0\xC9Wa\x0BR}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[a\x0B\x9E}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0a\xA8\0\0a\xA8_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[_a1\x08a5{V[`\x04\x01T`\xFF\x16\x91\x90PV[3_\x80Q` aJS\x839\x81Q\x91R\x14a1AW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a!\xCB}]\xC0\0\0]\xC0\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0J8\0\0J8}u0\0\0u0\0\0\0\0\0\0\0\0\0\0a\xA8\0\0a\xA8\0\0]\xC0\0\0]\xC0\x86a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a1\xB6W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a1\xFFWa\x0BRu\x0B\x98\xC0\0\x0B\x98\xC0\0\x0BZ@\0\x0BZ@\0\nA\0\0\nA`E\x1Bn\x02\x9F\xE0\0\x02\x9F\xE0\0\x02\x07\x88\0\x02\x07\x88\x89a4]V[a\x0B\x9E~\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0n\x03\xF7\xA0\0\x03\xF7\xA0\0\x02x\xD0\0\x02x\xD0\x89a4]V[_\x80a2Ba5{V[`\x01`\x01`\xA0\x1B\x03\x90\x93\x16_\x90\x81R`\x01\x90\x93\x01` RPP`@\x90 T`\xFF\x16\x90V[_3_\x80Q` aJ\x13\x839\x81Q\x91R\x14a2\x93W`@Qb\x91k\x8B`\xE5\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a2\x9Ba5{V[`\x04\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x03a2\xB9WP_a2\xCAV[`\x80a2\xC5\x84\x84a;\xE9V[\x90\x1C\x90P[\x92\x91PPV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x07\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a3\x19WP\x80T`\x01`\x01`@\x1B\x03\x80\x84\x16\x91\x16\x10\x15[\x15a37W`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01`\x01`@\x1B\x03\x83\x16\x90\x81\x17`\x01`@\x1B\x17`\xFF`@\x1B\x19\x16\x82U`@Q\x90\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01[`@Q\x80\x91\x03\x90\xA1PPV[3_\x80Q` aJS\x839\x81Q\x91R\x14a3\xC6W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a4\x18Wa\x0BRt}\0\0\0}\0\0\0}\0\0\0}\0\0\0}\0\0\0}`H\x1Bm\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4]V[a\x0B\x9E~\x02x\xD0\0\x02x\xD0\0\x01\xE8H\0\x01\xE8H\0\x01g`\0\x01g`\0\0\0\0\0\0\0\0~\x05\xC4\x90\0\x05\xC4\x90\0\0\0\0\0\0\0\0\0\x04&\x80\0\x04&\x80\0\x03,\x80\0\x03,\x80\x89[_\x80\x82`S\x81\x11\x15a4qWa4qaH\xF4V[a4\x7F\x90`\xFF\x16`\x04aIIV[d\x08vT2\x01\x90\x1C`\x0F\x16\x90P\x80_\x03a4\xACW`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a4\xB7`\x01\x82aI`V[\x90P`\x01`\x01`@\x1B\x03a4\xCC`\x04\x83aI\x87V[a4\xD7\x90`@aIIV[`\x04\x83\x10a4\xE5W\x85a4\xE7V[\x86[\x90\x1C\x16\x91P\x81_\x03a5\x0CW`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[P\x93\x92PPPV[a5'a5!\x85` \x1C\x90V[\x84a<\xECV[a\x0F~\x81c\xFF\xFF\xFF\xFF\x86\x16a5<\x85\x87a;\xE9V[a=\xA2V[a5Ta5N\x86` \x1C\x90V[\x85a<\xECV[a\x13\t\x81c\xFF\xFF\xFF\xFF\x87\x16a5<a5l\x87\x89a;\xE9V[a5v\x87\x8Aa;\xE9V[a>qV[\x7F\xC1:\xF6\xC5\x14\xBF\xF8\x99\x7F0\xC9\0\x03\xBA\xA8+\xD0*\xAD\x97\x81y\xD1\xCEX\xD8\\C\x19\xADe\0\x90V[``_a5\xAB\x83a>\xD0V[`\x01\x01\x90P_\x81`\x01`\x01`@\x1B\x03\x81\x11\x15a5\xC9Wa5\xC9aFEV[`@Q\x90\x80\x82R\x80`\x1F\x01`\x1F\x19\x16` \x01\x82\x01`@R\x80\x15a5\xF3W` \x82\x01\x81\x806\x837\x01\x90P[P\x90P\x81\x81\x01` \x01[_\x19\x01o\x18\x18\x99\x19\x9A\x1A\x9B\x1B\x9C\x1C\xB0\xB11\xB22\xB3`\x81\x1B`\n\x86\x06\x1A\x81S`\n\x85\x04\x94P\x84a5\xFDWP\x93\x92PPPV[_a67a5{V[\x80T\x90\x91Pe\xFF\xFF\xFF\xFF\xFF\xFF`\x01`\xC0\x1B\x90\x91\x04\x81\x16\x90\x83\x16\x10\x15a6oW`@Qc\x04\xAC\xCA/`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16e\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x90\x81\x17\x82U`@Q\x90\x81R\x7F\xC1\xF1\xFC\xAA\x89\x8A\xAE\"c\xDD\xEDq.\x17\x98\x08?\xCA\x92r\xFF\x80>\xE4\x15\x0C\xE4\x8F\x86\x19\x89\x1A\x90` \x01a3\x8DV[_a6\xC1a5{V[\x80T\x90\x91Pe\xFF\xFF\xFF\xFF\xFF\xFF\x80\x84\x16\x91\x16\x10\x15a6\xF1W`@Qc\x04\xAC\xCA/`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\xC0\x1B\x19\x16`\x01`\xC0\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x90\x81\x02\x91\x90\x91\x17\x82U`@Q\x90\x81R\x7Fd\xCB\x9Ez\xE6I|Y\x08\x0C\xDB\xC0HU.\x12=R\xAAB@\xE17u\x8A\x175\x82xia\xCA\x90` \x01a3\x8DV[_a7Oa5{V[`\x04\x81\x01T\x90\x91Pa\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15\x80\x15\x90a7\x85WP`\x04\x81\x01Te\xFF\xFF\xFF\xFF\xFF\xFF\x80\x84\x16a\x01\0\x90\x92\x04\x16\x10[\x15a7\xA3W`@QcO5}%`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x90\x1B\x19\x16`\x01`\x90\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x90\x81\x02\x91\x90\x91\x17\x82U`@Q\x90\x81R\x7FU\x11\xB1\x85\x1F\xC4\n&)\xC8U\xBA\xB7\xAD\xCE2v\xC4p\xD8\x19\x0E\xB0\x141\xE4\x18\xDC*\xF1>\x8E\x90` \x01a3\x8DV[a8\x0Ba8\x05\x87` \x1C\x90V[\x86a<\xECV[a8:\x81c\xFF\xFF\xFF\xFF\x88\x16a5<a8#\x88\x8Aa;\xE9V[a5va80\x89\x8Ca;\xE9V[a5v\x89\x8Da;\xE9V[PPPPPPV[a8Oa8\x05\x87` \x1C\x90V[_a8Z\x85\x87a;\xE9V[\x90P_[\x83\x81\x10\x15a8\x96Wa8\x8C\x82a5v\x87\x87\x85\x81\x81\x10a8\x7FWa8\x7FaH\xE0V[\x90P` \x02\x015\x8Aa;\xE9V[\x91P`\x01\x01a8^V[Pa\x0B\xAD\x82c\xFF\xFF\xFF\xFF\x89\x16[\x83a=\xA2V[_a8\xB2a5{V[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R`\x03\x82\x01` R`@\x81 T\x91\x92P\x03a8\xD8WPPV[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x81\x81R`\x03\x83\x01` R`@\x80\x82 \x82\x90UQ\x7F\xB3\xB1h\xC7_\xE5\xD5|\xE3\xAD\t\x8A\xB4\xF8\x9E\xAA\xBB)\x0BsT\xC6}\x13\xC0H\xF9\x852\x8B\xB0\x17\x91\x90\xA2PPV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14\x80a9\xA4WP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x01`\x01`\xA0\x1B\x03\x16a9\x98_\x80Q` aJ3\x839\x81Q\x91RT`\x01`\x01`\xA0\x1B\x03\x16\x90V[`\x01`\x01`\xA0\x1B\x03\x16\x14\x15[\x15a0NW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a:\x0BW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a:/\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1A\x83W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[\x81`\x01`\x01`\xA0\x1B\x03\x16cR\xD1\x90-`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x92PPP\x80\x15a:\xBCWP`@\x80Q`\x1F=\x90\x81\x01`\x1F\x19\x16\x82\x01\x90\x92Ra:\xB9\x91\x81\x01\x90aI\x9AV[`\x01[a:\xE4W`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[_\x80Q` aJ3\x839\x81Q\x91R\x81\x14a;\x14W`@Qc*\x87Ri`\xE2\x1B\x81R`\x04\x81\x01\x82\x90R`$\x01a\x0E\x7FV[a;\x1E\x83\x83a?\xA7V[PPPV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14a0NW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a;\x7Fa;y\x84` \x1C\x90V[\x83a<\xECV[a;\x1E\x81c\xFF\xFF\xFF\xFF\x85\x16_a=\xA2V[a;\x9Da5N\x86` \x1C\x90V[_\x80[\x83\x81\x10\x15a;\xD8Wa;\xCE\x82a5v\x87\x87\x85\x81\x81\x10a;\xC1Wa;\xC1aH\xE0V[\x90P` \x02\x015\x89a;\xE9V[\x91P`\x01\x01a;\xA0V[Pa8:\x82c\xFF\xFF\xFF\xFF\x88\x16a8\xA3V[_\x80a;\xF4\x84a?\xFCV[\x90\x92P\x90P\x80\x15a<\x05WPa2\xCAV[a<\ra5{V[`\x04\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x03a<-W_\x91PPa2\xCAV[`@Qcw\x8E/\xEF`\xE0\x1B\x81R`\x04\x81\x01\x85\x90R`\x01`\x01`\xA0\x1B\x03\x84\x16`$\x82\x01R_\x90\x81\x90_\x80Q` aJ\x13\x839\x81Q\x91R\x90cw\x8E/\xEF\x90`D\x01`@\x80Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a<\x86W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a<\xAA\x91\x90aI\x08V[\x91P\x91P`\x80a<\xD5\x83\x83a<\xBDa5{V[`\x04\x01T`\x01`8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16a@7V[\x90\x1B\x93Pa<\xE3\x86\x85a@\x8CV[PPP\x92\x91PPV[_a<\xF5a5{V[`\x04\x81\x01T\x90\x91P`\xFF\x16\x80\x15a=&WP`\x01`\x01`\xA0\x1B\x03\x82\x16_\x90\x81R`\x02\x82\x01` R`@\x90 T`\xFF\x16\x15[\x15a=OW`@Qc\x06\x96n\x15`\xE2\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[a=Y\x83\x83a@\xB9V[_a=e\x81\\\x85aI\xB1V[\x82T\x90\x91P`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15a=\x99W`@Qcw\xE3\xC2\x93`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x0F~\x81aA\xA2V[_a=\xB3\x82`\x80\x85\x90\x1B\x85\x17aI\xB1V[\x90P_a=\xBEa5{V[\x80T\x90\x91P`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x01`\x01`\x80\x1B\x03\x83\x16\x11\x15a=\xFBW`@Qc\x0F\xC3D\x87`\xE4\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x04\x81\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x80\x83\x90\x1C\x81\x15\x80\x15\x90a> WP\x81\x81\x11[\x15a>gWa>Ka>2\x83\x83aI`V[`\x04\x85\x01T`\x01`8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16aA\xA8V[`@Qc\x13MC9`\xE3\x1B\x81R`\x04\x01a\x0E\x7F\x91\x81R` \x01\x90V[a\x0B\xAD\x87\x85a@\x8CV[_\x80\x82`\x01`\x01`\x80\x1B\x03\x16\x84`\x01`\x01`\x80\x1B\x03\x16\x10\x15a>\x93W\x82a>\x95V[\x83[`\x01`\x01`\x80\x1B\x03\x16\x90P_`\x80\x84\x90\x1C`\x80\x86\x90\x1C\x10\x15a>\xBBW`\x80\x84\x90\x1Ca>\xC1V[`\x80\x85\x90\x1C[`\x80\x1B\x91\x90\x91\x17\x94\x93PPPPV[_\x80r\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x10a?\x0EWr\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x04\x92P`@\x01[m\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x10a?:Wm\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x04\x92P` \x01[f#\x86\xF2o\xC1\0\0\x83\x10a?XWf#\x86\xF2o\xC1\0\0\x83\x04\x92P`\x10\x01[c\x05\xF5\xE1\0\x83\x10a?pWc\x05\xF5\xE1\0\x83\x04\x92P`\x08\x01[a'\x10\x83\x10a?\x84Wa'\x10\x83\x04\x92P`\x04\x01[`d\x83\x10a?\x96W`d\x83\x04\x92P`\x02\x01[`\n\x83\x10a2\xCAW`\x01\x01\x92\x91PPV[a?\xB0\x82aA\xCAV[`@Q`\x01`\x01`\xA0\x1B\x03\x83\x16\x90\x7F\xBC|\xD7Z \xEE'\xFD\x9A\xDE\xBA\xB3 A\xF7U!M\xBCk\xFF\xA9\x0C\xC0\"[9\xDA.\\-;\x90_\x90\xA2\x80Q\x15a?\xF4Wa;\x1E\x82\x82aB-V[a\x1B\xF1aB\x9FV[_\x80\x82a@\x1CW`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[PP\\`\x01`\x01`\xFF\x1B\x03\x81\x16\x91`\x01`\xFF\x1B\x90\x91\x16\x15\x15\x90V[_\x80\x82a@Le\xFF\xFF\xFF\xFF\xFF\xFF\x86\x16CaI`V[a@V\x91\x90aIIV[\x90P\x84e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x10\x15a@\x7FWa@z\x81e\xFF\xFF\xFF\xFF\xFF\xFF\x87\x16aI`V[a@\x81V[_[\x91PP[\x93\x92PPPV[\x81a@\xAAW`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x01`\xFF\x1B\x81\x17\x80\x83]PPPV[_a@\xC2a5{V[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R`\x01\x82\x01` R`@\x90 T\x90\x91P`\xFF\x16\x15a@\xECWPPPV[\x80TC\x90e\xFF\xFF\xFF\xFF\xFF\xFF`\x01`0\x1B\x82\x04\x81\x16\x91`\x01``\x1B\x90\x04\x81\x16\x90\x83\x16\x14aA\x15WP_[_aA(\x86e\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16aI\xB1V[\x84T\x90\x91Pe\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15aAUW`@Qc+ID]`\xE2\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x83Tq\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\x19\x16`\x01`0\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x92\x83\x16\x02e\xFF\xFF\xFF\xFF\xFF\xFF``\x1B\x19\x16\x17`\x01``\x1B\x93\x90\x91\x16\x92\x90\x92\x02\x91\x90\x91\x17\x90\x91UPPPV[\x80_]PV[_\x81`\x01aA\xB6\x82\x86aI\xB1V[aA\xC0\x91\x90aI`V[a@\x85\x91\x90aI\xC4V[\x80`\x01`\x01`\xA0\x1B\x03\x16;_\x03aA\xFFW`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[_\x80Q` aJ3\x839\x81Q\x91R\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x92\x90\x92\x16\x91\x90\x91\x17\x90UV[``_\x80\x84`\x01`\x01`\xA0\x1B\x03\x16\x84`@QaBI\x91\x90aI\xD7V[_`@Q\x80\x83\x03\x81\x85Z\xF4\x91PP=\x80_\x81\x14aB\x81W`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>aB\x86V[``\x91P[P\x91P\x91PaB\x96\x85\x83\x83aB\xBEV[\x95\x94PPPPPV[4\x15a0NW`@Qc\xB3\x98\x97\x9F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[``\x82aB\xD3WaB\xCE\x82aC\x1AV[a@\x85V[\x81Q\x15\x80\x15aB\xEAWP`\x01`\x01`\xA0\x1B\x03\x84\x16;\x15[\x15aC\x13W`@Qc\x99\x96\xB3\x15`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[P\x80a@\x85V[\x80Q\x15aC*W\x80Q\x80\x82` \x01\xFD[`@Qc\xD6\xBD\xA2u`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x805`T\x81\x10aCQW_\x80\xFD[\x91\x90PV[`\x01`\x01`\xA0\x1B\x03\x81\x16\x81\x14a\x1A\x83W_\x80\xFD[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aC\x7FW_\x80\xFD[aC\x88\x87aCCV[\x95P` \x87\x015`\x01`\x01`\xF8\x1B\x03\x19\x81\x16\x81\x14aC\xA4W_\x80\xFD[\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aC\xC9\x81aCVV[\x80\x91PP\x92\x95P\x92\x95P\x92\x95V[_` \x82\x84\x03\x12\x15aC\xE7W_\x80\xFD[\x815a@\x85\x81aCVV[_[\x83\x81\x10\x15aD\x0CW\x81\x81\x01Q\x83\x82\x01R` \x01aC\xF4V[PP_\x91\x01RV[` \x81R_\x82Q\x80` \x84\x01RaD2\x81`@\x85\x01` \x87\x01aC\xF2V[`\x1F\x01`\x1F\x19\x16\x91\x90\x91\x01`@\x01\x92\x91PPV[_\x80\x83`\x1F\x84\x01\x12aDVW_\x80\xFD[P\x815`\x01`\x01`@\x1B\x03\x81\x11\x15aDlW_\x80\xFD[` \x83\x01\x91P\x83` \x82`\x05\x1B\x85\x01\x01\x11\x15aD\x86W_\x80\xFD[\x92P\x92\x90PV[_\x80` \x83\x85\x03\x12\x15aD\x9EW_\x80\xFD[\x825`\x01`\x01`@\x1B\x03\x81\x11\x15aD\xB3W_\x80\xFD[aD\xBF\x85\x82\x86\x01aDFV[\x90\x96\x90\x95P\x93PPPPV[e\xFF\xFF\xFF\xFF\xFF\xFF\x81\x16\x81\x14a\x1A\x83W_\x80\xFD[_\x80_``\x84\x86\x03\x12\x15aD\xF0W_\x80\xFD[\x835aD\xFB\x81aD\xCBV[\x92P` \x84\x015aE\x0B\x81aD\xCBV[\x91P`@\x84\x015aE\x1B\x81aD\xCBV[\x80\x91PP\x92P\x92P\x92V[_\x80_\x80`\x80\x85\x87\x03\x12\x15aE9W_\x80\xFD[aEB\x85aCCV[\x93P` \x85\x015\x92P`@\x85\x015\x91P``\x85\x015aE`\x81aCVV[\x93\x96\x92\x95P\x90\x93PPV[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aE\x80W_\x80\xFD[aE\x89\x87aCCV[\x95P` \x87\x015\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aC\xC9\x81aCVV[_\x80_\x80_\x80`\xA0\x87\x89\x03\x12\x15aE\xCAW_\x80\xFD[aE\xD3\x87aCCV[\x95P` \x87\x015\x94P`@\x87\x015`\x01`\x01`@\x1B\x03\x81\x11\x15aE\xF4W_\x80\xFD[aF\0\x89\x82\x8A\x01aDFV[\x90\x95P\x93PP``\x87\x015\x91P`\x80\x87\x015aC\xC9\x81aCVV[_\x80`@\x83\x85\x03\x12\x15aF,W_\x80\xFD[\x825aF7\x81aCVV[\x94` \x93\x90\x93\x015\x93PPPV[cNH{q`\xE0\x1B_R`A`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15aFjW_\x80\xFD[\x825aFu\x81aCVV[\x91P` \x83\x015`\x01`\x01`@\x1B\x03\x80\x82\x11\x15aF\x90W_\x80\xFD[\x81\x85\x01\x91P\x85`\x1F\x83\x01\x12aF\xA3W_\x80\xFD[\x815\x81\x81\x11\x15aF\xB5WaF\xB5aFEV[`@Q`\x1F\x82\x01`\x1F\x19\x90\x81\x16`?\x01\x16\x81\x01\x90\x83\x82\x11\x81\x83\x10\x17\x15aF\xDDWaF\xDDaFEV[\x81`@R\x82\x81R\x88` \x84\x87\x01\x01\x11\x15aF\xF5W_\x80\xFD[\x82` \x86\x01` \x83\x017_` \x84\x83\x01\x01R\x80\x95PPPPPP\x92P\x92\x90PV[_` \x82\x84\x03\x12\x15aG&W_\x80\xFD[\x815a@\x85\x81aD\xCBV[_\x80_``\x84\x86\x03\x12\x15aGCW_\x80\xFD[aGL\x84aCCV[\x92P` \x84\x015\x91P`@\x84\x015aE\x1B\x81aCVV[_` \x82\x84\x03\x12\x15aGsW_\x80\xFD[\x815\x80\x15\x15\x81\x14a@\x85W_\x80\xFD[_\x80`@\x83\x85\x03\x12\x15aG\x93W_\x80\xFD[\x825aG\x9E\x81aD\xCBV[\x91P` \x83\x015aG\xAE\x81aD\xCBV[\x80\x91PP\x92P\x92\x90PV[_\x80_\x80_`\x80\x86\x88\x03\x12\x15aG\xCDW_\x80\xFD[aG\xD6\x86aCCV[\x94P` \x86\x015`\x01`\x01`@\x1B\x03\x81\x11\x15aG\xF0W_\x80\xFD[aG\xFC\x88\x82\x89\x01aDFV[\x90\x95P\x93PP`@\x86\x015\x91P``\x86\x015aH\x17\x81aCVV[\x80\x91PP\x92\x95P\x92\x95\x90\x93PV[_\x80`@\x83\x85\x03\x12\x15aH6W_\x80\xFD[\x825\x91P` \x83\x015aG\xAE\x81aCVV[_\x85QaHY\x81\x84` \x8A\x01aC\xF2V[a\x10;`\xF1\x1B\x90\x83\x01\x90\x81R\x85QaHx\x81`\x02\x84\x01` \x8A\x01aC\xF2V[\x80\x82\x01\x91PP`\x17`\xF9\x1B\x80`\x02\x83\x01R\x85QaH\x9C\x81`\x03\x85\x01` \x8A\x01aC\xF2V[`\x03\x92\x01\x91\x82\x01R\x83QaH\xB7\x81`\x04\x84\x01` \x88\x01aC\xF2V[\x01`\x04\x01\x96\x95PPPPPPV[_` \x82\x84\x03\x12\x15aH\xD5W_\x80\xFD[\x81Qa@\x85\x81aCVV[cNH{q`\xE0\x1B_R`2`\x04R`$_\xFD[cNH{q`\xE0\x1B_R`!`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15aI\x19W_\x80\xFD[\x82QaI$\x81aD\xCBV[` \x84\x01Q\x90\x92PaG\xAE\x81aD\xCBV[cNH{q`\xE0\x1B_R`\x11`\x04R`$_\xFD[\x80\x82\x02\x81\x15\x82\x82\x04\x84\x14\x17a2\xCAWa2\xCAaI5V[\x81\x81\x03\x81\x81\x11\x15a2\xCAWa2\xCAaI5V[cNH{q`\xE0\x1B_R`\x12`\x04R`$_\xFD[_\x82aI\x95WaI\x95aIsV[P\x06\x90V[_` \x82\x84\x03\x12\x15aI\xAAW_\x80\xFD[PQ\x91\x90PV[\x80\x82\x01\x80\x82\x11\x15a2\xCAWa2\xCAaI5V[_\x82aI\xD2WaI\xD2aIsV[P\x04\x90V[_\x82QaI\xE8\x81\x84` \x87\x01aC\xF2V[\x91\x90\x91\x01\x92\x91PPV\xFE\0\0\x94p\0\0\x94p\0\0\0\0\0\0\0\0\0\0\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0\0\0\0\0\0\0\0\0\0\0\0\0P\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\0\0\0\0\0\0\0\0\0\0\0\0\xE3\xA9\x10Z:\x93\"S\xA7\x0F\x12n\xB1\xE3\xB5\x89\xC6C\xDD$",
+        b"`\xA0`@R0`\x80R4\x80\x15b\0\0\x14W_\x80\xFD[Pb\0\0\x1Fb\0\0%V[b\0\0\xD9V[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80Th\x01\0\0\0\0\0\0\0\0\x90\x04`\xFF\x16\x15b\0\0vW`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80T`\x01`\x01`@\x1B\x03\x90\x81\x16\x14b\0\0\xD6W\x80T`\x01`\x01`@\x1B\x03\x19\x16`\x01`\x01`@\x1B\x03\x90\x81\x17\x82U`@Q\x90\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1[PV[`\x80QaMRb\0\x01\0_9_\x81\x81a:\xC1\x01R\x81\x81a:\xEA\x01Ra<\xC3\x01RaMR_\xF3\xFE`\x80`@R`\x046\x10a\x03fW_5`\xE0\x1C\x80cv\xE9D\xEC\x11a\x01\xC8W\x80c\xB9f%T\x11a\0\xFDW\x80c\xC8\xDECR\x11a\0\x9DW\x80c\xF1\xC4\xE4\xED\x11a\0mW\x80c\xF1\xC4\xE4\xED\x14a\nLW\x80c\xF5\xD0\xB2\xD5\x14a\nkW\x80c\xF7\xD1\x98\xF8\x14a\n\x7FW\x80c\xF8\xE4\xD1\xEC\x14a\n\x9EW_\x80\xFD[\x80c\xC8\xDECR\x14a\t\xA7W\x80c\xD0tv\xC6\x14a\t\xC6W\x80c\xD5\xB8\xB8\xF3\x14a\n\x0EW\x80c\xD63\xC9k\x14a\n-W_\x80\xFD[\x80c\xC19\x0C4\x11a\0\xD8W\x80c\xC19\x0C4\x14a\t6W\x80c\xC1<\x19q\x14a\tUW\x80c\xC2w\xA96\x14a\tiW\x80c\xC7\xA7\xFA\xEE\x14a\t\x88W_\x80\xFD[\x80c\xB9f%T\x14a\x08\xD9W\x80c\xBD!\x94v\x14a\x08\xF8W\x80c\xC0\xC5\xDF|\x14a\t\x17W_\x80\xFD[\x80c\x96\x83\x02\xD7\x11a\x01hW\x80c\xAA\x1F\xFA9\x11a\x01CW\x80c\xAA\x1F\xFA9\x14a\x08LW\x80c\xAB9GU\x14a\x08kW\x80c\xAD<\xB1\xCC\x14a\x08\x8AW\x80c\xB7\x8B\xEFY\x14a\x08\xBAW_\x80\xFD[\x80c\x96\x83\x02\xD7\x14a\x07\xEFW\x80c\x9B?x\x1A\x14a\x08\x0EW\x80c\x9F\x92Y\xBB\x14a\x08-W_\x80\xFD[\x80c\x86)\xF5E\x11a\x01\xA3W\x80c\x86)\xF5E\x14a\x07sW\x80c\x89\xAB\xB89\x14a\x07\x92W\x80c\x8A\x1Em\xE5\x14a\x07\xB1W\x80c\x8D\xC3<\x17\x14a\x07\xD0W_\x80\xFD[\x80cv\xE9D\xEC\x14a\x07\x06W\x80c~\xEF\xEBc\x14a\x075W\x80c\x81\x8FMi\x14a\x07TW_\x80\xFD[\x80c9\xDD\xE4C\x11a\x02\x9EW\x80c\\AKW\x11a\x02>W\x80c`\xE1!\x89\x11a\x02\x19W\x80c`\xE1!\x89\x14a\x06\x8AW\x80ci\x93\x1A\xFB\x14a\x06\xA9W\x80ck\xAD\x18\xB6\x14a\x06\xC8W\x80cl\xF0\xBD%\x14a\x06\xE7W_\x80\xFD[\x80c\\AKW\x14a\x06-W\x80c^`\xEF+\x14a\x06LW\x80c_v\xEB0\x14a\x06kW_\x80\xFD[\x80cE\x8F\xB2w\x11a\x02yW\x80cE\x8F\xB2w\x14a\x05\xBAW\x80cI|\"\xC5\x14a\x05\xD9W\x80cO\x1E\xF2\x86\x14a\x05\xF8W\x80cR\xD1\x90-\x14a\x06\x0BW_\x80\xFD[\x80c9\xDD\xE4C\x14a\x05]W\x80c;\xB7\xD5\xA3\x14a\x05|W\x80c;\xBC\xC4\xB2\x14a\x05\x9BW_\x80\xFD[\x80c&\x8Dm1\x11a\x03\tW\x80c.<9\x06\x11a\x02\xE4W\x80c.<9\x06\x14a\x04\xE1W\x80c3\x11\xB1\xBC\x14a\x05\0W\x80c8\xBD\x17\xE5\x14a\x05\x1FW\x80c9Q\xE5\x06\x14a\x05>W_\x80\xFD[\x80c&\x8Dm1\x14a\x04\\W\x80c-i\x05H\x14a\x04\x8FW\x80c-\xCB\xC5\xD1\x14a\x04\xC2W_\x80\xFD[\x80c\r\x81\xA3\xF1\x11a\x03DW\x80c\r\x81\xA3\xF1\x14a\x03\xC9W\x80c\r\x8En,\x14a\x03\xE8W\x80c\x19jEm\x14a\x04\x12W\x80c\x1E$\xAAI\x14a\x041W_\x80\xFD[\x80c\x04U?\xB6\x14a\x03jW\x80c\x06\x18\r\0\x14a\x03\x8BW\x80c\x07\xCC\xDFa\x14a\x03\xAAW[_\x80\xFD[4\x80\x15a\x03uW_\x80\xFD[Pa\x03\x89a\x03\x846`\x04aF\x02V[a\n\xD0V[\0[4\x80\x15a\x03\x96W_\x80\xFD[Pa\x03\x89a\x03\xA56`\x04aF\x80V[a\x0B\xB0V[4\x80\x15a\x03\xB5W_\x80\xFD[Pa\x03\x89a\x03\xC46`\x04aF\x02V[a\x0C\xE8V[4\x80\x15a\x03\xD4W_\x80\xFD[Pa\x03\x89a\x03\xE36`\x04aF\x02V[a\r\xA4V[4\x80\x15a\x03\xF3W_\x80\xFD[Pa\x03\xFCa\x0E\x82V[`@Qa\x04\t\x91\x90aF\xD7V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x04\x1DW_\x80\xFD[Pa\x03\x89a\x04,6`\x04aG\x1CV[a\x0E\xE8V[4\x80\x15a\x04<W_\x80\xFD[Pa\x04Ea\x10/V[`@Qe\xFF\xFF\xFF\xFF\xFF\xFF\x90\x91\x16\x81R` \x01a\x04\tV[4\x80\x15a\x04gW_\x80\xFD[P_\x80Q` aM2\x839\x81Q\x91R[`@Q`\x01`\x01`\xA0\x1B\x03\x90\x91\x16\x81R` \x01a\x04\tV[4\x80\x15a\x04\x9AW_\x80\xFD[Pa\x04\xA3a\x10MV[`@\x80Qe\xFF\xFF\xFF\xFF\xFF\xFF\x93\x84\x16\x81R\x92\x90\x91\x16` \x83\x01R\x01a\x04\tV[4\x80\x15a\x04\xCDW_\x80\xFD[Pa\x03\x89a\x04\xDC6`\x04aGdV[a\x10{V[4\x80\x15a\x04\xECW_\x80\xFD[Pa\x03\x89a\x04\xFB6`\x04aG\xA9V[a\x11\x03V[4\x80\x15a\x05\x0BW_\x80\xFD[Pa\x03\x89a\x05\x1A6`\x04aF\x02V[a\x11\x89V[4\x80\x15a\x05*W_\x80\xFD[Pa\x03\x89a\x0596`\x04aF\x02V[a\x12,V[4\x80\x15a\x05IW_\x80\xFD[Pa\x03\x89a\x05X6`\x04aF\x80V[a\x12\xE1V[4\x80\x15a\x05hW_\x80\xFD[Pa\x03\x89a\x05w6`\x04aF\x80V[a\x13\xEAV[4\x80\x15a\x05\x87W_\x80\xFD[Pa\x03\x89a\x05\x966`\x04aF\x02V[a\x15\nV[4\x80\x15a\x05\xA6W_\x80\xFD[Pa\x03\x89a\x05\xB56`\x04aH:V[a\x15\xBFV[4\x80\x15a\x05\xC5W_\x80\xFD[Pa\x03\x89a\x05\xD46`\x04aF\x02V[a\x18\xA6V[4\x80\x15a\x05\xE4W_\x80\xFD[Pa\x03\x89a\x05\xF36`\x04aGdV[a\x19UV[a\x03\x89a\x06\x066`\x04aH\xB4V[a\x19\xCCV[4\x80\x15a\x06\x16W_\x80\xFD[Pa\x06\x1Fa\x19\xEBV[`@Q\x90\x81R` \x01a\x04\tV[4\x80\x15a\x068W_\x80\xFD[Pa\x03\x89a\x06G6`\x04aIqV[a\x1A\x06V[4\x80\x15a\x06WW_\x80\xFD[Pa\x03\x89a\x06f6`\x04aI\x8CV[a\x1A\xB2V[4\x80\x15a\x06vW_\x80\xFD[Pa\x03\x89a\x06\x856`\x04aF\x02V[a\x1B\\V[4\x80\x15a\x06\x95W_\x80\xFD[Pa\x03\x89a\x06\xA46`\x04aF\x02V[a\x1C\x19V[4\x80\x15a\x06\xB4W_\x80\xFD[Pa\x03\x89a\x06\xC36`\x04aGdV[a\x1C\xEEV[4\x80\x15a\x06\xD3W_\x80\xFD[Pa\x03\x89a\x06\xE26`\x04aF\x02V[a\x1DaV[4\x80\x15a\x06\xF2W_\x80\xFD[Pa\x03\x89a\x07\x016`\x04aI\xA5V[a\x1E6V[4\x80\x15a\x07\x11W_\x80\xFD[Pa\x07%a\x07 6`\x04aI\x8CV[a\x1E\xB8V[`@Q\x90\x15\x15\x81R` \x01a\x04\tV[4\x80\x15a\x07@W_\x80\xFD[Pa\x03\x89a\x07O6`\x04aF\x80V[a\x1E\xE7V[4\x80\x15a\x07_W_\x80\xFD[Pa\x03\x89a\x07n6`\x04aF\x02V[a\x1F\x91V[4\x80\x15a\x07~W_\x80\xFD[Pa\x03\x89a\x07\x8D6`\x04aF\x02V[a FV[4\x80\x15a\x07\x9DW_\x80\xFD[Pa\x04Ea\x07\xAC6`\x04aI\x8CV[a!\x14V[4\x80\x15a\x07\xBCW_\x80\xFD[Pa\x04wa\x07\xCB6`\x04aI\x8CV[a!HV[4\x80\x15a\x07\xDBW_\x80\xFD[Pa\x03\x89a\x07\xEA6`\x04aI\xD7V[a!vV[4\x80\x15a\x07\xFAW_\x80\xFD[Pa\x03\x89a\x08\t6`\x04aF\x02V[a\"&V[4\x80\x15a\x08\x19W_\x80\xFD[Pa\x03\x89a\x08(6`\x04aF\x02V[a\"\xDBV[4\x80\x15a\x088W_\x80\xFD[Pa\x03\x89a\x08G6`\x04aF\x02V[a#pV[4\x80\x15a\x08WW_\x80\xFD[Pa\x03\x89a\x08f6`\x04aI\xF2V[a$7V[4\x80\x15a\x08vW_\x80\xFD[Pa\x03\x89a\x08\x856`\x04aIqV[a&NV[4\x80\x15a\x08\x95W_\x80\xFD[Pa\x03\xFC`@Q\x80`@\x01`@R\x80`\x05\x81R` \x01d\x03R\xE3\x02\xE3`\xDC\x1B\x81RP\x81V[4\x80\x15a\x08\xC5W_\x80\xFD[Pa\x03\x89a\x08\xD46`\x04aI\xA5V[a&\xF7V[4\x80\x15a\x08\xE4W_\x80\xFD[Pa\x03\x89a\x08\xF36`\x04aJ\x1EV[a'MV[4\x80\x15a\t\x03W_\x80\xFD[Pa\x03\x89a\t\x126`\x04aI\x8CV[a)fV[4\x80\x15a\t\"W_\x80\xFD[Pa\x03\x89a\t16`\x04aF\x02V[a*\x86V[4\x80\x15a\tAW_\x80\xFD[Pa\x03\x89a\tP6`\x04aF\x02V[a+5V[4\x80\x15a\t`W_\x80\xFD[Pa\x04Ea+\xE4V[4\x80\x15a\ttW_\x80\xFD[Pa\x03\x89a\t\x836`\x04aF\x02V[a,\x02V[4\x80\x15a\t\x93W_\x80\xFD[Pa\x03\x89a\t\xA26`\x04aJ\x8AV[a,\xB1V[4\x80\x15a\t\xB2W_\x80\xFD[Pa\x03\x89a\t\xC16`\x04aF\x02V[a.\xE0V[4\x80\x15a\t\xD1W_\x80\xFD[Pa\t\xE5a\t\xE06`\x04aI\x8CV[a/\x8FV[`@\x80Qe\xFF\xFF\xFF\xFF\xFF\xFF\x94\x85\x16\x81R\x92\x84\x16` \x84\x01R\x92\x16\x91\x81\x01\x91\x90\x91R``\x01a\x04\tV[4\x80\x15a\n\x19W_\x80\xFD[Pa\x03\x89a\n(6`\x04aI\xA5V[a/\xF6V[4\x80\x15a\n8W_\x80\xFD[Pa\x03\x89a\nG6`\x04aF\x02V[a0kV[4\x80\x15a\nWW_\x80\xFD[Pa\x04Ea\nf6`\x04aJ\xA4V[a1\x1AV[4\x80\x15a\nvW_\x80\xFD[Pa\x03\x89a2DV[4\x80\x15a\n\x8AW_\x80\xFD[Pa\x03\x89a\n\x996`\x04aF\x02V[a3vV[4\x80\x15a\n\xA9W_\x80\xFD[Pa\n\xBDa\n\xB86`\x04aJ\xC7V[a4>V[`@Qa\xFF\xFF\x90\x91\x16\x81R` \x01a\x04\tV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\n\xFDW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x0B_Wa\x0BL~\x01\xC9\x08\0\x01\xC9\x08\0\x01W\xC0\0\x01W\xC0\0\x01H \0\x01H \0\0\0\0\0\0\0\0n\x02\xD6\x90\0\x02\xD6\x90\0\x02I\xF0\0\x02I\xF0\x89a4HV[\x90Pa\x0BZ\x81\x83\x87\x86a4\xFFV[a\x0B\xA7V[a\x0B\x98~\x02\xC6\xF0\0\x02\xC6\xF0\0\x02:P\0\x02:P\0\x01\xD0\xD8\0\x01\xD0\xD8\0\0\0\0\0\0\0\0n\x04h\xE8\0\x04h\xE8\0\x03Wx\0\x03Wx\x89a4HV[\x90Pa\x0B\xA7\x81\x83\x87\x87\x87a5,V[PPPPPPPV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x0B\xF9W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x0C\x1D\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x0CUW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01[`@Q\x80\x91\x03\x90\xFD[`\x02a\xFF\xFF\x83\x16\x11a\x0C\x80W`@Qc$Bz]`\xE0\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[\x80a\x0C\x89a5fV[a\xFF\xFF\x84\x16_\x81\x81R`\x07\x92\x90\x92\x01` R`@\x80\x83 \x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x95\x86\x16\x17\x90UQ\x92\x84\x16\x92\x90\x91\x7F\x9AcAwn\xC8\x86\xF65Wj\xAF\xE3u\x9F\t\xCE\xF0\x19\xB2d\xDF\xA6\xA2}\xEB\xB4\x85T\x15\xFF>\x91\xA3PPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\r\x15W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\r[Wa\x0BLt}\0\0\0}\0\0\0}\0\0\0}\0\0\0}\0\0\0}`H\x1B_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[a\x0B\x98~\x02|\xB8\0\x02|\xB8\0\x01\xE0x\0\x01\xE0x\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0~\x05\xA1h\0\x05\xA1h\0\0\0\0\0\0\0\0\0\x04&\x80\0\x04&\x80\0\x030h\0\x030h\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\r\xD1W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\xFD`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x01a\x0E\x18Wa\x0BL~\x10z\xC0\0\x10z\xC0\0\n\xBA\x18\0\n\xBA\x18\0\x07\x8D\x98\0\x07\x8D\x98\0\0\0\0\0\0\0\0f\x1DO\xE8\0\x1DO\xE8\x89a4HV[`\x01`\x01`\xF8\x1B\x03\x19\x86\x81\x16\x01a\x0EiWa\x0EZ~\x14\x01\x18\0\x14\x01\x18\0\x0B\xB00\0\x0B\xB00\0\x07\xFE\xE0\0\x07\xFE\xE0\0\0\0\0\0\0\0\0f,k\x18\0,k\x18\x89a4HV[\x90Pa\x0BZ\x81\x83\x87\x87\x87a5,V[`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[```@Q\x80`@\x01`@R\x80`\x08\x81R` \x01g\x12\x10\xD5S\x1A[Z]`\xC2\x1B\x81RPa\x0E\xAE_a5\x8AV[a\x0E\xB8`\x06a5\x8AV[a\x0E\xC1_a5\x8AV[`@Q` \x01a\x0E\xD4\x94\x93\x92\x91\x90aJ\xFDV[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x90P\x90V[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0T`\x01`\x01`@\x1B\x03\x16`\x01`\x01`@\x1B\x03\x16`\x01\x14a\x0F<W`@QcoOs\x1F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x07\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a\x0F\x85WP\x80T`\x01`\x01`@\x1B\x03\x80\x84\x16\x91\x16\x10\x15[\x15a\x0F\xA3W`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01`\x01`@\x1B\x03\x83\x16\x17`\x01`@\x1B\x17\x81Ua\x0F\xCF_\x86\x80a6\x19V[a\x0F\xD8\x83a6\xDDV[a\x0F\xE1\x84a7?V[\x80T`\xFF`@\x1B\x19\x16\x81U`@Q`\x01`\x01`@\x1B\x03\x83\x16\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1PPPPPV[_a\x108a5fV[T`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91\x90PV[_\x80_a\x10Xa5fV[`\x04\x01Te\xFF\xFF\xFF\xFF\xFF\xFFa\x01\0\x82\x04\x81\x16\x95`\x01`8\x1B\x90\x92\x04\x16\x93P\x91PPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x10\xA8W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x10\xEE| \0\0\0 \0\0\0\x10\0\0\0\x10\0\0\0\t\0\0\0\t\0\0\0\x02\0\0\0\x02|\x82\0\0\0\x82\0\0\0\0\0\0\0\0\0\0\0\x82\0\0\0\x82\0\0\0?\0\0\0?\x87a4HV[\x90Pa\x10\xFC\x81\x83\x86\x86a4\xFFV[PPPPPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x110W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x11y}\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8~\x01\xA5\xE0\0\x01\xA5\xE0\0\x01D8\0\x01D8\0\0\xDE\xA8\0\0\xDE\xA8\0\0\xD6\xD8\0\0\xD6\xD8\x89a4HV[\x90Pa\x0B\xA7\x81\x83\x88\x88\x88\x88a8NV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x11\xB6W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a\x11\xE5W`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x12\x1E~\x0C\x15\xC0\0\x0C\x15\xC0\0\x08\xD9\xA0\0\x08\xD9\xA0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\0\0\0\0\0\0\0n\x1D\xA5\xD8\0\x1D\xA5\xD8\0\x11\x97\xE8\0\x11\x97\xE8\x89a4HV[\x90Pa\x0B\xA7\x81\x83\x87\x86a4\xFFV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x12YW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x12\xA8Wa\x0BL~\x01H \0\x01H \0\0\xE2\x90\0\0\xE2\x90\0\0\xE2\x90\0\0\xE2\x90\0\0\0\0\0\0\0\0n\x02I\xF0\0\x02I\xF0\0\x01\xD0\xD8\0\x01\xD0\xD8\x89a4HV[a\x0B\x98~\x01\xC9\x08\0\x01\xC9\x08\0\x01D8\0\x01D8\0\0\xE2\x90\0\0\xE2\x90\0\0\0\0\0\0\0\0n\x03S\x90\0\x03S\x90\0\x02F\x08\0\x02F\x08\x89a4HV[\x81_a\x12\xEBa5fV[a\xFF\xFF\x83\x16_\x90\x81R`\x07\x82\x01` R`@\x90 T\x90\x91P`\x01`\x01`\xA0\x1B\x03\x163\x14a\x137W`@Qc\x02s\x87%`\xE0\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R3`$\x82\x01R`D\x01a\x0CLV[a\xFF\xFF\x82\x16_\x90\x81R`\x05\x82\x01` R`@\x90 T`\x01`\xC0\x1B\x90\x04`\xFF\x16\x15a\x13zW`@Qc\x18:P\xD5`\xE1\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[\x83a\xFF\xFF\x16a\x13\x87a5fV[`\x01`\x01`\xA0\x1B\x03\x85\x16_\x90\x81R`\x06\x91\x90\x91\x01` R`@\x90 Ta\xFF\xFF\x16\x14a\x13\xDAW`@Qc\xAAB\xE7\x85`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x84\x16`\x04\x82\x01Ra\xFF\xFF\x85\x16`$\x82\x01R`D\x01a\x0CLV[a\x13\xE4_\x84a8\x98V[PPPPV[\x81_a\x13\xF4a5fV[a\xFF\xFF\x83\x16_\x90\x81R`\x07\x82\x01` R`@\x90 T\x90\x91P`\x01`\x01`\xA0\x1B\x03\x163\x14a\x14@W`@Qc\x02s\x87%`\xE0\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R3`$\x82\x01R`D\x01a\x0CLV[a\xFF\xFF\x82\x16_\x90\x81R`\x05\x82\x01` R`@\x90 T`\x01`\xC0\x1B\x90\x04`\xFF\x16\x15a\x14\x83W`@Qc\x18:P\xD5`\xE1\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[a\x14\x8Ba5fV[_\x80\x80R`\x05\x91\x90\x91\x01` R`@\x90 Te\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15a\x14\xC3W`@Qc\xCA4\xEF\xB1`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x14\xCD\x84a9\x85V[a\xFF\xFF\x16\x14a\x15\0W`@Qc\xAAB\xE7\x85`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x84\x16`\x04\x82\x01R_`$\x82\x01R`D\x01a\x0CLV[a\x13\xE4\x84\x84a8\x98V[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x157W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x15\x86Wa\x0BL~\x01D8\0\x01D8\0\0\xE2\x90\0\0\xE2\x90\0\0\xCB \0\0\xCB \0\0\0\0\0\0\0\0n\x02F\x08\0\x02F\x08\0\x01\xCC\xF0\0\x01\xCC\xF0\x89a4HV[a\x0B\x98~\x01\xC9\x08\0\x01\xC9\x08\0\x01H \0\x01H \0\0\xE6x\0\0\xE6x\0\0\0\0\0\0\0\0n\x03G\xD8\0\x03G\xD8\0\x02:P\0\x02:P\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x15\xECW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x88`S\x81\x11\x15a\x16\x02Wa\x16\x02aKzV[\x03a\x16WW`\n\x82\x11a\x16\x1DWPf\x01\x16\x84\0\x01\x16\x84a\x18\x8EV[`\x1E\x82\x11a\x163WPf\x02B \0\x02B a\x18\x8EV[`<\x82\x11a\x16IWPf\x03\xC4\xD8\0\x03\xC4\xD8a\x18\x8EV[Pf\x05\xB4\xF0\0\x05\xB4\xF0a\x18\x8EV[`\x03\x88`S\x81\x11\x15a\x16kWa\x16kaKzV[\x03a\x16\xC0W`\n\x82\x11a\x16\x86WPf\x01\x92X\0\x01\x92Xa\x18\x8EV[`\x1E\x82\x11a\x16\x9CWPf\x03S\x90\0\x03S\x90a\x18\x8EV[`<\x82\x11a\x16\xB2WPf\x05\xC4\x90\0\x05\xC4\x90a\x18\x8EV[Pf\t;H\0\t;Ha\x18\x8EV[`\x04\x88`S\x81\x11\x15a\x16\xD4Wa\x16\xD4aKzV[\x03a\x17)W`\n\x82\x11a\x16\xEFWPf\x02\x17(\0\x02\x17(a\x18\x8EV[`\x1E\x82\x11a\x17\x05WPf\x04\x93\xE0\0\x04\x93\xE0a\x18\x8EV[`<\x82\x11a\x17\x1BWPf\x08\x1A8\0\x08\x1A8a\x18\x8EV[Pf\x0C\x9Ex\0\x0C\x9Exa\x18\x8EV[`\x05\x88`S\x81\x11\x15a\x17=Wa\x17=aKzV[\x03a\x17|W`\n\x82\x11a\x17XWPf\x03S\x90\0\x03S\x90a\x18\x8EV[`\x1E\x82\x11a\x17nWPf\x07\x81\xE0\0\x07\x81\xE0a\x18\x8EV[Pf\ri\x98\0\ri\x98a\x18\x8EV[`\x06\x88`S\x81\x11\x15a\x17\x90Wa\x17\x90aKzV[\x03a\x17\xCFW`\n\x82\x11a\x17\xABWPf\x03\xE8\0\0\x03\xE8\0a\x18\x8EV[`\x1E\x82\x11a\x17\xC1WPf\x08)\xD8\0\x08)\xD8a\x18\x8EV[Pf\x0E\r\xA8\0\x0E\r\xA8a\x18\x8EV[`\x07\x88`S\x81\x11\x15a\x17\xE3Wa\x17\xE3aKzV[\x03a\x18\"W`\n\x82\x11a\x17\xFEWPf\x04]0\0\x04]0a\x18\x8EV[`\x1E\x82\x11a\x18\x14WPf\x08\xE9@\0\x08\xE9@a\x18\x8EV[Pf\r\x81\x08\0\r\x81\x08a\x18\x8EV[`\x08\x88`S\x81\x11\x15a\x186Wa\x186aKzV[\x03a\x18uW`\n\x82\x11a\x18QWPf\x04\xE5\xE8\0\x04\xE5\xE8a\x18\x8EV[`\x1E\x82\x11a\x18gWPf\x08\xF1\x10\0\x08\xF1\x10a\x18\x8EV[Pf\x0Ec\x98\0\x0Ec\x98a\x18\x8EV[`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x18\x9C\x81\x84\x89\x89\x89\x89a:OV[PPPPPPPPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x18\xD3W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x19\x1CWa\x0BLu\nA\0\0\nA\0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\x06Y\0\0\x06Y`E\x1Bn\x02I\xF0\0\x02I\xF0\0\x01\xC9\x08\0\x01\xC9\x08\x89a4HV[a\x0B\x98~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01H \0\x01H \0\0\xE6x\0\0\xE6x\0\0\0\0\0\0\0\0n\x03S\x90\0\x03S\x90\0\x02Q\xC0\0\x02Q\xC0\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x19\x82W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x10\xEE~\x01s\x18\0\x01s\x18\0\x01kH\0\x01kH\0\x014\x98\0\x014\x98\0\0\0\0\0\0\0\0~\x04\x1A\xC8\0\x04\x1A\xC8\0\0\0\0\0\0\0\0\0\x02\x90@\0\x02\x90@\0\x01\xFF\xB8\0\x01\xFF\xB8\x87a4HV[a\x19\xD4a:\xB6V[a\x19\xDD\x82a;\\V[a\x19\xE7\x82\x82a;\xFCV[PPV[_a\x19\xF4a<\xB8V[P_\x80Q` aM\x12\x839\x81Q\x91R\x90V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1AOW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1As\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1A\xA6W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x1A\xAF\x81a7?V[PV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1A\xFBW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1B\x1F\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1BRW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x1A\xAF\x81_a=\x01V[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1B\x89W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1B\xD0Wa\x0BLu\x0F\xA0\0\0\x0F\xA0\0\0\x0F#\0\0\x0F#\0\0\x0F#\0\0\x0F#`C\x1B_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[a\x0B\x98~\x02|\xB8\0\x02|\xB8\0\x01\xE8H\0\x01\xE8H\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0~\x05\xC4\x90\0\x05\xC4\x90\0\0\0\0\0\0\0\0\0\x04=\xF0\0\x04=\xF0\0\x030h\0\x030h\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1CFW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1C\xA5Wa\x0BL~\x01@P\0\x01@P\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0a\xA8\0\0a\xA8~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01D8\0\x01D8\x89a4HV[a\x0B\x98~\x01O\xF0\0\x01O\xF0\0\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0e\x90\0\0e\x90~\x02Q\xC0\0\x02Q\xC0\0\x02\x17(\0\x02\x17(\0\x01\xDC\x90\0\x01\xDC\x90\0\x01\xD4\xC0\0\x01\xD4\xC0\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1D\x1BW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x10\xEE| \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 | \0\0\0 \0\0\0\0\0\0\0\0\0\0\0 \0\0\0 \0\0\0 \0\0\0 \x87a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1D\x8EW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1D\xEDWa\x0BL~\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0Y\xD8\0\0Y\xD8~\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01H \0\x01H \x89a4HV[a\x0B\x98~\x01L\x08\0\x01L\x08\0\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0Y\xD8\0\0Y\xD8~\x02I\xF0\0\x02I\xF0\0\x02\x13@\0\x02\x13@\0\x01\xDC\x90\0\x01\xDC\x90\0\x01\xCC\xF0\0\x01\xCC\xF0\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1EcW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x1E\xAB}]\xC0\0\0]\xC0\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0\0\0\0\0\0\0}u0\0\0u0\0\0\0\0\0\0\0\0\0\0a\xA8\0\0a\xA8\0\0]\xC0\0\0]\xC0\x86a4HV[\x90Pa\x13\xE4\x81\x83\x85a=~V[_a\x1E\xC1a5fV[a\xFF\xFF\x92\x90\x92\x16_\x90\x81R`\x05\x90\x92\x01` RP`@\x90 T`\x01`\xC0\x1B\x90\x04`\xFF\x16\x90V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1F0W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1FT\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1F\x87W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x19\xE7\x82\x82a8\x98V[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1F\xBEW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a \rWa\x0BL~\x04\x0B(\0\x04\x0B(\0\x02\xF1\xE8\0\x02\xF1\xE8\0\x01\xDC\x90\0\x01\xDC\x90\0\0\0\0\0\0\0\0n\n\x9E\xC0\0\n\x9E\xC0\0\x05\x91\xC8\0\x05\x91\xC8\x89a4HV[a\x0B\x98~\x05\x01@\0\x05\x01@\0\x03c0\0\x03c0\0\x02I\xF0\0\x02I\xF0\0\0\0\0\0\0\0\0n\x19\xB9\xF0\0\x19\xB9\xF0\0\t\x18 \0\t\x18 \x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a sW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a \xCBWa\x0BLu\x0F\xA0\0\0\x0F\xA0\0\0\x0F#\0\0\x0F#\0\0\x0F#\0\0\x0F#`C\x1B}\x9C@\0\0\x9C@\0\0\0\0\0\0\0\0\0\0\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0\x89a4HV[a\x0B\x98~\x02q\0\0\x02q\0\0\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\0\0\0\0\0\0\0~\x05\xB8\xD8\0\x05\xB8\xD8\0\0\0\0\0\0\0\0\0\x04Qx\0\x04Qx\0\x030h\0\x030h\x89a4HV[_a!\x1Da5fV[a\xFF\xFF\x92\x90\x92\x16_\x90\x81R`\x05\x90\x92\x01` RP`@\x90 T`\x01`\xC8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90V[_a!Qa5fV[a\xFF\xFF\x90\x92\x16_\x90\x81R`\x07\x92\x90\x92\x01` RP`@\x90 T`\x01`\x01`\xA0\x1B\x03\x16\x90V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a!\xBFW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a!\xE3\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\"\x16W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\"!\x83\x83\x83a6\x19V[PPPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\"SW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\"\xA2Wa\x0BL~\x01\xC9\x08\0\x01\xC9\x08\0\x01[\xA8\0\x01[\xA8\0\x01[\xA8\0\x01[\xA8\0\0\0\0\0\0\0\0n\x02\xBF \0\x02\xBF \0\x02F\x08\0\x02F\x08\x89a4HV[a\x0B\x98~\x02\xBF \0\x02\xBF \0\x026h\0\x026h\0\x01\xD8\xA8\0\x01\xD8\xA8\0\0\0\0\0\0\0\0n\x04l\xD0\0\x04l\xD0\0\x03S\x90\0\x03S\x90\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a#\x08W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a#7W`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x12\x1E~\x06\xAE\xF0\0\x06\xAE\xF0\0\x04\x9B\xB0\0\x04\x9B\xB0\0\x034P\0\x034P\0\0\0\0\0\0\0\0n\x12\xB1(\0\x12\xB1(\0\n\xE8\xF8\0\n\xE8\xF8\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a#\x9DW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a#\xF5Wa\x0BL}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0m\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4HV[a\x0B\x98}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0m\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4HV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a$\x80W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a$\xA4\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a$\xD7W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x81\x16\x15\x90\x82\x16\x15\x14a%\x04W`@Qc\x0B\xF8'\xAB`\xE3\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a%\ra5fV[\x90Pe\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x15a%\xC5W\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x01`\x90\x1B\x90\x91\x04\x81\x16\x90\x84\x16\x10\x15a%RW`@QcO5}%`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`@Qcw\x8E/\xEF`\xE0\x1B\x81R_`\x04\x82\x01\x81\x90R`$\x82\x01R_\x80Q` aL\xF2\x839\x81Q\x91R\x90cw\x8E/\xEF\x90`D\x01`@\x80Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a%\x9EW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a%\xC2\x91\x90aK\x8EV[PP[`\x04\x81\x01\x80Tl\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\x19\x16a\x01\0e\xFF\xFF\xFF\xFF\xFF\xFF\x86\x81\x16\x91\x82\x02l\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\x19\x16\x92\x90\x92\x17`\x01`8\x1B\x92\x86\x16\x92\x83\x02\x17\x90\x92U`@\x80Q\x92\x83R` \x83\x01\x91\x90\x91R\x7F\xDD@a\xCD\xC8\xBA'F\x0C\xADG\xA9\rU\x96\x1F\xBB\xFC\xF7\x1E\xEA\xF7\x88Uj\x9A\xD3kh)*\xB2\x91\x01[`@Q\x80\x91\x03\x90\xA1PPPV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a&\x97W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a&\xBB\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a&\xEEW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x1A\xAF\x81a6\xDDV[3_\x80Q` aM2\x839\x81Q\x91R\x14a'$W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x1E\xAB| \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \x80\x86a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a'zW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x87`S\x81\x11\x15a'\x90Wa'\x90aKzV[\x03a'\xE5W`\n\x82\x11a'\xABWPf\x01c\x14\0\x01c\x14a)YV[`\x1E\x82\x11a'\xC1WPf\x01\xF0\x18\0\x01\xF0\x18a)YV[`<\x82\x11a'\xD7WPf\x02B \0\x02B a)YV[Pf\x02m\x18\0\x02m\x18a)YV[`\x03\x87`S\x81\x11\x15a'\xF9Wa'\xF9aKzV[\x03a(NW`\n\x82\x11a(\x14WPf\x01s\x18\0\x01s\x18a)YV[`\x1E\x82\x11a(*WPf\x02\x13@\0\x02\x13@a)YV[`<\x82\x11a(@WPf\x02x\xD0\0\x02x\xD0a)YV[Pf\x02\xCE\xC0\0\x02\xCE\xC0a)YV[`\x04\x87`S\x81\x11\x15a(bWa(baKzV[\x03a(\xB7W`\n\x82\x11a(}WPf\x01\xC5 \0\x01\xC5 a)YV[`\x1E\x82\x11a(\x93WPf\x02\x80\xA0\0\x02\x80\xA0a)YV[`<\x82\x11a(\xA9WPf\x03 \xC8\0\x03 \xC8a)YV[Pf\x04I\xA8\0\x04I\xA8a)YV[`\x05\x87`S\x81\x11\x15a(\xCBWa(\xCBaKzV[\x03a)\nW`\n\x82\x11a(\xE6WPf\x02\x1E\xF8\0\x02\x1E\xF8a)YV[`\x1E\x82\x11a(\xFCWPf\x03K\xC0\0\x03K\xC0a)YV[Pf\x04\xABP\0\x04\xABPa)YV[`\x06\x87`S\x81\x11\x15a)\x1EWa)\x1EaKzV[\x03a\x18uW`\n\x82\x11a)9WPf\x03Wx\0\x03Wxa)YV[`\x1E\x82\x11a)OWPf\x05j\xB8\0\x05j\xB8a)YV[Pf\x08l@\0\x08l@[a\x0B\xA7\x81\x84\x88\x88\x88a=\xA2V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a)\xAFW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a)\xD3\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14\x15\x80\x15a*[WP`@Qc#}\xFBG`\xE1\x1B\x81R3`\x04\x82\x01R_\x80Q` aL\xF2\x839\x81Q\x91R\x90cF\xFB\xF6\x8E\x90`$\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a*5W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a*Y\x91\x90aK\xBBV[\x15[\x15a*{W`@Qc\x105\x1A7`\xE1\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x1A\xAF\x81`\x01a=\x01V[3_\x80Q` aM2\x839\x81Q\x91R\x14a*\xB3W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a*\xFFWa\x0BL}}\0\0\0}\0\0\0u0\0\0u0\0\0u0\0\0u0\0\0U\xF0\0\0U\xF0_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[a\x0B\x98}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0u0\0\0u0\0\0]\xC0\0\0]\xC0_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a+bW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a+\xABWa\x0BLu\x0B\x98\xC0\0\x0B\x98\xC0\0\x0BZ@\0\x0BZ@\0\nA\0\0\nA`E\x1Bn\x02\x9F\xE0\0\x02\x9F\xE0\0\x02\x07\x88\0\x02\x07\x88\x89a4HV[a\x0B\x98~\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\x01W\xC0\0\x01W\xC0\0\0\0\0\0\0\0\0n\x03\xF3\xB8\0\x03\xF3\xB8\0\x02x\xD0\0\x02x\xD0\x89a4HV[_a+\xEDa5fV[T`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91\x90PV[3_\x80Q` aM2\x839\x81Q\x91R\x14a,/W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a,xWa\x0BLu\nA\0\0\nA\0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\x06Y\0\0\x06Y`E\x1Bn\x02F\x08\0\x02F\x08\0\x01\xC5 \0\x01\xC5 \x89a4HV[a\x0B\x98~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01H \0\x01H \0\0\xF6\x18\0\0\xF6\x18\0\0\0\0\0\0\0\0n\x034P\0\x034P\0\x02Q\xC0\0\x02Q\xC0\x89a4HV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a,\xFAW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a-\x1E\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a-QW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\xFF\xFF\x82\x16`\x01\x14\x80a-hWPa\xFF\xFF\x82\x16`\x02\x14[\x15a-\x8CW`@Qc\n]E\xA7`\xE3\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[_a-\x95a5fV[\x90Pe\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16\x15a.jW\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x01`\x90\x1B\x90\x91\x04\x81\x16\x90\x83\x16\x10\x80a-\xDBWP`\x04\x81\x01Te\xFF\xFF\xFF\xFF\xFF\xFFa\x01\0\x90\x91\x04\x81\x16\x90\x83\x16\x11[\x15a-\xFFW`@Qc\n]E\xA7`\xE3\x1B\x81Ra\xFF\xFF\x84\x16`\x04\x82\x01R`$\x01a\x0CLV[a\xFF\xFF\x83\x16\x15a.jW_\x80\x80R`\x05\x82\x01` R`@\x90 T`\x01`\xC8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x80\x15\x80a.DWP\x80e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x83e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x10[\x15a.hW`@Qc\n]E\xA7`\xE3\x1B\x81Ra\xFF\xFF\x85\x16`\x04\x82\x01R`$\x01a\x0CLV[P[a\xFF\xFF\x83\x16_\x81\x81R`\x05\x83\x01` \x90\x81R`@\x91\x82\x90 \x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\xC8\x1B\x19\x16`\x01`\xC8\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x88\x16\x90\x81\x02\x91\x90\x91\x17\x90\x91U\x91Q\x91\x82R3\x92\x91\x7F\xE9\x9C\xC7\xCD#\n[\x07\x19=a\xD9~\xB5\xC5\x97\xDAN\xA6\x02\xBDNGy\xCE~\r\x86a\t\xFD\xD0\x91\x01`@Q\x80\x91\x03\x90\xA3PPPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a/\rW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a/YWa\x0BL}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[a\x0B\x98}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0a\xA8\0\0a\xA8_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[_\x80_\x80a/\x9Ba5fV[a\xFF\xFF\x86\x16_\x90\x81R`\x05\x91\x90\x91\x01` R`@\x90 \x80T\x90\x91Pe\xFF\xFF\xFF\xFF\xFF\xFF\x80\x82\x16\x91`\x01`0\x1B\x81\x04\x82\x16\x91a/\xE8\x91`\x01``\x1B\x81\x04\x82\x16\x91`\x01`\x90\x1B\x90\x91\x04\x16\x83a=\xFBV[\x93P\x93P\x93PP\x91\x93\x90\x92PV[3_\x80Q` aM2\x839\x81Q\x91R\x14a0#W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x1E\xAB}]\xC0\0\0]\xC0\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0J8\0\0J8}u0\0\0u0\0\0\0\0\0\0\0\0\0\0a\xA8\0\0a\xA8\0\0]\xC0\0\0]\xC0\x86a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a0\x98W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a0\xE1Wa\x0BLu\x0B\x98\xC0\0\x0B\x98\xC0\0\x0BZ@\0\x0BZ@\0\nA\0\0\nA`E\x1Bn\x02\x9F\xE0\0\x02\x9F\xE0\0\x02\x07\x88\0\x02\x07\x88\x89a4HV[a\x0B\x98~\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0n\x03\xF7\xA0\0\x03\xF7\xA0\0\x02x\xD0\0\x02x\xD0\x89a4HV[_3_\x80Q` aL\xF2\x839\x81Q\x91R\x14a1GW`@Qb\x91k\x8B`\xE5\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a1Pa5fV[`\x04\x81\x01T\x90\x91Pa\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x03a1tW_\x91PPa2>V[`\x80a1\x80\x85\x85a>PV[\x90\x1C\x91P_a1\x8E\x84a9\x85V[a\xFF\xFF\x81\x16_\x90\x81R`\x05\x84\x01` R`@\x90 T\x90\x91P`\x01`\xC8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x80\x15\x80\x15\x90a1\xD3WP\x80e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x84e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x11[\x15a2:W\x84\x82a2\x05a1\xE7\x84\x88aK\xEEV[`\x04\x87\x01Te\xFF\xFF\xFF\xFF\xFF\xFF\x91\x82\x16\x91`\x01`8\x1B\x90\x91\x04\x16a?JV[`@Qc\x19\x96a\x85`\xE1\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x90\x93\x16`\x04\x84\x01Ra\xFF\xFF\x90\x91\x16`$\x83\x01R`D\x82\x01R`d\x01a\x0CLV[PPP[\x92\x91PPV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x07\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a2\x8DWP\x80T`\x01`\x01`@\x1B\x03\x80\x84\x16\x91\x16\x10\x15[\x15a2\xABW`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01`\x01`@\x1B\x03\x83\x16\x17`\x01`@\x1B\x17\x81U_a2\xD5a5fV[\x80T`\x04\x82\x01T\x91\x92Pe\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90`\xFF\x16\x15a3\x1EWa2\xFB_\x80_a6\x19V[a3\x07`\x01\x82\x83a6\x19V[a3\x19`\x02e\xFF\xFF\xFF\xFF\xFF\xFF\x80a6\x19V[a3)V[a3)_\x82\x83a6\x19V[PP\x80T`\xFF`@\x1B\x19\x16\x81U`@Q`\x01`\x01`@\x1B\x03\x83\x16\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1PPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a3\xA3W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a3\xF5Wa\x0BLt}\0\0\0}\0\0\0}\0\0\0}\0\0\0}\0\0\0}`H\x1Bm\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4HV[a\x0B\x98~\x02x\xD0\0\x02x\xD0\0\x01\xE8H\0\x01\xE8H\0\x01g`\0\x01g`\0\0\0\0\0\0\0\0~\x05\xC4\x90\0\x05\xC4\x90\0\0\0\0\0\0\0\0\0\x04&\x80\0\x04&\x80\0\x03,\x80\0\x03,\x80\x89a4HV[_a2>\x82a9\x85V[_\x80\x82`S\x81\x11\x15a4\\Wa4\\aKzV[a4j\x90`\xFF\x16`\x04aL\x14V[d\x08vT2\x01\x90\x1C`\x0F\x16\x90P\x80_\x03a4\x97W`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a4\xA2`\x01\x82aL+V[\x90P`\x01`\x01`@\x1B\x03a4\xB7`\x04\x83aLRV[a4\xC2\x90`@aL\x14V[`\x04\x83\x10a4\xD0W\x85a4\xD2V[\x86[\x90\x1C\x16\x91P\x81_\x03a4\xF7W`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[P\x93\x92PPPV[a5\x12a5\x0C\x85` \x1C\x90V[\x84a?lV[a\x13\xE4\x81c\xFF\xFF\xFF\xFF\x86\x16a5'\x85\x87a>PV[a?\xC5V[a5?a59\x86` \x1C\x90V[\x85a?lV[a\x10\xFC\x81c\xFF\xFF\xFF\xFF\x87\x16a5'a5W\x87\x89a>PV[a5a\x87\x8Aa>PV[a@\x94V[\x7F\xC1:\xF6\xC5\x14\xBF\xF8\x99\x7F0\xC9\0\x03\xBA\xA8+\xD0*\xAD\x97\x81y\xD1\xCEX\xD8\\C\x19\xADe\0\x90V[``_a5\x96\x83a@\xF3V[`\x01\x01\x90P_\x81`\x01`\x01`@\x1B\x03\x81\x11\x15a5\xB4Wa5\xB4aH\xA0V[`@Q\x90\x80\x82R\x80`\x1F\x01`\x1F\x19\x16` \x01\x82\x01`@R\x80\x15a5\xDEW` \x82\x01\x81\x806\x837\x01\x90P[P\x90P\x81\x81\x01` \x01[_\x19\x01o\x18\x18\x99\x19\x9A\x1A\x9B\x1B\x9C\x1C\xB0\xB11\xB22\xB3`\x81\x1B`\n\x86\x06\x1A\x81S`\n\x85\x04\x94P\x84a5\xE8WP\x93\x92PPPV[e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x81\x16\x15\x90\x82\x16\x15\x14a6LW`@Qc$Bz]`\xE0\x1B\x81Ra\xFF\xFF\x84\x16`\x04\x82\x01R`$\x01a\x0CLV[_a6Ua5fV[a\xFF\xFF\x85\x16_\x81\x81R`\x05\x92\x90\x92\x01` \x90\x81R`@\x92\x83\x90 \x80Te\xFF\xFF\xFF\xFF\xFF\xFF\x88\x81\x16k\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x90\x92\x16\x82\x17`\x01`0\x1B\x91\x89\x16\x91\x82\x02\x17\x83U\x85Q\x91\x82R\x92\x81\x01\x92\x90\x92R\x93P3\x92\x7F\x0B\x07\xF4\xD2\x9C\x11\xF9\xEC\x86\x02k\xCF\xDE\x08R~\x11q\x8B\xE2\xBF\xFC\xD1\n3\xA2F\xEC0\xDCPf\x91\x01`@Q\x80\x91\x03\x90\xA3PPPPV[\x80a6\xE6a5fV[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\xC0\x1B\x19\x16`\x01`\xC0\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x93\x84\x16\x02\x17\x90U`@Q\x90\x82\x16\x81R\x7Fd\xCB\x9Ez\xE6I|Y\x08\x0C\xDB\xC0HU.\x12=R\xAAB@\xE17u\x8A\x175\x82xia\xCA\x90` \x01`@Q\x80\x91\x03\x90\xA1PV[_a7Ha5fV[`\x04\x81\x01T\x90\x91Pa\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15\x80\x15\x90a7~WP`\x04\x81\x01Te\xFF\xFF\xFF\xFF\xFF\xFF\x80\x84\x16a\x01\0\x90\x92\x04\x16\x10[\x15a7\x9CW`@QcO5}%`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x80R`\x05\x82\x01` R`@\x90 T`\x01`\xC8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x80\x15\x80\x15\x90a7\xD9WP\x82e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x10[\x15a7\xF9W`@Qc\n]E\xA7`\xE3\x1B\x81R_`\x04\x82\x01R`$\x01a\x0CLV[\x81Te\xFF\xFF\xFF\xFF\xFF\xFF`\x90\x1B\x19\x16`\x01`\x90\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x85\x16\x90\x81\x02\x91\x90\x91\x17\x83U`@Q\x90\x81R\x7FU\x11\xB1\x85\x1F\xC4\n&)\xC8U\xBA\xB7\xAD\xCE2v\xC4p\xD8\x19\x0E\xB0\x141\xE4\x18\xDC*\xF1>\x8E\x90` \x01a&AV[a8aa8[\x87` \x1C\x90V[\x86a?lV[a8\x90\x81c\xFF\xFF\xFF\xFF\x88\x16a5'a8y\x88\x8Aa>PV[a5aa8\x86\x89\x8Ca>PV[a5a\x89\x8Da>PV[PPPPPPV[_a8\xA1a5fV[\x90Pa\xFF\xFF\x83\x16\x15\x80\x15\x90a8\xD0WPa\xFF\xFF\x83\x16_\x90\x81R`\x05\x82\x01` R`@\x90 Te\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15[\x15a8\xF4W`@Qc$Bz]`\xE0\x1B\x81Ra\xFF\xFF\x84\x16`\x04\x82\x01R`$\x01a\x0CLV[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x90\x81R`\x06\x82\x01` R`@\x90 \x80Ta\xFF\xFF\x19\x16a\xFF\xFF\x85\x16\x90\x81\x17\x90\x91Ua9EW`\x01`\x01`\xA0\x1B\x03\x82\x16_\x90\x81R`\x02\x82\x01` R`@\x90 \x80T`\xFF\x19\x16\x90U[`@Q3\x90`\x01`\x01`\xA0\x1B\x03\x84\x16\x90a\xFF\xFF\x86\x16\x90\x7F\x83\x1E\xC3\x96q\xAB\xEANUE\x15\xAF\xD1@\xCE\xD2\xD4#\xF3\xA8\x02\x8D\x1D\x9D\r\x14\0 QN\xCEy\x90_\x90\xA4PPPV[_\x80a9\x8Fa5fV[`\x01`\x01`\xA0\x1B\x03\x84\x16_\x90\x81R`\x06\x82\x01` R`@\x90 T\x90\x91Pa\xFF\xFF\x16\x80\x15\x15\x80a9\xD4WP_\x80\x80R`\x05\x83\x01` R`@\x90 Te\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15\x15[\x15a9\xE0W\x93\x92PPPV[`\x04\x82\x01T`\xFF\x16\x15\x80a:\x0EWP`\x01`\x01`\xA0\x1B\x03\x84\x16_\x90\x81R`\x02\x83\x01` R`@\x90 T`\xFF\x16\x15[\x15a:\x1CWP_\x93\x92PPPV[`\x01`\x01`\xA0\x1B\x03\x84\x16_\x90\x81R`\x01\x83\x01` R`@\x90 T`\xFF\x16a:DW`\x01a:GV[`\x02[\x94\x93PPPPV[a:\\a8[\x87` \x1C\x90V[_a:g\x85\x87a>PV[\x90P_[\x83\x81\x10\x15a:\xA3Wa:\x99\x82a5a\x87\x87\x85\x81\x81\x10a:\x8CWa:\x8CaLeV[\x90P` \x02\x015\x8Aa>PV[\x91P`\x01\x01a:kV[Pa\x0B\xA7\x82c\xFF\xFF\xFF\xFF\x89\x16[\x83a?\xC5V[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14\x80a;<WP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x01`\x01`\xA0\x1B\x03\x16a;0_\x80Q` aM\x12\x839\x81Q\x91RT`\x01`\x01`\xA0\x1B\x03\x16\x90V[`\x01`\x01`\xA0\x1B\x03\x16\x14\x15[\x15a;ZW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a;\xA5W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a;\xC9\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1A\xAFW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[\x81`\x01`\x01`\xA0\x1B\x03\x16cR\xD1\x90-`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x92PPP\x80\x15a<VWP`@\x80Q`\x1F=\x90\x81\x01`\x1F\x19\x16\x82\x01\x90\x92Ra<S\x91\x81\x01\x90aLyV[`\x01[a<~W`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[_\x80Q` aM\x12\x839\x81Q\x91R\x81\x14a<\xAEW`@Qc*\x87Ri`\xE2\x1B\x81R`\x04\x81\x01\x82\x90R`$\x01a\x0CLV[a\"!\x83\x83aA\xCAV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14a;ZW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80a=\na5fV[a\xFF\xFF\x84\x16_\x81\x81R`\x05\x92\x90\x92\x01` R`@\x91\x82\x90 \x80T\x93\x15\x15`\x01`\xC0\x1B\x02`\xFF`\xC0\x1B\x19\x90\x94\x16\x93\x90\x93\x17\x90\x92UQ3\x91\x90\x7FS\x08\x11,KX\xB5r\xB0Z\xD6\x03\xD3\x16\xEDG\x06!\xC6\x07\xB7\x85\xE3\xBB\x80\x18\xD6\xA5\x1BRM\x8E\x90a=r\x90\x85\x15\x15\x81R` \x01\x90V[`@Q\x80\x91\x03\x90\xA3PPV[a=\x91a=\x8B\x84` \x1C\x90V[\x83a?lV[a\"!\x81c\xFF\xFF\xFF\xFF\x85\x16_a?\xC5V[a=\xAFa59\x86` \x1C\x90V[_\x80[\x83\x81\x10\x15a=\xEAWa=\xE0\x82a5a\x87\x87\x85\x81\x81\x10a=\xD3Wa=\xD3aLeV[\x90P` \x02\x015\x89a>PV[\x91P`\x01\x01a=\xB2V[Pa8\x90\x82c\xFF\xFF\xFF\xFF\x88\x16a:\xB0V[_\x80\x82a>\x10e\xFF\xFF\xFF\xFF\xFF\xFF\x86\x16CaL+V[a>\x1A\x91\x90aL\x14V[\x90P\x84e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x10\x15a>CWa>>\x81e\xFF\xFF\xFF\xFF\xFF\xFF\x87\x16aL+V[a>EV[_[\x91PP[\x93\x92PPPV[_\x80a>[\x84aB\x1FV[\x90\x92P\x90P\x80\x15a>lWPa2>V[a>ta5fV[`\x04\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x03a>\x94W_\x91PPa2>V[`@Qcw\x8E/\xEF`\xE0\x1B\x81R`\x04\x81\x01\x85\x90R`\x01`\x01`\xA0\x1B\x03\x84\x16`$\x82\x01R_\x90\x81\x90_\x80Q` aL\xF2\x839\x81Q\x91R\x90cw\x8E/\xEF\x90`D\x01`@\x80Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a>\xEDW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a?\x11\x91\x90aK\x8EV[\x91P\x91P`\x80a?<\x83\x83a?$a5fV[`\x04\x01T`\x01`8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16a=\xFBV[\x90\x1B\x93Pa2:\x86\x85aBZV[_\x81`\x01a?X\x82\x86aL\x90V[a?b\x91\x90aL+V[a>I\x91\x90aL\xA3V[a?v\x82\x82aB\x87V[_a?\x82\x81\\\x84aL\x90V[\x90Pa?\x8Ca5fV[T`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15a?\xBCW`@Qcw\xE3\xC2\x93`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\"!\x81aD\\V[_a?\xD6\x82`\x80\x85\x90\x1B\x85\x17aL\x90V[\x90P_a?\xE1a5fV[\x80T\x90\x91P`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x01`\x01`\x80\x1B\x03\x83\x16\x11\x15a@\x1EW`@Qc\x0F\xC3D\x87`\xE4\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x04\x81\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x80\x83\x90\x1C\x81\x15\x80\x15\x90a@CWP\x81\x81\x11[\x15a@\x8AWa@na@U\x83\x83aL+V[`\x04\x85\x01T`\x01`8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16a?JV[`@Qc\x13MC9`\xE3\x1B\x81R`\x04\x01a\x0CL\x91\x81R` \x01\x90V[a\x0B\xA7\x87\x85aBZV[_\x80\x82`\x01`\x01`\x80\x1B\x03\x16\x84`\x01`\x01`\x80\x1B\x03\x16\x10\x15a@\xB6W\x82a@\xB8V[\x83[`\x01`\x01`\x80\x1B\x03\x16\x90P_`\x80\x84\x90\x1C`\x80\x86\x90\x1C\x10\x15a@\xDEW`\x80\x84\x90\x1Ca@\xE4V[`\x80\x85\x90\x1C[`\x80\x1B\x91\x90\x91\x17\x94\x93PPPPV[_\x80r\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x10aA1Wr\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x04\x92P`@\x01[m\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x10aA]Wm\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x04\x92P` \x01[f#\x86\xF2o\xC1\0\0\x83\x10aA{Wf#\x86\xF2o\xC1\0\0\x83\x04\x92P`\x10\x01[c\x05\xF5\xE1\0\x83\x10aA\x93Wc\x05\xF5\xE1\0\x83\x04\x92P`\x08\x01[a'\x10\x83\x10aA\xA7Wa'\x10\x83\x04\x92P`\x04\x01[`d\x83\x10aA\xB9W`d\x83\x04\x92P`\x02\x01[`\n\x83\x10a2>W`\x01\x01\x92\x91PPV[aA\xD3\x82aDbV[`@Q`\x01`\x01`\xA0\x1B\x03\x83\x16\x90\x7F\xBC|\xD7Z \xEE'\xFD\x9A\xDE\xBA\xB3 A\xF7U!M\xBCk\xFF\xA9\x0C\xC0\"[9\xDA.\\-;\x90_\x90\xA2\x80Q\x15aB\x17Wa\"!\x82\x82aD\xC5V[a\x19\xE7aE7V[_\x80\x82aB?W`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[PP\\`\x01`\x01`\xFF\x1B\x03\x81\x16\x91`\x01`\xFF\x1B\x90\x91\x16\x15\x15\x90V[\x81aBxW`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x01`\xFF\x1B\x81\x17\x80\x83]PPPV[_aB\x91\x82a9\x85V[\x90P_aB\x9Ca5fV[a\xFF\xFF\x83\x16_\x90\x81R`\x05\x91\x90\x91\x01` R`@\x90 \x80T\x90\x91P`\x01`\xC0\x1B\x90\x04`\xFF\x16\x15aB\xF4W`@Qc&\r&\x81`\xE2\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x84\x16`\x04\x82\x01Ra\xFF\xFF\x83\x16`$\x82\x01R`D\x01a\x0CLV[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x81\x90\x03aC4W`@Qc\xB4t\xCB\xA9`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01Ra\xFF\xFF\x84\x16`$\x82\x01R`D\x01a\x0CLV[e\xFF\xFF\xFF\xFF\xFF\xFE\x19e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16\x01aCQWPPPPPV[\x81Te\xFF\xFF\xFF\xFF\xFF\xFF`\x01`0\x1B\x82\x04\x81\x16\x91_\x91\x88\x91aC\x84\x91`\x01``\x1B\x82\x04\x81\x16\x91`\x01`\x90\x1B\x90\x04\x16\x85a=\xFBV[aC\x8E\x91\x90aL\x90V[\x90P\x82e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15aD\x13W_\x83e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x88\x11aC\xD8WaC\xD3aC\xC5e\xFF\xFF\xFF\xFF\xFF\xFF\x86\x16\x84aL+V[\x84e\xFF\xFF\xFF\xFF\xFF\xFF\x16a?JV[aC\xDBV[_\x19[`@Qcs\x83\xEE\xE5`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x89\x16`\x04\x82\x01Ra\xFF\xFF\x88\x16`$\x82\x01R`D\x81\x01\x82\x90R\x90\x91P`d\x01a\x0CLV[\x83TCe\xFF\xFF\xFF\xFF\xFF\xFF\x90\x81\x16`\x01`\x90\x1B\x02e\xFF\xFF\xFF\xFF\xFF\xFF`\x90\x1B\x19\x91\x90\x93\x16`\x01``\x1B\x02\x16k\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF``\x1B\x19\x90\x91\x16\x17\x17\x90\x92UPPPPPV[\x80_]PV[\x80`\x01`\x01`\xA0\x1B\x03\x16;_\x03aD\x97W`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01a\x0CLV[_\x80Q` aM\x12\x839\x81Q\x91R\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x92\x90\x92\x16\x91\x90\x91\x17\x90UV[``_\x80\x84`\x01`\x01`\xA0\x1B\x03\x16\x84`@QaD\xE1\x91\x90aL\xB6V[_`@Q\x80\x83\x03\x81\x85Z\xF4\x91PP=\x80_\x81\x14aE\x19W`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>aE\x1EV[``\x91P[P\x91P\x91PaE.\x85\x83\x83aEVV[\x95\x94PPPPPV[4\x15a;ZW`@Qc\xB3\x98\x97\x9F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[``\x82aEkWaEf\x82aE\xB2V[a>IV[\x81Q\x15\x80\x15aE\x82WP`\x01`\x01`\xA0\x1B\x03\x84\x16;\x15[\x15aE\xABW`@Qc\x99\x96\xB3\x15`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x01a\x0CLV[P\x80a>IV[\x80Q\x15aE\xC2W\x80Q\x80\x82` \x01\xFD[`@Qc\xD6\xBD\xA2u`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x805`T\x81\x10aE\xE9W_\x80\xFD[\x91\x90PV[`\x01`\x01`\xA0\x1B\x03\x81\x16\x81\x14a\x1A\xAFW_\x80\xFD[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aF\x17W_\x80\xFD[aF \x87aE\xDBV[\x95P` \x87\x015`\x01`\x01`\xF8\x1B\x03\x19\x81\x16\x81\x14aF<W_\x80\xFD[\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aFa\x81aE\xEEV[\x80\x91PP\x92\x95P\x92\x95P\x92\x95V[\x805a\xFF\xFF\x81\x16\x81\x14aE\xE9W_\x80\xFD[_\x80`@\x83\x85\x03\x12\x15aF\x91W_\x80\xFD[aF\x9A\x83aFoV[\x91P` \x83\x015aF\xAA\x81aE\xEEV[\x80\x91PP\x92P\x92\x90PV[_[\x83\x81\x10\x15aF\xCFW\x81\x81\x01Q\x83\x82\x01R` \x01aF\xB7V[PP_\x91\x01RV[` \x81R_\x82Q\x80` \x84\x01RaF\xF5\x81`@\x85\x01` \x87\x01aF\xB5V[`\x1F\x01`\x1F\x19\x16\x91\x90\x91\x01`@\x01\x92\x91PPV[e\xFF\xFF\xFF\xFF\xFF\xFF\x81\x16\x81\x14a\x1A\xAFW_\x80\xFD[_\x80_``\x84\x86\x03\x12\x15aG.W_\x80\xFD[\x835aG9\x81aG\tV[\x92P` \x84\x015aGI\x81aG\tV[\x91P`@\x84\x015aGY\x81aG\tV[\x80\x91PP\x92P\x92P\x92V[_\x80_\x80`\x80\x85\x87\x03\x12\x15aGwW_\x80\xFD[aG\x80\x85aE\xDBV[\x93P` \x85\x015\x92P`@\x85\x015\x91P``\x85\x015aG\x9E\x81aE\xEEV[\x93\x96\x92\x95P\x90\x93PPV[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aG\xBEW_\x80\xFD[aG\xC7\x87aE\xDBV[\x95P` \x87\x015\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aFa\x81aE\xEEV[_\x80\x83`\x1F\x84\x01\x12aH\x03W_\x80\xFD[P\x815`\x01`\x01`@\x1B\x03\x81\x11\x15aH\x19W_\x80\xFD[` \x83\x01\x91P\x83` \x82`\x05\x1B\x85\x01\x01\x11\x15aH3W_\x80\xFD[\x92P\x92\x90PV[_\x80_\x80_\x80`\xA0\x87\x89\x03\x12\x15aHOW_\x80\xFD[aHX\x87aE\xDBV[\x95P` \x87\x015\x94P`@\x87\x015`\x01`\x01`@\x1B\x03\x81\x11\x15aHyW_\x80\xFD[aH\x85\x89\x82\x8A\x01aG\xF3V[\x90\x95P\x93PP``\x87\x015\x91P`\x80\x87\x015aFa\x81aE\xEEV[cNH{q`\xE0\x1B_R`A`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15aH\xC5W_\x80\xFD[\x825aH\xD0\x81aE\xEEV[\x91P` \x83\x015`\x01`\x01`@\x1B\x03\x80\x82\x11\x15aH\xEBW_\x80\xFD[\x81\x85\x01\x91P\x85`\x1F\x83\x01\x12aH\xFEW_\x80\xFD[\x815\x81\x81\x11\x15aI\x10WaI\x10aH\xA0V[`@Q`\x1F\x82\x01`\x1F\x19\x90\x81\x16`?\x01\x16\x81\x01\x90\x83\x82\x11\x81\x83\x10\x17\x15aI8WaI8aH\xA0V[\x81`@R\x82\x81R\x88` \x84\x87\x01\x01\x11\x15aIPW_\x80\xFD[\x82` \x86\x01` \x83\x017_` \x84\x83\x01\x01R\x80\x95PPPPPP\x92P\x92\x90PV[_` \x82\x84\x03\x12\x15aI\x81W_\x80\xFD[\x815a>I\x81aG\tV[_` \x82\x84\x03\x12\x15aI\x9CW_\x80\xFD[a>I\x82aFoV[_\x80_``\x84\x86\x03\x12\x15aI\xB7W_\x80\xFD[aI\xC0\x84aE\xDBV[\x92P` \x84\x015\x91P`@\x84\x015aGY\x81aE\xEEV[_\x80_``\x84\x86\x03\x12\x15aI\xE9W_\x80\xFD[aG9\x84aFoV[_\x80`@\x83\x85\x03\x12\x15aJ\x03W_\x80\xFD[\x825aJ\x0E\x81aG\tV[\x91P` \x83\x015aF\xAA\x81aG\tV[_\x80_\x80_`\x80\x86\x88\x03\x12\x15aJ2W_\x80\xFD[aJ;\x86aE\xDBV[\x94P` \x86\x015`\x01`\x01`@\x1B\x03\x81\x11\x15aJUW_\x80\xFD[aJa\x88\x82\x89\x01aG\xF3V[\x90\x95P\x93PP`@\x86\x015\x91P``\x86\x015aJ|\x81aE\xEEV[\x80\x91PP\x92\x95P\x92\x95\x90\x93PV[_\x80`@\x83\x85\x03\x12\x15aJ\x9BW_\x80\xFD[aJ\x0E\x83aFoV[_\x80`@\x83\x85\x03\x12\x15aJ\xB5W_\x80\xFD[\x825\x91P` \x83\x015aF\xAA\x81aE\xEEV[_` \x82\x84\x03\x12\x15aJ\xD7W_\x80\xFD[\x815a>I\x81aE\xEEV[_` \x82\x84\x03\x12\x15aJ\xF2W_\x80\xFD[\x81Qa>I\x81aE\xEEV[_\x85QaK\x0E\x81\x84` \x8A\x01aF\xB5V[a\x10;`\xF1\x1B\x90\x83\x01\x90\x81R\x85QaK-\x81`\x02\x84\x01` \x8A\x01aF\xB5V[\x80\x82\x01\x91PP`\x17`\xF9\x1B\x80`\x02\x83\x01R\x85QaKQ\x81`\x03\x85\x01` \x8A\x01aF\xB5V[`\x03\x92\x01\x91\x82\x01R\x83QaKl\x81`\x04\x84\x01` \x88\x01aF\xB5V[\x01`\x04\x01\x96\x95PPPPPPV[cNH{q`\xE0\x1B_R`!`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15aK\x9FW_\x80\xFD[\x82QaK\xAA\x81aG\tV[` \x84\x01Q\x90\x92PaF\xAA\x81aG\tV[_` \x82\x84\x03\x12\x15aK\xCBW_\x80\xFD[\x81Q\x80\x15\x15\x81\x14a>IW_\x80\xFD[cNH{q`\xE0\x1B_R`\x11`\x04R`$_\xFD[e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x81\x16\x82\x82\x16\x03\x90\x80\x82\x11\x15aL\rWaL\raK\xDAV[P\x92\x91PPV[\x80\x82\x02\x81\x15\x82\x82\x04\x84\x14\x17a2>Wa2>aK\xDAV[\x81\x81\x03\x81\x81\x11\x15a2>Wa2>aK\xDAV[cNH{q`\xE0\x1B_R`\x12`\x04R`$_\xFD[_\x82aL`WaL`aL>V[P\x06\x90V[cNH{q`\xE0\x1B_R`2`\x04R`$_\xFD[_` \x82\x84\x03\x12\x15aL\x89W_\x80\xFD[PQ\x91\x90PV[\x80\x82\x01\x80\x82\x11\x15a2>Wa2>aK\xDAV[_\x82aL\xB1WaL\xB1aL>V[P\x04\x90V[_\x82QaL\xC7\x81\x84` \x87\x01aF\xB5V[\x91\x90\x91\x01\x92\x91PPV\xFE\0\0\x94p\0\0\x94p\0\0\0\0\0\0\0\0\0\0\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0\0\0\0\0\0\0\0\0\0\0\0\0P\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\0\0\0\0\0\0\0\0\0\0\0\0\xE3\xA9\x10Z:\x93\"S\xA7\x0F\x12n\xB1\xE3\xB5\x89\xC6C\xDD$",
     );
     /// The runtime bytecode of the contract, as deployed on the network.
     ///
     /// ```text
-    ///0x608060405260043610610387575f3560e01c80636bad18b6116101d3578063b78bef59116100fd578063c8de43521161009d578063ede8776e1161006d578063ede8776e14610a65578063f1c4e4ed14610a84578063f5d0b2d514610aa3578063f7d198f814610ab7575f80fd5b8063c8de4352146109f4578063d1f31d1514610a13578063d5b8b8f314610a27578063d633c96b14610a46575f80fd5b8063c1390c34116100d8578063c1390c341461098e578063c13c1971146109ad578063c277a936146109c1578063c5c1610c146109e0575f80fd5b8063b78bef5914610931578063b966255414610950578063c0c5df7c1461096f575f80fd5b80639b3f781a11610173578063aa1ffa3911610143578063aa1ffa39146108af578063ab394755146108ce578063ad3cb1cc146108ed578063b59547b81461091d575f80fd5b80639b3f781a1461083e5780639f4b99371461085d5780639f9259bb14610871578063a036ea2e14610890575f80fd5b80637de4d40d116101ae5780637de4d40d146107c2578063818f4d69146107e15780638629f54514610800578063968302d71461081f575f80fd5b80636bad18b6146107655780636cf0bd25146107845780636fd65e4d146107a3575f80fd5b806338bd17e5116102b4578063497c22c5116102545780635c414b57116102245780635c414b57146106e95780635f76eb301461070857806360e121891461072757806369931afb14610746575f80fd5b8063497c22c5146106845780634f1ef286146106a35780635207c273146106b657806352d1902d146106d5575f80fd5b80633d044b9e1161028f5780633d044b9e146105fa57806342300aaa146106195780634391568c14610638578063458fb27714610665575f80fd5b806338bd17e51461059d5780633bb7d5a3146105bc5780633bbcc4b2146105db575f80fd5b8063196a456d1161032a5780632d690548116102fa5780632d6905481461050d5780632dcbc5d1146105405780632e3c39061461055f5780633311b1bc1461057e575f80fd5b8063196a456d1461047d5780631e24aa491461049c578063268d6d31146104c757806328677ca7146104ee575f80fd5b80630d81a3f1116103655780630d81a3f1146103ff5780630d8e6e2c1461041e578063104b6cb71461043f57806315e2cfd31461045e575f80fd5b806304553fb61461038b57806305a3b809146103ac57806307ccdf61146103e0575b5f80fd5b348015610396575f80fd5b506103aa6103a536600461436a565b610ad6565b005b3480156103b7575f80fd5b506103cb6103c63660046143d7565b610bb6565b60405190151581526020015b60405180910390f35b3480156103eb575f80fd5b506103aa6103fa36600461436a565b610be3565b34801561040a575f80fd5b506103aa61041936600461436a565b610c9f565b348015610429575f80fd5b50610432610d7d565b6040516103d79190614414565b34801561044a575f80fd5b506103aa61045936600461448d565b610de3565b348015610469575f80fd5b506103cb6104783660046143d7565b610f84565b348015610488575f80fd5b506103aa6104973660046144de565b610fbb565b3480156104a7575f80fd5b506104b0611100565b60405165ffffffffffff90911681526020016103d7565b3480156104d2575f80fd5b506040515f80516020614a5383398151915281526020016103d7565b3480156104f9575f80fd5b506103aa6105083660046143d7565b61111e565b348015610518575f80fd5b5061052161125a565b6040805165ffffffffffff9384168152929091166020830152016103d7565b34801561054b575f80fd5b506103aa61055a366004614526565b611288565b34801561056a575f80fd5b506103aa61057936600461456b565b611310565b348015610589575f80fd5b506103aa61059836600461436a565b611396565b3480156105a8575f80fd5b506103aa6105b736600461436a565b611439565b3480156105c7575f80fd5b506103aa6105d636600461436a565b6114ee565b3480156105e6575f80fd5b506103aa6105f53660046145b5565b6115a3565b348015610605575f80fd5b506103aa61061436600461461b565b61188a565b348015610624575f80fd5b506103aa6106333660046143d7565b6119da565b348015610643575f80fd5b506106576106523660046143d7565b611a86565b6040519081526020016103d7565b348015610670575f80fd5b506103aa61067f36600461436a565b611ab0565b34801561068f575f80fd5b506103aa61069e366004614526565b611b5f565b6103aa6106b1366004614659565b611bd6565b3480156106c1575f80fd5b506103aa6106d036600461448d565b611bf5565b3480156106e0575f80fd5b50610657611db8565b3480156106f4575f80fd5b506103aa610703366004614716565b611dd3565b348015610713575f80fd5b506103aa61072236600461436a565b611e7c565b348015610732575f80fd5b506103aa61074136600461436a565b611f39565b348015610751575f80fd5b506103aa610760366004614526565b61200e565b348015610770575f80fd5b506103aa61077f36600461436a565b612081565b34801561078f575f80fd5b506103aa61079e366004614731565b612156565b3480156107ae575f80fd5b506103aa6107bd3660046143d7565b6121d8565b3480156107cd575f80fd5b506103aa6107dc366004614763565b61231a565b3480156107ec575f80fd5b506103aa6107fb36600461436a565b61240d565b34801561080b575f80fd5b506103aa61081a36600461436a565b6124c2565b34801561082a575f80fd5b506103aa61083936600461436a565b612590565b348015610849575f80fd5b506103aa61085836600461436a565b612645565b348015610868575f80fd5b506105216126da565b34801561087c575f80fd5b506103aa61088b36600461436a565b612727565b34801561089b575f80fd5b506103aa6108aa366004614716565b6127ee565b3480156108ba575f80fd5b506103aa6108c9366004614782565b612897565b3480156108d9575f80fd5b506103aa6108e8366004614716565b612aad565b3480156108f8575f80fd5b50610432604051806040016040528060058152602001640352e302e360dc1b81525081565b348015610928575f80fd5b506104b0612b56565b34801561093c575f80fd5b506103aa61094b366004614731565b612b6f565b34801561095b575f80fd5b506103aa61096a3660046147b9565b612bc5565b34801561097a575f80fd5b506103aa61098936600461436a565b612dde565b348015610999575f80fd5b506103aa6109a836600461436a565b612e8d565b3480156109b8575f80fd5b506104b0612f3c565b3480156109cc575f80fd5b506103aa6109db36600461436a565b612f5a565b3480156109eb575f80fd5b506103aa613009565b3480156109ff575f80fd5b506103aa610a0e36600461436a565b613050565b348015610a1e575f80fd5b506103cb6130ff565b348015610a32575f80fd5b506103aa610a41366004614731565b613114565b348015610a51575f80fd5b506103aa610a6036600461436a565b613189565b348015610a70575f80fd5b506103cb610a7f3660046143d7565b613238565b348015610a8f575f80fd5b506104b0610a9e366004614825565b613266565b348015610aae575f80fd5b506103aa6132d0565b348015610ac2575f80fd5b506103aa610ad136600461436a565b613399565b335f80516020614a5383398151915214610b03576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03610b6557610b527e01c9080001c908000157c0000157c0000148200001482000000000000000006e02d6900002d690000249f0000249f08961345d565b9050610b6081838786613514565b610bad565b610b9e7e02c6f00002c6f000023a5000023a500001d0d80001d0d800000000000000006e0468e8000468e800035778000357788961345d565b9050610bad8183878787613541565b50505050505050565b5f610bbf61357b565b6001600160a01b039092165f90815260029290920160205250604090205460ff1690565b335f80516020614a5383398151915214610c10576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03610c5657610b52747d0000007d0000007d0000007d0000007d0000007d60481b5f805160206149f38339815191528961345d565b610b9e7e027cb800027cb80001e0780001e078000163780001637800000000000000007e05a1680005a1680000000000000000000426800004268000033068000330688961345d565b335f80516020614a5383398151915214610ccc576040516331a81a8160e01b815260040160405180910390fd5b5f60fd60f81b6001600160f81b0319871601610d1357610b527e107ac000107ac0000aba18000aba1800078d9800078d980000000000000000661d4fe8001d4fe88961345d565b6001600160f81b031986811601610d6457610d557e14011800140118000bb030000bb0300007fee00007fee00000000000000000662c6b18002c6b188961345d565b9050610b608183878787613541565b604051636aa9eb0560e01b815260040160405180910390fd5b6060604051806040016040528060088152602001671210d5531a5b5a5d60c21b815250610da95f61359f565b610db3600661359f565b610dbc5f61359f565b604051602001610dcf9493929190614848565b604051602081830303815290604052905090565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015610e2c573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190610e5091906148c5565b6001600160a01b0316336001600160a01b031614610e885760405163021bfda160e41b81523360048201526024015b60405180910390fd5b5f819003610ea95760405163c2e5347d60e01b815260040160405180910390fd5b5f610eb261357b565b90505f5b82811015610f7e575f848483818110610ed157610ed16148e0565b9050602002016020810190610ee691906143d7565b6001600160a01b0381165f90815260028501602052604090205490915060ff16610f2e57604051636f7a527560e01b81526001600160a01b0382166004820152602401610e7f565b6001600160a01b0381165f818152600285016020526040808220805460ff19169055517f458680f79aa9de0ae06344287a3bd8ec6179faa05252e9af81ae734d6b4dc6ba9190a250600101610eb6565b50505050565b5f42610f8e61357b565b6003015f846001600160a01b03166001600160a01b031681526020019081526020015f2054119050919050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00546001600160401b03166001600160401b031660011461100f57604051636f4f731f60e01b815260040160405180910390fd5b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805460079190600160401b900460ff1680611058575080546001600160401b03808416911610155b156110765760405163f92ee8a960e01b815260040160405180910390fd5b805468ffffffffffffffffff19166001600160401b03831617600160401b1781556110a08561362e565b6110a9836136b8565b6110b284613746565b805460ff60401b191681556040516001600160401b03831681527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15050505050565b5f61110961357b565b54600160901b900465ffffffffffff16919050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611167573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061118b91906148c5565b6001600160a01b0316336001600160a01b0316146111be5760405163021bfda160e41b8152336004820152602401610e7f565b5f6111c761357b565b6001600160a01b0383165f90815260018201602052604090205490915060ff1661120f57604051631c79868360e31b81526001600160a01b0383166004820152602401610e7f565b6001600160a01b0382165f818152600183016020526040808220805460ff19169055517f92fc97af15002646cea63c7633bb375b82db7cde7b480c75fe6341dacc292c819190a25050565b5f805f61126561357b565b6004015465ffffffffffff6101008204811695600160381b909204169350915050565b335f80516020614a53833981519152146112b5576040516331a81a8160e01b815260040160405180910390fd5b5f6112fb7c20000000200000001000000010000000090000000900000002000000027c8200000082000000000000000000000082000000820000003f0000003f8761345d565b905061130981838686613514565b5050505050565b335f80516020614a538339815191521461133d576040516331a81a8160e01b815260040160405180910390fd5b5f6113867dd6d80000d6d80000d6d80000d6d80000d6d80000d6d80000d6d80000d6d87e01a5e00001a5e000014438000144380000dea80000dea80000d6d80000d6d88961345d565b9050610bad8183888888886137f8565b335f80516020614a53833981519152146113c3576040516331a81a8160e01b815260040160405180910390fd5b5f600160f81b6001600160f81b03198716146113f257604051636aa9eb0560e01b815260040160405180910390fd5b61142b7e0c15c0000c15c00008d9a00008d9a00006b6c00006b6c000000000000000006e1da5d8001da5d8001197e8001197e88961345d565b9050610bad81838786613514565b335f80516020614a5383398151915214611466576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036114b557610b527e014820000148200000e2900000e2900000e2900000e29000000000000000006e0249f0000249f00001d0d80001d0d88961345d565b610b9e7e01c9080001c90800014438000144380000e2900000e29000000000000000006e0353900003539000024608000246088961345d565b335f80516020614a538339815191521461151b576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361156a57610b527e014438000144380000e2900000e2900000cb200000cb2000000000000000006e024608000246080001ccf00001ccf08961345d565b610b9e7e01c9080001c90800014820000148200000e6780000e67800000000000000006e0347d8000347d800023a5000023a508961345d565b335f80516020614a53833981519152146115d0576040516331a81a8160e01b815260040160405180910390fd5b825f60028860538111156115e6576115e66148f4565b0361163b57600a821161160157506601168400011684611872565b601e821161161757506602422000024220611872565b603c821161162d57506603c4d80003c4d8611872565b506605b4f00005b4f0611872565b600388605381111561164f5761164f6148f4565b036116a457600a821161166a57506601925800019258611872565b601e821161168057506603539000035390611872565b603c821161169657506605c4900005c490611872565b5066093b4800093b48611872565b60048860538111156116b8576116b86148f4565b0361170d57600a82116116d357506602172800021728611872565b601e82116116e95750660493e0000493e0611872565b603c82116116ff575066081a3800081a38611872565b50660c9e78000c9e78611872565b6005886053811115611721576117216148f4565b0361176057600a821161173c57506603539000035390611872565b601e82116117525750660781e0000781e0611872565b50660d6998000d6998611872565b6006886053811115611774576117746148f4565b036117b357600a821161178f57506603e8000003e800611872565b601e82116117a55750660829d8000829d8611872565b50660e0da8000e0da8611872565b60078860538111156117c7576117c76148f4565b0361180657600a82116117e2575066045d3000045d30611872565b601e82116117f857506608e9400008e940611872565b50660d8108000d8108611872565b600888605381111561181a5761181a6148f4565b0361185957600a821161183557506604e5e80004e5e8611872565b601e821161184b57506608f1100008f110611872565b50660e6398000e6398611872565b604051639ba6061b60e01b815260040160405180910390fd5b611880818489898989613842565b5050505050505050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156118d3573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906118f791906148c5565b6001600160a01b0316336001600160a01b03161461192a5760405163021bfda160e41b8152336004820152602401610e7f565b6001600160a01b0382166119515760405163f6b2911f60e01b815260040160405180910390fd5b42811161197457604051633ad4a7f160e11b815260048101829052602401610e7f565b8061197d61357b565b6001600160a01b0384165f81815260039290920160205260409182902092909255517f702308f307104d2cb94599ca9d733f059c22460a3bbdd48ccccec249f7b75eb2906119ce9084815260200190565b60405180910390a25050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611a23573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611a4791906148c5565b6001600160a01b0316336001600160a01b031614611a7a5760405163021bfda160e41b8152336004820152602401610e7f565b611a83816138a9565b50565b5f611a8f61357b565b6001600160a01b039092165f90815260039290920160205250604090205490565b335f80516020614a5383398151915214611add576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611b2657610b52750a4100000a41000006b6c00006b6c00006590000065960451b6e0249f0000249f00001c9080001c9088961345d565b610b9e7e01ccf00001ccf000014820000148200000e6780000e67800000000000000006e03539000035390000251c0000251c08961345d565b335f80516020614a5383398151915214611b8c576040516331a81a8160e01b815260040160405180910390fd5b5f6112fb7e0173180001731800016b4800016b48000134980001349800000000000000007e041ac800041ac8000000000000000000029040000290400001ffb80001ffb88761345d565b611bde61391e565b611be7826139c2565b611bf18282613a62565b5050565b5f611bfe61357b565b90505f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611c49573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611c6d91906148c5565b6001600160a01b0316336001600160a01b031614158015611c9e5750335f9081526003820160205260409020544210155b15611cbe5760405163743466a760e11b8152336004820152602401610e7f565b5f829003611cdf5760405163c2e5347d60e01b815260040160405180910390fd5b5f5b82811015610f7e575f848483818110611cfc57611cfc6148e0565b9050602002016020810190611d1191906143d7565b90506001600160a01b038116611d3a5760405163f6b2911f60e01b815260040160405180910390fd5b6001600160a01b0381165f90815260028401602052604090205460ff1615611d625750611db0565b6001600160a01b0381165f818152600285016020526040808220805460ff19166001179055513392917f3a1d7975c5faf5b51fd037a8d3de977f33ee55b9e8fd42c82fc1a9a260226a4191a3505b600101611ce1565b5f611dc1613b23565b505f80516020614a3383398151915290565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611e1c573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611e4091906148c5565b6001600160a01b0316336001600160a01b031614611e735760405163021bfda160e41b8152336004820152602401610e7f565b611a8381613746565b335f80516020614a5383398151915214611ea9576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611ef057610b52750fa000000fa000000f2300000f2300000f2300000f2360431b5f805160206149f38339815191528961345d565b610b9e7e027cb800027cb80001e8480001e848000163780001637800000000000000007e05c4900005c490000000000000000000043df000043df000033068000330688961345d565b335f80516020614a5383398151915214611f66576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611fc557610b527e014050000140500000d6d80000d6d80000d6d80000d6d8000061a8000061a87e01ccf00001ccf00001c9080001c9080001c9080001c90800014438000144388961345d565b610b9e7e014ff000014ff000014438000144380000d6d80000d6d800006590000065907e0251c0000251c000021728000217280001dc900001dc900001d4c00001d4c08961345d565b335f80516020614a538339815191521461203b576040516331a81a8160e01b815260040160405180910390fd5b5f6112fb7c20000000200000002000000020000000200000002000000020000000207c20000000200000000000000000000000200000002000000020000000208761345d565b335f80516020614a53833981519152146120ae576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361210d57610b527e014438000144380000d6d80000d6d80000d6d80000d6d8000059d8000059d87e01c9080001c9080001c9080001c9080001c9080001c90800014820000148208961345d565b610b9e7e014c0800014c0800014438000144380000d6d80000d6d8000059d8000059d87e0249f0000249f000021340000213400001dc900001dc900001ccf00001ccf08961345d565b335f80516020614a5383398151915214612183576040516331a81a8160e01b815260040160405180910390fd5b5f6121cb7d5dc000005dc0000059d8000059d8000059d8000059d800000000000000007d7530000075300000000000000000000061a8000061a800005dc000005dc08661345d565b9050610f7e818385613b6c565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612221573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061224591906148c5565b6001600160a01b0316336001600160a01b0316146122785760405163021bfda160e41b8152336004820152602401610e7f565b5f61228161357b565b6001600160a01b0383165f90815260018201602052604090205490915060ff16156122ca5760405163f99c4fd160e01b81526001600160a01b0383166004820152602401610e7f565b6001600160a01b0382165f81815260018381016020526040808320805460ff1916909217909155517fcca1d46384cdbbeef2f9daddb76db138101c9905f818d867b630195c128d3c669190a25050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612363573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061238791906148c5565b6001600160a01b0316336001600160a01b0316146123ba5760405163021bfda160e41b8152336004820152602401610e7f565b806123c361357b565b600401805460ff191691151591909117905560405181151581527fad553b60ca37b0efb5444e26b0e05a21044896bc327ac810edcadbdd0218c2cd9060200160405180910390a150565b335f80516020614a538339815191521461243a576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361248957610b527e040b2800040b280002f1e80002f1e80001dc900001dc9000000000000000006e0a9ec0000a9ec0000591c8000591c88961345d565b610b9e7e050140000501400003633000036330000249f0000249f000000000000000006e19b9f00019b9f000091820000918208961345d565b335f80516020614a53833981519152146124ef576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361254757610b52750fa000000fa000000f2300000f2300000f2300000f2360431b7d9c4000009c4000000000000000000000908800009088000084d0000084d08961345d565b610b9e7e027100000271000001e8480001e84800016b4800016b4800000000000000007e05b8d80005b8d80000000000000000000451780004517800033068000330688961345d565b335f80516020614a53833981519152146125bd576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361260c57610b527e01c9080001c90800015ba800015ba800015ba800015ba800000000000000006e02bf200002bf2000024608000246088961345d565b610b9e7e02bf200002bf2000023668000236680001d8a80001d8a800000000000000006e046cd000046cd000035390000353908961345d565b335f80516020614a5383398151915214612672576040516331a81a8160e01b815260040160405180910390fd5b5f600160f81b6001600160f81b03198716146126a157604051636aa9eb0560e01b815260040160405180910390fd5b61142b7e06aef00006aef000049bb000049bb0000334500003345000000000000000006e12b1280012b128000ae8f8000ae8f88961345d565b5f805f6126e561357b565b8054909150439065ffffffffffff808316600160601b909204161461270d57935f9350915050565b90549093600160301b90910465ffffffffffff1692509050565b335f80516020614a5383398151915214612754576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036127ac57610b527d7d0000007d0000007918000079180000791800007918000055f0000055f06d908800009088000084d0000084d065130b0000130b60c31b018961345d565b610b9e7d7d0000007d0000007918000079180000791800007918000055f0000055f06d908800009088000084d0000084d065130b0000130b60c31b018961345d565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612837573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061285b91906148c5565b6001600160a01b0316336001600160a01b03161461288e5760405163021bfda160e41b8152336004820152602401610e7f565b611a838161362e565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156128e0573d5f803e3d5ffd5b505050506040513d601f19601f8201168201806040525081019061290491906148c5565b6001600160a01b0316336001600160a01b0316146129375760405163021bfda160e41b8152336004820152602401610e7f565b65ffffffffffff82811615908216151461296457604051630bf827ab60e31b815260040160405180910390fd5b5f61296d61357b565b905065ffffffffffff831615612a2557805465ffffffffffff600160901b909104811690841610156129b257604051634f357d2560e11b815260040160405180910390fd5b60405163778e2fef60e01b81525f6004820181905260248201525f80516020614a138339815191529063778e2fef906044016040805180830381865afa1580156129fe573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190612a229190614908565b50505b6004810180546cffffffffffffffffffffffff00191661010065ffffffffffff8681169182026cffffffffffff00000000000000191692909217600160381b928616928302179092556040805192835260208301919091527fdd4061cdc8ba27460cad47a90d55961fbbfcf71eeaf788556a9ad36b68292ab2910160405180910390a1505050565b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612af6573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190612b1a91906148c5565b6001600160a01b0316336001600160a01b031614612b4d5760405163021bfda160e41b8152336004820152602401610e7f565b611a83816136b8565b5f80612b6061357b565b5465ffffffffffff1692915050565b335f80516020614a5383398151915214612b9c576040516331a81a8160e01b815260040160405180910390fd5b5f6121cb7c2000000020000000200000002000000020000000200000002000000020808661345d565b335f80516020614a5383398151915214612bf2576040516331a81a8160e01b815260040160405180910390fd5b825f6002876053811115612c0857612c086148f4565b03612c5d57600a8211612c2357506601631400016314612dd1565b601e8211612c3957506601f0180001f018612dd1565b603c8211612c4f57506602422000024220612dd1565b5066026d1800026d18612dd1565b6003876053811115612c7157612c716148f4565b03612cc657600a8211612c8c57506601731800017318612dd1565b601e8211612ca257506602134000021340612dd1565b603c8211612cb85750660278d0000278d0612dd1565b506602cec00002cec0612dd1565b6004876053811115612cda57612cda6148f4565b03612d2f57600a8211612cf557506601c5200001c520612dd1565b601e8211612d0b5750660280a0000280a0612dd1565b603c8211612d215750660320c8000320c8612dd1565b50660449a8000449a8612dd1565b6005876053811115612d4357612d436148f4565b03612d8257600a8211612d5e575066021ef800021ef8612dd1565b601e8211612d74575066034bc000034bc0612dd1565b506604ab500004ab50612dd1565b6006876053811115612d9657612d966148f4565b0361185957600a8211612db157506603577800035778612dd1565b601e8211612dc7575066056ab800056ab8612dd1565b5066086c4000086c405b610bad8184888888613b90565b335f80516020614a5383398151915214612e0b576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612e5757610b527d7d0000007d0000007530000075300000753000007530000055f0000055f05f805160206149f38339815191528961345d565b610b9e7d7d0000007d000000791800007918000075300000753000005dc000005dc05f805160206149f38339815191528961345d565b335f80516020614a5383398151915214612eba576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612f0357610b52750b98c0000b98c0000b5a40000b5a40000a4100000a4160451b6e029fe000029fe000020788000207888961345d565b610b9e7e01e8480001e84800016b4800016b48000157c0000157c000000000000000006e03f3b80003f3b8000278d0000278d08961345d565b5f612f4561357b565b54600160c01b900465ffffffffffff16919050565b335f80516020614a5383398151915214612f87576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612fd057610b52750a4100000a41000006b6c00006b6c00006590000065960451b6e024608000246080001c5200001c5208961345d565b610b9e7e01ccf00001ccf000014820000148200000f6180000f61800000000000000006e03345000033450000251c0000251c08961345d565b61301161357b565b335f908152600391909101602052604081205490036130455760405163803c647d60e01b8152336004820152602401610e7f565b61304e336138a9565b565b335f80516020614a538339815191521461307d576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036130c957610b527d7d0000007d0000007918000079180000791800007918000055f0000055f05f805160206149f38339815191528961345d565b610b9e7d7d0000007d0000007918000079180000791800007918000061a8000061a85f805160206149f38339815191528961345d565b5f61310861357b565b6004015460ff16919050565b335f80516020614a5383398151915214613141576040516331a81a8160e01b815260040160405180910390fd5b5f6121cb7d5dc000005dc0000059d8000059d8000059d8000059d800004a3800004a387d7530000075300000000000000000000061a8000061a800005dc000005dc08661345d565b335f80516020614a53833981519152146131b6576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036131ff57610b52750b98c0000b98c0000b5a40000b5a40000a4100000a4160451b6e029fe000029fe000020788000207888961345d565b610b9e7e01e8480001e84800016b4800016b48000163780001637800000000000000006e03f7a00003f7a0000278d0000278d08961345d565b5f8061324261357b565b6001600160a01b039093165f90815260019093016020525050604090205460ff1690565b5f335f80516020614a13833981519152146132935760405162916b8b60e51b815260040160405180910390fd5b61329b61357b565b60040154610100900465ffffffffffff165f036132b957505f6132ca565b60806132c58484613be9565b901c90505b92915050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805460079190600160401b900460ff1680613319575080546001600160401b03808416911610155b156133375760405163f92ee8a960e01b815260040160405180910390fd5b805468ffffffffffffffffff19166001600160401b038316908117600160401b1760ff60401b191682556040519081527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2906020015b60405180910390a15050565b335f80516020614a53833981519152146133c6576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361341857610b52747d0000007d0000007d0000007d0000007d0000007d60481b6d908800009088000084d0000084d065130b0000130b60c31b018961345d565b610b9e7e0278d0000278d00001e8480001e848000167600001676000000000000000007e05c4900005c4900000000000000000000426800004268000032c8000032c80895b5f80826053811115613471576134716148f4565b61347f9060ff166004614949565b640876543201901c600f169050805f036134ac57604051639ba6061b60e01b815260040160405180910390fd5b6134b7600182614960565b90506001600160401b036134cc600483614987565b6134d7906040614949565b600483106134e557856134e7565b865b901c169150815f0361350c57604051639ba6061b60e01b815260040160405180910390fd5b509392505050565b6135276135218560201c90565b84613cec565b610f7e8163ffffffff861661353c8587613be9565b613da2565b61355461354e8660201c90565b85613cec565b6113098163ffffffff871661353c61356c8789613be9565b613576878a613be9565b613e71565b7fc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad650090565b60605f6135ab83613ed0565b60010190505f816001600160401b038111156135c9576135c9614645565b6040519080825280601f01601f1916602001820160405280156135f3576020820181803683370190505b5090508181016020015b5f19016f181899199a1a9b1b9c1cb0b131b232b360811b600a86061a8153600a85049450846135fd57509392505050565b5f61363761357b565b805490915065ffffffffffff600160c01b9091048116908316101561366f576040516304acca2f60e01b815260040160405180910390fd5b805465ffffffffffff191665ffffffffffff831690811782556040519081527fc1f1fcaa898aae2263dded712e1798083fca9272ff803ee4150ce48f8619891a9060200161338d565b5f6136c161357b565b805490915065ffffffffffff808416911610156136f1576040516304acca2f60e01b815260040160405180910390fd5b805465ffffffffffff60c01b1916600160c01b65ffffffffffff84169081029190911782556040519081527f64cb9e7ae6497c59080cdbc048552e123d52aa4240e137758a173582786961ca9060200161338d565b5f61374f61357b565b6004810154909150610100900465ffffffffffff16158015906137855750600481015465ffffffffffff80841661010090920416105b156137a357604051634f357d2560e11b815260040160405180910390fd5b805465ffffffffffff60901b1916600160901b65ffffffffffff84169081029190911782556040519081527f5511b1851fc40a2629c855bab7adce3276c470d8190eb01431e418dc2af13e8e9060200161338d565b61380b6138058760201c90565b86613cec565b61383a8163ffffffff881661353c613823888a613be9565b613576613830898c613be9565b613576898d613be9565b505050505050565b61384f6138058760201c90565b5f61385a8587613be9565b90505f5b838110156138965761388c8261357687878581811061387f5761387f6148e0565b905060200201358a613be9565b915060010161385e565b50610bad8263ffffffff89165b83613da2565b5f6138b261357b565b6001600160a01b0383165f908152600382016020526040812054919250036138d8575050565b6001600160a01b0382165f818152600383016020526040808220829055517fb3b168c75fe5d57ce3ad098ab4f89eaabb290b7354c67d13c048f985328bb0179190a25050565b306001600160a01b037f00000000000000000000000000000000000000000000000000000000000000001614806139a457507f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03166139985f80516020614a33833981519152546001600160a01b031690565b6001600160a01b031614155b1561304e5760405163703e46dd60e11b815260040160405180910390fd5b5f80516020614a138339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015613a0b573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190613a2f91906148c5565b6001600160a01b0316336001600160a01b031614611a835760405163021bfda160e41b8152336004820152602401610e7f565b816001600160a01b03166352d1902d6040518163ffffffff1660e01b8152600401602060405180830381865afa925050508015613abc575060408051601f3d908101601f19168201909252613ab99181019061499a565b60015b613ae457604051634c9c8ce360e01b81526001600160a01b0383166004820152602401610e7f565b5f80516020614a338339815191528114613b1457604051632a87526960e21b815260048101829052602401610e7f565b613b1e8383613fa7565b505050565b306001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000161461304e5760405163703e46dd60e11b815260040160405180910390fd5b613b7f613b798460201c90565b83613cec565b613b1e8163ffffffff85165f613da2565b613b9d61354e8660201c90565b5f805b83811015613bd857613bce82613576878785818110613bc157613bc16148e0565b9050602002013589613be9565b9150600101613ba0565b5061383a8263ffffffff88166138a3565b5f80613bf484613ffc565b90925090508015613c0557506132ca565b613c0d61357b565b60040154610100900465ffffffffffff165f03613c2d575f9150506132ca565b60405163778e2fef60e01b8152600481018590526001600160a01b03841660248201525f9081905f80516020614a138339815191529063778e2fef906044016040805180830381865afa158015613c86573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190613caa9190614908565b915091506080613cd58383613cbd61357b565b60040154600160381b900465ffffffffffff16614037565b901b9350613ce3868561408c565b50505092915050565b5f613cf561357b565b600481015490915060ff168015613d2657506001600160a01b0382165f90815260028201602052604090205460ff16155b15613d4f576040516306966e1560e21b81526001600160a01b0383166004820152602401610e7f565b613d5983836140b9565b5f613d65815c856149b1565b8254909150600160c01b900465ffffffffffff16811115613d99576040516377e3c29360e01b815260040160405180910390fd5b610f7e816141a2565b5f613db382608085901b85176149b1565b90505f613dbe61357b565b8054909150600160901b900465ffffffffffff166001600160801b0383161115613dfb57604051630fc3448760e41b815260040160405180910390fd5b6004810154610100900465ffffffffffff16608083901c8115801590613e2057508181115b15613e6757613e4b613e328383614960565b6004850154600160381b900465ffffffffffff166141a8565b60405163134d433960e31b8152600401610e7f91815260200190565b610bad878561408c565b5f80826001600160801b0316846001600160801b03161015613e935782613e95565b835b6001600160801b031690505f608084901c608086901c1015613ebb57608084901c613ec1565b608085901c5b60801b91909117949350505050565b5f8072184f03e93ff9f4daa797ed6e38ed64bf6a1f0160401b8310613f0e5772184f03e93ff9f4daa797ed6e38ed64bf6a1f0160401b830492506040015b6d04ee2d6d415b85acef81000000008310613f3a576d04ee2d6d415b85acef8100000000830492506020015b662386f26fc100008310613f5857662386f26fc10000830492506010015b6305f5e1008310613f70576305f5e100830492506008015b6127108310613f8457612710830492506004015b60648310613f96576064830492506002015b600a83106132ca5760010192915050565b613fb0826141ca565b6040516001600160a01b038316907fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b905f90a2805115613ff457613b1e828261422d565b611bf161429f565b5f808261401c576040516334e45d7b60e01b815260040160405180910390fd5b50505c6001600160ff1b03811691600160ff1b909116151590565b5f808261404c65ffffffffffff861643614960565b6140569190614949565b90508465ffffffffffff1681101561407f5761407a8165ffffffffffff8716614960565b614081565b5f5b9150505b9392505050565b816140aa576040516334e45d7b60e01b815260040160405180910390fd5b600160ff1b811780835d505050565b5f6140c261357b565b6001600160a01b0383165f90815260018201602052604090205490915060ff16156140ec57505050565b8054439065ffffffffffff600160301b8204811691600160601b900481169083161461411557505f5b5f6141288665ffffffffffff84166149b1565b845490915065ffffffffffff1681111561415557604051632b49445d60e21b815260040160405180910390fd5b835471ffffffffffffffffffffffff0000000000001916600160301b65ffffffffffff9283160265ffffffffffff60601b191617600160601b939091169290920291909117909155505050565b805f5d50565b5f8160016141b682866149b1565b6141c09190614960565b61408591906149c4565b806001600160a01b03163b5f036141ff57604051634c9c8ce360e01b81526001600160a01b0382166004820152602401610e7f565b5f80516020614a3383398151915280546001600160a01b0319166001600160a01b0392909216919091179055565b60605f80846001600160a01b03168460405161424991906149d7565b5f60405180830381855af49150503d805f8114614281576040519150601f19603f3d011682016040523d82523d5f602084013e614286565b606091505b50915091506142968583836142be565b95945050505050565b341561304e5760405163b398979f60e01b815260040160405180910390fd5b6060826142d3576142ce8261431a565b614085565b81511580156142ea57506001600160a01b0384163b155b1561431357604051639996b31560e01b81526001600160a01b0385166004820152602401610e7f565b5080614085565b80511561432a5780518082602001fd5b60405163d6bda27560e01b815260040160405180910390fd5b803560548110614351575f80fd5b919050565b6001600160a01b0381168114611a83575f80fd5b5f805f805f8060c0878903121561437f575f80fd5b61438887614343565b955060208701356001600160f81b0319811681146143a4575f80fd5b945060408701359350606087013592506080870135915060a08701356143c981614356565b809150509295509295509295565b5f602082840312156143e7575f80fd5b813561408581614356565b5f5b8381101561440c5781810151838201526020016143f4565b50505f910152565b602081525f82518060208401526144328160408501602087016143f2565b601f01601f19169190910160400192915050565b5f8083601f840112614456575f80fd5b5081356001600160401b0381111561446c575f80fd5b6020830191508360208260051b8501011115614486575f80fd5b9250929050565b5f806020838503121561449e575f80fd5b82356001600160401b038111156144b3575f80fd5b6144bf85828601614446565b90969095509350505050565b65ffffffffffff81168114611a83575f80fd5b5f805f606084860312156144f0575f80fd5b83356144fb816144cb565b9250602084013561450b816144cb565b9150604084013561451b816144cb565b809150509250925092565b5f805f8060808587031215614539575f80fd5b61454285614343565b93506020850135925060408501359150606085013561456081614356565b939692955090935050565b5f805f805f8060c08789031215614580575f80fd5b61458987614343565b95506020870135945060408701359350606087013592506080870135915060a08701356143c981614356565b5f805f805f8060a087890312156145ca575f80fd5b6145d387614343565b95506020870135945060408701356001600160401b038111156145f4575f80fd5b61460089828a01614446565b9095509350506060870135915060808701356143c981614356565b5f806040838503121561462c575f80fd5b823561463781614356565b946020939093013593505050565b634e487b7160e01b5f52604160045260245ffd5b5f806040838503121561466a575f80fd5b823561467581614356565b915060208301356001600160401b0380821115614690575f80fd5b818501915085601f8301126146a3575f80fd5b8135818111156146b5576146b5614645565b604051601f8201601f19908116603f011681019083821181831017156146dd576146dd614645565b816040528281528860208487010111156146f5575f80fd5b826020860160208301375f6020848301015280955050505050509250929050565b5f60208284031215614726575f80fd5b8135614085816144cb565b5f805f60608486031215614743575f80fd5b61474c84614343565b925060208401359150604084013561451b81614356565b5f60208284031215614773575f80fd5b81358015158114614085575f80fd5b5f8060408385031215614793575f80fd5b823561479e816144cb565b915060208301356147ae816144cb565b809150509250929050565b5f805f805f608086880312156147cd575f80fd5b6147d686614343565b945060208601356001600160401b038111156147f0575f80fd5b6147fc88828901614446565b90955093505060408601359150606086013561481781614356565b809150509295509295909350565b5f8060408385031215614836575f80fd5b8235915060208301356147ae81614356565b5f8551614859818460208a016143f2565b61103b60f11b9083019081528551614878816002840160208a016143f2565b808201915050601760f91b806002830152855161489c816003850160208a016143f2565b600392019182015283516148b78160048401602088016143f2565b016004019695505050505050565b5f602082840312156148d5575f80fd5b815161408581614356565b634e487b7160e01b5f52603260045260245ffd5b634e487b7160e01b5f52602160045260245ffd5b5f8060408385031215614919575f80fd5b8251614924816144cb565b60208401519092506147ae816144cb565b634e487b7160e01b5f52601160045260245ffd5b80820281158282048414176132ca576132ca614935565b818103818111156132ca576132ca614935565b634e487b7160e01b5f52601260045260245ffd5b5f8261499557614995614973565b500690565b5f602082840312156149aa575f80fd5b5051919050565b808201808211156132ca576132ca614935565b5f826149d2576149d2614973565b500490565b5f82516149e88184602087016143f2565b919091019291505056fe000094700000947000000000000000000000908800009088000084d0000084d000000000000000000000000050157cffd6bbfa2dece204a89ec419c23ef5755d360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc000000000000000000000000e3a9105a3a932253a70f126eb1e3b589c643dd24
+    ///0x608060405260043610610366575f3560e01c806376e944ec116101c8578063b9662554116100fd578063c8de43521161009d578063f1c4e4ed1161006d578063f1c4e4ed14610a4c578063f5d0b2d514610a6b578063f7d198f814610a7f578063f8e4d1ec14610a9e575f80fd5b8063c8de4352146109a7578063d07476c6146109c6578063d5b8b8f314610a0e578063d633c96b14610a2d575f80fd5b8063c1390c34116100d8578063c1390c3414610936578063c13c197114610955578063c277a93614610969578063c7a7faee14610988575f80fd5b8063b9662554146108d9578063bd219476146108f8578063c0c5df7c14610917575f80fd5b8063968302d711610168578063aa1ffa3911610143578063aa1ffa391461084c578063ab3947551461086b578063ad3cb1cc1461088a578063b78bef59146108ba575f80fd5b8063968302d7146107ef5780639b3f781a1461080e5780639f9259bb1461082d575f80fd5b80638629f545116101a35780638629f5451461077357806389abb839146107925780638a1e6de5146107b15780638dc33c17146107d0575f80fd5b806376e944ec146107065780637eefeb6314610735578063818f4d6914610754575f80fd5b806339dde4431161029e5780635c414b571161023e57806360e121891161021957806360e121891461068a57806369931afb146106a95780636bad18b6146106c85780636cf0bd25146106e7575f80fd5b80635c414b571461062d5780635e60ef2b1461064c5780635f76eb301461066b575f80fd5b8063458fb27711610279578063458fb277146105ba578063497c22c5146105d95780634f1ef286146105f857806352d1902d1461060b575f80fd5b806339dde4431461055d5780633bb7d5a31461057c5780633bbcc4b21461059b575f80fd5b8063268d6d31116103095780632e3c3906116102e45780632e3c3906146104e15780633311b1bc1461050057806338bd17e51461051f5780633951e5061461053e575f80fd5b8063268d6d311461045c5780632d6905481461048f5780632dcbc5d1146104c2575f80fd5b80630d81a3f1116103445780630d81a3f1146103c95780630d8e6e2c146103e8578063196a456d146104125780631e24aa4914610431575f80fd5b806304553fb61461036a57806306180d001461038b57806307ccdf61146103aa575b5f80fd5b348015610375575f80fd5b50610389610384366004614602565b610ad0565b005b348015610396575f80fd5b506103896103a5366004614680565b610bb0565b3480156103b5575f80fd5b506103896103c4366004614602565b610ce8565b3480156103d4575f80fd5b506103896103e3366004614602565b610da4565b3480156103f3575f80fd5b506103fc610e82565b60405161040991906146d7565b60405180910390f35b34801561041d575f80fd5b5061038961042c36600461471c565b610ee8565b34801561043c575f80fd5b5061044561102f565b60405165ffffffffffff9091168152602001610409565b348015610467575f80fd5b505f80516020614d328339815191525b6040516001600160a01b039091168152602001610409565b34801561049a575f80fd5b506104a361104d565b6040805165ffffffffffff938416815292909116602083015201610409565b3480156104cd575f80fd5b506103896104dc366004614764565b61107b565b3480156104ec575f80fd5b506103896104fb3660046147a9565b611103565b34801561050b575f80fd5b5061038961051a366004614602565b611189565b34801561052a575f80fd5b50610389610539366004614602565b61122c565b348015610549575f80fd5b50610389610558366004614680565b6112e1565b348015610568575f80fd5b50610389610577366004614680565b6113ea565b348015610587575f80fd5b50610389610596366004614602565b61150a565b3480156105a6575f80fd5b506103896105b536600461483a565b6115bf565b3480156105c5575f80fd5b506103896105d4366004614602565b6118a6565b3480156105e4575f80fd5b506103896105f3366004614764565b611955565b6103896106063660046148b4565b6119cc565b348015610616575f80fd5b5061061f6119eb565b604051908152602001610409565b348015610638575f80fd5b50610389610647366004614971565b611a06565b348015610657575f80fd5b5061038961066636600461498c565b611ab2565b348015610676575f80fd5b50610389610685366004614602565b611b5c565b348015610695575f80fd5b506103896106a4366004614602565b611c19565b3480156106b4575f80fd5b506103896106c3366004614764565b611cee565b3480156106d3575f80fd5b506103896106e2366004614602565b611d61565b3480156106f2575f80fd5b506103896107013660046149a5565b611e36565b348015610711575f80fd5b5061072561072036600461498c565b611eb8565b6040519015158152602001610409565b348015610740575f80fd5b5061038961074f366004614680565b611ee7565b34801561075f575f80fd5b5061038961076e366004614602565b611f91565b34801561077e575f80fd5b5061038961078d366004614602565b612046565b34801561079d575f80fd5b506104456107ac36600461498c565b612114565b3480156107bc575f80fd5b506104776107cb36600461498c565b612148565b3480156107db575f80fd5b506103896107ea3660046149d7565b612176565b3480156107fa575f80fd5b50610389610809366004614602565b612226565b348015610819575f80fd5b50610389610828366004614602565b6122db565b348015610838575f80fd5b50610389610847366004614602565b612370565b348015610857575f80fd5b506103896108663660046149f2565b612437565b348015610876575f80fd5b50610389610885366004614971565b61264e565b348015610895575f80fd5b506103fc604051806040016040528060058152602001640352e302e360dc1b81525081565b3480156108c5575f80fd5b506103896108d43660046149a5565b6126f7565b3480156108e4575f80fd5b506103896108f3366004614a1e565b61274d565b348015610903575f80fd5b5061038961091236600461498c565b612966565b348015610922575f80fd5b50610389610931366004614602565b612a86565b348015610941575f80fd5b50610389610950366004614602565b612b35565b348015610960575f80fd5b50610445612be4565b348015610974575f80fd5b50610389610983366004614602565b612c02565b348015610993575f80fd5b506103896109a2366004614a8a565b612cb1565b3480156109b2575f80fd5b506103896109c1366004614602565b612ee0565b3480156109d1575f80fd5b506109e56109e036600461498c565b612f8f565b6040805165ffffffffffff94851681529284166020840152921691810191909152606001610409565b348015610a19575f80fd5b50610389610a283660046149a5565b612ff6565b348015610a38575f80fd5b50610389610a47366004614602565b61306b565b348015610a57575f80fd5b50610445610a66366004614aa4565b61311a565b348015610a76575f80fd5b50610389613244565b348015610a8a575f80fd5b50610389610a99366004614602565b613376565b348015610aa9575f80fd5b50610abd610ab8366004614ac7565b61343e565b60405161ffff9091168152602001610409565b335f80516020614d3283398151915214610afd576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03610b5f57610b4c7e01c9080001c908000157c0000157c0000148200001482000000000000000006e02d6900002d690000249f0000249f089613448565b9050610b5a818387866134ff565b610ba7565b610b987e02c6f00002c6f000023a5000023a500001d0d80001d0d800000000000000006e0468e8000468e8000357780003577889613448565b9050610ba7818387878761352c565b50505050505050565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015610bf9573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190610c1d9190614ae2565b6001600160a01b0316336001600160a01b031614610c555760405163021bfda160e41b81523360048201526024015b60405180910390fd5b600261ffff831611610c80576040516324427a5d60e01b815261ffff83166004820152602401610c4c565b80610c89613566565b61ffff84165f818152600792909201602052604080832080546001600160a01b0319166001600160a01b03958616179055519284169290917f9a6341776ec886f635576aafe3759f09cef019b264dfa6a27debb4855415ff3e91a35050565b335f80516020614d3283398151915214610d15576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03610d5b57610b4c747d0000007d0000007d0000007d0000007d0000007d60481b5f80516020614cd283398151915289613448565b610b987e027cb800027cb80001e0780001e078000163780001637800000000000000007e05a1680005a16800000000000000000004268000042680000330680003306889613448565b335f80516020614d3283398151915214610dd1576040516331a81a8160e01b815260040160405180910390fd5b5f60fd60f81b6001600160f81b0319871601610e1857610b4c7e107ac000107ac0000aba18000aba1800078d9800078d980000000000000000661d4fe8001d4fe889613448565b6001600160f81b031986811601610e6957610e5a7e14011800140118000bb030000bb0300007fee00007fee00000000000000000662c6b18002c6b1889613448565b9050610b5a818387878761352c565b604051636aa9eb0560e01b815260040160405180910390fd5b6060604051806040016040528060088152602001671210d5531a5b5a5d60c21b815250610eae5f61358a565b610eb8600661358a565b610ec15f61358a565b604051602001610ed49493929190614afd565b604051602081830303815290604052905090565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00546001600160401b03166001600160401b0316600114610f3c57604051636f4f731f60e01b815260040160405180910390fd5b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805460079190600160401b900460ff1680610f85575080546001600160401b03808416911610155b15610fa35760405163f92ee8a960e01b815260040160405180910390fd5b805468ffffffffffffffffff19166001600160401b03831617600160401b178155610fcf5f8680613619565b610fd8836136dd565b610fe18461373f565b805460ff60401b191681556040516001600160401b03831681527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15050505050565b5f611038613566565b54600160901b900465ffffffffffff16919050565b5f805f611058613566565b6004015465ffffffffffff6101008204811695600160381b909204169350915050565b335f80516020614d32833981519152146110a8576040516331a81a8160e01b815260040160405180910390fd5b5f6110ee7c20000000200000001000000010000000090000000900000002000000027c8200000082000000000000000000000082000000820000003f0000003f87613448565b90506110fc818386866134ff565b5050505050565b335f80516020614d3283398151915214611130576040516331a81a8160e01b815260040160405180910390fd5b5f6111797dd6d80000d6d80000d6d80000d6d80000d6d80000d6d80000d6d80000d6d87e01a5e00001a5e000014438000144380000dea80000dea80000d6d80000d6d889613448565b9050610ba781838888888861384e565b335f80516020614d32833981519152146111b6576040516331a81a8160e01b815260040160405180910390fd5b5f600160f81b6001600160f81b03198716146111e557604051636aa9eb0560e01b815260040160405180910390fd5b61121e7e0c15c0000c15c00008d9a00008d9a00006b6c00006b6c000000000000000006e1da5d8001da5d8001197e8001197e889613448565b9050610ba7818387866134ff565b335f80516020614d3283398151915214611259576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036112a857610b4c7e014820000148200000e2900000e2900000e2900000e29000000000000000006e0249f0000249f00001d0d80001d0d889613448565b610b987e01c9080001c90800014438000144380000e2900000e29000000000000000006e03539000035390000246080002460889613448565b815f6112eb613566565b61ffff83165f9081526007820160205260409020549091506001600160a01b0316331461133757604051630273872560e01b815261ffff83166004820152336024820152604401610c4c565b61ffff82165f908152600582016020526040902054600160c01b900460ff161561137a5760405163183a50d560e11b815261ffff83166004820152602401610c4c565b8361ffff16611387613566565b6001600160a01b0385165f908152600691909101602052604090205461ffff16146113da5760405163aa42e78560e01b81526001600160a01b038416600482015261ffff85166024820152604401610c4c565b6113e45f84613898565b50505050565b815f6113f4613566565b61ffff83165f9081526007820160205260409020549091506001600160a01b0316331461144057604051630273872560e01b815261ffff83166004820152336024820152604401610c4c565b61ffff82165f908152600582016020526040902054600160c01b900460ff16156114835760405163183a50d560e11b815261ffff83166004820152602401610c4c565b61148b613566565b5f808052600591909101602052604090205465ffffffffffff16156114c35760405163ca34efb160e01b815260040160405180910390fd5b5f6114cd84613985565b61ffff16146115005760405163aa42e78560e01b81526001600160a01b03841660048201525f6024820152604401610c4c565b6113e48484613898565b335f80516020614d3283398151915214611537576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361158657610b4c7e014438000144380000e2900000e2900000cb200000cb2000000000000000006e024608000246080001ccf00001ccf089613448565b610b987e01c9080001c90800014820000148200000e6780000e67800000000000000006e0347d8000347d800023a5000023a5089613448565b335f80516020614d32833981519152146115ec576040516331a81a8160e01b815260040160405180910390fd5b825f600288605381111561160257611602614b7a565b0361165757600a821161161d5750660116840001168461188e565b601e82116116335750660242200002422061188e565b603c821161164957506603c4d80003c4d861188e565b506605b4f00005b4f061188e565b600388605381111561166b5761166b614b7a565b036116c057600a82116116865750660192580001925861188e565b601e821161169c5750660353900003539061188e565b603c82116116b257506605c4900005c49061188e565b5066093b4800093b4861188e565b60048860538111156116d4576116d4614b7a565b0361172957600a82116116ef5750660217280002172861188e565b601e82116117055750660493e0000493e061188e565b603c821161171b575066081a3800081a3861188e565b50660c9e78000c9e7861188e565b600588605381111561173d5761173d614b7a565b0361177c57600a82116117585750660353900003539061188e565b601e821161176e5750660781e0000781e061188e565b50660d6998000d699861188e565b600688605381111561179057611790614b7a565b036117cf57600a82116117ab57506603e8000003e80061188e565b601e82116117c15750660829d8000829d861188e565b50660e0da8000e0da861188e565b60078860538111156117e3576117e3614b7a565b0361182257600a82116117fe575066045d3000045d3061188e565b601e821161181457506608e9400008e94061188e565b50660d8108000d810861188e565b600888605381111561183657611836614b7a565b0361187557600a821161185157506604e5e80004e5e861188e565b601e821161186757506608f1100008f11061188e565b50660e6398000e639861188e565b604051639ba6061b60e01b815260040160405180910390fd5b61189c818489898989613a4f565b5050505050505050565b335f80516020614d32833981519152146118d3576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361191c57610b4c750a4100000a41000006b6c00006b6c00006590000065960451b6e0249f0000249f00001c9080001c90889613448565b610b987e01ccf00001ccf000014820000148200000e6780000e67800000000000000006e03539000035390000251c0000251c089613448565b335f80516020614d3283398151915214611982576040516331a81a8160e01b815260040160405180910390fd5b5f6110ee7e0173180001731800016b4800016b48000134980001349800000000000000007e041ac800041ac8000000000000000000029040000290400001ffb80001ffb887613448565b6119d4613ab6565b6119dd82613b5c565b6119e78282613bfc565b5050565b5f6119f4613cb8565b505f80516020614d1283398151915290565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611a4f573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611a739190614ae2565b6001600160a01b0316336001600160a01b031614611aa65760405163021bfda160e41b8152336004820152602401610c4c565b611aaf8161373f565b50565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611afb573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611b1f9190614ae2565b6001600160a01b0316336001600160a01b031614611b525760405163021bfda160e41b8152336004820152602401610c4c565b611aaf815f613d01565b335f80516020614d3283398151915214611b89576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611bd057610b4c750fa000000fa000000f2300000f2300000f2300000f2360431b5f80516020614cd283398151915289613448565b610b987e027cb800027cb80001e8480001e848000163780001637800000000000000007e05c4900005c490000000000000000000043df000043df0000330680003306889613448565b335f80516020614d3283398151915214611c46576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611ca557610b4c7e014050000140500000d6d80000d6d80000d6d80000d6d8000061a8000061a87e01ccf00001ccf00001c9080001c9080001c9080001c908000144380001443889613448565b610b987e014ff000014ff000014438000144380000d6d80000d6d800006590000065907e0251c0000251c000021728000217280001dc900001dc900001d4c00001d4c089613448565b335f80516020614d3283398151915214611d1b576040516331a81a8160e01b815260040160405180910390fd5b5f6110ee7c20000000200000002000000020000000200000002000000020000000207c200000002000000000000000000000002000000020000000200000002087613448565b335f80516020614d3283398151915214611d8e576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03611ded57610b4c7e014438000144380000d6d80000d6d80000d6d80000d6d8000059d8000059d87e01c9080001c9080001c9080001c9080001c9080001c908000148200001482089613448565b610b987e014c0800014c0800014438000144380000d6d80000d6d8000059d8000059d87e0249f0000249f000021340000213400001dc900001dc900001ccf00001ccf089613448565b335f80516020614d3283398151915214611e63576040516331a81a8160e01b815260040160405180910390fd5b5f611eab7d5dc000005dc0000059d8000059d8000059d8000059d800000000000000007d7530000075300000000000000000000061a8000061a800005dc000005dc086613448565b90506113e4818385613d7e565b5f611ec1613566565b61ffff929092165f9081526005909201602052506040902054600160c01b900460ff1690565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015611f30573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190611f549190614ae2565b6001600160a01b0316336001600160a01b031614611f875760405163021bfda160e41b8152336004820152602401610c4c565b6119e78282613898565b335f80516020614d3283398151915214611fbe576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b0361200d57610b4c7e040b2800040b280002f1e80002f1e80001dc900001dc9000000000000000006e0a9ec0000a9ec0000591c8000591c889613448565b610b987e050140000501400003633000036330000249f0000249f000000000000000006e19b9f00019b9f0000918200009182089613448565b335f80516020614d3283398151915214612073576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036120cb57610b4c750fa000000fa000000f2300000f2300000f2300000f2360431b7d9c4000009c4000000000000000000000908800009088000084d0000084d089613448565b610b987e027100000271000001e8480001e84800016b4800016b4800000000000000007e05b8d80005b8d800000000000000000004517800045178000330680003306889613448565b5f61211d613566565b61ffff929092165f9081526005909201602052506040902054600160c81b900465ffffffffffff1690565b5f612151613566565b61ffff9092165f9081526007929092016020525060409020546001600160a01b031690565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156121bf573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906121e39190614ae2565b6001600160a01b0316336001600160a01b0316146122165760405163021bfda160e41b8152336004820152602401610c4c565b612221838383613619565b505050565b335f80516020614d3283398151915214612253576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036122a257610b4c7e01c9080001c90800015ba800015ba800015ba800015ba800000000000000006e02bf200002bf20000246080002460889613448565b610b987e02bf200002bf2000023668000236680001d8a80001d8a800000000000000006e046cd000046cd0000353900003539089613448565b335f80516020614d3283398151915214612308576040516331a81a8160e01b815260040160405180910390fd5b5f600160f81b6001600160f81b031987161461233757604051636aa9eb0560e01b815260040160405180910390fd5b61121e7e06aef00006aef000049bb000049bb0000334500003345000000000000000006e12b1280012b128000ae8f8000ae8f889613448565b335f80516020614d328339815191521461239d576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036123f557610b4c7d7d0000007d0000007918000079180000791800007918000055f0000055f06d908800009088000084d0000084d065130b0000130b60c31b0189613448565b610b987d7d0000007d0000007918000079180000791800007918000055f0000055f06d908800009088000084d0000084d065130b0000130b60c31b0189613448565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612480573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906124a49190614ae2565b6001600160a01b0316336001600160a01b0316146124d75760405163021bfda160e41b8152336004820152602401610c4c565b65ffffffffffff82811615908216151461250457604051630bf827ab60e31b815260040160405180910390fd5b5f61250d613566565b905065ffffffffffff8316156125c557805465ffffffffffff600160901b9091048116908416101561255257604051634f357d2560e11b815260040160405180910390fd5b60405163778e2fef60e01b81525f6004820181905260248201525f80516020614cf28339815191529063778e2fef906044016040805180830381865afa15801561259e573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906125c29190614b8e565b50505b6004810180546cffffffffffffffffffffffff00191661010065ffffffffffff8681169182026cffffffffffff00000000000000191692909217600160381b928616928302179092556040805192835260208301919091527fdd4061cdc8ba27460cad47a90d55961fbbfcf71eeaf788556a9ad36b68292ab291015b60405180910390a1505050565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612697573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906126bb9190614ae2565b6001600160a01b0316336001600160a01b0316146126ee5760405163021bfda160e41b8152336004820152602401610c4c565b611aaf816136dd565b335f80516020614d3283398151915214612724576040516331a81a8160e01b815260040160405180910390fd5b5f611eab7c20000000200000002000000020000000200000002000000020000000208086613448565b335f80516020614d328339815191521461277a576040516331a81a8160e01b815260040160405180910390fd5b825f600287605381111561279057612790614b7a565b036127e557600a82116127ab57506601631400016314612959565b601e82116127c157506601f0180001f018612959565b603c82116127d757506602422000024220612959565b5066026d1800026d18612959565b60038760538111156127f9576127f9614b7a565b0361284e57600a821161281457506601731800017318612959565b601e821161282a57506602134000021340612959565b603c82116128405750660278d0000278d0612959565b506602cec00002cec0612959565b600487605381111561286257612862614b7a565b036128b757600a821161287d57506601c5200001c520612959565b601e82116128935750660280a0000280a0612959565b603c82116128a95750660320c8000320c8612959565b50660449a8000449a8612959565b60058760538111156128cb576128cb614b7a565b0361290a57600a82116128e6575066021ef800021ef8612959565b601e82116128fc575066034bc000034bc0612959565b506604ab500004ab50612959565b600687605381111561291e5761291e614b7a565b0361187557600a821161293957506603577800035778612959565b601e821161294f575066056ab800056ab8612959565b5066086c4000086c405b610ba78184888888613da2565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156129af573d5f803e3d5ffd5b505050506040513d601f19601f820116820180604052508101906129d39190614ae2565b6001600160a01b0316336001600160a01b031614158015612a5b575060405163237dfb4760e11b81523360048201525f80516020614cf2833981519152906346fbf68e90602401602060405180830381865afa158015612a35573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190612a599190614bbb565b155b15612a7b576040516310351a3760e11b8152336004820152602401610c4c565b611aaf816001613d01565b335f80516020614d3283398151915214612ab3576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612aff57610b4c7d7d0000007d0000007530000075300000753000007530000055f0000055f05f80516020614cd283398151915289613448565b610b987d7d0000007d000000791800007918000075300000753000005dc000005dc05f80516020614cd283398151915289613448565b335f80516020614d3283398151915214612b62576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612bab57610b4c750b98c0000b98c0000b5a40000b5a40000a4100000a4160451b6e029fe000029fe0000207880002078889613448565b610b987e01e8480001e84800016b4800016b48000157c0000157c000000000000000006e03f3b80003f3b8000278d0000278d089613448565b5f612bed613566565b54600160c01b900465ffffffffffff16919050565b335f80516020614d3283398151915214612c2f576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612c7857610b4c750a4100000a41000006b6c00006b6c00006590000065960451b6e024608000246080001c5200001c52089613448565b610b987e01ccf00001ccf000014820000148200000f6180000f61800000000000000006e03345000033450000251c0000251c089613448565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015612cfa573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190612d1e9190614ae2565b6001600160a01b0316336001600160a01b031614612d515760405163021bfda160e41b8152336004820152602401610c4c565b61ffff821660011480612d68575061ffff82166002145b15612d8c57604051630a5d45a760e31b815261ffff83166004820152602401610c4c565b5f612d95613566565b905065ffffffffffff821615612e6a57805465ffffffffffff600160901b90910481169083161080612ddb5750600481015465ffffffffffff6101009091048116908316115b15612dff57604051630a5d45a760e31b815261ffff84166004820152602401610c4c565b61ffff831615612e6a575f808052600582016020526040902054600160c81b900465ffffffffffff16801580612e4457508065ffffffffffff168365ffffffffffff16105b15612e6857604051630a5d45a760e31b815261ffff85166004820152602401610c4c565b505b61ffff83165f818152600583016020908152604091829020805465ffffffffffff60c81b1916600160c81b65ffffffffffff88169081029190911790915591519182523392917fe99cc7cd230a5b07193d61d97eb5c597da4ea602bd4e4779ce7e0d866109fdd0910160405180910390a3505050565b335f80516020614d3283398151915214612f0d576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b03612f5957610b4c7d7d0000007d0000007918000079180000791800007918000055f0000055f05f80516020614cd283398151915289613448565b610b987d7d0000007d0000007918000079180000791800007918000061a8000061a85f80516020614cd283398151915289613448565b5f805f80612f9b613566565b61ffff86165f90815260059190910160205260409020805490915065ffffffffffff80821691600160301b8104821691612fe891600160601b8104821691600160901b9091041683613dfb565b935093509350509193909250565b335f80516020614d3283398151915214613023576040516331a81a8160e01b815260040160405180910390fd5b5f611eab7d5dc000005dc0000059d8000059d8000059d8000059d800004a3800004a387d7530000075300000000000000000000061a8000061a800005dc000005dc086613448565b335f80516020614d3283398151915214613098576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036130e157610b4c750b98c0000b98c0000b5a40000b5a40000a4100000a4160451b6e029fe000029fe0000207880002078889613448565b610b987e01e8480001e84800016b4800016b48000163780001637800000000000000006e03f7a00003f7a0000278d0000278d089613448565b5f335f80516020614cf2833981519152146131475760405162916b8b60e51b815260040160405180910390fd5b5f613150613566565b6004810154909150610100900465ffffffffffff165f03613174575f91505061323e565b60806131808585613e50565b901c91505f61318e84613985565b61ffff81165f908152600584016020526040902054909150600160c81b900465ffffffffffff1680158015906131d357508065ffffffffffff168465ffffffffffff16115b1561323a5784826132056131e78488614bee565b600487015465ffffffffffff91821691600160381b90910416613f4a565b604051631996618560e11b81526001600160a01b03909316600484015261ffff90911660248301526044820152606401610c4c565b5050505b92915050565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805460079190600160401b900460ff168061328d575080546001600160401b03808416911610155b156132ab5760405163f92ee8a960e01b815260040160405180910390fd5b805468ffffffffffffffffff19166001600160401b03831617600160401b1781555f6132d5613566565b8054600482015491925065ffffffffffff169060ff161561331e576132fb5f805f613619565b61330760018283613619565b613319600265ffffffffffff80613619565b613329565b6133295f8283613619565b5050805460ff60401b191681556040516001600160401b03831681527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15050565b335f80516020614d32833981519152146133a3576040516331a81a8160e01b815260040160405180910390fd5b5f6001600160f81b03198616600160f81b036133f557610b4c747d0000007d0000007d0000007d0000007d0000007d60481b6d908800009088000084d0000084d065130b0000130b60c31b0189613448565b610b987e0278d0000278d00001e8480001e848000167600001676000000000000000007e05c4900005c4900000000000000000000426800004268000032c8000032c8089613448565b5f61323e82613985565b5f8082605381111561345c5761345c614b7a565b61346a9060ff166004614c14565b640876543201901c600f169050805f0361349757604051639ba6061b60e01b815260040160405180910390fd5b6134a2600182614c2b565b90506001600160401b036134b7600483614c52565b6134c2906040614c14565b600483106134d057856134d2565b865b901c169150815f036134f757604051639ba6061b60e01b815260040160405180910390fd5b509392505050565b61351261350c8560201c90565b84613f6c565b6113e48163ffffffff86166135278587613e50565b613fc5565b61353f6135398660201c90565b85613f6c565b6110fc8163ffffffff87166135276135578789613e50565b613561878a613e50565b614094565b7fc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad650090565b60605f613596836140f3565b60010190505f816001600160401b038111156135b4576135b46148a0565b6040519080825280601f01601f1916602001820160405280156135de576020820181803683370190505b5090508181016020015b5f19016f181899199a1a9b1b9c1cb0b131b232b360811b600a86061a8153600a85049450846135e857509392505050565b65ffffffffffff82811615908216151461364c576040516324427a5d60e01b815261ffff84166004820152602401610c4c565b5f613655613566565b61ffff85165f8181526005929092016020908152604092839020805465ffffffffffff8881166bffffffffffffffffffffffff199092168217600160301b918916918202178355855191825292810192909252935033927f0b07f4d29c11f9ec86026bcfde08527e11718be2bffcd10a33a246ec30dc5066910160405180910390a350505050565b806136e6613566565b805465ffffffffffff60c01b1916600160c01b65ffffffffffff9384160217905560405190821681527f64cb9e7ae6497c59080cdbc048552e123d52aa4240e137758a173582786961ca9060200160405180910390a150565b5f613748613566565b6004810154909150610100900465ffffffffffff161580159061377e5750600481015465ffffffffffff80841661010090920416105b1561379c57604051634f357d2560e11b815260040160405180910390fd5b5f808052600582016020526040902054600160c81b900465ffffffffffff1680158015906137d957508265ffffffffffff168165ffffffffffff16105b156137f957604051630a5d45a760e31b81525f6004820152602401610c4c565b815465ffffffffffff60901b1916600160901b65ffffffffffff85169081029190911783556040519081527f5511b1851fc40a2629c855bab7adce3276c470d8190eb01431e418dc2af13e8e90602001612641565b61386161385b8760201c90565b86613f6c565b6138908163ffffffff8816613527613879888a613e50565b613561613886898c613e50565b613561898d613e50565b505050505050565b5f6138a1613566565b905061ffff8316158015906138d0575061ffff83165f90815260058201602052604090205465ffffffffffff16155b156138f4576040516324427a5d60e01b815261ffff84166004820152602401610c4c565b6001600160a01b0382165f9081526006820160205260409020805461ffff191661ffff8516908117909155613945576001600160a01b0382165f9081526002820160205260409020805460ff191690555b60405133906001600160a01b0384169061ffff8616907f831ec39671abea4e554515afd140ced2d423f3a8028d1d9d0d140020514ece79905f90a4505050565b5f8061398f613566565b6001600160a01b0384165f90815260068201602052604090205490915061ffff16801515806139d457505f80805260058301602052604090205465ffffffffffff1615155b156139e0579392505050565b600482015460ff161580613a0e57506001600160a01b0384165f90815260028301602052604090205460ff16155b15613a1c57505f9392505050565b6001600160a01b0384165f90815260018301602052604090205460ff16613a44576001613a47565b60025b949350505050565b613a5c61385b8760201c90565b5f613a678587613e50565b90505f5b83811015613aa357613a9982613561878785818110613a8c57613a8c614c65565b905060200201358a613e50565b9150600101613a6b565b50610ba78263ffffffff89165b83613fc5565b306001600160a01b037f0000000000000000000000000000000000000000000000000000000000000000161480613b3c57507f00000000000000000000000000000000000000000000000000000000000000006001600160a01b0316613b305f80516020614d12833981519152546001600160a01b031690565b6001600160a01b031614155b15613b5a5760405163703e46dd60e11b815260040160405180910390fd5b565b5f80516020614cf28339815191526001600160a01b0316638da5cb5b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015613ba5573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190613bc99190614ae2565b6001600160a01b0316336001600160a01b031614611aaf5760405163021bfda160e41b8152336004820152602401610c4c565b816001600160a01b03166352d1902d6040518163ffffffff1660e01b8152600401602060405180830381865afa925050508015613c56575060408051601f3d908101601f19168201909252613c5391810190614c79565b60015b613c7e57604051634c9c8ce360e01b81526001600160a01b0383166004820152602401610c4c565b5f80516020614d128339815191528114613cae57604051632a87526960e21b815260048101829052602401610c4c565b61222183836141ca565b306001600160a01b037f00000000000000000000000000000000000000000000000000000000000000001614613b5a5760405163703e46dd60e11b815260040160405180910390fd5b80613d0a613566565b61ffff84165f8181526005929092016020526040918290208054931515600160c01b0260ff60c01b1990941693909317909255513391907f5308112c4b58b572b05ad603d316ed470621c607b785e3bb8018d6a51b524d8e90613d7290851515815260200190565b60405180910390a35050565b613d91613d8b8460201c90565b83613f6c565b6122218163ffffffff85165f613fc5565b613daf6135398660201c90565b5f805b83811015613dea57613de082613561878785818110613dd357613dd3614c65565b9050602002013589613e50565b9150600101613db2565b506138908263ffffffff8816613ab0565b5f8082613e1065ffffffffffff861643614c2b565b613e1a9190614c14565b90508465ffffffffffff16811015613e4357613e3e8165ffffffffffff8716614c2b565b613e45565b5f5b9150505b9392505050565b5f80613e5b8461421f565b90925090508015613e6c575061323e565b613e74613566565b60040154610100900465ffffffffffff165f03613e94575f91505061323e565b60405163778e2fef60e01b8152600481018590526001600160a01b03841660248201525f9081905f80516020614cf28339815191529063778e2fef906044016040805180830381865afa158015613eed573d5f803e3d5ffd5b505050506040513d601f19601f82011682018060405250810190613f119190614b8e565b915091506080613f3c8383613f24613566565b60040154600160381b900465ffffffffffff16613dfb565b901b935061323a868561425a565b5f816001613f588286614c90565b613f629190614c2b565b613e499190614ca3565b613f768282614287565b5f613f82815c84614c90565b9050613f8c613566565b54600160c01b900465ffffffffffff16811115613fbc576040516377e3c29360e01b815260040160405180910390fd5b6122218161445c565b5f613fd682608085901b8517614c90565b90505f613fe1613566565b8054909150600160901b900465ffffffffffff166001600160801b038316111561401e57604051630fc3448760e41b815260040160405180910390fd5b6004810154610100900465ffffffffffff16608083901c811580159061404357508181115b1561408a5761406e6140558383614c2b565b6004850154600160381b900465ffffffffffff16613f4a565b60405163134d433960e31b8152600401610c4c91815260200190565b610ba7878561425a565b5f80826001600160801b0316846001600160801b031610156140b657826140b8565b835b6001600160801b031690505f608084901c608086901c10156140de57608084901c6140e4565b608085901c5b60801b91909117949350505050565b5f8072184f03e93ff9f4daa797ed6e38ed64bf6a1f0160401b83106141315772184f03e93ff9f4daa797ed6e38ed64bf6a1f0160401b830492506040015b6d04ee2d6d415b85acef8100000000831061415d576d04ee2d6d415b85acef8100000000830492506020015b662386f26fc10000831061417b57662386f26fc10000830492506010015b6305f5e1008310614193576305f5e100830492506008015b61271083106141a757612710830492506004015b606483106141b9576064830492506002015b600a831061323e5760010192915050565b6141d382614462565b6040516001600160a01b038316907fbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b905f90a28051156142175761222182826144c5565b6119e7614537565b5f808261423f576040516334e45d7b60e01b815260040160405180910390fd5b50505c6001600160ff1b03811691600160ff1b909116151590565b81614278576040516334e45d7b60e01b815260040160405180910390fd5b600160ff1b811780835d505050565b5f61429182613985565b90505f61429c613566565b61ffff83165f908152600591909101602052604090208054909150600160c01b900460ff16156142f45760405163260d268160e21b81526001600160a01b038416600482015261ffff83166024820152604401610c4c565b805465ffffffffffff165f8190036143345760405163b474cba960e01b81526001600160a01b038516600482015261ffff84166024820152604401610c4c565b65fffffffffffe1965ffffffffffff821601614351575050505050565b815465ffffffffffff600160301b82048116915f91889161438491600160601b8204811691600160901b90041685613dfb565b61438e9190614c90565b90508265ffffffffffff16811115614413575f8365ffffffffffff1688116143d8576143d36143c565ffffffffffff861684614c2b565b8465ffffffffffff16613f4a565b6143db565b5f195b604051637383eee560e01b81526001600160a01b038916600482015261ffff8816602482015260448101829052909150606401610c4c565b83544365ffffffffffff908116600160901b0265ffffffffffff60901b1991909316600160601b02166bffffffffffffffffffffffff60601b1990911617179092555050505050565b805f5d50565b806001600160a01b03163b5f0361449757604051634c9c8ce360e01b81526001600160a01b0382166004820152602401610c4c565b5f80516020614d1283398151915280546001600160a01b0319166001600160a01b0392909216919091179055565b60605f80846001600160a01b0316846040516144e19190614cb6565b5f60405180830381855af49150503d805f8114614519576040519150601f19603f3d011682016040523d82523d5f602084013e61451e565b606091505b509150915061452e858383614556565b95945050505050565b3415613b5a5760405163b398979f60e01b815260040160405180910390fd5b60608261456b57614566826145b2565b613e49565b815115801561458257506001600160a01b0384163b155b156145ab57604051639996b31560e01b81526001600160a01b0385166004820152602401610c4c565b5080613e49565b8051156145c25780518082602001fd5b60405163d6bda27560e01b815260040160405180910390fd5b8035605481106145e9575f80fd5b919050565b6001600160a01b0381168114611aaf575f80fd5b5f805f805f8060c08789031215614617575f80fd5b614620876145db565b955060208701356001600160f81b03198116811461463c575f80fd5b945060408701359350606087013592506080870135915060a0870135614661816145ee565b809150509295509295509295565b803561ffff811681146145e9575f80fd5b5f8060408385031215614691575f80fd5b61469a8361466f565b915060208301356146aa816145ee565b809150509250929050565b5f5b838110156146cf5781810151838201526020016146b7565b50505f910152565b602081525f82518060208401526146f58160408501602087016146b5565b601f01601f19169190910160400192915050565b65ffffffffffff81168114611aaf575f80fd5b5f805f6060848603121561472e575f80fd5b833561473981614709565b9250602084013561474981614709565b9150604084013561475981614709565b809150509250925092565b5f805f8060808587031215614777575f80fd5b614780856145db565b93506020850135925060408501359150606085013561479e816145ee565b939692955090935050565b5f805f805f8060c087890312156147be575f80fd5b6147c7876145db565b95506020870135945060408701359350606087013592506080870135915060a0870135614661816145ee565b5f8083601f840112614803575f80fd5b5081356001600160401b03811115614819575f80fd5b6020830191508360208260051b8501011115614833575f80fd5b9250929050565b5f805f805f8060a0878903121561484f575f80fd5b614858876145db565b95506020870135945060408701356001600160401b03811115614879575f80fd5b61488589828a016147f3565b909550935050606087013591506080870135614661816145ee565b634e487b7160e01b5f52604160045260245ffd5b5f80604083850312156148c5575f80fd5b82356148d0816145ee565b915060208301356001600160401b03808211156148eb575f80fd5b818501915085601f8301126148fe575f80fd5b813581811115614910576149106148a0565b604051601f8201601f19908116603f01168101908382118183101715614938576149386148a0565b81604052828152886020848701011115614950575f80fd5b826020860160208301375f6020848301015280955050505050509250929050565b5f60208284031215614981575f80fd5b8135613e4981614709565b5f6020828403121561499c575f80fd5b613e498261466f565b5f805f606084860312156149b7575f80fd5b6149c0846145db565b9250602084013591506040840135614759816145ee565b5f805f606084860312156149e9575f80fd5b6147398461466f565b5f8060408385031215614a03575f80fd5b8235614a0e81614709565b915060208301356146aa81614709565b5f805f805f60808688031215614a32575f80fd5b614a3b866145db565b945060208601356001600160401b03811115614a55575f80fd5b614a61888289016147f3565b909550935050604086013591506060860135614a7c816145ee565b809150509295509295909350565b5f8060408385031215614a9b575f80fd5b614a0e8361466f565b5f8060408385031215614ab5575f80fd5b8235915060208301356146aa816145ee565b5f60208284031215614ad7575f80fd5b8135613e49816145ee565b5f60208284031215614af2575f80fd5b8151613e49816145ee565b5f8551614b0e818460208a016146b5565b61103b60f11b9083019081528551614b2d816002840160208a016146b5565b808201915050601760f91b8060028301528551614b51816003850160208a016146b5565b60039201918201528351614b6c8160048401602088016146b5565b016004019695505050505050565b634e487b7160e01b5f52602160045260245ffd5b5f8060408385031215614b9f575f80fd5b8251614baa81614709565b60208401519092506146aa81614709565b5f60208284031215614bcb575f80fd5b81518015158114613e49575f80fd5b634e487b7160e01b5f52601160045260245ffd5b65ffffffffffff828116828216039080821115614c0d57614c0d614bda565b5092915050565b808202811582820484141761323e5761323e614bda565b8181038181111561323e5761323e614bda565b634e487b7160e01b5f52601260045260245ffd5b5f82614c6057614c60614c3e565b500690565b634e487b7160e01b5f52603260045260245ffd5b5f60208284031215614c89575f80fd5b5051919050565b8082018082111561323e5761323e614bda565b5f82614cb157614cb1614c3e565b500490565b5f8251614cc78184602087016146b5565b919091019291505056fe000094700000947000000000000000000000908800009088000084d0000084d000000000000000000000000050157cffd6bbfa2dece204a89ec419c23ef5755d360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc000000000000000000000000e3a9105a3a932253a70f126eb1e3b589c643dd24
     /// ```
     #[rustfmt::skip]
     #[allow(clippy::all)]
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
-        b"`\x80`@R`\x046\x10a\x03\x87W_5`\xE0\x1C\x80ck\xAD\x18\xB6\x11a\x01\xD3W\x80c\xB7\x8B\xEFY\x11a\0\xFDW\x80c\xC8\xDECR\x11a\0\x9DW\x80c\xED\xE8wn\x11a\0mW\x80c\xED\xE8wn\x14a\neW\x80c\xF1\xC4\xE4\xED\x14a\n\x84W\x80c\xF5\xD0\xB2\xD5\x14a\n\xA3W\x80c\xF7\xD1\x98\xF8\x14a\n\xB7W_\x80\xFD[\x80c\xC8\xDECR\x14a\t\xF4W\x80c\xD1\xF3\x1D\x15\x14a\n\x13W\x80c\xD5\xB8\xB8\xF3\x14a\n'W\x80c\xD63\xC9k\x14a\nFW_\x80\xFD[\x80c\xC19\x0C4\x11a\0\xD8W\x80c\xC19\x0C4\x14a\t\x8EW\x80c\xC1<\x19q\x14a\t\xADW\x80c\xC2w\xA96\x14a\t\xC1W\x80c\xC5\xC1a\x0C\x14a\t\xE0W_\x80\xFD[\x80c\xB7\x8B\xEFY\x14a\t1W\x80c\xB9f%T\x14a\tPW\x80c\xC0\xC5\xDF|\x14a\toW_\x80\xFD[\x80c\x9B?x\x1A\x11a\x01sW\x80c\xAA\x1F\xFA9\x11a\x01CW\x80c\xAA\x1F\xFA9\x14a\x08\xAFW\x80c\xAB9GU\x14a\x08\xCEW\x80c\xAD<\xB1\xCC\x14a\x08\xEDW\x80c\xB5\x95G\xB8\x14a\t\x1DW_\x80\xFD[\x80c\x9B?x\x1A\x14a\x08>W\x80c\x9FK\x997\x14a\x08]W\x80c\x9F\x92Y\xBB\x14a\x08qW\x80c\xA06\xEA.\x14a\x08\x90W_\x80\xFD[\x80c}\xE4\xD4\r\x11a\x01\xAEW\x80c}\xE4\xD4\r\x14a\x07\xC2W\x80c\x81\x8FMi\x14a\x07\xE1W\x80c\x86)\xF5E\x14a\x08\0W\x80c\x96\x83\x02\xD7\x14a\x08\x1FW_\x80\xFD[\x80ck\xAD\x18\xB6\x14a\x07eW\x80cl\xF0\xBD%\x14a\x07\x84W\x80co\xD6^M\x14a\x07\xA3W_\x80\xFD[\x80c8\xBD\x17\xE5\x11a\x02\xB4W\x80cI|\"\xC5\x11a\x02TW\x80c\\AKW\x11a\x02$W\x80c\\AKW\x14a\x06\xE9W\x80c_v\xEB0\x14a\x07\x08W\x80c`\xE1!\x89\x14a\x07'W\x80ci\x93\x1A\xFB\x14a\x07FW_\x80\xFD[\x80cI|\"\xC5\x14a\x06\x84W\x80cO\x1E\xF2\x86\x14a\x06\xA3W\x80cR\x07\xC2s\x14a\x06\xB6W\x80cR\xD1\x90-\x14a\x06\xD5W_\x80\xFD[\x80c=\x04K\x9E\x11a\x02\x8FW\x80c=\x04K\x9E\x14a\x05\xFAW\x80cB0\n\xAA\x14a\x06\x19W\x80cC\x91V\x8C\x14a\x068W\x80cE\x8F\xB2w\x14a\x06eW_\x80\xFD[\x80c8\xBD\x17\xE5\x14a\x05\x9DW\x80c;\xB7\xD5\xA3\x14a\x05\xBCW\x80c;\xBC\xC4\xB2\x14a\x05\xDBW_\x80\xFD[\x80c\x19jEm\x11a\x03*W\x80c-i\x05H\x11a\x02\xFAW\x80c-i\x05H\x14a\x05\rW\x80c-\xCB\xC5\xD1\x14a\x05@W\x80c.<9\x06\x14a\x05_W\x80c3\x11\xB1\xBC\x14a\x05~W_\x80\xFD[\x80c\x19jEm\x14a\x04}W\x80c\x1E$\xAAI\x14a\x04\x9CW\x80c&\x8Dm1\x14a\x04\xC7W\x80c(g|\xA7\x14a\x04\xEEW_\x80\xFD[\x80c\r\x81\xA3\xF1\x11a\x03eW\x80c\r\x81\xA3\xF1\x14a\x03\xFFW\x80c\r\x8En,\x14a\x04\x1EW\x80c\x10Kl\xB7\x14a\x04?W\x80c\x15\xE2\xCF\xD3\x14a\x04^W_\x80\xFD[\x80c\x04U?\xB6\x14a\x03\x8BW\x80c\x05\xA3\xB8\t\x14a\x03\xACW\x80c\x07\xCC\xDFa\x14a\x03\xE0W[_\x80\xFD[4\x80\x15a\x03\x96W_\x80\xFD[Pa\x03\xAAa\x03\xA56`\x04aCjV[a\n\xD6V[\0[4\x80\x15a\x03\xB7W_\x80\xFD[Pa\x03\xCBa\x03\xC66`\x04aC\xD7V[a\x0B\xB6V[`@Q\x90\x15\x15\x81R` \x01[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x03\xEBW_\x80\xFD[Pa\x03\xAAa\x03\xFA6`\x04aCjV[a\x0B\xE3V[4\x80\x15a\x04\nW_\x80\xFD[Pa\x03\xAAa\x04\x196`\x04aCjV[a\x0C\x9FV[4\x80\x15a\x04)W_\x80\xFD[Pa\x042a\r}V[`@Qa\x03\xD7\x91\x90aD\x14V[4\x80\x15a\x04JW_\x80\xFD[Pa\x03\xAAa\x04Y6`\x04aD\x8DV[a\r\xE3V[4\x80\x15a\x04iW_\x80\xFD[Pa\x03\xCBa\x04x6`\x04aC\xD7V[a\x0F\x84V[4\x80\x15a\x04\x88W_\x80\xFD[Pa\x03\xAAa\x04\x976`\x04aD\xDEV[a\x0F\xBBV[4\x80\x15a\x04\xA7W_\x80\xFD[Pa\x04\xB0a\x11\0V[`@Qe\xFF\xFF\xFF\xFF\xFF\xFF\x90\x91\x16\x81R` \x01a\x03\xD7V[4\x80\x15a\x04\xD2W_\x80\xFD[P`@Q_\x80Q` aJS\x839\x81Q\x91R\x81R` \x01a\x03\xD7V[4\x80\x15a\x04\xF9W_\x80\xFD[Pa\x03\xAAa\x05\x086`\x04aC\xD7V[a\x11\x1EV[4\x80\x15a\x05\x18W_\x80\xFD[Pa\x05!a\x12ZV[`@\x80Qe\xFF\xFF\xFF\xFF\xFF\xFF\x93\x84\x16\x81R\x92\x90\x91\x16` \x83\x01R\x01a\x03\xD7V[4\x80\x15a\x05KW_\x80\xFD[Pa\x03\xAAa\x05Z6`\x04aE&V[a\x12\x88V[4\x80\x15a\x05jW_\x80\xFD[Pa\x03\xAAa\x05y6`\x04aEkV[a\x13\x10V[4\x80\x15a\x05\x89W_\x80\xFD[Pa\x03\xAAa\x05\x986`\x04aCjV[a\x13\x96V[4\x80\x15a\x05\xA8W_\x80\xFD[Pa\x03\xAAa\x05\xB76`\x04aCjV[a\x149V[4\x80\x15a\x05\xC7W_\x80\xFD[Pa\x03\xAAa\x05\xD66`\x04aCjV[a\x14\xEEV[4\x80\x15a\x05\xE6W_\x80\xFD[Pa\x03\xAAa\x05\xF56`\x04aE\xB5V[a\x15\xA3V[4\x80\x15a\x06\x05W_\x80\xFD[Pa\x03\xAAa\x06\x146`\x04aF\x1BV[a\x18\x8AV[4\x80\x15a\x06$W_\x80\xFD[Pa\x03\xAAa\x0636`\x04aC\xD7V[a\x19\xDAV[4\x80\x15a\x06CW_\x80\xFD[Pa\x06Wa\x06R6`\x04aC\xD7V[a\x1A\x86V[`@Q\x90\x81R` \x01a\x03\xD7V[4\x80\x15a\x06pW_\x80\xFD[Pa\x03\xAAa\x06\x7F6`\x04aCjV[a\x1A\xB0V[4\x80\x15a\x06\x8FW_\x80\xFD[Pa\x03\xAAa\x06\x9E6`\x04aE&V[a\x1B_V[a\x03\xAAa\x06\xB16`\x04aFYV[a\x1B\xD6V[4\x80\x15a\x06\xC1W_\x80\xFD[Pa\x03\xAAa\x06\xD06`\x04aD\x8DV[a\x1B\xF5V[4\x80\x15a\x06\xE0W_\x80\xFD[Pa\x06Wa\x1D\xB8V[4\x80\x15a\x06\xF4W_\x80\xFD[Pa\x03\xAAa\x07\x036`\x04aG\x16V[a\x1D\xD3V[4\x80\x15a\x07\x13W_\x80\xFD[Pa\x03\xAAa\x07\"6`\x04aCjV[a\x1E|V[4\x80\x15a\x072W_\x80\xFD[Pa\x03\xAAa\x07A6`\x04aCjV[a\x1F9V[4\x80\x15a\x07QW_\x80\xFD[Pa\x03\xAAa\x07`6`\x04aE&V[a \x0EV[4\x80\x15a\x07pW_\x80\xFD[Pa\x03\xAAa\x07\x7F6`\x04aCjV[a \x81V[4\x80\x15a\x07\x8FW_\x80\xFD[Pa\x03\xAAa\x07\x9E6`\x04aG1V[a!VV[4\x80\x15a\x07\xAEW_\x80\xFD[Pa\x03\xAAa\x07\xBD6`\x04aC\xD7V[a!\xD8V[4\x80\x15a\x07\xCDW_\x80\xFD[Pa\x03\xAAa\x07\xDC6`\x04aGcV[a#\x1AV[4\x80\x15a\x07\xECW_\x80\xFD[Pa\x03\xAAa\x07\xFB6`\x04aCjV[a$\rV[4\x80\x15a\x08\x0BW_\x80\xFD[Pa\x03\xAAa\x08\x1A6`\x04aCjV[a$\xC2V[4\x80\x15a\x08*W_\x80\xFD[Pa\x03\xAAa\x0896`\x04aCjV[a%\x90V[4\x80\x15a\x08IW_\x80\xFD[Pa\x03\xAAa\x08X6`\x04aCjV[a&EV[4\x80\x15a\x08hW_\x80\xFD[Pa\x05!a&\xDAV[4\x80\x15a\x08|W_\x80\xFD[Pa\x03\xAAa\x08\x8B6`\x04aCjV[a''V[4\x80\x15a\x08\x9BW_\x80\xFD[Pa\x03\xAAa\x08\xAA6`\x04aG\x16V[a'\xEEV[4\x80\x15a\x08\xBAW_\x80\xFD[Pa\x03\xAAa\x08\xC96`\x04aG\x82V[a(\x97V[4\x80\x15a\x08\xD9W_\x80\xFD[Pa\x03\xAAa\x08\xE86`\x04aG\x16V[a*\xADV[4\x80\x15a\x08\xF8W_\x80\xFD[Pa\x042`@Q\x80`@\x01`@R\x80`\x05\x81R` \x01d\x03R\xE3\x02\xE3`\xDC\x1B\x81RP\x81V[4\x80\x15a\t(W_\x80\xFD[Pa\x04\xB0a+VV[4\x80\x15a\t<W_\x80\xFD[Pa\x03\xAAa\tK6`\x04aG1V[a+oV[4\x80\x15a\t[W_\x80\xFD[Pa\x03\xAAa\tj6`\x04aG\xB9V[a+\xC5V[4\x80\x15a\tzW_\x80\xFD[Pa\x03\xAAa\t\x896`\x04aCjV[a-\xDEV[4\x80\x15a\t\x99W_\x80\xFD[Pa\x03\xAAa\t\xA86`\x04aCjV[a.\x8DV[4\x80\x15a\t\xB8W_\x80\xFD[Pa\x04\xB0a/<V[4\x80\x15a\t\xCCW_\x80\xFD[Pa\x03\xAAa\t\xDB6`\x04aCjV[a/ZV[4\x80\x15a\t\xEBW_\x80\xFD[Pa\x03\xAAa0\tV[4\x80\x15a\t\xFFW_\x80\xFD[Pa\x03\xAAa\n\x0E6`\x04aCjV[a0PV[4\x80\x15a\n\x1EW_\x80\xFD[Pa\x03\xCBa0\xFFV[4\x80\x15a\n2W_\x80\xFD[Pa\x03\xAAa\nA6`\x04aG1V[a1\x14V[4\x80\x15a\nQW_\x80\xFD[Pa\x03\xAAa\n`6`\x04aCjV[a1\x89V[4\x80\x15a\npW_\x80\xFD[Pa\x03\xCBa\n\x7F6`\x04aC\xD7V[a28V[4\x80\x15a\n\x8FW_\x80\xFD[Pa\x04\xB0a\n\x9E6`\x04aH%V[a2fV[4\x80\x15a\n\xAEW_\x80\xFD[Pa\x03\xAAa2\xD0V[4\x80\x15a\n\xC2W_\x80\xFD[Pa\x03\xAAa\n\xD16`\x04aCjV[a3\x99V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x0B\x03W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x0BeWa\x0BR~\x01\xC9\x08\0\x01\xC9\x08\0\x01W\xC0\0\x01W\xC0\0\x01H \0\x01H \0\0\0\0\0\0\0\0n\x02\xD6\x90\0\x02\xD6\x90\0\x02I\xF0\0\x02I\xF0\x89a4]V[\x90Pa\x0B`\x81\x83\x87\x86a5\x14V[a\x0B\xADV[a\x0B\x9E~\x02\xC6\xF0\0\x02\xC6\xF0\0\x02:P\0\x02:P\0\x01\xD0\xD8\0\x01\xD0\xD8\0\0\0\0\0\0\0\0n\x04h\xE8\0\x04h\xE8\0\x03Wx\0\x03Wx\x89a4]V[\x90Pa\x0B\xAD\x81\x83\x87\x87\x87a5AV[PPPPPPPV[_a\x0B\xBFa5{V[`\x01`\x01`\xA0\x1B\x03\x90\x92\x16_\x90\x81R`\x02\x92\x90\x92\x01` RP`@\x90 T`\xFF\x16\x90V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x0C\x10W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x0CVWa\x0BRt}\0\0\0}\0\0\0}\0\0\0}\0\0\0}\0\0\0}`H\x1B_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[a\x0B\x9E~\x02|\xB8\0\x02|\xB8\0\x01\xE0x\0\x01\xE0x\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0~\x05\xA1h\0\x05\xA1h\0\0\0\0\0\0\0\0\0\x04&\x80\0\x04&\x80\0\x030h\0\x030h\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x0C\xCCW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\xFD`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x01a\r\x13Wa\x0BR~\x10z\xC0\0\x10z\xC0\0\n\xBA\x18\0\n\xBA\x18\0\x07\x8D\x98\0\x07\x8D\x98\0\0\0\0\0\0\0\0f\x1DO\xE8\0\x1DO\xE8\x89a4]V[`\x01`\x01`\xF8\x1B\x03\x19\x86\x81\x16\x01a\rdWa\rU~\x14\x01\x18\0\x14\x01\x18\0\x0B\xB00\0\x0B\xB00\0\x07\xFE\xE0\0\x07\xFE\xE0\0\0\0\0\0\0\0\0f,k\x18\0,k\x18\x89a4]V[\x90Pa\x0B`\x81\x83\x87\x87\x87a5AV[`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[```@Q\x80`@\x01`@R\x80`\x08\x81R` \x01g\x12\x10\xD5S\x1A[Z]`\xC2\x1B\x81RPa\r\xA9_a5\x9FV[a\r\xB3`\x06a5\x9FV[a\r\xBC_a5\x9FV[`@Q` \x01a\r\xCF\x94\x93\x92\x91\x90aHHV[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x90P\x90V[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x0E,W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x0EP\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x0E\x88W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01[`@Q\x80\x91\x03\x90\xFD[_\x81\x90\x03a\x0E\xA9W`@Qc\xC2\xE54}`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x0E\xB2a5{V[\x90P_[\x82\x81\x10\x15a\x0F~W_\x84\x84\x83\x81\x81\x10a\x0E\xD1Wa\x0E\xD1aH\xE0V[\x90P` \x02\x01` \x81\x01\x90a\x0E\xE6\x91\x90aC\xD7V[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x90\x81R`\x02\x85\x01` R`@\x90 T\x90\x91P`\xFF\x16a\x0F.W`@QcozRu`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x81\x81R`\x02\x85\x01` R`@\x80\x82 \x80T`\xFF\x19\x16\x90UQ\x7FE\x86\x80\xF7\x9A\xA9\xDE\n\xE0cD(z;\xD8\xECay\xFA\xA0RR\xE9\xAF\x81\xAEsMkM\xC6\xBA\x91\x90\xA2P`\x01\x01a\x0E\xB6V[PPPPV[_Ba\x0F\x8Ea5{V[`\x03\x01_\x84`\x01`\x01`\xA0\x1B\x03\x16`\x01`\x01`\xA0\x1B\x03\x16\x81R` \x01\x90\x81R` \x01_ T\x11\x90P\x91\x90PV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0T`\x01`\x01`@\x1B\x03\x16`\x01`\x01`@\x1B\x03\x16`\x01\x14a\x10\x0FW`@QcoOs\x1F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x07\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a\x10XWP\x80T`\x01`\x01`@\x1B\x03\x80\x84\x16\x91\x16\x10\x15[\x15a\x10vW`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01`\x01`@\x1B\x03\x83\x16\x17`\x01`@\x1B\x17\x81Ua\x10\xA0\x85a6.V[a\x10\xA9\x83a6\xB8V[a\x10\xB2\x84a7FV[\x80T`\xFF`@\x1B\x19\x16\x81U`@Q`\x01`\x01`@\x1B\x03\x83\x16\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1PPPPPV[_a\x11\ta5{V[T`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91\x90PV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x11gW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x11\x8B\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x11\xBEW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[_a\x11\xC7a5{V[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R`\x01\x82\x01` R`@\x90 T\x90\x91P`\xFF\x16a\x12\x0FW`@Qc\x1Cy\x86\x83`\xE3\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x81\x81R`\x01\x83\x01` R`@\x80\x82 \x80T`\xFF\x19\x16\x90UQ\x7F\x92\xFC\x97\xAF\x15\0&F\xCE\xA6<v3\xBB7[\x82\xDB|\xDE{H\x0Cu\xFEcA\xDA\xCC),\x81\x91\x90\xA2PPV[_\x80_a\x12ea5{V[`\x04\x01Te\xFF\xFF\xFF\xFF\xFF\xFFa\x01\0\x82\x04\x81\x16\x95`\x01`8\x1B\x90\x92\x04\x16\x93P\x91PPV[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x12\xB5W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x12\xFB| \0\0\0 \0\0\0\x10\0\0\0\x10\0\0\0\t\0\0\0\t\0\0\0\x02\0\0\0\x02|\x82\0\0\0\x82\0\0\0\0\0\0\0\0\0\0\0\x82\0\0\0\x82\0\0\0?\0\0\0?\x87a4]V[\x90Pa\x13\t\x81\x83\x86\x86a5\x14V[PPPPPV[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x13=W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x13\x86}\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8~\x01\xA5\xE0\0\x01\xA5\xE0\0\x01D8\0\x01D8\0\0\xDE\xA8\0\0\xDE\xA8\0\0\xD6\xD8\0\0\xD6\xD8\x89a4]V[\x90Pa\x0B\xAD\x81\x83\x88\x88\x88\x88a7\xF8V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x13\xC3W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a\x13\xF2W`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x14+~\x0C\x15\xC0\0\x0C\x15\xC0\0\x08\xD9\xA0\0\x08\xD9\xA0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\0\0\0\0\0\0\0n\x1D\xA5\xD8\0\x1D\xA5\xD8\0\x11\x97\xE8\0\x11\x97\xE8\x89a4]V[\x90Pa\x0B\xAD\x81\x83\x87\x86a5\x14V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x14fW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x14\xB5Wa\x0BR~\x01H \0\x01H \0\0\xE2\x90\0\0\xE2\x90\0\0\xE2\x90\0\0\xE2\x90\0\0\0\0\0\0\0\0n\x02I\xF0\0\x02I\xF0\0\x01\xD0\xD8\0\x01\xD0\xD8\x89a4]V[a\x0B\x9E~\x01\xC9\x08\0\x01\xC9\x08\0\x01D8\0\x01D8\0\0\xE2\x90\0\0\xE2\x90\0\0\0\0\0\0\0\0n\x03S\x90\0\x03S\x90\0\x02F\x08\0\x02F\x08\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x15\x1BW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x15jWa\x0BR~\x01D8\0\x01D8\0\0\xE2\x90\0\0\xE2\x90\0\0\xCB \0\0\xCB \0\0\0\0\0\0\0\0n\x02F\x08\0\x02F\x08\0\x01\xCC\xF0\0\x01\xCC\xF0\x89a4]V[a\x0B\x9E~\x01\xC9\x08\0\x01\xC9\x08\0\x01H \0\x01H \0\0\xE6x\0\0\xE6x\0\0\0\0\0\0\0\0n\x03G\xD8\0\x03G\xD8\0\x02:P\0\x02:P\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x15\xD0W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x88`S\x81\x11\x15a\x15\xE6Wa\x15\xE6aH\xF4V[\x03a\x16;W`\n\x82\x11a\x16\x01WPf\x01\x16\x84\0\x01\x16\x84a\x18rV[`\x1E\x82\x11a\x16\x17WPf\x02B \0\x02B a\x18rV[`<\x82\x11a\x16-WPf\x03\xC4\xD8\0\x03\xC4\xD8a\x18rV[Pf\x05\xB4\xF0\0\x05\xB4\xF0a\x18rV[`\x03\x88`S\x81\x11\x15a\x16OWa\x16OaH\xF4V[\x03a\x16\xA4W`\n\x82\x11a\x16jWPf\x01\x92X\0\x01\x92Xa\x18rV[`\x1E\x82\x11a\x16\x80WPf\x03S\x90\0\x03S\x90a\x18rV[`<\x82\x11a\x16\x96WPf\x05\xC4\x90\0\x05\xC4\x90a\x18rV[Pf\t;H\0\t;Ha\x18rV[`\x04\x88`S\x81\x11\x15a\x16\xB8Wa\x16\xB8aH\xF4V[\x03a\x17\rW`\n\x82\x11a\x16\xD3WPf\x02\x17(\0\x02\x17(a\x18rV[`\x1E\x82\x11a\x16\xE9WPf\x04\x93\xE0\0\x04\x93\xE0a\x18rV[`<\x82\x11a\x16\xFFWPf\x08\x1A8\0\x08\x1A8a\x18rV[Pf\x0C\x9Ex\0\x0C\x9Exa\x18rV[`\x05\x88`S\x81\x11\x15a\x17!Wa\x17!aH\xF4V[\x03a\x17`W`\n\x82\x11a\x17<WPf\x03S\x90\0\x03S\x90a\x18rV[`\x1E\x82\x11a\x17RWPf\x07\x81\xE0\0\x07\x81\xE0a\x18rV[Pf\ri\x98\0\ri\x98a\x18rV[`\x06\x88`S\x81\x11\x15a\x17tWa\x17taH\xF4V[\x03a\x17\xB3W`\n\x82\x11a\x17\x8FWPf\x03\xE8\0\0\x03\xE8\0a\x18rV[`\x1E\x82\x11a\x17\xA5WPf\x08)\xD8\0\x08)\xD8a\x18rV[Pf\x0E\r\xA8\0\x0E\r\xA8a\x18rV[`\x07\x88`S\x81\x11\x15a\x17\xC7Wa\x17\xC7aH\xF4V[\x03a\x18\x06W`\n\x82\x11a\x17\xE2WPf\x04]0\0\x04]0a\x18rV[`\x1E\x82\x11a\x17\xF8WPf\x08\xE9@\0\x08\xE9@a\x18rV[Pf\r\x81\x08\0\r\x81\x08a\x18rV[`\x08\x88`S\x81\x11\x15a\x18\x1AWa\x18\x1AaH\xF4V[\x03a\x18YW`\n\x82\x11a\x185WPf\x04\xE5\xE8\0\x04\xE5\xE8a\x18rV[`\x1E\x82\x11a\x18KWPf\x08\xF1\x10\0\x08\xF1\x10a\x18rV[Pf\x0Ec\x98\0\x0Ec\x98a\x18rV[`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x18\x80\x81\x84\x89\x89\x89\x89a8BV[PPPPPPPPV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x18\xD3W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x18\xF7\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x19*W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[`\x01`\x01`\xA0\x1B\x03\x82\x16a\x19QW`@Qc\xF6\xB2\x91\x1F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[B\x81\x11a\x19tW`@Qc:\xD4\xA7\xF1`\xE1\x1B\x81R`\x04\x81\x01\x82\x90R`$\x01a\x0E\x7FV[\x80a\x19}a5{V[`\x01`\x01`\xA0\x1B\x03\x84\x16_\x81\x81R`\x03\x92\x90\x92\x01` R`@\x91\x82\x90 \x92\x90\x92UQ\x7Fp#\x08\xF3\x07\x10M,\xB9E\x99\xCA\x9Ds?\x05\x9C\"F\n;\xBD\xD4\x8C\xCC\xCE\xC2I\xF7\xB7^\xB2\x90a\x19\xCE\x90\x84\x81R` \x01\x90V[`@Q\x80\x91\x03\x90\xA2PPV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1A#W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1AG\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1AzW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a\x1A\x83\x81a8\xA9V[PV[_a\x1A\x8Fa5{V[`\x01`\x01`\xA0\x1B\x03\x90\x92\x16_\x90\x81R`\x03\x92\x90\x92\x01` RP`@\x90 T\x90V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x1A\xDDW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1B&Wa\x0BRu\nA\0\0\nA\0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\x06Y\0\0\x06Y`E\x1Bn\x02I\xF0\0\x02I\xF0\0\x01\xC9\x08\0\x01\xC9\x08\x89a4]V[a\x0B\x9E~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01H \0\x01H \0\0\xE6x\0\0\xE6x\0\0\0\0\0\0\0\0n\x03S\x90\0\x03S\x90\0\x02Q\xC0\0\x02Q\xC0\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x1B\x8CW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x12\xFB~\x01s\x18\0\x01s\x18\0\x01kH\0\x01kH\0\x014\x98\0\x014\x98\0\0\0\0\0\0\0\0~\x04\x1A\xC8\0\x04\x1A\xC8\0\0\0\0\0\0\0\0\0\x02\x90@\0\x02\x90@\0\x01\xFF\xB8\0\x01\xFF\xB8\x87a4]V[a\x1B\xDEa9\x1EV[a\x1B\xE7\x82a9\xC2V[a\x1B\xF1\x82\x82a:bV[PPV[_a\x1B\xFEa5{V[\x90P_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1CIW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1Cm\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14\x15\x80\x15a\x1C\x9EWP3_\x90\x81R`\x03\x82\x01` R`@\x90 TB\x10\x15[\x15a\x1C\xBEW`@Qct4f\xA7`\xE1\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[_\x82\x90\x03a\x1C\xDFW`@Qc\xC2\xE54}`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_[\x82\x81\x10\x15a\x0F~W_\x84\x84\x83\x81\x81\x10a\x1C\xFCWa\x1C\xFCaH\xE0V[\x90P` \x02\x01` \x81\x01\x90a\x1D\x11\x91\x90aC\xD7V[\x90P`\x01`\x01`\xA0\x1B\x03\x81\x16a\x1D:W`@Qc\xF6\xB2\x91\x1F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x90\x81R`\x02\x84\x01` R`@\x90 T`\xFF\x16\x15a\x1DbWPa\x1D\xB0V[`\x01`\x01`\xA0\x1B\x03\x81\x16_\x81\x81R`\x02\x85\x01` R`@\x80\x82 \x80T`\xFF\x19\x16`\x01\x17\x90UQ3\x92\x91\x7F:\x1Dyu\xC5\xFA\xF5\xB5\x1F\xD07\xA8\xD3\xDE\x97\x7F3\xEEU\xB9\xE8\xFDB\xC8/\xC1\xA9\xA2`\"jA\x91\xA3P[`\x01\x01a\x1C\xE1V[_a\x1D\xC1a;#V[P_\x80Q` aJ3\x839\x81Q\x91R\x90V[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1E\x1CW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1E@\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1EsW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a\x1A\x83\x81a7FV[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x1E\xA9W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1E\xF0Wa\x0BRu\x0F\xA0\0\0\x0F\xA0\0\0\x0F#\0\0\x0F#\0\0\x0F#\0\0\x0F#`C\x1B_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[a\x0B\x9E~\x02|\xB8\0\x02|\xB8\0\x01\xE8H\0\x01\xE8H\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0~\x05\xC4\x90\0\x05\xC4\x90\0\0\0\0\0\0\0\0\0\x04=\xF0\0\x04=\xF0\0\x030h\0\x030h\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a\x1FfW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1F\xC5Wa\x0BR~\x01@P\0\x01@P\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0a\xA8\0\0a\xA8~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01D8\0\x01D8\x89a4]V[a\x0B\x9E~\x01O\xF0\0\x01O\xF0\0\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0e\x90\0\0e\x90~\x02Q\xC0\0\x02Q\xC0\0\x02\x17(\0\x02\x17(\0\x01\xDC\x90\0\x01\xDC\x90\0\x01\xD4\xC0\0\x01\xD4\xC0\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a ;W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x12\xFB| \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 | \0\0\0 \0\0\0\0\0\0\0\0\0\0\0 \0\0\0 \0\0\0 \0\0\0 \x87a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a \xAEW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a!\rWa\x0BR~\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0Y\xD8\0\0Y\xD8~\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01H \0\x01H \x89a4]V[a\x0B\x9E~\x01L\x08\0\x01L\x08\0\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0Y\xD8\0\0Y\xD8~\x02I\xF0\0\x02I\xF0\0\x02\x13@\0\x02\x13@\0\x01\xDC\x90\0\x01\xDC\x90\0\x01\xCC\xF0\0\x01\xCC\xF0\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a!\x83W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a!\xCB}]\xC0\0\0]\xC0\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0\0\0\0\0\0\0}u0\0\0u0\0\0\0\0\0\0\0\0\0\0a\xA8\0\0a\xA8\0\0]\xC0\0\0]\xC0\x86a4]V[\x90Pa\x0F~\x81\x83\x85a;lV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\"!W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\"E\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\"xW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[_a\"\x81a5{V[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R`\x01\x82\x01` R`@\x90 T\x90\x91P`\xFF\x16\x15a\"\xCAW`@Qc\xF9\x9CO\xD1`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x81\x81R`\x01\x83\x81\x01` R`@\x80\x83 \x80T`\xFF\x19\x16\x90\x92\x17\x90\x91UQ\x7F\xCC\xA1\xD4c\x84\xCD\xBB\xEE\xF2\xF9\xDA\xDD\xB7m\xB18\x10\x1C\x99\x05\xF8\x18\xD8g\xB60\x19\\\x12\x8D<f\x91\x90\xA2PPV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a#cW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a#\x87\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a#\xBAW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[\x80a#\xC3a5{V[`\x04\x01\x80T`\xFF\x19\x16\x91\x15\x15\x91\x90\x91\x17\x90U`@Q\x81\x15\x15\x81R\x7F\xADU;`\xCA7\xB0\xEF\xB5DN&\xB0\xE0Z!\x04H\x96\xBC2z\xC8\x10\xED\xCA\xDB\xDD\x02\x18\xC2\xCD\x90` \x01`@Q\x80\x91\x03\x90\xA1PV[3_\x80Q` aJS\x839\x81Q\x91R\x14a$:W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a$\x89Wa\x0BR~\x04\x0B(\0\x04\x0B(\0\x02\xF1\xE8\0\x02\xF1\xE8\0\x01\xDC\x90\0\x01\xDC\x90\0\0\0\0\0\0\0\0n\n\x9E\xC0\0\n\x9E\xC0\0\x05\x91\xC8\0\x05\x91\xC8\x89a4]V[a\x0B\x9E~\x05\x01@\0\x05\x01@\0\x03c0\0\x03c0\0\x02I\xF0\0\x02I\xF0\0\0\0\0\0\0\0\0n\x19\xB9\xF0\0\x19\xB9\xF0\0\t\x18 \0\t\x18 \x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a$\xEFW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a%GWa\x0BRu\x0F\xA0\0\0\x0F\xA0\0\0\x0F#\0\0\x0F#\0\0\x0F#\0\0\x0F#`C\x1B}\x9C@\0\0\x9C@\0\0\0\0\0\0\0\0\0\0\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0\x89a4]V[a\x0B\x9E~\x02q\0\0\x02q\0\0\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\0\0\0\0\0\0\0~\x05\xB8\xD8\0\x05\xB8\xD8\0\0\0\0\0\0\0\0\0\x04Qx\0\x04Qx\0\x030h\0\x030h\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a%\xBDW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a&\x0CWa\x0BR~\x01\xC9\x08\0\x01\xC9\x08\0\x01[\xA8\0\x01[\xA8\0\x01[\xA8\0\x01[\xA8\0\0\0\0\0\0\0\0n\x02\xBF \0\x02\xBF \0\x02F\x08\0\x02F\x08\x89a4]V[a\x0B\x9E~\x02\xBF \0\x02\xBF \0\x026h\0\x026h\0\x01\xD8\xA8\0\x01\xD8\xA8\0\0\0\0\0\0\0\0n\x04l\xD0\0\x04l\xD0\0\x03S\x90\0\x03S\x90\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a&rW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a&\xA1W`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x14+~\x06\xAE\xF0\0\x06\xAE\xF0\0\x04\x9B\xB0\0\x04\x9B\xB0\0\x034P\0\x034P\0\0\0\0\0\0\0\0n\x12\xB1(\0\x12\xB1(\0\n\xE8\xF8\0\n\xE8\xF8\x89a4]V[_\x80_a&\xE5a5{V[\x80T\x90\x91PC\x90e\xFF\xFF\xFF\xFF\xFF\xFF\x80\x83\x16`\x01``\x1B\x90\x92\x04\x16\x14a'\rW\x93_\x93P\x91PPV[\x90T\x90\x93`\x01`0\x1B\x90\x91\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x92P\x90PV[3_\x80Q` aJS\x839\x81Q\x91R\x14a'TW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a'\xACWa\x0BR}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0m\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4]V[a\x0B\x9E}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0m\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4]V[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a(7W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a([\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a(\x8EW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a\x1A\x83\x81a6.V[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a(\xE0W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a)\x04\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a)7W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x81\x16\x15\x90\x82\x16\x15\x14a)dW`@Qc\x0B\xF8'\xAB`\xE3\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a)ma5{V[\x90Pe\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x15a*%W\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x01`\x90\x1B\x90\x91\x04\x81\x16\x90\x84\x16\x10\x15a)\xB2W`@QcO5}%`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`@Qcw\x8E/\xEF`\xE0\x1B\x81R_`\x04\x82\x01\x81\x90R`$\x82\x01R_\x80Q` aJ\x13\x839\x81Q\x91R\x90cw\x8E/\xEF\x90`D\x01`@\x80Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a)\xFEW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a*\"\x91\x90aI\x08V[PP[`\x04\x81\x01\x80Tl\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\x19\x16a\x01\0e\xFF\xFF\xFF\xFF\xFF\xFF\x86\x81\x16\x91\x82\x02l\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\x19\x16\x92\x90\x92\x17`\x01`8\x1B\x92\x86\x16\x92\x83\x02\x17\x90\x92U`@\x80Q\x92\x83R` \x83\x01\x91\x90\x91R\x7F\xDD@a\xCD\xC8\xBA'F\x0C\xADG\xA9\rU\x96\x1F\xBB\xFC\xF7\x1E\xEA\xF7\x88Uj\x9A\xD3kh)*\xB2\x91\x01`@Q\x80\x91\x03\x90\xA1PPPV[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a*\xF6W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a+\x1A\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a+MW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a\x1A\x83\x81a6\xB8V[_\x80a+`a5{V[Te\xFF\xFF\xFF\xFF\xFF\xFF\x16\x92\x91PPV[3_\x80Q` aJS\x839\x81Q\x91R\x14a+\x9CW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a!\xCB| \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \x80\x86a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a+\xF2W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x87`S\x81\x11\x15a,\x08Wa,\x08aH\xF4V[\x03a,]W`\n\x82\x11a,#WPf\x01c\x14\0\x01c\x14a-\xD1V[`\x1E\x82\x11a,9WPf\x01\xF0\x18\0\x01\xF0\x18a-\xD1V[`<\x82\x11a,OWPf\x02B \0\x02B a-\xD1V[Pf\x02m\x18\0\x02m\x18a-\xD1V[`\x03\x87`S\x81\x11\x15a,qWa,qaH\xF4V[\x03a,\xC6W`\n\x82\x11a,\x8CWPf\x01s\x18\0\x01s\x18a-\xD1V[`\x1E\x82\x11a,\xA2WPf\x02\x13@\0\x02\x13@a-\xD1V[`<\x82\x11a,\xB8WPf\x02x\xD0\0\x02x\xD0a-\xD1V[Pf\x02\xCE\xC0\0\x02\xCE\xC0a-\xD1V[`\x04\x87`S\x81\x11\x15a,\xDAWa,\xDAaH\xF4V[\x03a-/W`\n\x82\x11a,\xF5WPf\x01\xC5 \0\x01\xC5 a-\xD1V[`\x1E\x82\x11a-\x0BWPf\x02\x80\xA0\0\x02\x80\xA0a-\xD1V[`<\x82\x11a-!WPf\x03 \xC8\0\x03 \xC8a-\xD1V[Pf\x04I\xA8\0\x04I\xA8a-\xD1V[`\x05\x87`S\x81\x11\x15a-CWa-CaH\xF4V[\x03a-\x82W`\n\x82\x11a-^WPf\x02\x1E\xF8\0\x02\x1E\xF8a-\xD1V[`\x1E\x82\x11a-tWPf\x03K\xC0\0\x03K\xC0a-\xD1V[Pf\x04\xABP\0\x04\xABPa-\xD1V[`\x06\x87`S\x81\x11\x15a-\x96Wa-\x96aH\xF4V[\x03a\x18YW`\n\x82\x11a-\xB1WPf\x03Wx\0\x03Wxa-\xD1V[`\x1E\x82\x11a-\xC7WPf\x05j\xB8\0\x05j\xB8a-\xD1V[Pf\x08l@\0\x08l@[a\x0B\xAD\x81\x84\x88\x88\x88a;\x90V[3_\x80Q` aJS\x839\x81Q\x91R\x14a.\x0BW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a.WWa\x0BR}}\0\0\0}\0\0\0u0\0\0u0\0\0u0\0\0u0\0\0U\xF0\0\0U\xF0_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[a\x0B\x9E}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0u0\0\0u0\0\0]\xC0\0\0]\xC0_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a.\xBAW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a/\x03Wa\x0BRu\x0B\x98\xC0\0\x0B\x98\xC0\0\x0BZ@\0\x0BZ@\0\nA\0\0\nA`E\x1Bn\x02\x9F\xE0\0\x02\x9F\xE0\0\x02\x07\x88\0\x02\x07\x88\x89a4]V[a\x0B\x9E~\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\x01W\xC0\0\x01W\xC0\0\0\0\0\0\0\0\0n\x03\xF3\xB8\0\x03\xF3\xB8\0\x02x\xD0\0\x02x\xD0\x89a4]V[_a/Ea5{V[T`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91\x90PV[3_\x80Q` aJS\x839\x81Q\x91R\x14a/\x87W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a/\xD0Wa\x0BRu\nA\0\0\nA\0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\x06Y\0\0\x06Y`E\x1Bn\x02F\x08\0\x02F\x08\0\x01\xC5 \0\x01\xC5 \x89a4]V[a\x0B\x9E~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01H \0\x01H \0\0\xF6\x18\0\0\xF6\x18\0\0\0\0\0\0\0\0n\x034P\0\x034P\0\x02Q\xC0\0\x02Q\xC0\x89a4]V[a0\x11a5{V[3_\x90\x81R`\x03\x91\x90\x91\x01` R`@\x81 T\x90\x03a0EW`@Qc\x80<d}`\xE0\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[a0N3a8\xA9V[V[3_\x80Q` aJS\x839\x81Q\x91R\x14a0}W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a0\xC9Wa\x0BR}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[a\x0B\x9E}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0a\xA8\0\0a\xA8_\x80Q` aI\xF3\x839\x81Q\x91R\x89a4]V[_a1\x08a5{V[`\x04\x01T`\xFF\x16\x91\x90PV[3_\x80Q` aJS\x839\x81Q\x91R\x14a1AW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a!\xCB}]\xC0\0\0]\xC0\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0J8\0\0J8}u0\0\0u0\0\0\0\0\0\0\0\0\0\0a\xA8\0\0a\xA8\0\0]\xC0\0\0]\xC0\x86a4]V[3_\x80Q` aJS\x839\x81Q\x91R\x14a1\xB6W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a1\xFFWa\x0BRu\x0B\x98\xC0\0\x0B\x98\xC0\0\x0BZ@\0\x0BZ@\0\nA\0\0\nA`E\x1Bn\x02\x9F\xE0\0\x02\x9F\xE0\0\x02\x07\x88\0\x02\x07\x88\x89a4]V[a\x0B\x9E~\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0n\x03\xF7\xA0\0\x03\xF7\xA0\0\x02x\xD0\0\x02x\xD0\x89a4]V[_\x80a2Ba5{V[`\x01`\x01`\xA0\x1B\x03\x90\x93\x16_\x90\x81R`\x01\x90\x93\x01` RPP`@\x90 T`\xFF\x16\x90V[_3_\x80Q` aJ\x13\x839\x81Q\x91R\x14a2\x93W`@Qb\x91k\x8B`\xE5\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a2\x9Ba5{V[`\x04\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x03a2\xB9WP_a2\xCAV[`\x80a2\xC5\x84\x84a;\xE9V[\x90\x1C\x90P[\x92\x91PPV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x07\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a3\x19WP\x80T`\x01`\x01`@\x1B\x03\x80\x84\x16\x91\x16\x10\x15[\x15a37W`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01`\x01`@\x1B\x03\x83\x16\x90\x81\x17`\x01`@\x1B\x17`\xFF`@\x1B\x19\x16\x82U`@Q\x90\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01[`@Q\x80\x91\x03\x90\xA1PPV[3_\x80Q` aJS\x839\x81Q\x91R\x14a3\xC6W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a4\x18Wa\x0BRt}\0\0\0}\0\0\0}\0\0\0}\0\0\0}\0\0\0}`H\x1Bm\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4]V[a\x0B\x9E~\x02x\xD0\0\x02x\xD0\0\x01\xE8H\0\x01\xE8H\0\x01g`\0\x01g`\0\0\0\0\0\0\0\0~\x05\xC4\x90\0\x05\xC4\x90\0\0\0\0\0\0\0\0\0\x04&\x80\0\x04&\x80\0\x03,\x80\0\x03,\x80\x89[_\x80\x82`S\x81\x11\x15a4qWa4qaH\xF4V[a4\x7F\x90`\xFF\x16`\x04aIIV[d\x08vT2\x01\x90\x1C`\x0F\x16\x90P\x80_\x03a4\xACW`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a4\xB7`\x01\x82aI`V[\x90P`\x01`\x01`@\x1B\x03a4\xCC`\x04\x83aI\x87V[a4\xD7\x90`@aIIV[`\x04\x83\x10a4\xE5W\x85a4\xE7V[\x86[\x90\x1C\x16\x91P\x81_\x03a5\x0CW`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[P\x93\x92PPPV[a5'a5!\x85` \x1C\x90V[\x84a<\xECV[a\x0F~\x81c\xFF\xFF\xFF\xFF\x86\x16a5<\x85\x87a;\xE9V[a=\xA2V[a5Ta5N\x86` \x1C\x90V[\x85a<\xECV[a\x13\t\x81c\xFF\xFF\xFF\xFF\x87\x16a5<a5l\x87\x89a;\xE9V[a5v\x87\x8Aa;\xE9V[a>qV[\x7F\xC1:\xF6\xC5\x14\xBF\xF8\x99\x7F0\xC9\0\x03\xBA\xA8+\xD0*\xAD\x97\x81y\xD1\xCEX\xD8\\C\x19\xADe\0\x90V[``_a5\xAB\x83a>\xD0V[`\x01\x01\x90P_\x81`\x01`\x01`@\x1B\x03\x81\x11\x15a5\xC9Wa5\xC9aFEV[`@Q\x90\x80\x82R\x80`\x1F\x01`\x1F\x19\x16` \x01\x82\x01`@R\x80\x15a5\xF3W` \x82\x01\x81\x806\x837\x01\x90P[P\x90P\x81\x81\x01` \x01[_\x19\x01o\x18\x18\x99\x19\x9A\x1A\x9B\x1B\x9C\x1C\xB0\xB11\xB22\xB3`\x81\x1B`\n\x86\x06\x1A\x81S`\n\x85\x04\x94P\x84a5\xFDWP\x93\x92PPPV[_a67a5{V[\x80T\x90\x91Pe\xFF\xFF\xFF\xFF\xFF\xFF`\x01`\xC0\x1B\x90\x91\x04\x81\x16\x90\x83\x16\x10\x15a6oW`@Qc\x04\xAC\xCA/`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16e\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x90\x81\x17\x82U`@Q\x90\x81R\x7F\xC1\xF1\xFC\xAA\x89\x8A\xAE\"c\xDD\xEDq.\x17\x98\x08?\xCA\x92r\xFF\x80>\xE4\x15\x0C\xE4\x8F\x86\x19\x89\x1A\x90` \x01a3\x8DV[_a6\xC1a5{V[\x80T\x90\x91Pe\xFF\xFF\xFF\xFF\xFF\xFF\x80\x84\x16\x91\x16\x10\x15a6\xF1W`@Qc\x04\xAC\xCA/`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\xC0\x1B\x19\x16`\x01`\xC0\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x90\x81\x02\x91\x90\x91\x17\x82U`@Q\x90\x81R\x7Fd\xCB\x9Ez\xE6I|Y\x08\x0C\xDB\xC0HU.\x12=R\xAAB@\xE17u\x8A\x175\x82xia\xCA\x90` \x01a3\x8DV[_a7Oa5{V[`\x04\x81\x01T\x90\x91Pa\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15\x80\x15\x90a7\x85WP`\x04\x81\x01Te\xFF\xFF\xFF\xFF\xFF\xFF\x80\x84\x16a\x01\0\x90\x92\x04\x16\x10[\x15a7\xA3W`@QcO5}%`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x90\x1B\x19\x16`\x01`\x90\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16\x90\x81\x02\x91\x90\x91\x17\x82U`@Q\x90\x81R\x7FU\x11\xB1\x85\x1F\xC4\n&)\xC8U\xBA\xB7\xAD\xCE2v\xC4p\xD8\x19\x0E\xB0\x141\xE4\x18\xDC*\xF1>\x8E\x90` \x01a3\x8DV[a8\x0Ba8\x05\x87` \x1C\x90V[\x86a<\xECV[a8:\x81c\xFF\xFF\xFF\xFF\x88\x16a5<a8#\x88\x8Aa;\xE9V[a5va80\x89\x8Ca;\xE9V[a5v\x89\x8Da;\xE9V[PPPPPPV[a8Oa8\x05\x87` \x1C\x90V[_a8Z\x85\x87a;\xE9V[\x90P_[\x83\x81\x10\x15a8\x96Wa8\x8C\x82a5v\x87\x87\x85\x81\x81\x10a8\x7FWa8\x7FaH\xE0V[\x90P` \x02\x015\x8Aa;\xE9V[\x91P`\x01\x01a8^V[Pa\x0B\xAD\x82c\xFF\xFF\xFF\xFF\x89\x16[\x83a=\xA2V[_a8\xB2a5{V[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R`\x03\x82\x01` R`@\x81 T\x91\x92P\x03a8\xD8WPPV[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x81\x81R`\x03\x83\x01` R`@\x80\x82 \x82\x90UQ\x7F\xB3\xB1h\xC7_\xE5\xD5|\xE3\xAD\t\x8A\xB4\xF8\x9E\xAA\xBB)\x0BsT\xC6}\x13\xC0H\xF9\x852\x8B\xB0\x17\x91\x90\xA2PPV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14\x80a9\xA4WP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x01`\x01`\xA0\x1B\x03\x16a9\x98_\x80Q` aJ3\x839\x81Q\x91RT`\x01`\x01`\xA0\x1B\x03\x16\x90V[`\x01`\x01`\xA0\x1B\x03\x16\x14\x15[\x15a0NW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80Q` aJ\x13\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a:\x0BW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a:/\x91\x90aH\xC5V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1A\x83W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0E\x7FV[\x81`\x01`\x01`\xA0\x1B\x03\x16cR\xD1\x90-`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x92PPP\x80\x15a:\xBCWP`@\x80Q`\x1F=\x90\x81\x01`\x1F\x19\x16\x82\x01\x90\x92Ra:\xB9\x91\x81\x01\x90aI\x9AV[`\x01[a:\xE4W`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[_\x80Q` aJ3\x839\x81Q\x91R\x81\x14a;\x14W`@Qc*\x87Ri`\xE2\x1B\x81R`\x04\x81\x01\x82\x90R`$\x01a\x0E\x7FV[a;\x1E\x83\x83a?\xA7V[PPPV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14a0NW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a;\x7Fa;y\x84` \x1C\x90V[\x83a<\xECV[a;\x1E\x81c\xFF\xFF\xFF\xFF\x85\x16_a=\xA2V[a;\x9Da5N\x86` \x1C\x90V[_\x80[\x83\x81\x10\x15a;\xD8Wa;\xCE\x82a5v\x87\x87\x85\x81\x81\x10a;\xC1Wa;\xC1aH\xE0V[\x90P` \x02\x015\x89a;\xE9V[\x91P`\x01\x01a;\xA0V[Pa8:\x82c\xFF\xFF\xFF\xFF\x88\x16a8\xA3V[_\x80a;\xF4\x84a?\xFCV[\x90\x92P\x90P\x80\x15a<\x05WPa2\xCAV[a<\ra5{V[`\x04\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x03a<-W_\x91PPa2\xCAV[`@Qcw\x8E/\xEF`\xE0\x1B\x81R`\x04\x81\x01\x85\x90R`\x01`\x01`\xA0\x1B\x03\x84\x16`$\x82\x01R_\x90\x81\x90_\x80Q` aJ\x13\x839\x81Q\x91R\x90cw\x8E/\xEF\x90`D\x01`@\x80Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a<\x86W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a<\xAA\x91\x90aI\x08V[\x91P\x91P`\x80a<\xD5\x83\x83a<\xBDa5{V[`\x04\x01T`\x01`8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16a@7V[\x90\x1B\x93Pa<\xE3\x86\x85a@\x8CV[PPP\x92\x91PPV[_a<\xF5a5{V[`\x04\x81\x01T\x90\x91P`\xFF\x16\x80\x15a=&WP`\x01`\x01`\xA0\x1B\x03\x82\x16_\x90\x81R`\x02\x82\x01` R`@\x90 T`\xFF\x16\x15[\x15a=OW`@Qc\x06\x96n\x15`\xE2\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[a=Y\x83\x83a@\xB9V[_a=e\x81\\\x85aI\xB1V[\x82T\x90\x91P`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15a=\x99W`@Qcw\xE3\xC2\x93`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x0F~\x81aA\xA2V[_a=\xB3\x82`\x80\x85\x90\x1B\x85\x17aI\xB1V[\x90P_a=\xBEa5{V[\x80T\x90\x91P`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x01`\x01`\x80\x1B\x03\x83\x16\x11\x15a=\xFBW`@Qc\x0F\xC3D\x87`\xE4\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x04\x81\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x80\x83\x90\x1C\x81\x15\x80\x15\x90a> WP\x81\x81\x11[\x15a>gWa>Ka>2\x83\x83aI`V[`\x04\x85\x01T`\x01`8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16aA\xA8V[`@Qc\x13MC9`\xE3\x1B\x81R`\x04\x01a\x0E\x7F\x91\x81R` \x01\x90V[a\x0B\xAD\x87\x85a@\x8CV[_\x80\x82`\x01`\x01`\x80\x1B\x03\x16\x84`\x01`\x01`\x80\x1B\x03\x16\x10\x15a>\x93W\x82a>\x95V[\x83[`\x01`\x01`\x80\x1B\x03\x16\x90P_`\x80\x84\x90\x1C`\x80\x86\x90\x1C\x10\x15a>\xBBW`\x80\x84\x90\x1Ca>\xC1V[`\x80\x85\x90\x1C[`\x80\x1B\x91\x90\x91\x17\x94\x93PPPPV[_\x80r\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x10a?\x0EWr\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x04\x92P`@\x01[m\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x10a?:Wm\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x04\x92P` \x01[f#\x86\xF2o\xC1\0\0\x83\x10a?XWf#\x86\xF2o\xC1\0\0\x83\x04\x92P`\x10\x01[c\x05\xF5\xE1\0\x83\x10a?pWc\x05\xF5\xE1\0\x83\x04\x92P`\x08\x01[a'\x10\x83\x10a?\x84Wa'\x10\x83\x04\x92P`\x04\x01[`d\x83\x10a?\x96W`d\x83\x04\x92P`\x02\x01[`\n\x83\x10a2\xCAW`\x01\x01\x92\x91PPV[a?\xB0\x82aA\xCAV[`@Q`\x01`\x01`\xA0\x1B\x03\x83\x16\x90\x7F\xBC|\xD7Z \xEE'\xFD\x9A\xDE\xBA\xB3 A\xF7U!M\xBCk\xFF\xA9\x0C\xC0\"[9\xDA.\\-;\x90_\x90\xA2\x80Q\x15a?\xF4Wa;\x1E\x82\x82aB-V[a\x1B\xF1aB\x9FV[_\x80\x82a@\x1CW`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[PP\\`\x01`\x01`\xFF\x1B\x03\x81\x16\x91`\x01`\xFF\x1B\x90\x91\x16\x15\x15\x90V[_\x80\x82a@Le\xFF\xFF\xFF\xFF\xFF\xFF\x86\x16CaI`V[a@V\x91\x90aIIV[\x90P\x84e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x10\x15a@\x7FWa@z\x81e\xFF\xFF\xFF\xFF\xFF\xFF\x87\x16aI`V[a@\x81V[_[\x91PP[\x93\x92PPPV[\x81a@\xAAW`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x01`\xFF\x1B\x81\x17\x80\x83]PPPV[_a@\xC2a5{V[`\x01`\x01`\xA0\x1B\x03\x83\x16_\x90\x81R`\x01\x82\x01` R`@\x90 T\x90\x91P`\xFF\x16\x15a@\xECWPPPV[\x80TC\x90e\xFF\xFF\xFF\xFF\xFF\xFF`\x01`0\x1B\x82\x04\x81\x16\x91`\x01``\x1B\x90\x04\x81\x16\x90\x83\x16\x14aA\x15WP_[_aA(\x86e\xFF\xFF\xFF\xFF\xFF\xFF\x84\x16aI\xB1V[\x84T\x90\x91Pe\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15aAUW`@Qc+ID]`\xE2\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x83Tq\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\x19\x16`\x01`0\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x92\x83\x16\x02e\xFF\xFF\xFF\xFF\xFF\xFF``\x1B\x19\x16\x17`\x01``\x1B\x93\x90\x91\x16\x92\x90\x92\x02\x91\x90\x91\x17\x90\x91UPPPV[\x80_]PV[_\x81`\x01aA\xB6\x82\x86aI\xB1V[aA\xC0\x91\x90aI`V[a@\x85\x91\x90aI\xC4V[\x80`\x01`\x01`\xA0\x1B\x03\x16;_\x03aA\xFFW`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[_\x80Q` aJ3\x839\x81Q\x91R\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x92\x90\x92\x16\x91\x90\x91\x17\x90UV[``_\x80\x84`\x01`\x01`\xA0\x1B\x03\x16\x84`@QaBI\x91\x90aI\xD7V[_`@Q\x80\x83\x03\x81\x85Z\xF4\x91PP=\x80_\x81\x14aB\x81W`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>aB\x86V[``\x91P[P\x91P\x91PaB\x96\x85\x83\x83aB\xBEV[\x95\x94PPPPPV[4\x15a0NW`@Qc\xB3\x98\x97\x9F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[``\x82aB\xD3WaB\xCE\x82aC\x1AV[a@\x85V[\x81Q\x15\x80\x15aB\xEAWP`\x01`\x01`\xA0\x1B\x03\x84\x16;\x15[\x15aC\x13W`@Qc\x99\x96\xB3\x15`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x01a\x0E\x7FV[P\x80a@\x85V[\x80Q\x15aC*W\x80Q\x80\x82` \x01\xFD[`@Qc\xD6\xBD\xA2u`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x805`T\x81\x10aCQW_\x80\xFD[\x91\x90PV[`\x01`\x01`\xA0\x1B\x03\x81\x16\x81\x14a\x1A\x83W_\x80\xFD[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aC\x7FW_\x80\xFD[aC\x88\x87aCCV[\x95P` \x87\x015`\x01`\x01`\xF8\x1B\x03\x19\x81\x16\x81\x14aC\xA4W_\x80\xFD[\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aC\xC9\x81aCVV[\x80\x91PP\x92\x95P\x92\x95P\x92\x95V[_` \x82\x84\x03\x12\x15aC\xE7W_\x80\xFD[\x815a@\x85\x81aCVV[_[\x83\x81\x10\x15aD\x0CW\x81\x81\x01Q\x83\x82\x01R` \x01aC\xF4V[PP_\x91\x01RV[` \x81R_\x82Q\x80` \x84\x01RaD2\x81`@\x85\x01` \x87\x01aC\xF2V[`\x1F\x01`\x1F\x19\x16\x91\x90\x91\x01`@\x01\x92\x91PPV[_\x80\x83`\x1F\x84\x01\x12aDVW_\x80\xFD[P\x815`\x01`\x01`@\x1B\x03\x81\x11\x15aDlW_\x80\xFD[` \x83\x01\x91P\x83` \x82`\x05\x1B\x85\x01\x01\x11\x15aD\x86W_\x80\xFD[\x92P\x92\x90PV[_\x80` \x83\x85\x03\x12\x15aD\x9EW_\x80\xFD[\x825`\x01`\x01`@\x1B\x03\x81\x11\x15aD\xB3W_\x80\xFD[aD\xBF\x85\x82\x86\x01aDFV[\x90\x96\x90\x95P\x93PPPPV[e\xFF\xFF\xFF\xFF\xFF\xFF\x81\x16\x81\x14a\x1A\x83W_\x80\xFD[_\x80_``\x84\x86\x03\x12\x15aD\xF0W_\x80\xFD[\x835aD\xFB\x81aD\xCBV[\x92P` \x84\x015aE\x0B\x81aD\xCBV[\x91P`@\x84\x015aE\x1B\x81aD\xCBV[\x80\x91PP\x92P\x92P\x92V[_\x80_\x80`\x80\x85\x87\x03\x12\x15aE9W_\x80\xFD[aEB\x85aCCV[\x93P` \x85\x015\x92P`@\x85\x015\x91P``\x85\x015aE`\x81aCVV[\x93\x96\x92\x95P\x90\x93PPV[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aE\x80W_\x80\xFD[aE\x89\x87aCCV[\x95P` \x87\x015\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aC\xC9\x81aCVV[_\x80_\x80_\x80`\xA0\x87\x89\x03\x12\x15aE\xCAW_\x80\xFD[aE\xD3\x87aCCV[\x95P` \x87\x015\x94P`@\x87\x015`\x01`\x01`@\x1B\x03\x81\x11\x15aE\xF4W_\x80\xFD[aF\0\x89\x82\x8A\x01aDFV[\x90\x95P\x93PP``\x87\x015\x91P`\x80\x87\x015aC\xC9\x81aCVV[_\x80`@\x83\x85\x03\x12\x15aF,W_\x80\xFD[\x825aF7\x81aCVV[\x94` \x93\x90\x93\x015\x93PPPV[cNH{q`\xE0\x1B_R`A`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15aFjW_\x80\xFD[\x825aFu\x81aCVV[\x91P` \x83\x015`\x01`\x01`@\x1B\x03\x80\x82\x11\x15aF\x90W_\x80\xFD[\x81\x85\x01\x91P\x85`\x1F\x83\x01\x12aF\xA3W_\x80\xFD[\x815\x81\x81\x11\x15aF\xB5WaF\xB5aFEV[`@Q`\x1F\x82\x01`\x1F\x19\x90\x81\x16`?\x01\x16\x81\x01\x90\x83\x82\x11\x81\x83\x10\x17\x15aF\xDDWaF\xDDaFEV[\x81`@R\x82\x81R\x88` \x84\x87\x01\x01\x11\x15aF\xF5W_\x80\xFD[\x82` \x86\x01` \x83\x017_` \x84\x83\x01\x01R\x80\x95PPPPPP\x92P\x92\x90PV[_` \x82\x84\x03\x12\x15aG&W_\x80\xFD[\x815a@\x85\x81aD\xCBV[_\x80_``\x84\x86\x03\x12\x15aGCW_\x80\xFD[aGL\x84aCCV[\x92P` \x84\x015\x91P`@\x84\x015aE\x1B\x81aCVV[_` \x82\x84\x03\x12\x15aGsW_\x80\xFD[\x815\x80\x15\x15\x81\x14a@\x85W_\x80\xFD[_\x80`@\x83\x85\x03\x12\x15aG\x93W_\x80\xFD[\x825aG\x9E\x81aD\xCBV[\x91P` \x83\x015aG\xAE\x81aD\xCBV[\x80\x91PP\x92P\x92\x90PV[_\x80_\x80_`\x80\x86\x88\x03\x12\x15aG\xCDW_\x80\xFD[aG\xD6\x86aCCV[\x94P` \x86\x015`\x01`\x01`@\x1B\x03\x81\x11\x15aG\xF0W_\x80\xFD[aG\xFC\x88\x82\x89\x01aDFV[\x90\x95P\x93PP`@\x86\x015\x91P``\x86\x015aH\x17\x81aCVV[\x80\x91PP\x92\x95P\x92\x95\x90\x93PV[_\x80`@\x83\x85\x03\x12\x15aH6W_\x80\xFD[\x825\x91P` \x83\x015aG\xAE\x81aCVV[_\x85QaHY\x81\x84` \x8A\x01aC\xF2V[a\x10;`\xF1\x1B\x90\x83\x01\x90\x81R\x85QaHx\x81`\x02\x84\x01` \x8A\x01aC\xF2V[\x80\x82\x01\x91PP`\x17`\xF9\x1B\x80`\x02\x83\x01R\x85QaH\x9C\x81`\x03\x85\x01` \x8A\x01aC\xF2V[`\x03\x92\x01\x91\x82\x01R\x83QaH\xB7\x81`\x04\x84\x01` \x88\x01aC\xF2V[\x01`\x04\x01\x96\x95PPPPPPV[_` \x82\x84\x03\x12\x15aH\xD5W_\x80\xFD[\x81Qa@\x85\x81aCVV[cNH{q`\xE0\x1B_R`2`\x04R`$_\xFD[cNH{q`\xE0\x1B_R`!`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15aI\x19W_\x80\xFD[\x82QaI$\x81aD\xCBV[` \x84\x01Q\x90\x92PaG\xAE\x81aD\xCBV[cNH{q`\xE0\x1B_R`\x11`\x04R`$_\xFD[\x80\x82\x02\x81\x15\x82\x82\x04\x84\x14\x17a2\xCAWa2\xCAaI5V[\x81\x81\x03\x81\x81\x11\x15a2\xCAWa2\xCAaI5V[cNH{q`\xE0\x1B_R`\x12`\x04R`$_\xFD[_\x82aI\x95WaI\x95aIsV[P\x06\x90V[_` \x82\x84\x03\x12\x15aI\xAAW_\x80\xFD[PQ\x91\x90PV[\x80\x82\x01\x80\x82\x11\x15a2\xCAWa2\xCAaI5V[_\x82aI\xD2WaI\xD2aIsV[P\x04\x90V[_\x82QaI\xE8\x81\x84` \x87\x01aC\xF2V[\x91\x90\x91\x01\x92\x91PPV\xFE\0\0\x94p\0\0\x94p\0\0\0\0\0\0\0\0\0\0\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0\0\0\0\0\0\0\0\0\0\0\0\0P\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\0\0\0\0\0\0\0\0\0\0\0\0\xE3\xA9\x10Z:\x93\"S\xA7\x0F\x12n\xB1\xE3\xB5\x89\xC6C\xDD$",
+        b"`\x80`@R`\x046\x10a\x03fW_5`\xE0\x1C\x80cv\xE9D\xEC\x11a\x01\xC8W\x80c\xB9f%T\x11a\0\xFDW\x80c\xC8\xDECR\x11a\0\x9DW\x80c\xF1\xC4\xE4\xED\x11a\0mW\x80c\xF1\xC4\xE4\xED\x14a\nLW\x80c\xF5\xD0\xB2\xD5\x14a\nkW\x80c\xF7\xD1\x98\xF8\x14a\n\x7FW\x80c\xF8\xE4\xD1\xEC\x14a\n\x9EW_\x80\xFD[\x80c\xC8\xDECR\x14a\t\xA7W\x80c\xD0tv\xC6\x14a\t\xC6W\x80c\xD5\xB8\xB8\xF3\x14a\n\x0EW\x80c\xD63\xC9k\x14a\n-W_\x80\xFD[\x80c\xC19\x0C4\x11a\0\xD8W\x80c\xC19\x0C4\x14a\t6W\x80c\xC1<\x19q\x14a\tUW\x80c\xC2w\xA96\x14a\tiW\x80c\xC7\xA7\xFA\xEE\x14a\t\x88W_\x80\xFD[\x80c\xB9f%T\x14a\x08\xD9W\x80c\xBD!\x94v\x14a\x08\xF8W\x80c\xC0\xC5\xDF|\x14a\t\x17W_\x80\xFD[\x80c\x96\x83\x02\xD7\x11a\x01hW\x80c\xAA\x1F\xFA9\x11a\x01CW\x80c\xAA\x1F\xFA9\x14a\x08LW\x80c\xAB9GU\x14a\x08kW\x80c\xAD<\xB1\xCC\x14a\x08\x8AW\x80c\xB7\x8B\xEFY\x14a\x08\xBAW_\x80\xFD[\x80c\x96\x83\x02\xD7\x14a\x07\xEFW\x80c\x9B?x\x1A\x14a\x08\x0EW\x80c\x9F\x92Y\xBB\x14a\x08-W_\x80\xFD[\x80c\x86)\xF5E\x11a\x01\xA3W\x80c\x86)\xF5E\x14a\x07sW\x80c\x89\xAB\xB89\x14a\x07\x92W\x80c\x8A\x1Em\xE5\x14a\x07\xB1W\x80c\x8D\xC3<\x17\x14a\x07\xD0W_\x80\xFD[\x80cv\xE9D\xEC\x14a\x07\x06W\x80c~\xEF\xEBc\x14a\x075W\x80c\x81\x8FMi\x14a\x07TW_\x80\xFD[\x80c9\xDD\xE4C\x11a\x02\x9EW\x80c\\AKW\x11a\x02>W\x80c`\xE1!\x89\x11a\x02\x19W\x80c`\xE1!\x89\x14a\x06\x8AW\x80ci\x93\x1A\xFB\x14a\x06\xA9W\x80ck\xAD\x18\xB6\x14a\x06\xC8W\x80cl\xF0\xBD%\x14a\x06\xE7W_\x80\xFD[\x80c\\AKW\x14a\x06-W\x80c^`\xEF+\x14a\x06LW\x80c_v\xEB0\x14a\x06kW_\x80\xFD[\x80cE\x8F\xB2w\x11a\x02yW\x80cE\x8F\xB2w\x14a\x05\xBAW\x80cI|\"\xC5\x14a\x05\xD9W\x80cO\x1E\xF2\x86\x14a\x05\xF8W\x80cR\xD1\x90-\x14a\x06\x0BW_\x80\xFD[\x80c9\xDD\xE4C\x14a\x05]W\x80c;\xB7\xD5\xA3\x14a\x05|W\x80c;\xBC\xC4\xB2\x14a\x05\x9BW_\x80\xFD[\x80c&\x8Dm1\x11a\x03\tW\x80c.<9\x06\x11a\x02\xE4W\x80c.<9\x06\x14a\x04\xE1W\x80c3\x11\xB1\xBC\x14a\x05\0W\x80c8\xBD\x17\xE5\x14a\x05\x1FW\x80c9Q\xE5\x06\x14a\x05>W_\x80\xFD[\x80c&\x8Dm1\x14a\x04\\W\x80c-i\x05H\x14a\x04\x8FW\x80c-\xCB\xC5\xD1\x14a\x04\xC2W_\x80\xFD[\x80c\r\x81\xA3\xF1\x11a\x03DW\x80c\r\x81\xA3\xF1\x14a\x03\xC9W\x80c\r\x8En,\x14a\x03\xE8W\x80c\x19jEm\x14a\x04\x12W\x80c\x1E$\xAAI\x14a\x041W_\x80\xFD[\x80c\x04U?\xB6\x14a\x03jW\x80c\x06\x18\r\0\x14a\x03\x8BW\x80c\x07\xCC\xDFa\x14a\x03\xAAW[_\x80\xFD[4\x80\x15a\x03uW_\x80\xFD[Pa\x03\x89a\x03\x846`\x04aF\x02V[a\n\xD0V[\0[4\x80\x15a\x03\x96W_\x80\xFD[Pa\x03\x89a\x03\xA56`\x04aF\x80V[a\x0B\xB0V[4\x80\x15a\x03\xB5W_\x80\xFD[Pa\x03\x89a\x03\xC46`\x04aF\x02V[a\x0C\xE8V[4\x80\x15a\x03\xD4W_\x80\xFD[Pa\x03\x89a\x03\xE36`\x04aF\x02V[a\r\xA4V[4\x80\x15a\x03\xF3W_\x80\xFD[Pa\x03\xFCa\x0E\x82V[`@Qa\x04\t\x91\x90aF\xD7V[`@Q\x80\x91\x03\x90\xF3[4\x80\x15a\x04\x1DW_\x80\xFD[Pa\x03\x89a\x04,6`\x04aG\x1CV[a\x0E\xE8V[4\x80\x15a\x04<W_\x80\xFD[Pa\x04Ea\x10/V[`@Qe\xFF\xFF\xFF\xFF\xFF\xFF\x90\x91\x16\x81R` \x01a\x04\tV[4\x80\x15a\x04gW_\x80\xFD[P_\x80Q` aM2\x839\x81Q\x91R[`@Q`\x01`\x01`\xA0\x1B\x03\x90\x91\x16\x81R` \x01a\x04\tV[4\x80\x15a\x04\x9AW_\x80\xFD[Pa\x04\xA3a\x10MV[`@\x80Qe\xFF\xFF\xFF\xFF\xFF\xFF\x93\x84\x16\x81R\x92\x90\x91\x16` \x83\x01R\x01a\x04\tV[4\x80\x15a\x04\xCDW_\x80\xFD[Pa\x03\x89a\x04\xDC6`\x04aGdV[a\x10{V[4\x80\x15a\x04\xECW_\x80\xFD[Pa\x03\x89a\x04\xFB6`\x04aG\xA9V[a\x11\x03V[4\x80\x15a\x05\x0BW_\x80\xFD[Pa\x03\x89a\x05\x1A6`\x04aF\x02V[a\x11\x89V[4\x80\x15a\x05*W_\x80\xFD[Pa\x03\x89a\x0596`\x04aF\x02V[a\x12,V[4\x80\x15a\x05IW_\x80\xFD[Pa\x03\x89a\x05X6`\x04aF\x80V[a\x12\xE1V[4\x80\x15a\x05hW_\x80\xFD[Pa\x03\x89a\x05w6`\x04aF\x80V[a\x13\xEAV[4\x80\x15a\x05\x87W_\x80\xFD[Pa\x03\x89a\x05\x966`\x04aF\x02V[a\x15\nV[4\x80\x15a\x05\xA6W_\x80\xFD[Pa\x03\x89a\x05\xB56`\x04aH:V[a\x15\xBFV[4\x80\x15a\x05\xC5W_\x80\xFD[Pa\x03\x89a\x05\xD46`\x04aF\x02V[a\x18\xA6V[4\x80\x15a\x05\xE4W_\x80\xFD[Pa\x03\x89a\x05\xF36`\x04aGdV[a\x19UV[a\x03\x89a\x06\x066`\x04aH\xB4V[a\x19\xCCV[4\x80\x15a\x06\x16W_\x80\xFD[Pa\x06\x1Fa\x19\xEBV[`@Q\x90\x81R` \x01a\x04\tV[4\x80\x15a\x068W_\x80\xFD[Pa\x03\x89a\x06G6`\x04aIqV[a\x1A\x06V[4\x80\x15a\x06WW_\x80\xFD[Pa\x03\x89a\x06f6`\x04aI\x8CV[a\x1A\xB2V[4\x80\x15a\x06vW_\x80\xFD[Pa\x03\x89a\x06\x856`\x04aF\x02V[a\x1B\\V[4\x80\x15a\x06\x95W_\x80\xFD[Pa\x03\x89a\x06\xA46`\x04aF\x02V[a\x1C\x19V[4\x80\x15a\x06\xB4W_\x80\xFD[Pa\x03\x89a\x06\xC36`\x04aGdV[a\x1C\xEEV[4\x80\x15a\x06\xD3W_\x80\xFD[Pa\x03\x89a\x06\xE26`\x04aF\x02V[a\x1DaV[4\x80\x15a\x06\xF2W_\x80\xFD[Pa\x03\x89a\x07\x016`\x04aI\xA5V[a\x1E6V[4\x80\x15a\x07\x11W_\x80\xFD[Pa\x07%a\x07 6`\x04aI\x8CV[a\x1E\xB8V[`@Q\x90\x15\x15\x81R` \x01a\x04\tV[4\x80\x15a\x07@W_\x80\xFD[Pa\x03\x89a\x07O6`\x04aF\x80V[a\x1E\xE7V[4\x80\x15a\x07_W_\x80\xFD[Pa\x03\x89a\x07n6`\x04aF\x02V[a\x1F\x91V[4\x80\x15a\x07~W_\x80\xFD[Pa\x03\x89a\x07\x8D6`\x04aF\x02V[a FV[4\x80\x15a\x07\x9DW_\x80\xFD[Pa\x04Ea\x07\xAC6`\x04aI\x8CV[a!\x14V[4\x80\x15a\x07\xBCW_\x80\xFD[Pa\x04wa\x07\xCB6`\x04aI\x8CV[a!HV[4\x80\x15a\x07\xDBW_\x80\xFD[Pa\x03\x89a\x07\xEA6`\x04aI\xD7V[a!vV[4\x80\x15a\x07\xFAW_\x80\xFD[Pa\x03\x89a\x08\t6`\x04aF\x02V[a\"&V[4\x80\x15a\x08\x19W_\x80\xFD[Pa\x03\x89a\x08(6`\x04aF\x02V[a\"\xDBV[4\x80\x15a\x088W_\x80\xFD[Pa\x03\x89a\x08G6`\x04aF\x02V[a#pV[4\x80\x15a\x08WW_\x80\xFD[Pa\x03\x89a\x08f6`\x04aI\xF2V[a$7V[4\x80\x15a\x08vW_\x80\xFD[Pa\x03\x89a\x08\x856`\x04aIqV[a&NV[4\x80\x15a\x08\x95W_\x80\xFD[Pa\x03\xFC`@Q\x80`@\x01`@R\x80`\x05\x81R` \x01d\x03R\xE3\x02\xE3`\xDC\x1B\x81RP\x81V[4\x80\x15a\x08\xC5W_\x80\xFD[Pa\x03\x89a\x08\xD46`\x04aI\xA5V[a&\xF7V[4\x80\x15a\x08\xE4W_\x80\xFD[Pa\x03\x89a\x08\xF36`\x04aJ\x1EV[a'MV[4\x80\x15a\t\x03W_\x80\xFD[Pa\x03\x89a\t\x126`\x04aI\x8CV[a)fV[4\x80\x15a\t\"W_\x80\xFD[Pa\x03\x89a\t16`\x04aF\x02V[a*\x86V[4\x80\x15a\tAW_\x80\xFD[Pa\x03\x89a\tP6`\x04aF\x02V[a+5V[4\x80\x15a\t`W_\x80\xFD[Pa\x04Ea+\xE4V[4\x80\x15a\ttW_\x80\xFD[Pa\x03\x89a\t\x836`\x04aF\x02V[a,\x02V[4\x80\x15a\t\x93W_\x80\xFD[Pa\x03\x89a\t\xA26`\x04aJ\x8AV[a,\xB1V[4\x80\x15a\t\xB2W_\x80\xFD[Pa\x03\x89a\t\xC16`\x04aF\x02V[a.\xE0V[4\x80\x15a\t\xD1W_\x80\xFD[Pa\t\xE5a\t\xE06`\x04aI\x8CV[a/\x8FV[`@\x80Qe\xFF\xFF\xFF\xFF\xFF\xFF\x94\x85\x16\x81R\x92\x84\x16` \x84\x01R\x92\x16\x91\x81\x01\x91\x90\x91R``\x01a\x04\tV[4\x80\x15a\n\x19W_\x80\xFD[Pa\x03\x89a\n(6`\x04aI\xA5V[a/\xF6V[4\x80\x15a\n8W_\x80\xFD[Pa\x03\x89a\nG6`\x04aF\x02V[a0kV[4\x80\x15a\nWW_\x80\xFD[Pa\x04Ea\nf6`\x04aJ\xA4V[a1\x1AV[4\x80\x15a\nvW_\x80\xFD[Pa\x03\x89a2DV[4\x80\x15a\n\x8AW_\x80\xFD[Pa\x03\x89a\n\x996`\x04aF\x02V[a3vV[4\x80\x15a\n\xA9W_\x80\xFD[Pa\n\xBDa\n\xB86`\x04aJ\xC7V[a4>V[`@Qa\xFF\xFF\x90\x91\x16\x81R` \x01a\x04\tV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\n\xFDW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x0B_Wa\x0BL~\x01\xC9\x08\0\x01\xC9\x08\0\x01W\xC0\0\x01W\xC0\0\x01H \0\x01H \0\0\0\0\0\0\0\0n\x02\xD6\x90\0\x02\xD6\x90\0\x02I\xF0\0\x02I\xF0\x89a4HV[\x90Pa\x0BZ\x81\x83\x87\x86a4\xFFV[a\x0B\xA7V[a\x0B\x98~\x02\xC6\xF0\0\x02\xC6\xF0\0\x02:P\0\x02:P\0\x01\xD0\xD8\0\x01\xD0\xD8\0\0\0\0\0\0\0\0n\x04h\xE8\0\x04h\xE8\0\x03Wx\0\x03Wx\x89a4HV[\x90Pa\x0B\xA7\x81\x83\x87\x87\x87a5,V[PPPPPPPV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x0B\xF9W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x0C\x1D\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x0CUW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01[`@Q\x80\x91\x03\x90\xFD[`\x02a\xFF\xFF\x83\x16\x11a\x0C\x80W`@Qc$Bz]`\xE0\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[\x80a\x0C\x89a5fV[a\xFF\xFF\x84\x16_\x81\x81R`\x07\x92\x90\x92\x01` R`@\x80\x83 \x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x95\x86\x16\x17\x90UQ\x92\x84\x16\x92\x90\x91\x7F\x9AcAwn\xC8\x86\xF65Wj\xAF\xE3u\x9F\t\xCE\xF0\x19\xB2d\xDF\xA6\xA2}\xEB\xB4\x85T\x15\xFF>\x91\xA3PPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\r\x15W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\r[Wa\x0BLt}\0\0\0}\0\0\0}\0\0\0}\0\0\0}\0\0\0}`H\x1B_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[a\x0B\x98~\x02|\xB8\0\x02|\xB8\0\x01\xE0x\0\x01\xE0x\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0~\x05\xA1h\0\x05\xA1h\0\0\0\0\0\0\0\0\0\x04&\x80\0\x04&\x80\0\x030h\0\x030h\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\r\xD1W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\xFD`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x01a\x0E\x18Wa\x0BL~\x10z\xC0\0\x10z\xC0\0\n\xBA\x18\0\n\xBA\x18\0\x07\x8D\x98\0\x07\x8D\x98\0\0\0\0\0\0\0\0f\x1DO\xE8\0\x1DO\xE8\x89a4HV[`\x01`\x01`\xF8\x1B\x03\x19\x86\x81\x16\x01a\x0EiWa\x0EZ~\x14\x01\x18\0\x14\x01\x18\0\x0B\xB00\0\x0B\xB00\0\x07\xFE\xE0\0\x07\xFE\xE0\0\0\0\0\0\0\0\0f,k\x18\0,k\x18\x89a4HV[\x90Pa\x0BZ\x81\x83\x87\x87\x87a5,V[`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[```@Q\x80`@\x01`@R\x80`\x08\x81R` \x01g\x12\x10\xD5S\x1A[Z]`\xC2\x1B\x81RPa\x0E\xAE_a5\x8AV[a\x0E\xB8`\x06a5\x8AV[a\x0E\xC1_a5\x8AV[`@Q` \x01a\x0E\xD4\x94\x93\x92\x91\x90aJ\xFDV[`@Q` \x81\x83\x03\x03\x81R\x90`@R\x90P\x90V[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0T`\x01`\x01`@\x1B\x03\x16`\x01`\x01`@\x1B\x03\x16`\x01\x14a\x0F<W`@QcoOs\x1F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x07\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a\x0F\x85WP\x80T`\x01`\x01`@\x1B\x03\x80\x84\x16\x91\x16\x10\x15[\x15a\x0F\xA3W`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01`\x01`@\x1B\x03\x83\x16\x17`\x01`@\x1B\x17\x81Ua\x0F\xCF_\x86\x80a6\x19V[a\x0F\xD8\x83a6\xDDV[a\x0F\xE1\x84a7?V[\x80T`\xFF`@\x1B\x19\x16\x81U`@Q`\x01`\x01`@\x1B\x03\x83\x16\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1PPPPPV[_a\x108a5fV[T`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91\x90PV[_\x80_a\x10Xa5fV[`\x04\x01Te\xFF\xFF\xFF\xFF\xFF\xFFa\x01\0\x82\x04\x81\x16\x95`\x01`8\x1B\x90\x92\x04\x16\x93P\x91PPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x10\xA8W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x10\xEE| \0\0\0 \0\0\0\x10\0\0\0\x10\0\0\0\t\0\0\0\t\0\0\0\x02\0\0\0\x02|\x82\0\0\0\x82\0\0\0\0\0\0\0\0\0\0\0\x82\0\0\0\x82\0\0\0?\0\0\0?\x87a4HV[\x90Pa\x10\xFC\x81\x83\x86\x86a4\xFFV[PPPPPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x110W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x11y}\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8~\x01\xA5\xE0\0\x01\xA5\xE0\0\x01D8\0\x01D8\0\0\xDE\xA8\0\0\xDE\xA8\0\0\xD6\xD8\0\0\xD6\xD8\x89a4HV[\x90Pa\x0B\xA7\x81\x83\x88\x88\x88\x88a8NV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x11\xB6W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a\x11\xE5W`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x12\x1E~\x0C\x15\xC0\0\x0C\x15\xC0\0\x08\xD9\xA0\0\x08\xD9\xA0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\0\0\0\0\0\0\0n\x1D\xA5\xD8\0\x1D\xA5\xD8\0\x11\x97\xE8\0\x11\x97\xE8\x89a4HV[\x90Pa\x0B\xA7\x81\x83\x87\x86a4\xFFV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x12YW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x12\xA8Wa\x0BL~\x01H \0\x01H \0\0\xE2\x90\0\0\xE2\x90\0\0\xE2\x90\0\0\xE2\x90\0\0\0\0\0\0\0\0n\x02I\xF0\0\x02I\xF0\0\x01\xD0\xD8\0\x01\xD0\xD8\x89a4HV[a\x0B\x98~\x01\xC9\x08\0\x01\xC9\x08\0\x01D8\0\x01D8\0\0\xE2\x90\0\0\xE2\x90\0\0\0\0\0\0\0\0n\x03S\x90\0\x03S\x90\0\x02F\x08\0\x02F\x08\x89a4HV[\x81_a\x12\xEBa5fV[a\xFF\xFF\x83\x16_\x90\x81R`\x07\x82\x01` R`@\x90 T\x90\x91P`\x01`\x01`\xA0\x1B\x03\x163\x14a\x137W`@Qc\x02s\x87%`\xE0\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R3`$\x82\x01R`D\x01a\x0CLV[a\xFF\xFF\x82\x16_\x90\x81R`\x05\x82\x01` R`@\x90 T`\x01`\xC0\x1B\x90\x04`\xFF\x16\x15a\x13zW`@Qc\x18:P\xD5`\xE1\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[\x83a\xFF\xFF\x16a\x13\x87a5fV[`\x01`\x01`\xA0\x1B\x03\x85\x16_\x90\x81R`\x06\x91\x90\x91\x01` R`@\x90 Ta\xFF\xFF\x16\x14a\x13\xDAW`@Qc\xAAB\xE7\x85`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x84\x16`\x04\x82\x01Ra\xFF\xFF\x85\x16`$\x82\x01R`D\x01a\x0CLV[a\x13\xE4_\x84a8\x98V[PPPPV[\x81_a\x13\xF4a5fV[a\xFF\xFF\x83\x16_\x90\x81R`\x07\x82\x01` R`@\x90 T\x90\x91P`\x01`\x01`\xA0\x1B\x03\x163\x14a\x14@W`@Qc\x02s\x87%`\xE0\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R3`$\x82\x01R`D\x01a\x0CLV[a\xFF\xFF\x82\x16_\x90\x81R`\x05\x82\x01` R`@\x90 T`\x01`\xC0\x1B\x90\x04`\xFF\x16\x15a\x14\x83W`@Qc\x18:P\xD5`\xE1\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[a\x14\x8Ba5fV[_\x80\x80R`\x05\x91\x90\x91\x01` R`@\x90 Te\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15a\x14\xC3W`@Qc\xCA4\xEF\xB1`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x14\xCD\x84a9\x85V[a\xFF\xFF\x16\x14a\x15\0W`@Qc\xAAB\xE7\x85`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x84\x16`\x04\x82\x01R_`$\x82\x01R`D\x01a\x0CLV[a\x13\xE4\x84\x84a8\x98V[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x157W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x15\x86Wa\x0BL~\x01D8\0\x01D8\0\0\xE2\x90\0\0\xE2\x90\0\0\xCB \0\0\xCB \0\0\0\0\0\0\0\0n\x02F\x08\0\x02F\x08\0\x01\xCC\xF0\0\x01\xCC\xF0\x89a4HV[a\x0B\x98~\x01\xC9\x08\0\x01\xC9\x08\0\x01H \0\x01H \0\0\xE6x\0\0\xE6x\0\0\0\0\0\0\0\0n\x03G\xD8\0\x03G\xD8\0\x02:P\0\x02:P\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x15\xECW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x88`S\x81\x11\x15a\x16\x02Wa\x16\x02aKzV[\x03a\x16WW`\n\x82\x11a\x16\x1DWPf\x01\x16\x84\0\x01\x16\x84a\x18\x8EV[`\x1E\x82\x11a\x163WPf\x02B \0\x02B a\x18\x8EV[`<\x82\x11a\x16IWPf\x03\xC4\xD8\0\x03\xC4\xD8a\x18\x8EV[Pf\x05\xB4\xF0\0\x05\xB4\xF0a\x18\x8EV[`\x03\x88`S\x81\x11\x15a\x16kWa\x16kaKzV[\x03a\x16\xC0W`\n\x82\x11a\x16\x86WPf\x01\x92X\0\x01\x92Xa\x18\x8EV[`\x1E\x82\x11a\x16\x9CWPf\x03S\x90\0\x03S\x90a\x18\x8EV[`<\x82\x11a\x16\xB2WPf\x05\xC4\x90\0\x05\xC4\x90a\x18\x8EV[Pf\t;H\0\t;Ha\x18\x8EV[`\x04\x88`S\x81\x11\x15a\x16\xD4Wa\x16\xD4aKzV[\x03a\x17)W`\n\x82\x11a\x16\xEFWPf\x02\x17(\0\x02\x17(a\x18\x8EV[`\x1E\x82\x11a\x17\x05WPf\x04\x93\xE0\0\x04\x93\xE0a\x18\x8EV[`<\x82\x11a\x17\x1BWPf\x08\x1A8\0\x08\x1A8a\x18\x8EV[Pf\x0C\x9Ex\0\x0C\x9Exa\x18\x8EV[`\x05\x88`S\x81\x11\x15a\x17=Wa\x17=aKzV[\x03a\x17|W`\n\x82\x11a\x17XWPf\x03S\x90\0\x03S\x90a\x18\x8EV[`\x1E\x82\x11a\x17nWPf\x07\x81\xE0\0\x07\x81\xE0a\x18\x8EV[Pf\ri\x98\0\ri\x98a\x18\x8EV[`\x06\x88`S\x81\x11\x15a\x17\x90Wa\x17\x90aKzV[\x03a\x17\xCFW`\n\x82\x11a\x17\xABWPf\x03\xE8\0\0\x03\xE8\0a\x18\x8EV[`\x1E\x82\x11a\x17\xC1WPf\x08)\xD8\0\x08)\xD8a\x18\x8EV[Pf\x0E\r\xA8\0\x0E\r\xA8a\x18\x8EV[`\x07\x88`S\x81\x11\x15a\x17\xE3Wa\x17\xE3aKzV[\x03a\x18\"W`\n\x82\x11a\x17\xFEWPf\x04]0\0\x04]0a\x18\x8EV[`\x1E\x82\x11a\x18\x14WPf\x08\xE9@\0\x08\xE9@a\x18\x8EV[Pf\r\x81\x08\0\r\x81\x08a\x18\x8EV[`\x08\x88`S\x81\x11\x15a\x186Wa\x186aKzV[\x03a\x18uW`\n\x82\x11a\x18QWPf\x04\xE5\xE8\0\x04\xE5\xE8a\x18\x8EV[`\x1E\x82\x11a\x18gWPf\x08\xF1\x10\0\x08\xF1\x10a\x18\x8EV[Pf\x0Ec\x98\0\x0Ec\x98a\x18\x8EV[`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x18\x9C\x81\x84\x89\x89\x89\x89a:OV[PPPPPPPPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x18\xD3W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x19\x1CWa\x0BLu\nA\0\0\nA\0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\x06Y\0\0\x06Y`E\x1Bn\x02I\xF0\0\x02I\xF0\0\x01\xC9\x08\0\x01\xC9\x08\x89a4HV[a\x0B\x98~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01H \0\x01H \0\0\xE6x\0\0\xE6x\0\0\0\0\0\0\0\0n\x03S\x90\0\x03S\x90\0\x02Q\xC0\0\x02Q\xC0\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x19\x82W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x10\xEE~\x01s\x18\0\x01s\x18\0\x01kH\0\x01kH\0\x014\x98\0\x014\x98\0\0\0\0\0\0\0\0~\x04\x1A\xC8\0\x04\x1A\xC8\0\0\0\0\0\0\0\0\0\x02\x90@\0\x02\x90@\0\x01\xFF\xB8\0\x01\xFF\xB8\x87a4HV[a\x19\xD4a:\xB6V[a\x19\xDD\x82a;\\V[a\x19\xE7\x82\x82a;\xFCV[PPV[_a\x19\xF4a<\xB8V[P_\x80Q` aM\x12\x839\x81Q\x91R\x90V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1AOW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1As\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1A\xA6W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x1A\xAF\x81a7?V[PV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1A\xFBW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1B\x1F\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1BRW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x1A\xAF\x81_a=\x01V[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1B\x89W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1B\xD0Wa\x0BLu\x0F\xA0\0\0\x0F\xA0\0\0\x0F#\0\0\x0F#\0\0\x0F#\0\0\x0F#`C\x1B_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[a\x0B\x98~\x02|\xB8\0\x02|\xB8\0\x01\xE8H\0\x01\xE8H\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0~\x05\xC4\x90\0\x05\xC4\x90\0\0\0\0\0\0\0\0\0\x04=\xF0\0\x04=\xF0\0\x030h\0\x030h\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1CFW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1C\xA5Wa\x0BL~\x01@P\0\x01@P\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0a\xA8\0\0a\xA8~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01D8\0\x01D8\x89a4HV[a\x0B\x98~\x01O\xF0\0\x01O\xF0\0\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0e\x90\0\0e\x90~\x02Q\xC0\0\x02Q\xC0\0\x02\x17(\0\x02\x17(\0\x01\xDC\x90\0\x01\xDC\x90\0\x01\xD4\xC0\0\x01\xD4\xC0\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1D\x1BW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x10\xEE| \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 | \0\0\0 \0\0\0\0\0\0\0\0\0\0\0 \0\0\0 \0\0\0 \0\0\0 \x87a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1D\x8EW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\x1D\xEDWa\x0BL~\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0\xD6\xD8\0\0Y\xD8\0\0Y\xD8~\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01\xC9\x08\0\x01H \0\x01H \x89a4HV[a\x0B\x98~\x01L\x08\0\x01L\x08\0\x01D8\0\x01D8\0\0\xD6\xD8\0\0\xD6\xD8\0\0Y\xD8\0\0Y\xD8~\x02I\xF0\0\x02I\xF0\0\x02\x13@\0\x02\x13@\0\x01\xDC\x90\0\x01\xDC\x90\0\x01\xCC\xF0\0\x01\xCC\xF0\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1EcW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x1E\xAB}]\xC0\0\0]\xC0\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0\0\0\0\0\0\0}u0\0\0u0\0\0\0\0\0\0\0\0\0\0a\xA8\0\0a\xA8\0\0]\xC0\0\0]\xC0\x86a4HV[\x90Pa\x13\xE4\x81\x83\x85a=~V[_a\x1E\xC1a5fV[a\xFF\xFF\x92\x90\x92\x16_\x90\x81R`\x05\x90\x92\x01` RP`@\x90 T`\x01`\xC0\x1B\x90\x04`\xFF\x16\x90V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a\x1F0W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a\x1FT\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1F\x87W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x19\xE7\x82\x82a8\x98V[3_\x80Q` aM2\x839\x81Q\x91R\x14a\x1F\xBEW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a \rWa\x0BL~\x04\x0B(\0\x04\x0B(\0\x02\xF1\xE8\0\x02\xF1\xE8\0\x01\xDC\x90\0\x01\xDC\x90\0\0\0\0\0\0\0\0n\n\x9E\xC0\0\n\x9E\xC0\0\x05\x91\xC8\0\x05\x91\xC8\x89a4HV[a\x0B\x98~\x05\x01@\0\x05\x01@\0\x03c0\0\x03c0\0\x02I\xF0\0\x02I\xF0\0\0\0\0\0\0\0\0n\x19\xB9\xF0\0\x19\xB9\xF0\0\t\x18 \0\t\x18 \x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a sW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a \xCBWa\x0BLu\x0F\xA0\0\0\x0F\xA0\0\0\x0F#\0\0\x0F#\0\0\x0F#\0\0\x0F#`C\x1B}\x9C@\0\0\x9C@\0\0\0\0\0\0\0\0\0\0\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0\x89a4HV[a\x0B\x98~\x02q\0\0\x02q\0\0\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\0\0\0\0\0\0\0~\x05\xB8\xD8\0\x05\xB8\xD8\0\0\0\0\0\0\0\0\0\x04Qx\0\x04Qx\0\x030h\0\x030h\x89a4HV[_a!\x1Da5fV[a\xFF\xFF\x92\x90\x92\x16_\x90\x81R`\x05\x90\x92\x01` RP`@\x90 T`\x01`\xC8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90V[_a!Qa5fV[a\xFF\xFF\x90\x92\x16_\x90\x81R`\x07\x92\x90\x92\x01` RP`@\x90 T`\x01`\x01`\xA0\x1B\x03\x16\x90V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a!\xBFW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a!\xE3\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\"\x16W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\"!\x83\x83\x83a6\x19V[PPPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a\"SW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a\"\xA2Wa\x0BL~\x01\xC9\x08\0\x01\xC9\x08\0\x01[\xA8\0\x01[\xA8\0\x01[\xA8\0\x01[\xA8\0\0\0\0\0\0\0\0n\x02\xBF \0\x02\xBF \0\x02F\x08\0\x02F\x08\x89a4HV[a\x0B\x98~\x02\xBF \0\x02\xBF \0\x026h\0\x026h\0\x01\xD8\xA8\0\x01\xD8\xA8\0\0\0\0\0\0\0\0n\x04l\xD0\0\x04l\xD0\0\x03S\x90\0\x03S\x90\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a#\x08W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\xF8\x1B`\x01`\x01`\xF8\x1B\x03\x19\x87\x16\x14a#7W`@Qcj\xA9\xEB\x05`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\x12\x1E~\x06\xAE\xF0\0\x06\xAE\xF0\0\x04\x9B\xB0\0\x04\x9B\xB0\0\x034P\0\x034P\0\0\0\0\0\0\0\0n\x12\xB1(\0\x12\xB1(\0\n\xE8\xF8\0\n\xE8\xF8\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a#\x9DW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a#\xF5Wa\x0BL}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0m\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4HV[a\x0B\x98}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0m\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4HV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a$\x80W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a$\xA4\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a$\xD7W`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x81\x16\x15\x90\x82\x16\x15\x14a%\x04W`@Qc\x0B\xF8'\xAB`\xE3\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a%\ra5fV[\x90Pe\xFF\xFF\xFF\xFF\xFF\xFF\x83\x16\x15a%\xC5W\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x01`\x90\x1B\x90\x91\x04\x81\x16\x90\x84\x16\x10\x15a%RW`@QcO5}%`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`@Qcw\x8E/\xEF`\xE0\x1B\x81R_`\x04\x82\x01\x81\x90R`$\x82\x01R_\x80Q` aL\xF2\x839\x81Q\x91R\x90cw\x8E/\xEF\x90`D\x01`@\x80Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a%\x9EW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a%\xC2\x91\x90aK\x8EV[PP[`\x04\x81\x01\x80Tl\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0\x19\x16a\x01\0e\xFF\xFF\xFF\xFF\xFF\xFF\x86\x81\x16\x91\x82\x02l\xFF\xFF\xFF\xFF\xFF\xFF\0\0\0\0\0\0\0\x19\x16\x92\x90\x92\x17`\x01`8\x1B\x92\x86\x16\x92\x83\x02\x17\x90\x92U`@\x80Q\x92\x83R` \x83\x01\x91\x90\x91R\x7F\xDD@a\xCD\xC8\xBA'F\x0C\xADG\xA9\rU\x96\x1F\xBB\xFC\xF7\x1E\xEA\xF7\x88Uj\x9A\xD3kh)*\xB2\x91\x01[`@Q\x80\x91\x03\x90\xA1PPPV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a&\x97W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a&\xBB\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a&\xEEW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x1A\xAF\x81a6\xDDV[3_\x80Q` aM2\x839\x81Q\x91R\x14a'$W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x1E\xAB| \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \0\0\0 \x80\x86a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a'zW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x82_`\x02\x87`S\x81\x11\x15a'\x90Wa'\x90aKzV[\x03a'\xE5W`\n\x82\x11a'\xABWPf\x01c\x14\0\x01c\x14a)YV[`\x1E\x82\x11a'\xC1WPf\x01\xF0\x18\0\x01\xF0\x18a)YV[`<\x82\x11a'\xD7WPf\x02B \0\x02B a)YV[Pf\x02m\x18\0\x02m\x18a)YV[`\x03\x87`S\x81\x11\x15a'\xF9Wa'\xF9aKzV[\x03a(NW`\n\x82\x11a(\x14WPf\x01s\x18\0\x01s\x18a)YV[`\x1E\x82\x11a(*WPf\x02\x13@\0\x02\x13@a)YV[`<\x82\x11a(@WPf\x02x\xD0\0\x02x\xD0a)YV[Pf\x02\xCE\xC0\0\x02\xCE\xC0a)YV[`\x04\x87`S\x81\x11\x15a(bWa(baKzV[\x03a(\xB7W`\n\x82\x11a(}WPf\x01\xC5 \0\x01\xC5 a)YV[`\x1E\x82\x11a(\x93WPf\x02\x80\xA0\0\x02\x80\xA0a)YV[`<\x82\x11a(\xA9WPf\x03 \xC8\0\x03 \xC8a)YV[Pf\x04I\xA8\0\x04I\xA8a)YV[`\x05\x87`S\x81\x11\x15a(\xCBWa(\xCBaKzV[\x03a)\nW`\n\x82\x11a(\xE6WPf\x02\x1E\xF8\0\x02\x1E\xF8a)YV[`\x1E\x82\x11a(\xFCWPf\x03K\xC0\0\x03K\xC0a)YV[Pf\x04\xABP\0\x04\xABPa)YV[`\x06\x87`S\x81\x11\x15a)\x1EWa)\x1EaKzV[\x03a\x18uW`\n\x82\x11a)9WPf\x03Wx\0\x03Wxa)YV[`\x1E\x82\x11a)OWPf\x05j\xB8\0\x05j\xB8a)YV[Pf\x08l@\0\x08l@[a\x0B\xA7\x81\x84\x88\x88\x88a=\xA2V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a)\xAFW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a)\xD3\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14\x15\x80\x15a*[WP`@Qc#}\xFBG`\xE1\x1B\x81R3`\x04\x82\x01R_\x80Q` aL\xF2\x839\x81Q\x91R\x90cF\xFB\xF6\x8E\x90`$\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a*5W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a*Y\x91\x90aK\xBBV[\x15[\x15a*{W`@Qc\x105\x1A7`\xE1\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\x1A\xAF\x81`\x01a=\x01V[3_\x80Q` aM2\x839\x81Q\x91R\x14a*\xB3W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a*\xFFWa\x0BL}}\0\0\0}\0\0\0u0\0\0u0\0\0u0\0\0u0\0\0U\xF0\0\0U\xF0_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[a\x0B\x98}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0u0\0\0u0\0\0]\xC0\0\0]\xC0_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a+bW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a+\xABWa\x0BLu\x0B\x98\xC0\0\x0B\x98\xC0\0\x0BZ@\0\x0BZ@\0\nA\0\0\nA`E\x1Bn\x02\x9F\xE0\0\x02\x9F\xE0\0\x02\x07\x88\0\x02\x07\x88\x89a4HV[a\x0B\x98~\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\x01W\xC0\0\x01W\xC0\0\0\0\0\0\0\0\0n\x03\xF3\xB8\0\x03\xF3\xB8\0\x02x\xD0\0\x02x\xD0\x89a4HV[_a+\xEDa5fV[T`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x91\x90PV[3_\x80Q` aM2\x839\x81Q\x91R\x14a,/W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a,xWa\x0BLu\nA\0\0\nA\0\0\x06\xB6\xC0\0\x06\xB6\xC0\0\x06Y\0\0\x06Y`E\x1Bn\x02F\x08\0\x02F\x08\0\x01\xC5 \0\x01\xC5 \x89a4HV[a\x0B\x98~\x01\xCC\xF0\0\x01\xCC\xF0\0\x01H \0\x01H \0\0\xF6\x18\0\0\xF6\x18\0\0\0\0\0\0\0\0n\x034P\0\x034P\0\x02Q\xC0\0\x02Q\xC0\x89a4HV[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a,\xFAW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a-\x1E\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a-QW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[a\xFF\xFF\x82\x16`\x01\x14\x80a-hWPa\xFF\xFF\x82\x16`\x02\x14[\x15a-\x8CW`@Qc\n]E\xA7`\xE3\x1B\x81Ra\xFF\xFF\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[_a-\x95a5fV[\x90Pe\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16\x15a.jW\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\x01`\x90\x1B\x90\x91\x04\x81\x16\x90\x83\x16\x10\x80a-\xDBWP`\x04\x81\x01Te\xFF\xFF\xFF\xFF\xFF\xFFa\x01\0\x90\x91\x04\x81\x16\x90\x83\x16\x11[\x15a-\xFFW`@Qc\n]E\xA7`\xE3\x1B\x81Ra\xFF\xFF\x84\x16`\x04\x82\x01R`$\x01a\x0CLV[a\xFF\xFF\x83\x16\x15a.jW_\x80\x80R`\x05\x82\x01` R`@\x90 T`\x01`\xC8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x80\x15\x80a.DWP\x80e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x83e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x10[\x15a.hW`@Qc\n]E\xA7`\xE3\x1B\x81Ra\xFF\xFF\x85\x16`\x04\x82\x01R`$\x01a\x0CLV[P[a\xFF\xFF\x83\x16_\x81\x81R`\x05\x83\x01` \x90\x81R`@\x91\x82\x90 \x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\xC8\x1B\x19\x16`\x01`\xC8\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x88\x16\x90\x81\x02\x91\x90\x91\x17\x90\x91U\x91Q\x91\x82R3\x92\x91\x7F\xE9\x9C\xC7\xCD#\n[\x07\x19=a\xD9~\xB5\xC5\x97\xDAN\xA6\x02\xBDNGy\xCE~\r\x86a\t\xFD\xD0\x91\x01`@Q\x80\x91\x03\x90\xA3PPPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a/\rW`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a/YWa\x0BL}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0U\xF0\0\0U\xF0_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[a\x0B\x98}}\0\0\0}\0\0\0y\x18\0\0y\x18\0\0y\x18\0\0y\x18\0\0a\xA8\0\0a\xA8_\x80Q` aL\xD2\x839\x81Q\x91R\x89a4HV[_\x80_\x80a/\x9Ba5fV[a\xFF\xFF\x86\x16_\x90\x81R`\x05\x91\x90\x91\x01` R`@\x90 \x80T\x90\x91Pe\xFF\xFF\xFF\xFF\xFF\xFF\x80\x82\x16\x91`\x01`0\x1B\x81\x04\x82\x16\x91a/\xE8\x91`\x01``\x1B\x81\x04\x82\x16\x91`\x01`\x90\x1B\x90\x91\x04\x16\x83a=\xFBV[\x93P\x93P\x93PP\x91\x93\x90\x92PV[3_\x80Q` aM2\x839\x81Q\x91R\x14a0#W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a\x1E\xAB}]\xC0\0\0]\xC0\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0Y\xD8\0\0J8\0\0J8}u0\0\0u0\0\0\0\0\0\0\0\0\0\0a\xA8\0\0a\xA8\0\0]\xC0\0\0]\xC0\x86a4HV[3_\x80Q` aM2\x839\x81Q\x91R\x14a0\x98W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a0\xE1Wa\x0BLu\x0B\x98\xC0\0\x0B\x98\xC0\0\x0BZ@\0\x0BZ@\0\nA\0\0\nA`E\x1Bn\x02\x9F\xE0\0\x02\x9F\xE0\0\x02\x07\x88\0\x02\x07\x88\x89a4HV[a\x0B\x98~\x01\xE8H\0\x01\xE8H\0\x01kH\0\x01kH\0\x01cx\0\x01cx\0\0\0\0\0\0\0\0n\x03\xF7\xA0\0\x03\xF7\xA0\0\x02x\xD0\0\x02x\xD0\x89a4HV[_3_\x80Q` aL\xF2\x839\x81Q\x91R\x14a1GW`@Qb\x91k\x8B`\xE5\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_a1Pa5fV[`\x04\x81\x01T\x90\x91Pa\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x03a1tW_\x91PPa2>V[`\x80a1\x80\x85\x85a>PV[\x90\x1C\x91P_a1\x8E\x84a9\x85V[a\xFF\xFF\x81\x16_\x90\x81R`\x05\x84\x01` R`@\x90 T\x90\x91P`\x01`\xC8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x80\x15\x80\x15\x90a1\xD3WP\x80e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x84e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x11[\x15a2:W\x84\x82a2\x05a1\xE7\x84\x88aK\xEEV[`\x04\x87\x01Te\xFF\xFF\xFF\xFF\xFF\xFF\x91\x82\x16\x91`\x01`8\x1B\x90\x91\x04\x16a?JV[`@Qc\x19\x96a\x85`\xE1\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x90\x93\x16`\x04\x84\x01Ra\xFF\xFF\x90\x91\x16`$\x83\x01R`D\x82\x01R`d\x01a\x0CLV[PPP[\x92\x91PPV[\x7F\xF0\xC5~\x16\x84\r\xF0@\xF1P\x88\xDC/\x81\xFE9\x1C9#\xBE\xC7>#\xA9f.\xFC\x9C\"\x9Cj\0\x80T`\x07\x91\x90`\x01`@\x1B\x90\x04`\xFF\x16\x80a2\x8DWP\x80T`\x01`\x01`@\x1B\x03\x80\x84\x16\x91\x16\x10\x15[\x15a2\xABW`@Qc\xF9.\xE8\xA9`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80Th\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x16`\x01`\x01`@\x1B\x03\x83\x16\x17`\x01`@\x1B\x17\x81U_a2\xD5a5fV[\x80T`\x04\x82\x01T\x91\x92Pe\xFF\xFF\xFF\xFF\xFF\xFF\x16\x90`\xFF\x16\x15a3\x1EWa2\xFB_\x80_a6\x19V[a3\x07`\x01\x82\x83a6\x19V[a3\x19`\x02e\xFF\xFF\xFF\xFF\xFF\xFF\x80a6\x19V[a3)V[a3)_\x82\x83a6\x19V[PP\x80T`\xFF`@\x1B\x19\x16\x81U`@Q`\x01`\x01`@\x1B\x03\x83\x16\x81R\x7F\xC7\xF5\x05\xB2\xF3q\xAE!u\xEEI\x13\xF4I\x9E\x1F&3\xA7\xB5\x93c!\xEE\xD1\xCD\xAE\xB6\x11Q\x81\xD2\x90` \x01`@Q\x80\x91\x03\x90\xA1PPV[3_\x80Q` aM2\x839\x81Q\x91R\x14a3\xA3W`@Qc1\xA8\x1A\x81`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_`\x01`\x01`\xF8\x1B\x03\x19\x86\x16`\x01`\xF8\x1B\x03a3\xF5Wa\x0BLt}\0\0\0}\0\0\0}\0\0\0}\0\0\0}\0\0\0}`H\x1Bm\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0e\x13\x0B\0\0\x13\x0B`\xC3\x1B\x01\x89a4HV[a\x0B\x98~\x02x\xD0\0\x02x\xD0\0\x01\xE8H\0\x01\xE8H\0\x01g`\0\x01g`\0\0\0\0\0\0\0\0~\x05\xC4\x90\0\x05\xC4\x90\0\0\0\0\0\0\0\0\0\x04&\x80\0\x04&\x80\0\x03,\x80\0\x03,\x80\x89a4HV[_a2>\x82a9\x85V[_\x80\x82`S\x81\x11\x15a4\\Wa4\\aKzV[a4j\x90`\xFF\x16`\x04aL\x14V[d\x08vT2\x01\x90\x1C`\x0F\x16\x90P\x80_\x03a4\x97W`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a4\xA2`\x01\x82aL+V[\x90P`\x01`\x01`@\x1B\x03a4\xB7`\x04\x83aLRV[a4\xC2\x90`@aL\x14V[`\x04\x83\x10a4\xD0W\x85a4\xD2V[\x86[\x90\x1C\x16\x91P\x81_\x03a4\xF7W`@Qc\x9B\xA6\x06\x1B`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[P\x93\x92PPPV[a5\x12a5\x0C\x85` \x1C\x90V[\x84a?lV[a\x13\xE4\x81c\xFF\xFF\xFF\xFF\x86\x16a5'\x85\x87a>PV[a?\xC5V[a5?a59\x86` \x1C\x90V[\x85a?lV[a\x10\xFC\x81c\xFF\xFF\xFF\xFF\x87\x16a5'a5W\x87\x89a>PV[a5a\x87\x8Aa>PV[a@\x94V[\x7F\xC1:\xF6\xC5\x14\xBF\xF8\x99\x7F0\xC9\0\x03\xBA\xA8+\xD0*\xAD\x97\x81y\xD1\xCEX\xD8\\C\x19\xADe\0\x90V[``_a5\x96\x83a@\xF3V[`\x01\x01\x90P_\x81`\x01`\x01`@\x1B\x03\x81\x11\x15a5\xB4Wa5\xB4aH\xA0V[`@Q\x90\x80\x82R\x80`\x1F\x01`\x1F\x19\x16` \x01\x82\x01`@R\x80\x15a5\xDEW` \x82\x01\x81\x806\x837\x01\x90P[P\x90P\x81\x81\x01` \x01[_\x19\x01o\x18\x18\x99\x19\x9A\x1A\x9B\x1B\x9C\x1C\xB0\xB11\xB22\xB3`\x81\x1B`\n\x86\x06\x1A\x81S`\n\x85\x04\x94P\x84a5\xE8WP\x93\x92PPPV[e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x81\x16\x15\x90\x82\x16\x15\x14a6LW`@Qc$Bz]`\xE0\x1B\x81Ra\xFF\xFF\x84\x16`\x04\x82\x01R`$\x01a\x0CLV[_a6Ua5fV[a\xFF\xFF\x85\x16_\x81\x81R`\x05\x92\x90\x92\x01` \x90\x81R`@\x92\x83\x90 \x80Te\xFF\xFF\xFF\xFF\xFF\xFF\x88\x81\x16k\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x19\x90\x92\x16\x82\x17`\x01`0\x1B\x91\x89\x16\x91\x82\x02\x17\x83U\x85Q\x91\x82R\x92\x81\x01\x92\x90\x92R\x93P3\x92\x7F\x0B\x07\xF4\xD2\x9C\x11\xF9\xEC\x86\x02k\xCF\xDE\x08R~\x11q\x8B\xE2\xBF\xFC\xD1\n3\xA2F\xEC0\xDCPf\x91\x01`@Q\x80\x91\x03\x90\xA3PPPPV[\x80a6\xE6a5fV[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF`\xC0\x1B\x19\x16`\x01`\xC0\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x93\x84\x16\x02\x17\x90U`@Q\x90\x82\x16\x81R\x7Fd\xCB\x9Ez\xE6I|Y\x08\x0C\xDB\xC0HU.\x12=R\xAAB@\xE17u\x8A\x175\x82xia\xCA\x90` \x01`@Q\x80\x91\x03\x90\xA1PV[_a7Ha5fV[`\x04\x81\x01T\x90\x91Pa\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15\x80\x15\x90a7~WP`\x04\x81\x01Te\xFF\xFF\xFF\xFF\xFF\xFF\x80\x84\x16a\x01\0\x90\x92\x04\x16\x10[\x15a7\x9CW`@QcO5}%`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[_\x80\x80R`\x05\x82\x01` R`@\x90 T`\x01`\xC8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x80\x15\x80\x15\x90a7\xD9WP\x82e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x10[\x15a7\xF9W`@Qc\n]E\xA7`\xE3\x1B\x81R_`\x04\x82\x01R`$\x01a\x0CLV[\x81Te\xFF\xFF\xFF\xFF\xFF\xFF`\x90\x1B\x19\x16`\x01`\x90\x1Be\xFF\xFF\xFF\xFF\xFF\xFF\x85\x16\x90\x81\x02\x91\x90\x91\x17\x83U`@Q\x90\x81R\x7FU\x11\xB1\x85\x1F\xC4\n&)\xC8U\xBA\xB7\xAD\xCE2v\xC4p\xD8\x19\x0E\xB0\x141\xE4\x18\xDC*\xF1>\x8E\x90` \x01a&AV[a8aa8[\x87` \x1C\x90V[\x86a?lV[a8\x90\x81c\xFF\xFF\xFF\xFF\x88\x16a5'a8y\x88\x8Aa>PV[a5aa8\x86\x89\x8Ca>PV[a5a\x89\x8Da>PV[PPPPPPV[_a8\xA1a5fV[\x90Pa\xFF\xFF\x83\x16\x15\x80\x15\x90a8\xD0WPa\xFF\xFF\x83\x16_\x90\x81R`\x05\x82\x01` R`@\x90 Te\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15[\x15a8\xF4W`@Qc$Bz]`\xE0\x1B\x81Ra\xFF\xFF\x84\x16`\x04\x82\x01R`$\x01a\x0CLV[`\x01`\x01`\xA0\x1B\x03\x82\x16_\x90\x81R`\x06\x82\x01` R`@\x90 \x80Ta\xFF\xFF\x19\x16a\xFF\xFF\x85\x16\x90\x81\x17\x90\x91Ua9EW`\x01`\x01`\xA0\x1B\x03\x82\x16_\x90\x81R`\x02\x82\x01` R`@\x90 \x80T`\xFF\x19\x16\x90U[`@Q3\x90`\x01`\x01`\xA0\x1B\x03\x84\x16\x90a\xFF\xFF\x86\x16\x90\x7F\x83\x1E\xC3\x96q\xAB\xEANUE\x15\xAF\xD1@\xCE\xD2\xD4#\xF3\xA8\x02\x8D\x1D\x9D\r\x14\0 QN\xCEy\x90_\x90\xA4PPPV[_\x80a9\x8Fa5fV[`\x01`\x01`\xA0\x1B\x03\x84\x16_\x90\x81R`\x06\x82\x01` R`@\x90 T\x90\x91Pa\xFF\xFF\x16\x80\x15\x15\x80a9\xD4WP_\x80\x80R`\x05\x83\x01` R`@\x90 Te\xFF\xFF\xFF\xFF\xFF\xFF\x16\x15\x15[\x15a9\xE0W\x93\x92PPPV[`\x04\x82\x01T`\xFF\x16\x15\x80a:\x0EWP`\x01`\x01`\xA0\x1B\x03\x84\x16_\x90\x81R`\x02\x83\x01` R`@\x90 T`\xFF\x16\x15[\x15a:\x1CWP_\x93\x92PPPV[`\x01`\x01`\xA0\x1B\x03\x84\x16_\x90\x81R`\x01\x83\x01` R`@\x90 T`\xFF\x16a:DW`\x01a:GV[`\x02[\x94\x93PPPPV[a:\\a8[\x87` \x1C\x90V[_a:g\x85\x87a>PV[\x90P_[\x83\x81\x10\x15a:\xA3Wa:\x99\x82a5a\x87\x87\x85\x81\x81\x10a:\x8CWa:\x8CaLeV[\x90P` \x02\x015\x8Aa>PV[\x91P`\x01\x01a:kV[Pa\x0B\xA7\x82c\xFF\xFF\xFF\xFF\x89\x16[\x83a?\xC5V[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14\x80a;<WP\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`\x01`\x01`\xA0\x1B\x03\x16a;0_\x80Q` aM\x12\x839\x81Q\x91RT`\x01`\x01`\xA0\x1B\x03\x16\x90V[`\x01`\x01`\xA0\x1B\x03\x16\x14\x15[\x15a;ZW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[V[_\x80Q` aL\xF2\x839\x81Q\x91R`\x01`\x01`\xA0\x1B\x03\x16c\x8D\xA5\xCB[`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a;\xA5W=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a;\xC9\x91\x90aJ\xE2V[`\x01`\x01`\xA0\x1B\x03\x163`\x01`\x01`\xA0\x1B\x03\x16\x14a\x1A\xAFW`@Qc\x02\x1B\xFD\xA1`\xE4\x1B\x81R3`\x04\x82\x01R`$\x01a\x0CLV[\x81`\x01`\x01`\xA0\x1B\x03\x16cR\xD1\x90-`@Q\x81c\xFF\xFF\xFF\xFF\x16`\xE0\x1B\x81R`\x04\x01` `@Q\x80\x83\x03\x81\x86Z\xFA\x92PPP\x80\x15a<VWP`@\x80Q`\x1F=\x90\x81\x01`\x1F\x19\x16\x82\x01\x90\x92Ra<S\x91\x81\x01\x90aLyV[`\x01[a<~W`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x83\x16`\x04\x82\x01R`$\x01a\x0CLV[_\x80Q` aM\x12\x839\x81Q\x91R\x81\x14a<\xAEW`@Qc*\x87Ri`\xE2\x1B\x81R`\x04\x81\x01\x82\x90R`$\x01a\x0CLV[a\"!\x83\x83aA\xCAV[0`\x01`\x01`\xA0\x1B\x03\x7F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x16\x14a;ZW`@Qcp>F\xDD`\xE1\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x80a=\na5fV[a\xFF\xFF\x84\x16_\x81\x81R`\x05\x92\x90\x92\x01` R`@\x91\x82\x90 \x80T\x93\x15\x15`\x01`\xC0\x1B\x02`\xFF`\xC0\x1B\x19\x90\x94\x16\x93\x90\x93\x17\x90\x92UQ3\x91\x90\x7FS\x08\x11,KX\xB5r\xB0Z\xD6\x03\xD3\x16\xEDG\x06!\xC6\x07\xB7\x85\xE3\xBB\x80\x18\xD6\xA5\x1BRM\x8E\x90a=r\x90\x85\x15\x15\x81R` \x01\x90V[`@Q\x80\x91\x03\x90\xA3PPV[a=\x91a=\x8B\x84` \x1C\x90V[\x83a?lV[a\"!\x81c\xFF\xFF\xFF\xFF\x85\x16_a?\xC5V[a=\xAFa59\x86` \x1C\x90V[_\x80[\x83\x81\x10\x15a=\xEAWa=\xE0\x82a5a\x87\x87\x85\x81\x81\x10a=\xD3Wa=\xD3aLeV[\x90P` \x02\x015\x89a>PV[\x91P`\x01\x01a=\xB2V[Pa8\x90\x82c\xFF\xFF\xFF\xFF\x88\x16a:\xB0V[_\x80\x82a>\x10e\xFF\xFF\xFF\xFF\xFF\xFF\x86\x16CaL+V[a>\x1A\x91\x90aL\x14V[\x90P\x84e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x10\x15a>CWa>>\x81e\xFF\xFF\xFF\xFF\xFF\xFF\x87\x16aL+V[a>EV[_[\x91PP[\x93\x92PPPV[_\x80a>[\x84aB\x1FV[\x90\x92P\x90P\x80\x15a>lWPa2>V[a>ta5fV[`\x04\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x03a>\x94W_\x91PPa2>V[`@Qcw\x8E/\xEF`\xE0\x1B\x81R`\x04\x81\x01\x85\x90R`\x01`\x01`\xA0\x1B\x03\x84\x16`$\x82\x01R_\x90\x81\x90_\x80Q` aL\xF2\x839\x81Q\x91R\x90cw\x8E/\xEF\x90`D\x01`@\x80Q\x80\x83\x03\x81\x86Z\xFA\x15\x80\x15a>\xEDW=_\x80>=_\xFD[PPPP`@Q=`\x1F\x19`\x1F\x82\x01\x16\x82\x01\x80`@RP\x81\x01\x90a?\x11\x91\x90aK\x8EV[\x91P\x91P`\x80a?<\x83\x83a?$a5fV[`\x04\x01T`\x01`8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16a=\xFBV[\x90\x1B\x93Pa2:\x86\x85aBZV[_\x81`\x01a?X\x82\x86aL\x90V[a?b\x91\x90aL+V[a>I\x91\x90aL\xA3V[a?v\x82\x82aB\x87V[_a?\x82\x81\\\x84aL\x90V[\x90Pa?\x8Ca5fV[T`\x01`\xC0\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15a?\xBCW`@Qcw\xE3\xC2\x93`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[a\"!\x81aD\\V[_a?\xD6\x82`\x80\x85\x90\x1B\x85\x17aL\x90V[\x90P_a?\xE1a5fV[\x80T\x90\x91P`\x01`\x90\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x01`\x01`\x80\x1B\x03\x83\x16\x11\x15a@\x1EW`@Qc\x0F\xC3D\x87`\xE4\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x04\x81\x01Ta\x01\0\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16`\x80\x83\x90\x1C\x81\x15\x80\x15\x90a@CWP\x81\x81\x11[\x15a@\x8AWa@na@U\x83\x83aL+V[`\x04\x85\x01T`\x01`8\x1B\x90\x04e\xFF\xFF\xFF\xFF\xFF\xFF\x16a?JV[`@Qc\x13MC9`\xE3\x1B\x81R`\x04\x01a\x0CL\x91\x81R` \x01\x90V[a\x0B\xA7\x87\x85aBZV[_\x80\x82`\x01`\x01`\x80\x1B\x03\x16\x84`\x01`\x01`\x80\x1B\x03\x16\x10\x15a@\xB6W\x82a@\xB8V[\x83[`\x01`\x01`\x80\x1B\x03\x16\x90P_`\x80\x84\x90\x1C`\x80\x86\x90\x1C\x10\x15a@\xDEW`\x80\x84\x90\x1Ca@\xE4V[`\x80\x85\x90\x1C[`\x80\x1B\x91\x90\x91\x17\x94\x93PPPPV[_\x80r\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x10aA1Wr\x18O\x03\xE9?\xF9\xF4\xDA\xA7\x97\xEDn8\xEDd\xBFj\x1F\x01`@\x1B\x83\x04\x92P`@\x01[m\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x10aA]Wm\x04\xEE-mA[\x85\xAC\xEF\x81\0\0\0\0\x83\x04\x92P` \x01[f#\x86\xF2o\xC1\0\0\x83\x10aA{Wf#\x86\xF2o\xC1\0\0\x83\x04\x92P`\x10\x01[c\x05\xF5\xE1\0\x83\x10aA\x93Wc\x05\xF5\xE1\0\x83\x04\x92P`\x08\x01[a'\x10\x83\x10aA\xA7Wa'\x10\x83\x04\x92P`\x04\x01[`d\x83\x10aA\xB9W`d\x83\x04\x92P`\x02\x01[`\n\x83\x10a2>W`\x01\x01\x92\x91PPV[aA\xD3\x82aDbV[`@Q`\x01`\x01`\xA0\x1B\x03\x83\x16\x90\x7F\xBC|\xD7Z \xEE'\xFD\x9A\xDE\xBA\xB3 A\xF7U!M\xBCk\xFF\xA9\x0C\xC0\"[9\xDA.\\-;\x90_\x90\xA2\x80Q\x15aB\x17Wa\"!\x82\x82aD\xC5V[a\x19\xE7aE7V[_\x80\x82aB?W`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[PP\\`\x01`\x01`\xFF\x1B\x03\x81\x16\x91`\x01`\xFF\x1B\x90\x91\x16\x15\x15\x90V[\x81aBxW`@Qc4\xE4]{`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[`\x01`\xFF\x1B\x81\x17\x80\x83]PPPV[_aB\x91\x82a9\x85V[\x90P_aB\x9Ca5fV[a\xFF\xFF\x83\x16_\x90\x81R`\x05\x91\x90\x91\x01` R`@\x90 \x80T\x90\x91P`\x01`\xC0\x1B\x90\x04`\xFF\x16\x15aB\xF4W`@Qc&\r&\x81`\xE2\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x84\x16`\x04\x82\x01Ra\xFF\xFF\x83\x16`$\x82\x01R`D\x01a\x0CLV[\x80Te\xFF\xFF\xFF\xFF\xFF\xFF\x16_\x81\x90\x03aC4W`@Qc\xB4t\xCB\xA9`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01Ra\xFF\xFF\x84\x16`$\x82\x01R`D\x01a\x0CLV[e\xFF\xFF\xFF\xFF\xFF\xFE\x19e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x16\x01aCQWPPPPPV[\x81Te\xFF\xFF\xFF\xFF\xFF\xFF`\x01`0\x1B\x82\x04\x81\x16\x91_\x91\x88\x91aC\x84\x91`\x01``\x1B\x82\x04\x81\x16\x91`\x01`\x90\x1B\x90\x04\x16\x85a=\xFBV[aC\x8E\x91\x90aL\x90V[\x90P\x82e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x81\x11\x15aD\x13W_\x83e\xFF\xFF\xFF\xFF\xFF\xFF\x16\x88\x11aC\xD8WaC\xD3aC\xC5e\xFF\xFF\xFF\xFF\xFF\xFF\x86\x16\x84aL+V[\x84e\xFF\xFF\xFF\xFF\xFF\xFF\x16a?JV[aC\xDBV[_\x19[`@Qcs\x83\xEE\xE5`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x89\x16`\x04\x82\x01Ra\xFF\xFF\x88\x16`$\x82\x01R`D\x81\x01\x82\x90R\x90\x91P`d\x01a\x0CLV[\x83TCe\xFF\xFF\xFF\xFF\xFF\xFF\x90\x81\x16`\x01`\x90\x1B\x02e\xFF\xFF\xFF\xFF\xFF\xFF`\x90\x1B\x19\x91\x90\x93\x16`\x01``\x1B\x02\x16k\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF``\x1B\x19\x90\x91\x16\x17\x17\x90\x92UPPPPPV[\x80_]PV[\x80`\x01`\x01`\xA0\x1B\x03\x16;_\x03aD\x97W`@QcL\x9C\x8C\xE3`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x82\x16`\x04\x82\x01R`$\x01a\x0CLV[_\x80Q` aM\x12\x839\x81Q\x91R\x80T`\x01`\x01`\xA0\x1B\x03\x19\x16`\x01`\x01`\xA0\x1B\x03\x92\x90\x92\x16\x91\x90\x91\x17\x90UV[``_\x80\x84`\x01`\x01`\xA0\x1B\x03\x16\x84`@QaD\xE1\x91\x90aL\xB6V[_`@Q\x80\x83\x03\x81\x85Z\xF4\x91PP=\x80_\x81\x14aE\x19W`@Q\x91P`\x1F\x19`?=\x01\x16\x82\x01`@R=\x82R=_` \x84\x01>aE\x1EV[``\x91P[P\x91P\x91PaE.\x85\x83\x83aEVV[\x95\x94PPPPPV[4\x15a;ZW`@Qc\xB3\x98\x97\x9F`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[``\x82aEkWaEf\x82aE\xB2V[a>IV[\x81Q\x15\x80\x15aE\x82WP`\x01`\x01`\xA0\x1B\x03\x84\x16;\x15[\x15aE\xABW`@Qc\x99\x96\xB3\x15`\xE0\x1B\x81R`\x01`\x01`\xA0\x1B\x03\x85\x16`\x04\x82\x01R`$\x01a\x0CLV[P\x80a>IV[\x80Q\x15aE\xC2W\x80Q\x80\x82` \x01\xFD[`@Qc\xD6\xBD\xA2u`\xE0\x1B\x81R`\x04\x01`@Q\x80\x91\x03\x90\xFD[\x805`T\x81\x10aE\xE9W_\x80\xFD[\x91\x90PV[`\x01`\x01`\xA0\x1B\x03\x81\x16\x81\x14a\x1A\xAFW_\x80\xFD[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aF\x17W_\x80\xFD[aF \x87aE\xDBV[\x95P` \x87\x015`\x01`\x01`\xF8\x1B\x03\x19\x81\x16\x81\x14aF<W_\x80\xFD[\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aFa\x81aE\xEEV[\x80\x91PP\x92\x95P\x92\x95P\x92\x95V[\x805a\xFF\xFF\x81\x16\x81\x14aE\xE9W_\x80\xFD[_\x80`@\x83\x85\x03\x12\x15aF\x91W_\x80\xFD[aF\x9A\x83aFoV[\x91P` \x83\x015aF\xAA\x81aE\xEEV[\x80\x91PP\x92P\x92\x90PV[_[\x83\x81\x10\x15aF\xCFW\x81\x81\x01Q\x83\x82\x01R` \x01aF\xB7V[PP_\x91\x01RV[` \x81R_\x82Q\x80` \x84\x01RaF\xF5\x81`@\x85\x01` \x87\x01aF\xB5V[`\x1F\x01`\x1F\x19\x16\x91\x90\x91\x01`@\x01\x92\x91PPV[e\xFF\xFF\xFF\xFF\xFF\xFF\x81\x16\x81\x14a\x1A\xAFW_\x80\xFD[_\x80_``\x84\x86\x03\x12\x15aG.W_\x80\xFD[\x835aG9\x81aG\tV[\x92P` \x84\x015aGI\x81aG\tV[\x91P`@\x84\x015aGY\x81aG\tV[\x80\x91PP\x92P\x92P\x92V[_\x80_\x80`\x80\x85\x87\x03\x12\x15aGwW_\x80\xFD[aG\x80\x85aE\xDBV[\x93P` \x85\x015\x92P`@\x85\x015\x91P``\x85\x015aG\x9E\x81aE\xEEV[\x93\x96\x92\x95P\x90\x93PPV[_\x80_\x80_\x80`\xC0\x87\x89\x03\x12\x15aG\xBEW_\x80\xFD[aG\xC7\x87aE\xDBV[\x95P` \x87\x015\x94P`@\x87\x015\x93P``\x87\x015\x92P`\x80\x87\x015\x91P`\xA0\x87\x015aFa\x81aE\xEEV[_\x80\x83`\x1F\x84\x01\x12aH\x03W_\x80\xFD[P\x815`\x01`\x01`@\x1B\x03\x81\x11\x15aH\x19W_\x80\xFD[` \x83\x01\x91P\x83` \x82`\x05\x1B\x85\x01\x01\x11\x15aH3W_\x80\xFD[\x92P\x92\x90PV[_\x80_\x80_\x80`\xA0\x87\x89\x03\x12\x15aHOW_\x80\xFD[aHX\x87aE\xDBV[\x95P` \x87\x015\x94P`@\x87\x015`\x01`\x01`@\x1B\x03\x81\x11\x15aHyW_\x80\xFD[aH\x85\x89\x82\x8A\x01aG\xF3V[\x90\x95P\x93PP``\x87\x015\x91P`\x80\x87\x015aFa\x81aE\xEEV[cNH{q`\xE0\x1B_R`A`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15aH\xC5W_\x80\xFD[\x825aH\xD0\x81aE\xEEV[\x91P` \x83\x015`\x01`\x01`@\x1B\x03\x80\x82\x11\x15aH\xEBW_\x80\xFD[\x81\x85\x01\x91P\x85`\x1F\x83\x01\x12aH\xFEW_\x80\xFD[\x815\x81\x81\x11\x15aI\x10WaI\x10aH\xA0V[`@Q`\x1F\x82\x01`\x1F\x19\x90\x81\x16`?\x01\x16\x81\x01\x90\x83\x82\x11\x81\x83\x10\x17\x15aI8WaI8aH\xA0V[\x81`@R\x82\x81R\x88` \x84\x87\x01\x01\x11\x15aIPW_\x80\xFD[\x82` \x86\x01` \x83\x017_` \x84\x83\x01\x01R\x80\x95PPPPPP\x92P\x92\x90PV[_` \x82\x84\x03\x12\x15aI\x81W_\x80\xFD[\x815a>I\x81aG\tV[_` \x82\x84\x03\x12\x15aI\x9CW_\x80\xFD[a>I\x82aFoV[_\x80_``\x84\x86\x03\x12\x15aI\xB7W_\x80\xFD[aI\xC0\x84aE\xDBV[\x92P` \x84\x015\x91P`@\x84\x015aGY\x81aE\xEEV[_\x80_``\x84\x86\x03\x12\x15aI\xE9W_\x80\xFD[aG9\x84aFoV[_\x80`@\x83\x85\x03\x12\x15aJ\x03W_\x80\xFD[\x825aJ\x0E\x81aG\tV[\x91P` \x83\x015aF\xAA\x81aG\tV[_\x80_\x80_`\x80\x86\x88\x03\x12\x15aJ2W_\x80\xFD[aJ;\x86aE\xDBV[\x94P` \x86\x015`\x01`\x01`@\x1B\x03\x81\x11\x15aJUW_\x80\xFD[aJa\x88\x82\x89\x01aG\xF3V[\x90\x95P\x93PP`@\x86\x015\x91P``\x86\x015aJ|\x81aE\xEEV[\x80\x91PP\x92\x95P\x92\x95\x90\x93PV[_\x80`@\x83\x85\x03\x12\x15aJ\x9BW_\x80\xFD[aJ\x0E\x83aFoV[_\x80`@\x83\x85\x03\x12\x15aJ\xB5W_\x80\xFD[\x825\x91P` \x83\x015aF\xAA\x81aE\xEEV[_` \x82\x84\x03\x12\x15aJ\xD7W_\x80\xFD[\x815a>I\x81aE\xEEV[_` \x82\x84\x03\x12\x15aJ\xF2W_\x80\xFD[\x81Qa>I\x81aE\xEEV[_\x85QaK\x0E\x81\x84` \x8A\x01aF\xB5V[a\x10;`\xF1\x1B\x90\x83\x01\x90\x81R\x85QaK-\x81`\x02\x84\x01` \x8A\x01aF\xB5V[\x80\x82\x01\x91PP`\x17`\xF9\x1B\x80`\x02\x83\x01R\x85QaKQ\x81`\x03\x85\x01` \x8A\x01aF\xB5V[`\x03\x92\x01\x91\x82\x01R\x83QaKl\x81`\x04\x84\x01` \x88\x01aF\xB5V[\x01`\x04\x01\x96\x95PPPPPPV[cNH{q`\xE0\x1B_R`!`\x04R`$_\xFD[_\x80`@\x83\x85\x03\x12\x15aK\x9FW_\x80\xFD[\x82QaK\xAA\x81aG\tV[` \x84\x01Q\x90\x92PaF\xAA\x81aG\tV[_` \x82\x84\x03\x12\x15aK\xCBW_\x80\xFD[\x81Q\x80\x15\x15\x81\x14a>IW_\x80\xFD[cNH{q`\xE0\x1B_R`\x11`\x04R`$_\xFD[e\xFF\xFF\xFF\xFF\xFF\xFF\x82\x81\x16\x82\x82\x16\x03\x90\x80\x82\x11\x15aL\rWaL\raK\xDAV[P\x92\x91PPV[\x80\x82\x02\x81\x15\x82\x82\x04\x84\x14\x17a2>Wa2>aK\xDAV[\x81\x81\x03\x81\x81\x11\x15a2>Wa2>aK\xDAV[cNH{q`\xE0\x1B_R`\x12`\x04R`$_\xFD[_\x82aL`WaL`aL>V[P\x06\x90V[cNH{q`\xE0\x1B_R`2`\x04R`$_\xFD[_` \x82\x84\x03\x12\x15aL\x89W_\x80\xFD[PQ\x91\x90PV[\x80\x82\x01\x80\x82\x11\x15a2>Wa2>aK\xDAV[_\x82aL\xB1WaL\xB1aL>V[P\x04\x90V[_\x82QaL\xC7\x81\x84` \x87\x01aF\xB5V[\x91\x90\x91\x01\x92\x91PPV\xFE\0\0\x94p\0\0\x94p\0\0\0\0\0\0\0\0\0\0\x90\x88\0\0\x90\x88\0\0\x84\xD0\0\0\x84\xD0\0\0\0\0\0\0\0\0\0\0\0\0P\x15|\xFF\xD6\xBB\xFA-\xEC\xE2\x04\xA8\x9E\xC4\x19\xC2>\xF5u]6\x08\x94\xA1;\xA1\xA3!\x06g\xC8(I-\xB9\x8D\xCA> v\xCC75\xA9 \xA3\xCAP]8+\xBC\0\0\0\0\0\0\0\0\0\0\0\0\xE3\xA9\x10Z:\x93\"S\xA7\x0F\x12n\xB1\xE3\xB5\x89\xC6C\xDD$",
     );
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
@@ -2288,89 +2357,6 @@ error AddressEmptyCode(address target);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `AlreadyBlockHCUWhitelisted(address)` and selector `0xf99c4fd1`.
-```solidity
-error AlreadyBlockHCUWhitelisted(address account);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct AlreadyBlockHCUWhitelisted {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<AlreadyBlockHCUWhitelisted>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: AlreadyBlockHCUWhitelisted) -> Self {
-                (value.account,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for AlreadyBlockHCUWhitelisted {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { account: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for AlreadyBlockHCUWhitelisted {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "AlreadyBlockHCUWhitelisted(address)";
-            const SELECTOR: [u8; 4] = [249u8, 156u8, 79u8, 209u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CallerMustBeACLContract()` and selector `0x122d7160`.
 ```solidity
 error CallerMustBeACLContract();
@@ -2521,15 +2507,17 @@ error CallerMustBeFHEVMExecutorContract();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `CallerNotACLOwnerOrAllowlister(address)` and selector `0xe868cd4e`.
+    /**Custom error with signature `ContractNotInQuota(address,uint16)` and selector `0xaa42e785`.
 ```solidity
-error CallerNotACLOwnerOrAllowlister(address caller);
+error ContractNotInQuota(address account, uint16 quotaId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct CallerNotACLOwnerOrAllowlister {
+    pub struct ContractNotInQuota {
         #[allow(missing_docs)]
-        pub caller: alloy::sol_types::private::Address,
+        pub account: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub quotaId: u16,
     }
     #[allow(
         non_camel_case_types,
@@ -2541,9 +2529,12 @@ error CallerNotACLOwnerOrAllowlister(address caller);
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Uint<16>,
+        );
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address, u16);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
         fn _type_assertion(
@@ -2557,28 +2548,29 @@ error CallerNotACLOwnerOrAllowlister(address caller);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<CallerNotACLOwnerOrAllowlister>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: CallerNotACLOwnerOrAllowlister) -> Self {
-                (value.caller,)
+        impl ::core::convert::From<ContractNotInQuota> for UnderlyingRustTuple<'_> {
+            fn from(value: ContractNotInQuota) -> Self {
+                (value.account, value.quotaId)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for CallerNotACLOwnerOrAllowlister {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ContractNotInQuota {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { caller: tuple.0 }
+                Self {
+                    account: tuple.0,
+                    quotaId: tuple.1,
+                }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for CallerNotACLOwnerOrAllowlister {
+        impl alloy_sol_types::SolError for ContractNotInQuota {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CallerNotACLOwnerOrAllowlister(address)";
-            const SELECTOR: [u8; 4] = [232u8, 104u8, 205u8, 78u8];
+            const SIGNATURE: &'static str = "ContractNotInQuota(address,uint16)";
+            const SELECTOR: [u8; 4] = [170u8, 66u8, 231u8, 133u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2589,89 +2581,11 @@ error CallerNotACLOwnerOrAllowlister(address caller);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.caller,
+                        &self.account,
                     ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `CallerNotAllowlisted(address)` and selector `0x1a59b854`.
-```solidity
-error CallerNotAllowlisted(address caller);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct CallerNotAllowlisted {
-        #[allow(missing_docs)]
-        pub caller: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<CallerNotAllowlisted> for UnderlyingRustTuple<'_> {
-            fn from(value: CallerNotAllowlisted) -> Self {
-                (value.caller,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CallerNotAllowlisted {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { caller: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for CallerNotAllowlisted {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CallerNotAllowlisted(address)";
-            const SELECTOR: [u8; 4] = [26u8, 89u8, 184u8, 84u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.caller,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
                 )
             }
             #[inline]
@@ -2740,6 +2654,80 @@ error CrossTxDepthBelowMaxDepthPerTx();
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "CrossTxDepthBelowMaxDepthPerTx()";
             const SELECTOR: [u8; 4] = [158u8, 106u8, 250u8, 74u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `DefaultQuotaNotStopped()` and selector `0xca34efb1`.
+```solidity
+error DefaultQuotaNotStopped();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct DefaultQuotaNotStopped;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<DefaultQuotaNotStopped> for UnderlyingRustTuple<'_> {
+            fn from(value: DefaultQuotaNotStopped) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for DefaultQuotaNotStopped {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for DefaultQuotaNotStopped {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "DefaultQuotaNotStopped()";
+            const SELECTOR: [u8; 4] = [202u8, 52u8, 239u8, 177u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2918,80 +2906,6 @@ error ERC1967NonPayable();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `EmptyBatch()` and selector `0xc2e5347d`.
-```solidity
-error EmptyBatch();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct EmptyBatch;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<EmptyBatch> for UnderlyingRustTuple<'_> {
-            fn from(value: EmptyBatch) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyBatch {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for EmptyBatch {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "EmptyBatch()";
-            const SELECTOR: [u8; 4] = [194u8, 229u8, 52u8, 125u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FailedCall()` and selector `0xd6bda275`.
 ```solidity
 error FailedCall();
@@ -3045,80 +2959,6 @@ error FailedCall();
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "FailedCall()";
             const SELECTOR: [u8; 4] = [214u8, 189u8, 162u8, 117u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `HCUBlockLimitExceeded()` and selector `0xad251174`.
-```solidity
-error HCUBlockLimitExceeded();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct HCUBlockLimitExceeded;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<HCUBlockLimitExceeded> for UnderlyingRustTuple<'_> {
-            fn from(value: HCUBlockLimitExceeded) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HCUBlockLimitExceeded {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for HCUBlockLimitExceeded {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "HCUBlockLimitExceeded()";
-            const SELECTOR: [u8; 4] = [173u8, 37u8, 17u8, 116u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3225,13 +3065,20 @@ error HCUCrossTxDepthLimitExceeded(uint256 retryAfterBlocks);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `HCUPerBlockBelowMaxPerTx()` and selector `0x04acca2f`.
+    /**Custom error with signature `HCUQuotaExceeded(address,uint16,uint256)` and selector `0x7383eee5`.
 ```solidity
-error HCUPerBlockBelowMaxPerTx();
+error HCUQuotaExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct HCUPerBlockBelowMaxPerTx;
+    pub struct HCUQuotaExceeded {
+        #[allow(missing_docs)]
+        pub account: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub retryAfterBlocks: alloy::sol_types::private::primitives::aliases::U256,
+    }
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3242,9 +3089,17 @@ error HCUPerBlockBelowMaxPerTx();
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = ();
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Uint<16>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::Address,
+            u16,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
         fn _type_assertion(
@@ -3258,28 +3113,30 @@ error HCUPerBlockBelowMaxPerTx();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<HCUPerBlockBelowMaxPerTx>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: HCUPerBlockBelowMaxPerTx) -> Self {
-                ()
+        impl ::core::convert::From<HCUQuotaExceeded> for UnderlyingRustTuple<'_> {
+            fn from(value: HCUQuotaExceeded) -> Self {
+                (value.account, value.quotaId, value.retryAfterBlocks)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for HCUPerBlockBelowMaxPerTx {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HCUQuotaExceeded {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
+                Self {
+                    account: tuple.0,
+                    quotaId: tuple.1,
+                    retryAfterBlocks: tuple.2,
+                }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for HCUPerBlockBelowMaxPerTx {
+        impl alloy_sol_types::SolError for HCUQuotaExceeded {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "HCUPerBlockBelowMaxPerTx()";
-            const SELECTOR: [u8; 4] = [4u8, 172u8, 202u8, 47u8];
+            const SIGNATURE: &'static str = "HCUQuotaExceeded(address,uint16,uint256)";
+            const SELECTOR: [u8; 4] = [115u8, 131u8, 238u8, 229u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3288,7 +3145,304 @@ error HCUPerBlockBelowMaxPerTx();
             }
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
-                ()
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.account,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.retryAfterBlocks),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `HCUQuotaPaused(address,uint16)` and selector `0x98349a04`.
+```solidity
+error HCUQuotaPaused(address account, uint16 quotaId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HCUQuotaPaused {
+        #[allow(missing_docs)]
+        pub account: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Uint<16>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address, u16);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HCUQuotaPaused> for UnderlyingRustTuple<'_> {
+            fn from(value: HCUQuotaPaused) -> Self {
+                (value.account, value.quotaId)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HCUQuotaPaused {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    account: tuple.0,
+                    quotaId: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for HCUQuotaPaused {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "HCUQuotaPaused(address,uint16)";
+            const SELECTOR: [u8; 4] = [152u8, 52u8, 154u8, 4u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.account,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `HCUQuotaStopped(address,uint16)` and selector `0xb474cba9`.
+```solidity
+error HCUQuotaStopped(address account, uint16 quotaId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HCUQuotaStopped {
+        #[allow(missing_docs)]
+        pub account: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Uint<16>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address, u16);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HCUQuotaStopped> for UnderlyingRustTuple<'_> {
+            fn from(value: HCUQuotaStopped) -> Self {
+                (value.account, value.quotaId)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HCUQuotaStopped {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    account: tuple.0,
+                    quotaId: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for HCUQuotaStopped {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "HCUQuotaStopped(address,uint16)";
+            const SELECTOR: [u8; 4] = [180u8, 116u8, 203u8, 169u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.account,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `HCUStoredDepthExceeded(address,uint16,uint256)` and selector `0x332cc30a`.
+```solidity
+error HCUStoredDepthExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct HCUStoredDepthExceeded {
+        #[allow(missing_docs)]
+        pub account: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub retryAfterBlocks: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Uint<16>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::Address,
+            u16,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<HCUStoredDepthExceeded> for UnderlyingRustTuple<'_> {
+            fn from(value: HCUStoredDepthExceeded) -> Self {
+                (value.account, value.quotaId, value.retryAfterBlocks)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for HCUStoredDepthExceeded {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    account: tuple.0,
+                    quotaId: tuple.1,
+                    retryAfterBlocks: tuple.2,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for HCUStoredDepthExceeded {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "HCUStoredDepthExceeded(address,uint16,uint256)";
+            const SELECTOR: [u8; 4] = [51u8, 44u8, 195u8, 10u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.account,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.retryAfterBlocks),
+                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -3453,91 +3607,6 @@ error HCUTransactionLimitExceeded();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidAllowlisterDeadline(uint256)` and selector `0x75a94fe2`.
-```solidity
-error InvalidAllowlisterDeadline(uint256 deadline);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct InvalidAllowlisterDeadline {
-        #[allow(missing_docs)]
-        pub deadline: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<InvalidAllowlisterDeadline>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidAllowlisterDeadline) -> Self {
-                (value.deadline,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for InvalidAllowlisterDeadline {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { deadline: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidAllowlisterDeadline {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidAllowlisterDeadline(uint256)";
-            const SELECTOR: [u8; 4] = [117u8, 169u8, 79u8, 226u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.deadline),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidCrossTxDepthLimit()` and selector `0x5fc13d58`.
 ```solidity
 error InvalidCrossTxDepthLimit();
@@ -3688,13 +3757,16 @@ error InvalidInitialization();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidZeroAddress()` and selector `0xf6b2911f`.
+    /**Custom error with signature `InvalidMaxStoredDepth(uint16)` and selector `0x52ea2d38`.
 ```solidity
-error InvalidZeroAddress();
+error InvalidMaxStoredDepth(uint16 quotaId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct InvalidZeroAddress;
+    pub struct InvalidMaxStoredDepth {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3705,9 +3777,9 @@ error InvalidZeroAddress();
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = ();
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
+        type UnderlyingRustTuple<'a> = (u16,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
         fn _type_assertion(
@@ -3721,26 +3793,26 @@ error InvalidZeroAddress();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<InvalidZeroAddress> for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidZeroAddress) -> Self {
-                ()
+        impl ::core::convert::From<InvalidMaxStoredDepth> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidMaxStoredDepth) -> Self {
+                (value.quotaId,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidZeroAddress {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidMaxStoredDepth {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
+                Self { quotaId: tuple.0 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidZeroAddress {
+        impl alloy_sol_types::SolError for InvalidMaxStoredDepth {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidZeroAddress()";
-            const SELECTOR: [u8; 4] = [246u8, 178u8, 145u8, 31u8];
+            const SIGNATURE: &'static str = "InvalidMaxStoredDepth(uint16)";
+            const SELECTOR: [u8; 4] = [82u8, 234u8, 45u8, 56u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3749,7 +3821,92 @@ error InvalidZeroAddress();
             }
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
-                ()
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidQuota(uint16)` and selector `0x24427a5d`.
+```solidity
+error InvalidQuota(uint16 quotaId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidQuota {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (u16,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidQuota> for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidQuota) -> Self {
+                (value.quotaId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidQuota {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { quotaId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidQuota {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidQuota(uint16)";
+            const SELECTOR: [u8; 4] = [36u8, 66u8, 122u8, 93u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -3824,249 +3981,6 @@ error InvalidZeroHandle();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotAllowlisted(address)` and selector `0x6f7a5275`.
-```solidity
-error NotAllowlisted(address account);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotAllowlisted {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotAllowlisted> for UnderlyingRustTuple<'_> {
-            fn from(value: NotAllowlisted) -> Self {
-                (value.account,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotAllowlisted {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { account: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotAllowlisted {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotAllowlisted(address)";
-            const SELECTOR: [u8; 4] = [111u8, 122u8, 82u8, 117u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotAllowlister(address)` and selector `0x803c647d`.
-```solidity
-error NotAllowlister(address account);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotAllowlister {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotAllowlister> for UnderlyingRustTuple<'_> {
-            fn from(value: NotAllowlister) -> Self {
-                (value.account,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotAllowlister {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { account: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotAllowlister {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotAllowlister(address)";
-            const SELECTOR: [u8; 4] = [128u8, 60u8, 100u8, 125u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotBlockHCUWhitelisted(address)` and selector `0xe3cc3418`.
-```solidity
-error NotBlockHCUWhitelisted(address account);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotBlockHCUWhitelisted {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotBlockHCUWhitelisted> for UnderlyingRustTuple<'_> {
-            fn from(value: NotBlockHCUWhitelisted) -> Self {
-                (value.account,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotBlockHCUWhitelisted {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { account: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotBlockHCUWhitelisted {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotBlockHCUWhitelisted(address)";
-            const SELECTOR: [u8; 4] = [227u8, 204u8, 52u8, 24u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -4310,6 +4224,179 @@ error NotInitializingFromEmptyProxy();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `NotPauser(address)` and selector `0x206a346e`.
+```solidity
+error NotPauser(address sender);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NotPauser {
+        #[allow(missing_docs)]
+        pub sender: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NotPauser> for UnderlyingRustTuple<'_> {
+            fn from(value: NotPauser) -> Self {
+                (value.sender,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotPauser {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { sender: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NotPauser {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NotPauser(address)";
+            const SELECTOR: [u8; 4] = [32u8, 106u8, 52u8, 110u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.sender,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `NotQuotaAdmin(uint16,address)` and selector `0x02738725`.
+```solidity
+error NotQuotaAdmin(uint16 quotaId, address sender);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NotQuotaAdmin {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub sender: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<16>,
+            alloy::sol_types::sol_data::Address,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (u16, alloy::sol_types::private::Address);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NotQuotaAdmin> for UnderlyingRustTuple<'_> {
+            fn from(value: NotQuotaAdmin) -> Self {
+                (value.quotaId, value.sender)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotQuotaAdmin {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    quotaId: tuple.0,
+                    sender: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NotQuotaAdmin {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NotQuotaAdmin(uint16,address)";
+            const SELECTOR: [u8; 4] = [2u8, 115u8, 135u8, 37u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.sender,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `OnlyScalarOperationsAreSupported()` and selector `0x6aa9eb05`.
 ```solidity
 error OnlyScalarOperationsAreSupported();
@@ -4374,6 +4461,87 @@ error OnlyScalarOperationsAreSupported();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `QuotaMembershipPaused(uint16)` and selector `0x3074a1aa`.
+```solidity
+error QuotaMembershipPaused(uint16 quotaId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct QuotaMembershipPaused {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (u16,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<QuotaMembershipPaused> for UnderlyingRustTuple<'_> {
+            fn from(value: QuotaMembershipPaused) -> Self {
+                (value.quotaId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for QuotaMembershipPaused {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { quotaId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for QuotaMembershipPaused {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "QuotaMembershipPaused(uint16)";
+            const SELECTOR: [u8; 4] = [48u8, 116u8, 161u8, 170u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -4619,9 +4787,9 @@ error UnsupportedOperation();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `AllowlistActivationChanged(bool)` and selector `0xad553b60ca37b0efb5444e26b0e05a21044896bc327ac810edcadbdd0218c2cd`.
+    /**Event with signature `ContractQuotaAssigned(uint16,address,address)` and selector `0x831ec39671abea4e554515afd140ced2d423f3a8028d1d9d0d140020514ece79`.
 ```solidity
-event AllowlistActivationChanged(bool activated);
+event ContractQuotaAssigned(uint16 indexed quotaId, address indexed account, address indexed setBy);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4630,118 +4798,13 @@ event AllowlistActivationChanged(bool activated);
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct AllowlistActivationChanged {
+    pub struct ContractQuotaAssigned {
         #[allow(missing_docs)]
-        pub activated: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for AllowlistActivationChanged {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "AllowlistActivationChanged(bool)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                173u8, 85u8, 59u8, 96u8, 202u8, 55u8, 176u8, 239u8, 181u8, 68u8, 78u8,
-                38u8, 176u8, 224u8, 90u8, 33u8, 4u8, 72u8, 150u8, 188u8, 50u8, 122u8,
-                200u8, 16u8, 237u8, 202u8, 219u8, 221u8, 2u8, 24u8, 194u8, 205u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self { activated: data.0 }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.activated,
-                    ),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for AllowlistActivationChanged {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&AllowlistActivationChanged> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(
-                this: &AllowlistActivationChanged,
-            ) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `AllowlistAdded(address,address)` and selector `0x3a1d7975c5faf5b51fd037a8d3de977f33ee55b9e8fd42c82fc1a9a260226a41`.
-```solidity
-event AllowlistAdded(address indexed account, address indexed addedBy);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct AllowlistAdded {
+        pub quotaId: u16,
         #[allow(missing_docs)]
         pub account: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub addedBy: alloy::sol_types::private::Address,
+        pub setBy: alloy::sol_types::private::Address,
     }
     #[allow(
         non_camel_case_types,
@@ -4752,21 +4815,22 @@ event AllowlistAdded(address indexed account, address indexed addedBy);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for AllowlistAdded {
+        impl alloy_sol_types::SolEvent for ContractQuotaAssigned {
             type DataTuple<'a> = ();
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<16>,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "AllowlistAdded(address,address)";
+            const SIGNATURE: &'static str = "ContractQuotaAssigned(uint16,address,address)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                58u8, 29u8, 121u8, 117u8, 197u8, 250u8, 245u8, 181u8, 31u8, 208u8, 55u8,
-                168u8, 211u8, 222u8, 151u8, 127u8, 51u8, 238u8, 85u8, 185u8, 232u8,
-                253u8, 66u8, 200u8, 47u8, 193u8, 169u8, 162u8, 96u8, 34u8, 106u8, 65u8,
+                131u8, 30u8, 195u8, 150u8, 113u8, 171u8, 234u8, 78u8, 85u8, 69u8, 21u8,
+                175u8, 209u8, 64u8, 206u8, 210u8, 212u8, 35u8, 243u8, 168u8, 2u8, 141u8,
+                29u8, 157u8, 13u8, 20u8, 0u8, 32u8, 81u8, 78u8, 206u8, 121u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4776,8 +4840,9 @@ event AllowlistAdded(address indexed account, address indexed addedBy);
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    account: topics.1,
-                    addedBy: topics.2,
+                    quotaId: topics.1,
+                    account: topics.2,
+                    setBy: topics.3,
                 }
             }
             #[inline]
@@ -4801,7 +4866,12 @@ event AllowlistAdded(address indexed account, address indexed addedBy);
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.account.clone(), self.addedBy.clone())
+                (
+                    Self::SIGNATURE_HASH.into(),
+                    self.quotaId.clone(),
+                    self.account.clone(),
+                    self.setBy.clone(),
+                )
             }
             #[inline]
             fn encode_topics_raw(
@@ -4814,124 +4884,20 @@ event AllowlistAdded(address indexed account, address indexed addedBy);
                 out[0usize] = alloy_sol_types::abi::token::WordToken(
                     Self::SIGNATURE_HASH,
                 );
-                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
-                    &self.account,
-                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    16,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.quotaId);
                 out[2usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
-                    &self.addedBy,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for AllowlistAdded {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&AllowlistAdded> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &AllowlistAdded) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `AllowlistRemoved(address)` and selector `0x458680f79aa9de0ae06344287a3bd8ec6179faa05252e9af81ae734d6b4dc6ba`.
-```solidity
-event AllowlistRemoved(address indexed account);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct AllowlistRemoved {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for AllowlistRemoved {
-            type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Address,
-            );
-            const SIGNATURE: &'static str = "AllowlistRemoved(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                69u8, 134u8, 128u8, 247u8, 154u8, 169u8, 222u8, 10u8, 224u8, 99u8, 68u8,
-                40u8, 122u8, 59u8, 216u8, 236u8, 97u8, 121u8, 250u8, 160u8, 82u8, 82u8,
-                233u8, 175u8, 129u8, 174u8, 115u8, 77u8, 107u8, 77u8, 198u8, 186u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self { account: topics.1 }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                ()
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.account.clone())
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.account,
                 );
+                out[3usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.setBy,
+                );
                 Ok(())
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for AllowlistRemoved {
+        impl alloy_sol_types::private::IntoLogData for ContractQuotaAssigned {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -4940,448 +4906,9 @@ event AllowlistRemoved(address indexed account);
             }
         }
         #[automatically_derived]
-        impl From<&AllowlistRemoved> for alloy_sol_types::private::LogData {
+        impl From<&ContractQuotaAssigned> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &AllowlistRemoved) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `AllowlisterAdded(address,uint256)` and selector `0x702308f307104d2cb94599ca9d733f059c22460a3bbdd48ccccec249f7b75eb2`.
-```solidity
-event AllowlisterAdded(address indexed account, uint256 deadline);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct AllowlisterAdded {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub deadline: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for AllowlisterAdded {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Address,
-            );
-            const SIGNATURE: &'static str = "AllowlisterAdded(address,uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                112u8, 35u8, 8u8, 243u8, 7u8, 16u8, 77u8, 44u8, 185u8, 69u8, 153u8,
-                202u8, 157u8, 115u8, 63u8, 5u8, 156u8, 34u8, 70u8, 10u8, 59u8, 189u8,
-                212u8, 140u8, 204u8, 206u8, 194u8, 73u8, 247u8, 183u8, 94u8, 178u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    account: topics.1,
-                    deadline: data.0,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.deadline),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.account.clone())
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
-                    &self.account,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for AllowlisterAdded {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&AllowlisterAdded> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &AllowlisterAdded) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `AllowlisterRemoved(address)` and selector `0xb3b168c75fe5d57ce3ad098ab4f89eaabb290b7354c67d13c048f985328bb017`.
-```solidity
-event AllowlisterRemoved(address indexed account);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct AllowlisterRemoved {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for AllowlisterRemoved {
-            type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Address,
-            );
-            const SIGNATURE: &'static str = "AllowlisterRemoved(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                179u8, 177u8, 104u8, 199u8, 95u8, 229u8, 213u8, 124u8, 227u8, 173u8, 9u8,
-                138u8, 180u8, 248u8, 158u8, 170u8, 187u8, 41u8, 11u8, 115u8, 84u8, 198u8,
-                125u8, 19u8, 192u8, 72u8, 249u8, 133u8, 50u8, 139u8, 176u8, 23u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self { account: topics.1 }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                ()
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.account.clone())
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
-                    &self.account,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for AllowlisterRemoved {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&AllowlisterRemoved> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &AllowlisterRemoved) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `BlockHCUWhitelistAdded(address)` and selector `0xcca1d46384cdbbeef2f9daddb76db138101c9905f818d867b630195c128d3c66`.
-```solidity
-event BlockHCUWhitelistAdded(address indexed account);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct BlockHCUWhitelistAdded {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for BlockHCUWhitelistAdded {
-            type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Address,
-            );
-            const SIGNATURE: &'static str = "BlockHCUWhitelistAdded(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                204u8, 161u8, 212u8, 99u8, 132u8, 205u8, 187u8, 238u8, 242u8, 249u8,
-                218u8, 221u8, 183u8, 109u8, 177u8, 56u8, 16u8, 28u8, 153u8, 5u8, 248u8,
-                24u8, 216u8, 103u8, 182u8, 48u8, 25u8, 92u8, 18u8, 141u8, 60u8, 102u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self { account: topics.1 }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                ()
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.account.clone())
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
-                    &self.account,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for BlockHCUWhitelistAdded {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&BlockHCUWhitelistAdded> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &BlockHCUWhitelistAdded) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `BlockHCUWhitelistRemoved(address)` and selector `0x92fc97af15002646cea63c7633bb375b82db7cde7b480c75fe6341dacc292c81`.
-```solidity
-event BlockHCUWhitelistRemoved(address indexed account);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct BlockHCUWhitelistRemoved {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for BlockHCUWhitelistRemoved {
-            type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Address,
-            );
-            const SIGNATURE: &'static str = "BlockHCUWhitelistRemoved(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                146u8, 252u8, 151u8, 175u8, 21u8, 0u8, 38u8, 70u8, 206u8, 166u8, 60u8,
-                118u8, 51u8, 187u8, 55u8, 91u8, 130u8, 219u8, 124u8, 222u8, 123u8, 72u8,
-                12u8, 117u8, 254u8, 99u8, 65u8, 218u8, 204u8, 41u8, 44u8, 129u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self { account: topics.1 }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                ()
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.account.clone())
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
-                    &self.account,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for BlockHCUWhitelistRemoved {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&BlockHCUWhitelistRemoved> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(
-                this: &BlockHCUWhitelistRemoved,
-            ) -> alloy_sol_types::private::LogData {
+            fn from(this: &ContractQuotaAssigned) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -5498,111 +5025,6 @@ event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
         impl From<&CrossTxDepthLimitSet> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &CrossTxDepthLimitSet) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `HCUPerBlockSet(uint48)` and selector `0xc1f1fcaa898aae2263dded712e1798083fca9272ff803ee4150ce48f8619891a`.
-```solidity
-event HCUPerBlockSet(uint48 hcuPerBlock);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct HCUPerBlockSet {
-        #[allow(missing_docs)]
-        pub hcuPerBlock: alloy::sol_types::private::primitives::aliases::U48,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for HCUPerBlockSet {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "HCUPerBlockSet(uint48)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                193u8, 241u8, 252u8, 170u8, 137u8, 138u8, 174u8, 34u8, 99u8, 221u8,
-                237u8, 113u8, 46u8, 23u8, 152u8, 8u8, 63u8, 202u8, 146u8, 114u8, 255u8,
-                128u8, 62u8, 228u8, 21u8, 12u8, 228u8, 143u8, 134u8, 25u8, 137u8, 26u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self { hcuPerBlock: data.0 }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.hcuPerBlock),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for HCUPerBlockSet {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&HCUPerBlockSet> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &HCUPerBlockSet) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -5924,6 +5346,500 @@ event MaxHCUPerTxSet(uint48 maxHCUPerTx);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `QuotaAdminSet(uint16,address)` and selector `0x9a6341776ec886f635576aafe3759f09cef019b264dfa6a27debb4855415ff3e`.
+```solidity
+event QuotaAdminSet(uint16 indexed quotaId, address indexed admin);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct QuotaAdminSet {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub admin: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for QuotaAdminSet {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
+            );
+            const SIGNATURE: &'static str = "QuotaAdminSet(uint16,address)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                154u8, 99u8, 65u8, 119u8, 110u8, 200u8, 134u8, 246u8, 53u8, 87u8, 106u8,
+                175u8, 227u8, 117u8, 159u8, 9u8, 206u8, 240u8, 25u8, 178u8, 100u8, 223u8,
+                166u8, 162u8, 125u8, 235u8, 180u8, 133u8, 84u8, 21u8, 255u8, 62u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    quotaId: topics.1,
+                    admin: topics.2,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.quotaId.clone(), self.admin.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    16,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.quotaId);
+                out[2usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.admin,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for QuotaAdminSet {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&QuotaAdminSet> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &QuotaAdminSet) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `QuotaMaxStoredDepthSet(uint16,uint48,address)` and selector `0xe99cc7cd230a5b07193d61d97eb5c597da4ea602bd4e4779ce7e0d866109fdd0`.
+```solidity
+event QuotaMaxStoredDepthSet(uint16 indexed quotaId, uint48 maxStoredDepth, address indexed setBy);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct QuotaMaxStoredDepthSet {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub maxStoredDepth: alloy::sol_types::private::primitives::aliases::U48,
+        #[allow(missing_docs)]
+        pub setBy: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for QuotaMaxStoredDepthSet {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
+            );
+            const SIGNATURE: &'static str = "QuotaMaxStoredDepthSet(uint16,uint48,address)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                233u8, 156u8, 199u8, 205u8, 35u8, 10u8, 91u8, 7u8, 25u8, 61u8, 97u8,
+                217u8, 126u8, 181u8, 197u8, 151u8, 218u8, 78u8, 166u8, 2u8, 189u8, 78u8,
+                71u8, 121u8, 206u8, 126u8, 13u8, 134u8, 97u8, 9u8, 253u8, 208u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    quotaId: topics.1,
+                    maxStoredDepth: data.0,
+                    setBy: topics.2,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxStoredDepth),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.quotaId.clone(), self.setBy.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    16,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.quotaId);
+                out[2usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.setBy,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for QuotaMaxStoredDepthSet {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&QuotaMaxStoredDepthSet> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &QuotaMaxStoredDepthSet) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `QuotaPauseSet(uint16,bool,address)` and selector `0x5308112c4b58b572b05ad603d316ed470621c607b785e3bb8018d6a51b524d8e`.
+```solidity
+event QuotaPauseSet(uint16 indexed quotaId, bool paused, address indexed setBy);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct QuotaPauseSet {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub paused: bool,
+        #[allow(missing_docs)]
+        pub setBy: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for QuotaPauseSet {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
+            );
+            const SIGNATURE: &'static str = "QuotaPauseSet(uint16,bool,address)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                83u8, 8u8, 17u8, 44u8, 75u8, 88u8, 181u8, 114u8, 176u8, 90u8, 214u8, 3u8,
+                211u8, 22u8, 237u8, 71u8, 6u8, 33u8, 198u8, 7u8, 183u8, 133u8, 227u8,
+                187u8, 128u8, 24u8, 214u8, 165u8, 27u8, 82u8, 77u8, 142u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    quotaId: topics.1,
+                    paused: data.0,
+                    setBy: topics.2,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        &self.paused,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.quotaId.clone(), self.setBy.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    16,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.quotaId);
+                out[2usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.setBy,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for QuotaPauseSet {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&QuotaPauseSet> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &QuotaPauseSet) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `QuotaSet(uint16,uint48,uint48,address)` and selector `0x0b07f4d29c11f9ec86026bcfde08527e11718be2bffcd10a33a246ec30dc5066`.
+```solidity
+event QuotaSet(uint16 indexed quotaId, uint48 maxHCU, uint48 decayPerBlock, address indexed setBy);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct QuotaSet {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub maxHCU: alloy::sol_types::private::primitives::aliases::U48,
+        #[allow(missing_docs)]
+        pub decayPerBlock: alloy::sol_types::private::primitives::aliases::U48,
+        #[allow(missing_docs)]
+        pub setBy: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for QuotaSet {
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<48>,
+                alloy::sol_types::sol_data::Uint<48>,
+            );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
+            );
+            const SIGNATURE: &'static str = "QuotaSet(uint16,uint48,uint48,address)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                11u8, 7u8, 244u8, 210u8, 156u8, 17u8, 249u8, 236u8, 134u8, 2u8, 107u8,
+                207u8, 222u8, 8u8, 82u8, 126u8, 17u8, 113u8, 139u8, 226u8, 191u8, 252u8,
+                209u8, 10u8, 51u8, 162u8, 70u8, 236u8, 48u8, 220u8, 80u8, 102u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    quotaId: topics.1,
+                    maxHCU: data.0,
+                    decayPerBlock: data.1,
+                    setBy: topics.2,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxHCU),
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(&self.decayPerBlock),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.quotaId.clone(), self.setBy.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    16,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.quotaId);
+                out[2usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.setBy,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for QuotaSet {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&QuotaSet> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &QuotaSet) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `Upgraded(address)` and selector `0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b`.
 ```solidity
 event Upgraded(address indexed implementation);
@@ -6239,22 +6155,22 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `addAllowlister(address,uint256)` and selector `0x3d044b9e`.
+    /**Function with signature `assignQuota(uint16,address)` and selector `0x7eefeb63`.
 ```solidity
-function addAllowlister(address account, uint256 deadline) external;
+function assignQuota(uint16 quotaId, address account) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct addAllowlisterCall {
+    pub struct assignQuotaCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
         #[allow(missing_docs)]
         pub account: alloy::sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub deadline: alloy::sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the [`addAllowlister(address,uint256)`](addAllowlisterCall) function.
+    ///Container type for the return parameters of the [`assignQuota(uint16,address)`](assignQuotaCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct addAllowlisterReturn {}
+    pub struct assignQuotaReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -6267,14 +6183,11 @@ function addAllowlister(address account, uint256 deadline) external;
             #[doc(hidden)]
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
                 alloy::sol_types::sol_data::Address,
-                alloy::sol_types::sol_data::Uint<256>,
             );
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Address,
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
+            type UnderlyingRustTuple<'a> = (u16, alloy::sol_types::private::Address);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
             fn _type_assertion(
@@ -6288,18 +6201,18 @@ function addAllowlister(address account, uint256 deadline) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<addAllowlisterCall> for UnderlyingRustTuple<'_> {
-                fn from(value: addAllowlisterCall) -> Self {
-                    (value.account, value.deadline)
+            impl ::core::convert::From<assignQuotaCall> for UnderlyingRustTuple<'_> {
+                fn from(value: assignQuotaCall) -> Self {
+                    (value.quotaId, value.account)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for addAllowlisterCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for assignQuotaCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        account: tuple.0,
-                        deadline: tuple.1,
+                        quotaId: tuple.0,
+                        account: tuple.1,
                     }
                 }
             }
@@ -6323,44 +6236,42 @@ function addAllowlister(address account, uint256 deadline) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<addAllowlisterReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: addAllowlisterReturn) -> Self {
+            impl ::core::convert::From<assignQuotaReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: assignQuotaReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for addAllowlisterReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for assignQuotaReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
-        impl addAllowlisterReturn {
+        impl assignQuotaReturn {
             fn _tokenize(
                 &self,
-            ) -> <addAllowlisterCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            ) -> <assignQuotaCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for addAllowlisterCall {
+        impl alloy_sol_types::SolCall for assignQuotaCall {
             type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
                 alloy::sol_types::sol_data::Address,
-                alloy::sol_types::sol_data::Uint<256>,
             );
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = addAllowlisterReturn;
+            type Return = assignQuotaReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "addAllowlister(address,uint256)";
-            const SELECTOR: [u8; 4] = [61u8, 4u8, 75u8, 158u8];
+            const SIGNATURE: &'static str = "assignQuota(uint16,address)";
+            const SELECTOR: [u8; 4] = [126u8, 239u8, 235u8, 99u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -6369,482 +6280,25 @@ function addAllowlister(address account, uint256 deadline) external;
             }
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.deadline),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                addAllowlisterReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `addToAllowlist(address[])` and selector `0x5207c273`.
-```solidity
-function addToAllowlist(address[] memory accounts) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct addToAllowlistCall {
-        #[allow(missing_docs)]
-        pub accounts: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-    }
-    ///Container type for the return parameters of the [`addToAllowlist(address[])`](addToAllowlistCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct addToAllowlistReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<addToAllowlistCall> for UnderlyingRustTuple<'_> {
-                fn from(value: addToAllowlistCall) -> Self {
-                    (value.accounts,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for addToAllowlistCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { accounts: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<addToAllowlistReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: addToAllowlistReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for addToAllowlistReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl addToAllowlistReturn {
-            fn _tokenize(
-                &self,
-            ) -> <addToAllowlistCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for addToAllowlistCall {
-            type Parameters<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = addToAllowlistReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "addToAllowlist(address[])";
-            const SELECTOR: [u8; 4] = [82u8, 7u8, 194u8, 115u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.accounts),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                addToAllowlistReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `addToBlockHCUWhitelist(address)` and selector `0x6fd65e4d`.
-```solidity
-function addToBlockHCUWhitelist(address account) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct addToBlockHCUWhitelistCall {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`addToBlockHCUWhitelist(address)`](addToBlockHCUWhitelistCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct addToBlockHCUWhitelistReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<addToBlockHCUWhitelistCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: addToBlockHCUWhitelistCall) -> Self {
-                    (value.account,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for addToBlockHCUWhitelistCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { account: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<addToBlockHCUWhitelistReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: addToBlockHCUWhitelistReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for addToBlockHCUWhitelistReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl addToBlockHCUWhitelistReturn {
-            fn _tokenize(
-                &self,
-            ) -> <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for addToBlockHCUWhitelistCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = addToBlockHCUWhitelistReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "addToBlockHCUWhitelist(address)";
-            const SELECTOR: [u8; 4] = [111u8, 214u8, 94u8, 77u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                addToBlockHCUWhitelistReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `allowlisterDeadline(address)` and selector `0x4391568c`.
-```solidity
-function allowlisterDeadline(address account) external view returns (uint256);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct allowlisterDeadlineCall {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`allowlisterDeadline(address)`](allowlisterDeadlineCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct allowlisterDeadlineReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<allowlisterDeadlineCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: allowlisterDeadlineCall) -> Self {
-                    (value.account,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for allowlisterDeadlineCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { account: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<allowlisterDeadlineReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: allowlisterDeadlineReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for allowlisterDeadlineReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for allowlisterDeadlineCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy::sol_types::private::primitives::aliases::U256;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "allowlisterDeadline(address)";
-            const SELECTOR: [u8; 4] = [67u8, 145u8, 86u8, 140u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 (
                     <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.account,
+                    ),
                 )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                assignQuotaReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: allowlisterDeadlineReturn = r.into();
-                        r._0
-                    })
+                    .map(Into::into)
             }
             #[inline]
             fn abi_decode_returns_validate(
@@ -6853,10 +6307,7 @@ function allowlisterDeadline(address account) external view returns (uint256);
                 <Self::ReturnTuple<
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: allowlisterDeadlineReturn = r.into();
-                        r._0
-                    })
+                    .map(Into::into)
             }
         }
     };
@@ -6864,7 +6315,7 @@ function allowlisterDeadline(address account) external view returns (uint256);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `cacheDepth(bytes32,address)` and selector `0xf1c4e4ed`.
 ```solidity
-function cacheDepth(bytes32 handle, address holder) external returns (uint48);
+function cacheDepth(bytes32 handle, address holder) external returns (uint48 depth);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -6881,7 +6332,7 @@ function cacheDepth(bytes32 handle, address holder) external returns (uint48);
     #[derive(Clone)]
     pub struct cacheDepthReturn {
         #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::primitives::aliases::U48,
+        pub depth: alloy::sol_types::private::primitives::aliases::U48,
     }
     #[allow(
         non_camel_case_types,
@@ -6955,14 +6406,14 @@ function cacheDepth(bytes32 handle, address holder) external returns (uint48);
             #[doc(hidden)]
             impl ::core::convert::From<cacheDepthReturn> for UnderlyingRustTuple<'_> {
                 fn from(value: cacheDepthReturn) -> Self {
-                    (value._0,)
+                    (value.depth,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for cacheDepthReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
+                    Self { depth: tuple.0 }
                 }
             }
         }
@@ -7014,7 +6465,7 @@ function cacheDepth(bytes32 handle, address holder) external returns (uint48);
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(|r| {
                         let r: cacheDepthReturn = r.into();
-                        r._0
+                        r.depth
                     })
             }
             #[inline]
@@ -7026,7 +6477,7 @@ function cacheDepth(bytes32 handle, address holder) external returns (uint48);
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: cacheDepthReturn = r.into();
-                        r._0
+                        r.depth
                     })
             }
         }
@@ -13027,23 +12478,24 @@ function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result, address c
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getBlockMeter()` and selector `0x9f4b9937`.
+    /**Function with signature `getContractQuota(address)` and selector `0xf8e4d1ec`.
 ```solidity
-function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedHCU);
+function getContractQuota(address account) external view returns (uint16);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getBlockMeterCall;
+    pub struct getContractQuotaCall {
+        #[allow(missing_docs)]
+        pub account: alloy::sol_types::private::Address,
+    }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getBlockMeter()`](getBlockMeterCall) function.
+    ///Container type for the return parameters of the [`getContractQuota(address)`](getContractQuotaCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getBlockMeterReturn {
+    pub struct getContractQuotaReturn {
         #[allow(missing_docs)]
-        pub blockNumber: alloy::sol_types::private::primitives::aliases::U48,
-        #[allow(missing_docs)]
-        pub usedHCU: alloy::sol_types::private::primitives::aliases::U48,
+        pub _0: u16,
     }
     #[allow(
         non_camel_case_types,
@@ -13056,9 +12508,9 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
         {
             #[doc(hidden)]
             #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
             fn _type_assertion(
@@ -13072,31 +12524,27 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getBlockMeterCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getBlockMeterCall) -> Self {
-                    ()
+            impl ::core::convert::From<getContractQuotaCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getContractQuotaCall) -> Self {
+                    (value.account,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getBlockMeterCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getContractQuotaCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
+                    Self { account: tuple.0 }
                 }
             }
         }
         {
             #[doc(hidden)]
             #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<48>,
-                alloy::sol_types::sol_data::Uint<48>,
-            );
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U48,
-                alloy::sol_types::private::primitives::aliases::U48,
-            );
+            type UnderlyingRustTuple<'a> = (u16,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
             fn _type_assertion(
@@ -13110,52 +12558,34 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getBlockMeterReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getBlockMeterReturn) -> Self {
-                    (value.blockNumber, value.usedHCU)
+            impl ::core::convert::From<getContractQuotaReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getContractQuotaReturn) -> Self {
+                    (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getBlockMeterReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getContractQuotaReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        blockNumber: tuple.0,
-                        usedHCU: tuple.1,
-                    }
+                    Self { _0: tuple.0 }
                 }
             }
         }
-        impl getBlockMeterReturn {
-            fn _tokenize(
-                &self,
-            ) -> <getBlockMeterCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.blockNumber),
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.usedHCU),
-                )
-            }
-        }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for getBlockMeterCall {
-            type Parameters<'a> = ();
+        impl alloy_sol_types::SolCall for getContractQuotaCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getBlockMeterReturn;
-            type ReturnTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<48>,
-                alloy::sol_types::sol_data::Uint<48>,
-            );
+            type Return = u16;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getBlockMeter()";
-            const SELECTOR: [u8; 4] = [159u8, 75u8, 153u8, 55u8];
+            const SIGNATURE: &'static str = "getContractQuota(address)";
+            const SELECTOR: [u8; 4] = [248u8, 228u8, 209u8, 236u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -13164,18 +12594,29 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
             }
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
-                ()
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.account,
+                    ),
+                )
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                getBlockMeterReturn::_tokenize(ret)
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
+                    .map(|r| {
+                        let r: getContractQuotaReturn = r.into();
+                        r._0
+                    })
             }
             #[inline]
             fn abi_decode_returns_validate(
@@ -13184,7 +12625,10 @@ function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedH
                 <Self::ReturnTuple<
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
+                    .map(|r| {
+                        let r: getContractQuotaReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -13508,157 +12952,6 @@ function getFHEVMExecutorAddress() external view returns (address);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getGlobalHCUCapPerBlock()` and selector `0xb59547b8`.
-```solidity
-function getGlobalHCUCapPerBlock() external view returns (uint48);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getGlobalHCUCapPerBlockCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getGlobalHCUCapPerBlock()`](getGlobalHCUCapPerBlockCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getGlobalHCUCapPerBlockReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::primitives::aliases::U48,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getGlobalHCUCapPerBlockCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getGlobalHCUCapPerBlockCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getGlobalHCUCapPerBlockCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U48,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getGlobalHCUCapPerBlockReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: getGlobalHCUCapPerBlockReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getGlobalHCUCapPerBlockReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getGlobalHCUCapPerBlockCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy::sol_types::private::primitives::aliases::U48;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getGlobalHCUCapPerBlock()";
-            const SELECTOR: [u8; 4] = [181u8, 149u8, 71u8, 184u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(ret),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: getGlobalHCUCapPerBlockReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getGlobalHCUCapPerBlockReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getMaxHCUDepthPerTx()` and selector `0x1e24aa49`.
 ```solidity
 function getMaxHCUDepthPerTx() external view returns (uint48);
@@ -13959,6 +13252,495 @@ function getMaxHCUPerTx() external view returns (uint48);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getQuota(uint16)` and selector `0xd07476c6`.
+```solidity
+function getQuota(uint16 quotaId) external view returns (uint48 maxHCU, uint48 decayPerBlock, uint48 usedHCU);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getQuotaCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getQuota(uint16)`](getQuotaCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getQuotaReturn {
+        #[allow(missing_docs)]
+        pub maxHCU: alloy::sol_types::private::primitives::aliases::U48,
+        #[allow(missing_docs)]
+        pub decayPerBlock: alloy::sol_types::private::primitives::aliases::U48,
+        #[allow(missing_docs)]
+        pub usedHCU: alloy::sol_types::private::primitives::aliases::U48,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u16,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getQuotaCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getQuotaCall) -> Self {
+                    (value.quotaId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getQuotaCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { quotaId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<48>,
+                alloy::sol_types::sol_data::Uint<48>,
+                alloy::sol_types::sol_data::Uint<48>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U48,
+                alloy::sol_types::private::primitives::aliases::U48,
+                alloy::sol_types::private::primitives::aliases::U48,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getQuotaReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getQuotaReturn) -> Self {
+                    (value.maxHCU, value.decayPerBlock, value.usedHCU)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getQuotaReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        maxHCU: tuple.0,
+                        decayPerBlock: tuple.1,
+                        usedHCU: tuple.2,
+                    }
+                }
+            }
+        }
+        impl getQuotaReturn {
+            fn _tokenize(
+                &self,
+            ) -> <getQuotaCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxHCU),
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(&self.decayPerBlock),
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(&self.usedHCU),
+                )
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getQuotaCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getQuotaReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<48>,
+                alloy::sol_types::sol_data::Uint<48>,
+                alloy::sol_types::sol_data::Uint<48>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getQuota(uint16)";
+            const SELECTOR: [u8; 4] = [208u8, 116u8, 118u8, 198u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                getQuotaReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getQuotaAdmin(uint16)` and selector `0x8a1e6de5`.
+```solidity
+function getQuotaAdmin(uint16 quotaId) external view returns (address);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getQuotaAdminCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getQuotaAdmin(uint16)`](getQuotaAdminCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getQuotaAdminReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u16,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getQuotaAdminCall> for UnderlyingRustTuple<'_> {
+                fn from(value: getQuotaAdminCall) -> Self {
+                    (value.quotaId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getQuotaAdminCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { quotaId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getQuotaAdminReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: getQuotaAdminReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getQuotaAdminReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getQuotaAdminCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::Address;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getQuotaAdmin(uint16)";
+            const SELECTOR: [u8; 4] = [138u8, 30u8, 109u8, 229u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getQuotaAdminReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getQuotaAdminReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getQuotaMaxStoredDepth(uint16)` and selector `0x89abb839`.
+```solidity
+function getQuotaMaxStoredDepth(uint16 quotaId) external view returns (uint48);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getQuotaMaxStoredDepthCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getQuotaMaxStoredDepth(uint16)`](getQuotaMaxStoredDepthCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getQuotaMaxStoredDepthReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U48,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u16,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getQuotaMaxStoredDepthCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getQuotaMaxStoredDepthCall) -> Self {
+                    (value.quotaId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getQuotaMaxStoredDepthCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { quotaId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U48,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getQuotaMaxStoredDepthReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getQuotaMaxStoredDepthReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getQuotaMaxStoredDepthReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getQuotaMaxStoredDepthCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::primitives::aliases::U48;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getQuotaMaxStoredDepth(uint16)";
+            const SELECTOR: [u8; 4] = [137u8, 171u8, 184u8, 57u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getQuotaMaxStoredDepthReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getQuotaMaxStoredDepthReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
 function getVersion() external pure returns (string memory);
@@ -14104,15 +13886,173 @@ function getVersion() external pure returns (string memory);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `grantQuota(uint16,address)` and selector `0x39dde443`.
+```solidity
+function grantQuota(uint16 quotaId, address account) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct grantQuotaCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub account: alloy::sol_types::private::Address,
+    }
+    ///Container type for the return parameters of the [`grantQuota(uint16,address)`](grantQuotaCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct grantQuotaReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u16, alloy::sol_types::private::Address);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<grantQuotaCall> for UnderlyingRustTuple<'_> {
+                fn from(value: grantQuotaCall) -> Self {
+                    (value.quotaId, value.account)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for grantQuotaCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        quotaId: tuple.0,
+                        account: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<grantQuotaReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: grantQuotaReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for grantQuotaReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl grantQuotaReturn {
+            fn _tokenize(
+                &self,
+            ) -> <grantQuotaCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for grantQuotaCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = grantQuotaReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "grantQuota(uint16,address)";
+            const SELECTOR: [u8; 4] = [57u8, 221u8, 228u8, 67u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.account,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                grantQuotaReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `initializeFromEmptyProxy(uint48,uint48,uint48)` and selector `0x196a456d`.
 ```solidity
-function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) external;
+function initializeFromEmptyProxy(uint48 defaultQuotaHCUPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeFromEmptyProxyCall {
         #[allow(missing_docs)]
-        pub hcuCapPerBlock: alloy::sol_types::private::primitives::aliases::U48,
+        pub defaultQuotaHCUPerBlock: alloy::sol_types::private::primitives::aliases::U48,
         #[allow(missing_docs)]
         pub maxHCUDepthPerTx: alloy::sol_types::private::primitives::aliases::U48,
         #[allow(missing_docs)]
@@ -14160,7 +14100,11 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
             impl ::core::convert::From<initializeFromEmptyProxyCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: initializeFromEmptyProxyCall) -> Self {
-                    (value.hcuCapPerBlock, value.maxHCUDepthPerTx, value.maxHCUPerTx)
+                    (
+                        value.defaultQuotaHCUPerBlock,
+                        value.maxHCUDepthPerTx,
+                        value.maxHCUPerTx,
+                    )
                 }
             }
             #[automatically_derived]
@@ -14169,7 +14113,7 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
             for initializeFromEmptyProxyCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        hcuCapPerBlock: tuple.0,
+                        defaultQuotaHCUPerBlock: tuple.0,
                         maxHCUDepthPerTx: tuple.1,
                         maxHCUPerTx: tuple.2,
                     }
@@ -14247,7 +14191,9 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
                 (
                     <alloy::sol_types::sol_data::Uint<
                         48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.hcuCapPerBlock),
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.defaultQuotaHCUPerBlock,
+                    ),
                     <alloy::sol_types::sol_data::Uint<
                         48,
                     > as alloy_sol_types::SolType>::tokenize(&self.maxHCUDepthPerTx),
@@ -14280,19 +14226,22 @@ function initializeFromEmptyProxy(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isAllowlistActivated()` and selector `0xd1f31d15`.
+    /**Function with signature `isQuotaPaused(uint16)` and selector `0x76e944ec`.
 ```solidity
-function isAllowlistActivated() external view returns (bool);
+function isQuotaPaused(uint16 quotaId) external view returns (bool);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct isAllowlistActivatedCall;
+    pub struct isQuotaPausedCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`isAllowlistActivated()`](isAllowlistActivatedCall) function.
+    ///Container type for the return parameters of the [`isQuotaPaused(uint16)`](isQuotaPausedCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct isAllowlistActivatedReturn {
+    pub struct isQuotaPausedReturn {
         #[allow(missing_docs)]
         pub _0: bool,
     }
@@ -14304,6 +14253,185 @@ function isAllowlistActivated() external view returns (bool);
     )]
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u16,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isQuotaPausedCall> for UnderlyingRustTuple<'_> {
+                fn from(value: isQuotaPausedCall) -> Self {
+                    (value.quotaId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isQuotaPausedCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { quotaId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isQuotaPausedReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: isQuotaPausedReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isQuotaPausedReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isQuotaPausedCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isQuotaPaused(uint16)";
+            const SELECTOR: [u8; 4] = [118u8, 233u8, 68u8, 236u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isQuotaPausedReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isQuotaPausedReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `pauseQuota(uint16)` and selector `0xbd219476`.
+```solidity
+function pauseQuota(uint16 quotaId) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct pauseQuotaCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
+    ///Container type for the return parameters of the [`pauseQuota(uint16)`](pauseQuotaCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct pauseQuotaReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u16,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<pauseQuotaCall> for UnderlyingRustTuple<'_> {
+                fn from(value: pauseQuotaCall) -> Self {
+                    (value.quotaId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for pauseQuotaCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { quotaId: tuple.0 }
+                }
+            }
+        }
         {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -14323,216 +14451,39 @@ function isAllowlistActivated() external view returns (bool);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isAllowlistActivatedCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: isAllowlistActivatedCall) -> Self {
+            impl ::core::convert::From<pauseQuotaReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: pauseQuotaReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isAllowlistActivatedCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for pauseQuotaReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
+                    Self {}
                 }
             }
         }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isAllowlistActivatedReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: isAllowlistActivatedReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isAllowlistActivatedReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for isAllowlistActivatedCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isAllowlistActivated()";
-            const SELECTOR: [u8; 4] = [209u8, 243u8, 29u8, 21u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
+        impl pauseQuotaReturn {
+            fn _tokenize(
+                &self,
+            ) -> <pauseQuotaCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isAllowlistActivatedReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isAllowlistActivatedReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isAllowlisted(address)` and selector `0x05a3b809`.
-```solidity
-function isAllowlisted(address account) external view returns (bool);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isAllowlistedCall {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`isAllowlisted(address)`](isAllowlistedCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isAllowlistedReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isAllowlistedCall> for UnderlyingRustTuple<'_> {
-                fn from(value: isAllowlistedCall) -> Self {
-                    (value.account,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isAllowlistedCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { account: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isAllowlistedReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: isAllowlistedReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isAllowlistedReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for isAllowlistedCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
+        impl alloy_sol_types::SolCall for pauseQuotaCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<16>,);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type Return = pauseQuotaReturn;
+            type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isAllowlisted(address)";
-            const SELECTOR: [u8; 4] = [5u8, 163u8, 184u8, 9u8];
+            const SIGNATURE: &'static str = "pauseQuota(uint16)";
+            const SELECTOR: [u8; 4] = [189u8, 33u8, 148u8, 118u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -14542,28 +14493,21 @@ function isAllowlisted(address account) external view returns (bool);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
                 )
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
+                pauseQuotaReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isAllowlistedReturn = r.into();
-                        r._0
-                    })
+                    .map(Into::into)
             }
             #[inline]
             fn abi_decode_returns_validate(
@@ -14572,318 +14516,7 @@ function isAllowlisted(address account) external view returns (bool);
                 <Self::ReturnTuple<
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isAllowlistedReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isAllowlister(address)` and selector `0x15e2cfd3`.
-```solidity
-function isAllowlister(address account) external view returns (bool);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isAllowlisterCall {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`isAllowlister(address)`](isAllowlisterCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isAllowlisterReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isAllowlisterCall> for UnderlyingRustTuple<'_> {
-                fn from(value: isAllowlisterCall) -> Self {
-                    (value.account,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isAllowlisterCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { account: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isAllowlisterReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: isAllowlisterReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isAllowlisterReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for isAllowlisterCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isAllowlister(address)";
-            const SELECTOR: [u8; 4] = [21u8, 226u8, 207u8, 211u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isAllowlisterReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isAllowlisterReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isBlockHCUWhitelisted(address)` and selector `0xede8776e`.
-```solidity
-function isBlockHCUWhitelisted(address account) external view returns (bool);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isBlockHCUWhitelistedCall {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`isBlockHCUWhitelisted(address)`](isBlockHCUWhitelistedCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isBlockHCUWhitelistedReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isBlockHCUWhitelistedCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: isBlockHCUWhitelistedCall) -> Self {
-                    (value.account,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isBlockHCUWhitelistedCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { account: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isBlockHCUWhitelistedReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: isBlockHCUWhitelistedReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for isBlockHCUWhitelistedReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for isBlockHCUWhitelistedCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isBlockHCUWhitelisted(address)";
-            const SELECTOR: [u8; 4] = [237u8, 232u8, 119u8, 110u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isBlockHCUWhitelistedReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isBlockHCUWhitelistedReturn = r.into();
-                        r._0
-                    })
+                    .map(Into::into)
             }
         }
     };
@@ -15173,168 +14806,22 @@ function reinitializeV6() external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `removeAllowlister(address)` and selector `0x42300aaa`.
+    /**Function with signature `revokeQuota(uint16,address)` and selector `0x3951e506`.
 ```solidity
-function removeAllowlister(address account) external;
+function revokeQuota(uint16 quotaId, address account) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct removeAllowlisterCall {
+    pub struct revokeQuotaCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
         #[allow(missing_docs)]
         pub account: alloy::sol_types::private::Address,
     }
-    ///Container type for the return parameters of the [`removeAllowlister(address)`](removeAllowlisterCall) function.
+    ///Container type for the return parameters of the [`revokeQuota(uint16,address)`](revokeQuotaCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct removeAllowlisterReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<removeAllowlisterCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: removeAllowlisterCall) -> Self {
-                    (value.account,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeAllowlisterCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { account: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<removeAllowlisterReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: removeAllowlisterReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeAllowlisterReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl removeAllowlisterReturn {
-            fn _tokenize(
-                &self,
-            ) -> <removeAllowlisterCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for removeAllowlisterCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = removeAllowlisterReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "removeAllowlister(address)";
-            const SELECTOR: [u8; 4] = [66u8, 48u8, 10u8, 170u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.account,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                removeAllowlisterReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `removeFromAllowlist(address[])` and selector `0x104b6cb7`.
-```solidity
-function removeFromAllowlist(address[] memory accounts) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct removeFromAllowlistCall {
-        #[allow(missing_docs)]
-        pub accounts: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-    }
-    ///Container type for the return parameters of the [`removeFromAllowlist(address[])`](removeFromAllowlistCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct removeFromAllowlistReturn {}
+    pub struct revokeQuotaReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -15347,12 +14834,11 @@ function removeFromAllowlist(address[] memory accounts) external;
             #[doc(hidden)]
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
             );
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-            );
+            type UnderlyingRustTuple<'a> = (u16, alloy::sol_types::private::Address);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
             fn _type_assertion(
@@ -15366,18 +14852,19 @@ function removeFromAllowlist(address[] memory accounts) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<removeFromAllowlistCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: removeFromAllowlistCall) -> Self {
-                    (value.accounts,)
+            impl ::core::convert::From<revokeQuotaCall> for UnderlyingRustTuple<'_> {
+                fn from(value: revokeQuotaCall) -> Self {
+                    (value.quotaId, value.account)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeFromAllowlistCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for revokeQuotaCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { accounts: tuple.0 }
+                    Self {
+                        quotaId: tuple.0,
+                        account: tuple.1,
+                    }
                 }
             }
         }
@@ -15400,43 +14887,42 @@ function removeFromAllowlist(address[] memory accounts) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<removeFromAllowlistReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: removeFromAllowlistReturn) -> Self {
+            impl ::core::convert::From<revokeQuotaReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: revokeQuotaReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeFromAllowlistReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for revokeQuotaReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
-        impl removeFromAllowlistReturn {
+        impl revokeQuotaReturn {
             fn _tokenize(
                 &self,
-            ) -> <removeFromAllowlistCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            ) -> <revokeQuotaCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for removeFromAllowlistCall {
+        impl alloy_sol_types::SolCall for revokeQuotaCall {
             type Parameters<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
             );
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = removeFromAllowlistReturn;
+            type Return = revokeQuotaReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "removeFromAllowlist(address[])";
-            const SELECTOR: [u8; 4] = [16u8, 75u8, 108u8, 183u8];
+            const SIGNATURE: &'static str = "revokeQuota(uint16,address)";
+            const SELECTOR: [u8; 4] = [57u8, 81u8, 229u8, 6u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -15446,156 +14932,9 @@ function removeFromAllowlist(address[] memory accounts) external;
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.accounts),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                removeFromAllowlistReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `removeFromBlockHCUWhitelist(address)` and selector `0x28677ca7`.
-```solidity
-function removeFromBlockHCUWhitelist(address account) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct removeFromBlockHCUWhitelistCall {
-        #[allow(missing_docs)]
-        pub account: alloy::sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`removeFromBlockHCUWhitelist(address)`](removeFromBlockHCUWhitelistCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct removeFromBlockHCUWhitelistReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<removeFromBlockHCUWhitelistCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: removeFromBlockHCUWhitelistCall) -> Self {
-                    (value.account,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeFromBlockHCUWhitelistCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { account: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<removeFromBlockHCUWhitelistReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: removeFromBlockHCUWhitelistReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for removeFromBlockHCUWhitelistReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl removeFromBlockHCUWhitelistReturn {
-            fn _tokenize(
-                &self,
-            ) -> <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for removeFromBlockHCUWhitelistCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = removeFromBlockHCUWhitelistReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "removeFromBlockHCUWhitelist(address)";
-            const SELECTOR: [u8; 4] = [40u8, 103u8, 124u8, 167u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.account,
                     ),
@@ -15603,298 +14942,7 @@ function removeFromBlockHCUWhitelist(address account) external;
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                removeFromBlockHCUWhitelistReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `renounceAllowlister()` and selector `0xc5c1610c`.
-```solidity
-function renounceAllowlister() external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct renounceAllowlisterCall;
-    ///Container type for the return parameters of the [`renounceAllowlister()`](renounceAllowlisterCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct renounceAllowlisterReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<renounceAllowlisterCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: renounceAllowlisterCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for renounceAllowlisterCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<renounceAllowlisterReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: renounceAllowlisterReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for renounceAllowlisterReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl renounceAllowlisterReturn {
-            fn _tokenize(
-                &self,
-            ) -> <renounceAllowlisterCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for renounceAllowlisterCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = renounceAllowlisterReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "renounceAllowlister()";
-            const SELECTOR: [u8; 4] = [197u8, 193u8, 97u8, 12u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                renounceAllowlisterReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `setAllowlistActivated(bool)` and selector `0x7de4d40d`.
-```solidity
-function setAllowlistActivated(bool activated) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct setAllowlistActivatedCall {
-        #[allow(missing_docs)]
-        pub activated: bool,
-    }
-    ///Container type for the return parameters of the [`setAllowlistActivated(bool)`](setAllowlistActivatedCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct setAllowlistActivatedReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<setAllowlistActivatedCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: setAllowlistActivatedCall) -> Self {
-                    (value.activated,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setAllowlistActivatedCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { activated: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<setAllowlistActivatedReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: setAllowlistActivatedReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setAllowlistActivatedReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl setAllowlistActivatedReturn {
-            fn _tokenize(
-                &self,
-            ) -> <setAllowlistActivatedCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for setAllowlistActivatedCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Bool,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = setAllowlistActivatedReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "setAllowlistActivated(bool)";
-            const SELECTOR: [u8; 4] = [125u8, 228u8, 212u8, 13u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.activated,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                setAllowlistActivatedReturn::_tokenize(ret)
+                revokeQuotaReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -16062,154 +15110,6 @@ function setCrossTxDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external;
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 setCrossTxDepthLimitReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `setHCUPerBlock(uint48)` and selector `0xa036ea2e`.
-```solidity
-function setHCUPerBlock(uint48 hcuPerBlock) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct setHCUPerBlockCall {
-        #[allow(missing_docs)]
-        pub hcuPerBlock: alloy::sol_types::private::primitives::aliases::U48,
-    }
-    ///Container type for the return parameters of the [`setHCUPerBlock(uint48)`](setHCUPerBlockCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct setHCUPerBlockReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U48,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<setHCUPerBlockCall> for UnderlyingRustTuple<'_> {
-                fn from(value: setHCUPerBlockCall) -> Self {
-                    (value.hcuPerBlock,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setHCUPerBlockCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { hcuPerBlock: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<setHCUPerBlockReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: setHCUPerBlockReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for setHCUPerBlockReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl setHCUPerBlockReturn {
-            fn _tokenize(
-                &self,
-            ) -> <setHCUPerBlockCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for setHCUPerBlockCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<48>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = setHCUPerBlockReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "setHCUPerBlock(uint48)";
-            const SELECTOR: [u8; 4] = [160u8, 54u8, 234u8, 46u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        48,
-                    > as alloy_sol_types::SolType>::tokenize(&self.hcuPerBlock),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                setHCUPerBlockReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -16529,6 +15429,645 @@ function setMaxHCUPerTx(uint48 maxHCUPerTx) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `setQuota(uint16,uint48,uint48)` and selector `0x8dc33c17`.
+```solidity
+function setQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setQuotaCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub maxHCU: alloy::sol_types::private::primitives::aliases::U48,
+        #[allow(missing_docs)]
+        pub decayPerBlock: alloy::sol_types::private::primitives::aliases::U48,
+    }
+    ///Container type for the return parameters of the [`setQuota(uint16,uint48,uint48)`](setQuotaCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setQuotaReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Uint<48>,
+                alloy::sol_types::sol_data::Uint<48>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                u16,
+                alloy::sol_types::private::primitives::aliases::U48,
+                alloy::sol_types::private::primitives::aliases::U48,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setQuotaCall> for UnderlyingRustTuple<'_> {
+                fn from(value: setQuotaCall) -> Self {
+                    (value.quotaId, value.maxHCU, value.decayPerBlock)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setQuotaCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        quotaId: tuple.0,
+                        maxHCU: tuple.1,
+                        decayPerBlock: tuple.2,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setQuotaReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: setQuotaReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setQuotaReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl setQuotaReturn {
+            fn _tokenize(
+                &self,
+            ) -> <setQuotaCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for setQuotaCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Uint<48>,
+                alloy::sol_types::sol_data::Uint<48>,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = setQuotaReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "setQuota(uint16,uint48,uint48)";
+            const SELECTOR: [u8; 4] = [141u8, 195u8, 60u8, 23u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxHCU),
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(&self.decayPerBlock),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                setQuotaReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `setQuotaAdmin(uint16,address)` and selector `0x06180d00`.
+```solidity
+function setQuotaAdmin(uint16 quotaId, address admin) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setQuotaAdminCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub admin: alloy::sol_types::private::Address,
+    }
+    ///Container type for the return parameters of the [`setQuotaAdmin(uint16,address)`](setQuotaAdminCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setQuotaAdminReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u16, alloy::sol_types::private::Address);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setQuotaAdminCall> for UnderlyingRustTuple<'_> {
+                fn from(value: setQuotaAdminCall) -> Self {
+                    (value.quotaId, value.admin)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setQuotaAdminCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        quotaId: tuple.0,
+                        admin: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setQuotaAdminReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: setQuotaAdminReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for setQuotaAdminReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl setQuotaAdminReturn {
+            fn _tokenize(
+                &self,
+            ) -> <setQuotaAdminCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for setQuotaAdminCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Address,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = setQuotaAdminReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "setQuotaAdmin(uint16,address)";
+            const SELECTOR: [u8; 4] = [6u8, 24u8, 13u8, 0u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.admin,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                setQuotaAdminReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `setQuotaMaxStoredDepth(uint16,uint48)` and selector `0xc7a7faee`.
+```solidity
+function setQuotaMaxStoredDepth(uint16 quotaId, uint48 maxStoredDepth) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setQuotaMaxStoredDepthCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+        #[allow(missing_docs)]
+        pub maxStoredDepth: alloy::sol_types::private::primitives::aliases::U48,
+    }
+    ///Container type for the return parameters of the [`setQuotaMaxStoredDepth(uint16,uint48)`](setQuotaMaxStoredDepthCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct setQuotaMaxStoredDepthReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Uint<48>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                u16,
+                alloy::sol_types::private::primitives::aliases::U48,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setQuotaMaxStoredDepthCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: setQuotaMaxStoredDepthCall) -> Self {
+                    (value.quotaId, value.maxStoredDepth)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setQuotaMaxStoredDepthCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        quotaId: tuple.0,
+                        maxStoredDepth: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<setQuotaMaxStoredDepthReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: setQuotaMaxStoredDepthReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for setQuotaMaxStoredDepthReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl setQuotaMaxStoredDepthReturn {
+            fn _tokenize(
+                &self,
+            ) -> <setQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for setQuotaMaxStoredDepthCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<16>,
+                alloy::sol_types::sol_data::Uint<48>,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = setQuotaMaxStoredDepthReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "setQuotaMaxStoredDepth(uint16,uint48)";
+            const SELECTOR: [u8; 4] = [199u8, 167u8, 250u8, 238u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                    <alloy::sol_types::sol_data::Uint<
+                        48,
+                    > as alloy_sol_types::SolType>::tokenize(&self.maxStoredDepth),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                setQuotaMaxStoredDepthReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `unpauseQuota(uint16)` and selector `0x5e60ef2b`.
+```solidity
+function unpauseQuota(uint16 quotaId) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct unpauseQuotaCall {
+        #[allow(missing_docs)]
+        pub quotaId: u16,
+    }
+    ///Container type for the return parameters of the [`unpauseQuota(uint16)`](unpauseQuotaCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct unpauseQuotaReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (u16,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<unpauseQuotaCall> for UnderlyingRustTuple<'_> {
+                fn from(value: unpauseQuotaCall) -> Self {
+                    (value.quotaId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for unpauseQuotaCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { quotaId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<unpauseQuotaReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: unpauseQuotaReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for unpauseQuotaReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl unpauseQuotaReturn {
+            fn _tokenize(
+                &self,
+            ) -> <unpauseQuotaCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for unpauseQuotaCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<16>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = unpauseQuotaReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "unpauseQuota(uint16)";
+            const SELECTOR: [u8; 4] = [94u8, 96u8, 239u8, 43u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        16,
+                    > as alloy_sol_types::SolType>::tokenize(&self.quotaId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                unpauseQuotaReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `upgradeToAndCall(address,bytes)` and selector `0x4f1ef286`.
 ```solidity
 function upgradeToAndCall(address newImplementation, bytes memory data) external payable;
@@ -16700,13 +16239,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         UPGRADE_INTERFACE_VERSION(UPGRADE_INTERFACE_VERSIONCall),
         #[allow(missing_docs)]
-        addAllowlister(addAllowlisterCall),
-        #[allow(missing_docs)]
-        addToAllowlist(addToAllowlistCall),
-        #[allow(missing_docs)]
-        addToBlockHCUWhitelist(addToBlockHCUWhitelistCall),
-        #[allow(missing_docs)]
-        allowlisterDeadline(allowlisterDeadlineCall),
+        assignQuota(assignQuotaCall),
         #[allow(missing_docs)]
         cacheDepth(cacheDepthCall),
         #[allow(missing_docs)]
@@ -16770,51 +16303,51 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         checkHCUForTrivialEncrypt(checkHCUForTrivialEncryptCall),
         #[allow(missing_docs)]
-        getBlockMeter(getBlockMeterCall),
+        getContractQuota(getContractQuotaCall),
         #[allow(missing_docs)]
         getCrossTxDepthLimit(getCrossTxDepthLimitCall),
         #[allow(missing_docs)]
         getFHEVMExecutorAddress(getFHEVMExecutorAddressCall),
         #[allow(missing_docs)]
-        getGlobalHCUCapPerBlock(getGlobalHCUCapPerBlockCall),
-        #[allow(missing_docs)]
         getMaxHCUDepthPerTx(getMaxHCUDepthPerTxCall),
         #[allow(missing_docs)]
         getMaxHCUPerTx(getMaxHCUPerTxCall),
         #[allow(missing_docs)]
+        getQuota(getQuotaCall),
+        #[allow(missing_docs)]
+        getQuotaAdmin(getQuotaAdminCall),
+        #[allow(missing_docs)]
+        getQuotaMaxStoredDepth(getQuotaMaxStoredDepthCall),
+        #[allow(missing_docs)]
         getVersion(getVersionCall),
+        #[allow(missing_docs)]
+        grantQuota(grantQuotaCall),
         #[allow(missing_docs)]
         initializeFromEmptyProxy(initializeFromEmptyProxyCall),
         #[allow(missing_docs)]
-        isAllowlistActivated(isAllowlistActivatedCall),
+        isQuotaPaused(isQuotaPausedCall),
         #[allow(missing_docs)]
-        isAllowlisted(isAllowlistedCall),
-        #[allow(missing_docs)]
-        isAllowlister(isAllowlisterCall),
-        #[allow(missing_docs)]
-        isBlockHCUWhitelisted(isBlockHCUWhitelistedCall),
+        pauseQuota(pauseQuotaCall),
         #[allow(missing_docs)]
         proxiableUUID(proxiableUUIDCall),
         #[allow(missing_docs)]
         reinitializeV6(reinitializeV6Call),
         #[allow(missing_docs)]
-        removeAllowlister(removeAllowlisterCall),
-        #[allow(missing_docs)]
-        removeFromAllowlist(removeFromAllowlistCall),
-        #[allow(missing_docs)]
-        removeFromBlockHCUWhitelist(removeFromBlockHCUWhitelistCall),
-        #[allow(missing_docs)]
-        renounceAllowlister(renounceAllowlisterCall),
-        #[allow(missing_docs)]
-        setAllowlistActivated(setAllowlistActivatedCall),
+        revokeQuota(revokeQuotaCall),
         #[allow(missing_docs)]
         setCrossTxDepthLimit(setCrossTxDepthLimitCall),
-        #[allow(missing_docs)]
-        setHCUPerBlock(setHCUPerBlockCall),
         #[allow(missing_docs)]
         setMaxHCUDepthPerTx(setMaxHCUDepthPerTxCall),
         #[allow(missing_docs)]
         setMaxHCUPerTx(setMaxHCUPerTxCall),
+        #[allow(missing_docs)]
+        setQuota(setQuotaCall),
+        #[allow(missing_docs)]
+        setQuotaAdmin(setQuotaAdminCall),
+        #[allow(missing_docs)]
+        setQuotaMaxStoredDepth(setQuotaMaxStoredDepthCall),
+        #[allow(missing_docs)]
+        unpauseQuota(unpauseQuotaCall),
         #[allow(missing_docs)]
         upgradeToAndCall(upgradeToAndCallCall),
     }
@@ -16827,191 +16360,182 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [4u8, 85u8, 63u8, 182u8],
-            [5u8, 163u8, 184u8, 9u8],
+            [6u8, 24u8, 13u8, 0u8],
             [7u8, 204u8, 223u8, 97u8],
             [13u8, 129u8, 163u8, 241u8],
             [13u8, 142u8, 110u8, 44u8],
-            [16u8, 75u8, 108u8, 183u8],
-            [21u8, 226u8, 207u8, 211u8],
             [25u8, 106u8, 69u8, 109u8],
             [30u8, 36u8, 170u8, 73u8],
             [38u8, 141u8, 109u8, 49u8],
-            [40u8, 103u8, 124u8, 167u8],
             [45u8, 105u8, 5u8, 72u8],
             [45u8, 203u8, 197u8, 209u8],
             [46u8, 60u8, 57u8, 6u8],
             [51u8, 17u8, 177u8, 188u8],
             [56u8, 189u8, 23u8, 229u8],
+            [57u8, 81u8, 229u8, 6u8],
+            [57u8, 221u8, 228u8, 67u8],
             [59u8, 183u8, 213u8, 163u8],
             [59u8, 188u8, 196u8, 178u8],
-            [61u8, 4u8, 75u8, 158u8],
-            [66u8, 48u8, 10u8, 170u8],
-            [67u8, 145u8, 86u8, 140u8],
             [69u8, 143u8, 178u8, 119u8],
             [73u8, 124u8, 34u8, 197u8],
             [79u8, 30u8, 242u8, 134u8],
-            [82u8, 7u8, 194u8, 115u8],
             [82u8, 209u8, 144u8, 45u8],
             [92u8, 65u8, 75u8, 87u8],
+            [94u8, 96u8, 239u8, 43u8],
             [95u8, 118u8, 235u8, 48u8],
             [96u8, 225u8, 33u8, 137u8],
             [105u8, 147u8, 26u8, 251u8],
             [107u8, 173u8, 24u8, 182u8],
             [108u8, 240u8, 189u8, 37u8],
-            [111u8, 214u8, 94u8, 77u8],
-            [125u8, 228u8, 212u8, 13u8],
+            [118u8, 233u8, 68u8, 236u8],
+            [126u8, 239u8, 235u8, 99u8],
             [129u8, 143u8, 77u8, 105u8],
             [134u8, 41u8, 245u8, 69u8],
+            [137u8, 171u8, 184u8, 57u8],
+            [138u8, 30u8, 109u8, 229u8],
+            [141u8, 195u8, 60u8, 23u8],
             [150u8, 131u8, 2u8, 215u8],
             [155u8, 63u8, 120u8, 26u8],
-            [159u8, 75u8, 153u8, 55u8],
             [159u8, 146u8, 89u8, 187u8],
-            [160u8, 54u8, 234u8, 46u8],
             [170u8, 31u8, 250u8, 57u8],
             [171u8, 57u8, 71u8, 85u8],
             [173u8, 60u8, 177u8, 204u8],
-            [181u8, 149u8, 71u8, 184u8],
             [183u8, 139u8, 239u8, 89u8],
             [185u8, 102u8, 37u8, 84u8],
+            [189u8, 33u8, 148u8, 118u8],
             [192u8, 197u8, 223u8, 124u8],
             [193u8, 57u8, 12u8, 52u8],
             [193u8, 60u8, 25u8, 113u8],
             [194u8, 119u8, 169u8, 54u8],
-            [197u8, 193u8, 97u8, 12u8],
+            [199u8, 167u8, 250u8, 238u8],
             [200u8, 222u8, 67u8, 82u8],
-            [209u8, 243u8, 29u8, 21u8],
+            [208u8, 116u8, 118u8, 198u8],
             [213u8, 184u8, 184u8, 243u8],
             [214u8, 51u8, 201u8, 107u8],
-            [237u8, 232u8, 119u8, 110u8],
             [241u8, 196u8, 228u8, 237u8],
             [245u8, 208u8, 178u8, 213u8],
             [247u8, 209u8, 152u8, 248u8],
+            [248u8, 228u8, 209u8, 236u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(checkHCUForFheMin),
-            ::core::stringify!(isAllowlisted),
+            ::core::stringify!(setQuotaAdmin),
             ::core::stringify!(checkHCUForFheShr),
             ::core::stringify!(checkHCUForFheMulDiv),
             ::core::stringify!(getVersion),
-            ::core::stringify!(removeFromAllowlist),
-            ::core::stringify!(isAllowlister),
             ::core::stringify!(initializeFromEmptyProxy),
             ::core::stringify!(getMaxHCUDepthPerTx),
             ::core::stringify!(getFHEVMExecutorAddress),
-            ::core::stringify!(removeFromBlockHCUWhitelist),
             ::core::stringify!(getCrossTxDepthLimit),
             ::core::stringify!(checkHCUForFheNot),
             ::core::stringify!(checkHCUForIfThenElse),
             ::core::stringify!(checkHCUForFheRem),
             ::core::stringify!(checkHCUForFheLe),
+            ::core::stringify!(revokeQuota),
+            ::core::stringify!(grantQuota),
             ::core::stringify!(checkHCUForFheLt),
             ::core::stringify!(checkHCUForFheIsIn),
-            ::core::stringify!(addAllowlister),
-            ::core::stringify!(removeAllowlister),
-            ::core::stringify!(allowlisterDeadline),
             ::core::stringify!(checkHCUForFheGt),
             ::core::stringify!(checkHCUForFheNeg),
             ::core::stringify!(upgradeToAndCall),
-            ::core::stringify!(addToAllowlist),
             ::core::stringify!(proxiableUUID),
             ::core::stringify!(setMaxHCUDepthPerTx),
+            ::core::stringify!(unpauseQuota),
             ::core::stringify!(checkHCUForFheRotl),
             ::core::stringify!(checkHCUForFheEq),
             ::core::stringify!(checkHCUForCast),
             ::core::stringify!(checkHCUForFheNe),
             ::core::stringify!(checkHCUForFheRandBounded),
-            ::core::stringify!(addToBlockHCUWhitelist),
-            ::core::stringify!(setAllowlistActivated),
+            ::core::stringify!(isQuotaPaused),
+            ::core::stringify!(assignQuota),
             ::core::stringify!(checkHCUForFheMul),
             ::core::stringify!(checkHCUForFheRotr),
+            ::core::stringify!(getQuotaMaxStoredDepth),
+            ::core::stringify!(getQuotaAdmin),
+            ::core::stringify!(setQuota),
             ::core::stringify!(checkHCUForFheMax),
             ::core::stringify!(checkHCUForFheDiv),
-            ::core::stringify!(getBlockMeter),
             ::core::stringify!(checkHCUForFheBitXor),
-            ::core::stringify!(setHCUPerBlock),
             ::core::stringify!(setCrossTxDepthLimit),
             ::core::stringify!(setMaxHCUPerTx),
             ::core::stringify!(UPGRADE_INTERFACE_VERSION),
-            ::core::stringify!(getGlobalHCUCapPerBlock),
             ::core::stringify!(checkHCUForTrivialEncrypt),
             ::core::stringify!(checkHCUForFheSum),
+            ::core::stringify!(pauseQuota),
             ::core::stringify!(checkHCUForFheBitOr),
             ::core::stringify!(checkHCUForFheAdd),
             ::core::stringify!(getMaxHCUPerTx),
             ::core::stringify!(checkHCUForFheGe),
-            ::core::stringify!(renounceAllowlister),
+            ::core::stringify!(setQuotaMaxStoredDepth),
             ::core::stringify!(checkHCUForFheBitAnd),
-            ::core::stringify!(isAllowlistActivated),
+            ::core::stringify!(getQuota),
             ::core::stringify!(checkHCUForFheRand),
             ::core::stringify!(checkHCUForFheSub),
-            ::core::stringify!(isBlockHCUWhitelisted),
             ::core::stringify!(cacheDepth),
             ::core::stringify!(reinitializeV6),
             ::core::stringify!(checkHCUForFheShl),
+            ::core::stringify!(getContractQuota),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <checkHCUForFheMinCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isAllowlistedCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <setQuotaAdminCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheShrCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheMulDivCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <removeFromAllowlistCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isAllowlisterCall as alloy_sol_types::SolCall>::SIGNATURE,
             <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getFHEVMExecutorAddressCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCrossTxDepthLimitCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheNotCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForIfThenElseCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheRemCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheLeCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <revokeQuotaCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <grantQuotaCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheLtCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheIsInCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <addAllowlisterCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <removeAllowlisterCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <allowlisterDeadlineCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheGtCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheNegCall as alloy_sol_types::SolCall>::SIGNATURE,
             <upgradeToAndCallCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <addToAllowlistCall as alloy_sol_types::SolCall>::SIGNATURE,
             <proxiableUUIDCall as alloy_sol_types::SolCall>::SIGNATURE,
             <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <unpauseQuotaCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheRotlCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheEqCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForCastCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheNeCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheRandBoundedCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setAllowlistActivatedCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <isQuotaPausedCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <assignQuotaCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheMulCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheRotrCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getQuotaAdminCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <setQuotaCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheMaxCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheDivCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getBlockMeterCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheBitXorCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <setHCUPerBlockCall as alloy_sol_types::SolCall>::SIGNATURE,
             <setCrossTxDepthLimitCall as alloy_sol_types::SolCall>::SIGNATURE,
             <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::SIGNATURE,
             <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheSumCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <pauseQuotaCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheBitOrCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheAddCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheGeCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <renounceAllowlisterCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <setQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheBitAndCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isAllowlistActivatedCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getQuotaCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheRandCall as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheSubCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::SIGNATURE,
             <cacheDepthCall as alloy_sol_types::SolCall>::SIGNATURE,
             <reinitializeV6Call as alloy_sol_types::SolCall>::SIGNATURE,
             <checkHCUForFheShlCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getContractQuotaCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -17038,24 +16562,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
     impl alloy_sol_types::SolInterface for HCULimitCalls {
         const NAME: &'static str = "HCULimitCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 60usize;
+        const COUNT: usize = 57usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::UPGRADE_INTERFACE_VERSION(_) => {
                     <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::addAllowlister(_) => {
-                    <addAllowlisterCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::addToAllowlist(_) => {
-                    <addToAllowlistCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::addToBlockHCUWhitelist(_) => {
-                    <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::allowlisterDeadline(_) => {
-                    <allowlisterDeadlineCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::assignQuota(_) => {
+                    <assignQuotaCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::cacheDepth(_) => {
                     <cacheDepthCall as alloy_sol_types::SolCall>::SELECTOR
@@ -17150,8 +16665,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::checkHCUForTrivialEncrypt(_) => {
                     <checkHCUForTrivialEncryptCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getBlockMeter(_) => {
-                    <getBlockMeterCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::getContractQuota(_) => {
+                    <getContractQuotaCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCrossTxDepthLimit(_) => {
                     <getCrossTxDepthLimitCall as alloy_sol_types::SolCall>::SELECTOR
@@ -17159,32 +16674,33 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::getFHEVMExecutorAddress(_) => {
                     <getFHEVMExecutorAddressCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getGlobalHCUCapPerBlock(_) => {
-                    <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::getMaxHCUDepthPerTx(_) => {
                     <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getMaxHCUPerTx(_) => {
                     <getMaxHCUPerTxCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getQuota(_) => <getQuotaCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::getQuotaAdmin(_) => {
+                    <getQuotaAdminCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getQuotaMaxStoredDepth(_) => {
+                    <getQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::grantQuota(_) => {
+                    <grantQuotaCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::initializeFromEmptyProxy(_) => {
                     <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::isAllowlistActivated(_) => {
-                    <isAllowlistActivatedCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::isQuotaPaused(_) => {
+                    <isQuotaPausedCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::isAllowlisted(_) => {
-                    <isAllowlistedCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::isAllowlister(_) => {
-                    <isAllowlisterCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::isBlockHCUWhitelisted(_) => {
-                    <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::pauseQuota(_) => {
+                    <pauseQuotaCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::proxiableUUID(_) => {
                     <proxiableUUIDCall as alloy_sol_types::SolCall>::SELECTOR
@@ -17192,32 +16708,27 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::reinitializeV6(_) => {
                     <reinitializeV6Call as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::removeAllowlister(_) => {
-                    <removeAllowlisterCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::removeFromAllowlist(_) => {
-                    <removeFromAllowlistCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::removeFromBlockHCUWhitelist(_) => {
-                    <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::renounceAllowlister(_) => {
-                    <renounceAllowlisterCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::setAllowlistActivated(_) => {
-                    <setAllowlistActivatedCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::revokeQuota(_) => {
+                    <revokeQuotaCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::setCrossTxDepthLimit(_) => {
                     <setCrossTxDepthLimitCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::setHCUPerBlock(_) => {
-                    <setHCUPerBlockCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::setMaxHCUDepthPerTx(_) => {
                     <setMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::setMaxHCUPerTx(_) => {
                     <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::setQuota(_) => <setQuotaCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::setQuotaAdmin(_) => {
+                    <setQuotaAdminCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::setQuotaMaxStoredDepth(_) => {
+                    <setQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::unpauseQuota(_) => {
+                    <unpauseQuotaCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::upgradeToAndCall(_) => {
                     <upgradeToAndCallCall as alloy_sol_types::SolCall>::SELECTOR
@@ -17253,15 +16764,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheMin
                 },
                 {
-                    fn isAllowlisted(
+                    fn setQuotaAdmin(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <isAllowlistedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setQuotaAdminCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(HCULimitCalls::isAllowlisted)
+                            .map(HCULimitCalls::setQuotaAdmin)
                     }
-                    isAllowlisted
+                    setQuotaAdmin
                 },
                 {
                     fn checkHCUForFheShr(
@@ -17297,28 +16808,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     getVersion
                 },
                 {
-                    fn removeFromAllowlist(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <removeFromAllowlistCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::removeFromAllowlist)
-                    }
-                    removeFromAllowlist
-                },
-                {
-                    fn isAllowlister(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <isAllowlisterCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::isAllowlister)
-                    }
-                    isAllowlister
-                },
-                {
                     fn initializeFromEmptyProxy(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -17350,17 +16839,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::getFHEVMExecutorAddress)
                     }
                     getFHEVMExecutorAddress
-                },
-                {
-                    fn removeFromBlockHCUWhitelist(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::removeFromBlockHCUWhitelist)
-                    }
-                    removeFromBlockHCUWhitelist
                 },
                 {
                     fn getCrossTxDepthLimit(
@@ -17418,6 +16896,28 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheLe
                 },
                 {
+                    fn revokeQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <revokeQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitCalls::revokeQuota)
+                    }
+                    revokeQuota
+                },
+                {
+                    fn grantQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <grantQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitCalls::grantQuota)
+                    }
+                    grantQuota
+                },
+                {
                     fn checkHCUForFheLt(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -17438,39 +16938,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::checkHCUForFheIsIn)
                     }
                     checkHCUForFheIsIn
-                },
-                {
-                    fn addAllowlister(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <addAllowlisterCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::addAllowlister)
-                    }
-                    addAllowlister
-                },
-                {
-                    fn removeAllowlister(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <removeAllowlisterCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::removeAllowlister)
-                    }
-                    removeAllowlister
-                },
-                {
-                    fn allowlisterDeadline(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <allowlisterDeadlineCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::allowlisterDeadline)
-                    }
-                    allowlisterDeadline
                 },
                 {
                     fn checkHCUForFheGt(
@@ -17506,17 +16973,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     upgradeToAndCall
                 },
                 {
-                    fn addToAllowlist(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <addToAllowlistCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::addToAllowlist)
-                    }
-                    addToAllowlist
-                },
-                {
                     fn proxiableUUID(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -17537,6 +16993,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::setMaxHCUDepthPerTx)
                     }
                     setMaxHCUDepthPerTx
+                },
+                {
+                    fn unpauseQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <unpauseQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitCalls::unpauseQuota)
+                    }
+                    unpauseQuota
                 },
                 {
                     fn checkHCUForFheRotl(
@@ -17594,26 +17061,26 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheRandBounded
                 },
                 {
-                    fn addToBlockHCUWhitelist(
+                    fn isQuotaPaused(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isQuotaPausedCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(HCULimitCalls::addToBlockHCUWhitelist)
+                            .map(HCULimitCalls::isQuotaPaused)
                     }
-                    addToBlockHCUWhitelist
+                    isQuotaPaused
                 },
                 {
-                    fn setAllowlistActivated(
+                    fn assignQuota(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setAllowlistActivatedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <assignQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(HCULimitCalls::setAllowlistActivated)
+                            .map(HCULimitCalls::assignQuota)
                     }
-                    setAllowlistActivated
+                    assignQuota
                 },
                 {
                     fn checkHCUForFheMul(
@@ -17638,6 +17105,35 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheRotr
                 },
                 {
+                    fn getQuotaMaxStoredDepth(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitCalls::getQuotaMaxStoredDepth)
+                    }
+                    getQuotaMaxStoredDepth
+                },
+                {
+                    fn getQuotaAdmin(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getQuotaAdminCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitCalls::getQuotaAdmin)
+                    }
+                    getQuotaAdmin
+                },
+                {
+                    fn setQuota(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <setQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(HCULimitCalls::setQuota)
+                    }
+                    setQuota
+                },
+                {
                     fn checkHCUForFheMax(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -17660,17 +17156,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheDiv
                 },
                 {
-                    fn getBlockMeter(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getBlockMeterCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::getBlockMeter)
-                    }
-                    getBlockMeter
-                },
-                {
                     fn checkHCUForFheBitXor(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -17680,17 +17165,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::checkHCUForFheBitXor)
                     }
                     checkHCUForFheBitXor
-                },
-                {
-                    fn setHCUPerBlock(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::setHCUPerBlock)
-                    }
-                    setHCUPerBlock
                 },
                 {
                     fn setCrossTxDepthLimit(
@@ -17726,17 +17200,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     UPGRADE_INTERFACE_VERSION
                 },
                 {
-                    fn getGlobalHCUCapPerBlock(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::getGlobalHCUCapPerBlock)
-                    }
-                    getGlobalHCUCapPerBlock
-                },
-                {
                     fn checkHCUForTrivialEncrypt(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -17757,6 +17220,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::checkHCUForFheSum)
                     }
                     checkHCUForFheSum
+                },
+                {
+                    fn pauseQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <pauseQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitCalls::pauseQuota)
+                    }
+                    pauseQuota
                 },
                 {
                     fn checkHCUForFheBitOr(
@@ -17803,15 +17277,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheGe
                 },
                 {
-                    fn renounceAllowlister(
+                    fn setQuotaMaxStoredDepth(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <renounceAllowlisterCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <setQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(HCULimitCalls::renounceAllowlister)
+                            .map(HCULimitCalls::setQuotaMaxStoredDepth)
                     }
-                    renounceAllowlister
+                    setQuotaMaxStoredDepth
                 },
                 {
                     fn checkHCUForFheBitAnd(
@@ -17825,15 +17299,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheBitAnd
                 },
                 {
-                    fn isAllowlistActivated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <isAllowlistActivatedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::isAllowlistActivated)
+                    fn getQuota(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(HCULimitCalls::getQuota)
                     }
-                    isAllowlistActivated
+                    getQuota
                 },
                 {
                     fn checkHCUForFheRand(
@@ -17856,17 +17326,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::checkHCUForFheSub)
                     }
                     checkHCUForFheSub
-                },
-                {
-                    fn isBlockHCUWhitelisted(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitCalls::isBlockHCUWhitelisted)
-                    }
-                    isBlockHCUWhitelisted
                 },
                 {
                     fn cacheDepth(
@@ -17901,6 +17360,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     }
                     checkHCUForFheShl
                 },
+                {
+                    fn getContractQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getContractQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitCalls::getContractQuota)
+                    }
+                    getContractQuota
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -17933,15 +17403,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheMin
                 },
                 {
-                    fn isAllowlisted(
+                    fn setQuotaAdmin(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <isAllowlistedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <setQuotaAdminCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitCalls::isAllowlisted)
+                            .map(HCULimitCalls::setQuotaAdmin)
                     }
-                    isAllowlisted
+                    setQuotaAdmin
                 },
                 {
                     fn checkHCUForFheShr(
@@ -17977,28 +17447,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     getVersion
                 },
                 {
-                    fn removeFromAllowlist(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <removeFromAllowlistCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::removeFromAllowlist)
-                    }
-                    removeFromAllowlist
-                },
-                {
-                    fn isAllowlister(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <isAllowlisterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::isAllowlister)
-                    }
-                    isAllowlister
-                },
-                {
                     fn initializeFromEmptyProxy(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -18030,17 +17478,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::getFHEVMExecutorAddress)
                     }
                     getFHEVMExecutorAddress
-                },
-                {
-                    fn removeFromBlockHCUWhitelist(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::removeFromBlockHCUWhitelist)
-                    }
-                    removeFromBlockHCUWhitelist
                 },
                 {
                     fn getCrossTxDepthLimit(
@@ -18098,6 +17535,28 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheLe
                 },
                 {
+                    fn revokeQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <revokeQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitCalls::revokeQuota)
+                    }
+                    revokeQuota
+                },
+                {
+                    fn grantQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <grantQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitCalls::grantQuota)
+                    }
+                    grantQuota
+                },
+                {
                     fn checkHCUForFheLt(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -18118,39 +17577,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::checkHCUForFheIsIn)
                     }
                     checkHCUForFheIsIn
-                },
-                {
-                    fn addAllowlister(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <addAllowlisterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::addAllowlister)
-                    }
-                    addAllowlister
-                },
-                {
-                    fn removeAllowlister(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <removeAllowlisterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::removeAllowlister)
-                    }
-                    removeAllowlister
-                },
-                {
-                    fn allowlisterDeadline(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <allowlisterDeadlineCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::allowlisterDeadline)
-                    }
-                    allowlisterDeadline
                 },
                 {
                     fn checkHCUForFheGt(
@@ -18186,17 +17612,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     upgradeToAndCall
                 },
                 {
-                    fn addToAllowlist(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <addToAllowlistCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::addToAllowlist)
-                    }
-                    addToAllowlist
-                },
-                {
                     fn proxiableUUID(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -18217,6 +17632,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::setMaxHCUDepthPerTx)
                     }
                     setMaxHCUDepthPerTx
+                },
+                {
+                    fn unpauseQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <unpauseQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitCalls::unpauseQuota)
+                    }
+                    unpauseQuota
                 },
                 {
                     fn checkHCUForFheRotl(
@@ -18274,26 +17700,26 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheRandBounded
                 },
                 {
-                    fn addToBlockHCUWhitelist(
+                    fn isQuotaPaused(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <isQuotaPausedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitCalls::addToBlockHCUWhitelist)
+                            .map(HCULimitCalls::isQuotaPaused)
                     }
-                    addToBlockHCUWhitelist
+                    isQuotaPaused
                 },
                 {
-                    fn setAllowlistActivated(
+                    fn assignQuota(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setAllowlistActivatedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <assignQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitCalls::setAllowlistActivated)
+                            .map(HCULimitCalls::assignQuota)
                     }
-                    setAllowlistActivated
+                    assignQuota
                 },
                 {
                     fn checkHCUForFheMul(
@@ -18318,6 +17744,37 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheRotr
                 },
                 {
+                    fn getQuotaMaxStoredDepth(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitCalls::getQuotaMaxStoredDepth)
+                    }
+                    getQuotaMaxStoredDepth
+                },
+                {
+                    fn getQuotaAdmin(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getQuotaAdminCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitCalls::getQuotaAdmin)
+                    }
+                    getQuotaAdmin
+                },
+                {
+                    fn setQuota(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <setQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitCalls::setQuota)
+                    }
+                    setQuota
+                },
+                {
                     fn checkHCUForFheMax(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -18340,17 +17797,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheDiv
                 },
                 {
-                    fn getBlockMeter(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getBlockMeterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::getBlockMeter)
-                    }
-                    getBlockMeter
-                },
-                {
                     fn checkHCUForFheBitXor(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -18360,17 +17806,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::checkHCUForFheBitXor)
                     }
                     checkHCUForFheBitXor
-                },
-                {
-                    fn setHCUPerBlock(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::setHCUPerBlock)
-                    }
-                    setHCUPerBlock
                 },
                 {
                     fn setCrossTxDepthLimit(
@@ -18406,17 +17841,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     UPGRADE_INTERFACE_VERSION
                 },
                 {
-                    fn getGlobalHCUCapPerBlock(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::getGlobalHCUCapPerBlock)
-                    }
-                    getGlobalHCUCapPerBlock
-                },
-                {
                     fn checkHCUForTrivialEncrypt(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
@@ -18437,6 +17861,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::checkHCUForFheSum)
                     }
                     checkHCUForFheSum
+                },
+                {
+                    fn pauseQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <pauseQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitCalls::pauseQuota)
+                    }
+                    pauseQuota
                 },
                 {
                     fn checkHCUForFheBitOr(
@@ -18483,15 +17918,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheGe
                 },
                 {
-                    fn renounceAllowlister(
+                    fn setQuotaMaxStoredDepth(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <renounceAllowlisterCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <setQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitCalls::renounceAllowlister)
+                            .map(HCULimitCalls::setQuotaMaxStoredDepth)
                     }
-                    renounceAllowlister
+                    setQuotaMaxStoredDepth
                 },
                 {
                     fn checkHCUForFheBitAnd(
@@ -18505,15 +17940,13 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     checkHCUForFheBitAnd
                 },
                 {
-                    fn isAllowlistActivated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <isAllowlistActivatedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                    fn getQuota(data: &[u8]) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitCalls::isAllowlistActivated)
+                            .map(HCULimitCalls::getQuota)
                     }
-                    isAllowlistActivated
+                    getQuota
                 },
                 {
                     fn checkHCUForFheRand(
@@ -18536,17 +17969,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitCalls::checkHCUForFheSub)
                     }
                     checkHCUForFheSub
-                },
-                {
-                    fn isBlockHCUWhitelisted(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitCalls> {
-                        <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitCalls::isBlockHCUWhitelisted)
-                    }
-                    isBlockHCUWhitelisted
                 },
                 {
                     fn cacheDepth(
@@ -18581,6 +18003,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     }
                     checkHCUForFheShl
                 },
+                {
+                    fn getContractQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitCalls> {
+                        <getContractQuotaCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitCalls::getContractQuota)
+                    }
+                    getContractQuota
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -18600,23 +18033,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::addAllowlister(inner) => {
-                    <addAllowlisterCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::addToAllowlist(inner) => {
-                    <addToAllowlistCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::addToBlockHCUWhitelist(inner) => {
-                    <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::allowlisterDeadline(inner) => {
-                    <allowlisterDeadlineCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::assignQuota(inner) => {
+                    <assignQuotaCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -18773,8 +18191,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::getBlockMeter(inner) => {
-                    <getBlockMeterCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::getContractQuota(inner) => {
+                    <getContractQuotaCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -18788,11 +18206,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::getGlobalHCUCapPerBlock(inner) => {
-                    <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::getMaxHCUDepthPerTx(inner) => {
                     <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -18803,33 +18216,37 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
+                Self::getQuota(inner) => {
+                    <getQuotaCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
+                Self::getQuotaAdmin(inner) => {
+                    <getQuotaAdminCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getQuotaMaxStoredDepth(inner) => {
+                    <getQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
+                Self::grantQuota(inner) => {
+                    <grantQuotaCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::initializeFromEmptyProxy(inner) => {
                     <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
-                Self::isAllowlistActivated(inner) => {
-                    <isAllowlistActivatedCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::isQuotaPaused(inner) => {
+                    <isQuotaPausedCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
-                Self::isAllowlisted(inner) => {
-                    <isAllowlistedCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::isAllowlister(inner) => {
-                    <isAllowlisterCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::isBlockHCUWhitelisted(inner) => {
-                    <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                Self::pauseQuota(inner) => {
+                    <pauseQuotaCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::proxiableUUID(inner) => {
                     <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -18841,38 +18258,13 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::removeAllowlister(inner) => {
-                    <removeAllowlisterCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::removeFromAllowlist(inner) => {
-                    <removeFromAllowlistCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::removeFromBlockHCUWhitelist(inner) => {
-                    <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::renounceAllowlister(inner) => {
-                    <renounceAllowlisterCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::setAllowlistActivated(inner) => {
-                    <setAllowlistActivatedCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::revokeQuota(inner) => {
+                    <revokeQuotaCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
                 Self::setCrossTxDepthLimit(inner) => {
                     <setCrossTxDepthLimitCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::setHCUPerBlock(inner) => {
-                    <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -18883,6 +18275,24 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::setMaxHCUPerTx(inner) => {
                     <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::setQuota(inner) => {
+                    <setQuotaCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
+                Self::setQuotaAdmin(inner) => {
+                    <setQuotaAdminCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::setQuotaMaxStoredDepth(inner) => {
+                    <setQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::unpauseQuota(inner) => {
+                    <unpauseQuotaCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -18902,26 +18312,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::addAllowlister(inner) => {
-                    <addAllowlisterCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::addToAllowlist(inner) => {
-                    <addToAllowlistCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::addToBlockHCUWhitelist(inner) => {
-                    <addToBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::allowlisterDeadline(inner) => {
-                    <allowlisterDeadlineCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::assignQuota(inner) => {
+                    <assignQuotaCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -19112,8 +18504,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::getBlockMeter(inner) => {
-                    <getBlockMeterCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::getContractQuota(inner) => {
+                    <getContractQuotaCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -19130,12 +18522,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::getGlobalHCUCapPerBlock(inner) => {
-                    <getGlobalHCUCapPerBlockCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::getMaxHCUDepthPerTx(inner) => {
                     <getMaxHCUDepthPerTxCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -19148,8 +18534,32 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
+                Self::getQuota(inner) => {
+                    <getQuotaCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getQuotaAdmin(inner) => {
+                    <getQuotaAdminCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getQuotaMaxStoredDepth(inner) => {
+                    <getQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::grantQuota(inner) => {
+                    <grantQuotaCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -19160,26 +18570,14 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::isAllowlistActivated(inner) => {
-                    <isAllowlistActivatedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::isQuotaPaused(inner) => {
+                    <isQuotaPausedCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
-                Self::isAllowlisted(inner) => {
-                    <isAllowlistedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::isAllowlister(inner) => {
-                    <isAllowlisterCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::isBlockHCUWhitelisted(inner) => {
-                    <isBlockHCUWhitelistedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::pauseQuota(inner) => {
+                    <pauseQuotaCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -19196,44 +18594,14 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::removeAllowlister(inner) => {
-                    <removeAllowlisterCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::removeFromAllowlist(inner) => {
-                    <removeFromAllowlistCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::removeFromBlockHCUWhitelist(inner) => {
-                    <removeFromBlockHCUWhitelistCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::renounceAllowlister(inner) => {
-                    <renounceAllowlisterCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::setAllowlistActivated(inner) => {
-                    <setAllowlistActivatedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::revokeQuota(inner) => {
+                    <revokeQuotaCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
                 Self::setCrossTxDepthLimit(inner) => {
                     <setCrossTxDepthLimitCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::setHCUPerBlock(inner) => {
-                    <setHCUPerBlockCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -19246,6 +18614,30 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::setMaxHCUPerTx(inner) => {
                     <setMaxHCUPerTxCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::setQuota(inner) => {
+                    <setQuotaCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::setQuotaAdmin(inner) => {
+                    <setQuotaAdminCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::setQuotaMaxStoredDepth(inner) => {
+                    <setQuotaMaxStoredDepthCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::unpauseQuota(inner) => {
+                    <unpauseQuotaCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -19267,51 +18659,45 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         AddressEmptyCode(AddressEmptyCode),
         #[allow(missing_docs)]
-        AlreadyBlockHCUWhitelisted(AlreadyBlockHCUWhitelisted),
-        #[allow(missing_docs)]
         CallerMustBeACLContract(CallerMustBeACLContract),
         #[allow(missing_docs)]
         CallerMustBeFHEVMExecutorContract(CallerMustBeFHEVMExecutorContract),
         #[allow(missing_docs)]
-        CallerNotACLOwnerOrAllowlister(CallerNotACLOwnerOrAllowlister),
-        #[allow(missing_docs)]
-        CallerNotAllowlisted(CallerNotAllowlisted),
+        ContractNotInQuota(ContractNotInQuota),
         #[allow(missing_docs)]
         CrossTxDepthBelowMaxDepthPerTx(CrossTxDepthBelowMaxDepthPerTx),
+        #[allow(missing_docs)]
+        DefaultQuotaNotStopped(DefaultQuotaNotStopped),
         #[allow(missing_docs)]
         ERC1967InvalidImplementation(ERC1967InvalidImplementation),
         #[allow(missing_docs)]
         ERC1967NonPayable(ERC1967NonPayable),
         #[allow(missing_docs)]
-        EmptyBatch(EmptyBatch),
-        #[allow(missing_docs)]
         FailedCall(FailedCall),
-        #[allow(missing_docs)]
-        HCUBlockLimitExceeded(HCUBlockLimitExceeded),
         #[allow(missing_docs)]
         HCUCrossTxDepthLimitExceeded(HCUCrossTxDepthLimitExceeded),
         #[allow(missing_docs)]
-        HCUPerBlockBelowMaxPerTx(HCUPerBlockBelowMaxPerTx),
+        HCUQuotaExceeded(HCUQuotaExceeded),
+        #[allow(missing_docs)]
+        HCUQuotaPaused(HCUQuotaPaused),
+        #[allow(missing_docs)]
+        HCUQuotaStopped(HCUQuotaStopped),
+        #[allow(missing_docs)]
+        HCUStoredDepthExceeded(HCUStoredDepthExceeded),
         #[allow(missing_docs)]
         HCUTransactionDepthLimitExceeded(HCUTransactionDepthLimitExceeded),
         #[allow(missing_docs)]
         HCUTransactionLimitExceeded(HCUTransactionLimitExceeded),
         #[allow(missing_docs)]
-        InvalidAllowlisterDeadline(InvalidAllowlisterDeadline),
-        #[allow(missing_docs)]
         InvalidCrossTxDepthLimit(InvalidCrossTxDepthLimit),
         #[allow(missing_docs)]
         InvalidInitialization(InvalidInitialization),
         #[allow(missing_docs)]
-        InvalidZeroAddress(InvalidZeroAddress),
+        InvalidMaxStoredDepth(InvalidMaxStoredDepth),
+        #[allow(missing_docs)]
+        InvalidQuota(InvalidQuota),
         #[allow(missing_docs)]
         InvalidZeroHandle(InvalidZeroHandle),
-        #[allow(missing_docs)]
-        NotAllowlisted(NotAllowlisted),
-        #[allow(missing_docs)]
-        NotAllowlister(NotAllowlister),
-        #[allow(missing_docs)]
-        NotBlockHCUWhitelisted(NotBlockHCUWhitelisted),
         #[allow(missing_docs)]
         NotHostOwner(NotHostOwner),
         #[allow(missing_docs)]
@@ -19319,7 +18705,13 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         NotInitializingFromEmptyProxy(NotInitializingFromEmptyProxy),
         #[allow(missing_docs)]
+        NotPauser(NotPauser),
+        #[allow(missing_docs)]
+        NotQuotaAdmin(NotQuotaAdmin),
+        #[allow(missing_docs)]
         OnlyScalarOperationsAreSupported(OnlyScalarOperationsAreSupported),
+        #[allow(missing_docs)]
+        QuotaMembershipPaused(QuotaMembershipPaused),
         #[allow(missing_docs)]
         UUPSUnauthorizedCallContext(UUPSUnauthorizedCallContext),
         #[allow(missing_docs)]
@@ -19335,104 +18727,104 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [4u8, 172u8, 202u8, 47u8],
+            [2u8, 115u8, 135u8, 37u8],
             [18u8, 45u8, 113u8, 96u8],
-            [26u8, 89u8, 184u8, 84u8],
+            [32u8, 106u8, 52u8, 110u8],
             [33u8, 191u8, 218u8, 16u8],
+            [36u8, 66u8, 122u8, 93u8],
+            [48u8, 116u8, 161u8, 170u8],
             [49u8, 168u8, 26u8, 129u8],
+            [51u8, 44u8, 195u8, 10u8],
             [52u8, 228u8, 93u8, 123u8],
             [76u8, 156u8, 140u8, 227u8],
+            [82u8, 234u8, 45u8, 56u8],
             [95u8, 193u8, 61u8, 88u8],
             [106u8, 169u8, 235u8, 5u8],
             [111u8, 79u8, 115u8, 31u8],
-            [111u8, 122u8, 82u8, 117u8],
-            [117u8, 169u8, 79u8, 226u8],
+            [115u8, 131u8, 238u8, 229u8],
             [119u8, 227u8, 194u8, 147u8],
-            [128u8, 60u8, 100u8, 125u8],
+            [152u8, 52u8, 154u8, 4u8],
             [153u8, 150u8, 179u8, 21u8],
             [154u8, 106u8, 25u8, 200u8],
             [155u8, 166u8, 6u8, 27u8],
             [158u8, 106u8, 250u8, 74u8],
             [170u8, 29u8, 73u8, 164u8],
-            [173u8, 37u8, 17u8, 116u8],
+            [170u8, 66u8, 231u8, 133u8],
             [179u8, 152u8, 151u8, 159u8],
-            [194u8, 229u8, 52u8, 125u8],
+            [180u8, 116u8, 203u8, 169u8],
+            [202u8, 52u8, 239u8, 177u8],
             [214u8, 189u8, 162u8, 117u8],
             [215u8, 230u8, 188u8, 248u8],
             [224u8, 124u8, 141u8, 186u8],
-            [227u8, 204u8, 52u8, 24u8],
-            [232u8, 104u8, 205u8, 78u8],
-            [246u8, 178u8, 145u8, 31u8],
             [249u8, 46u8, 232u8, 169u8],
-            [249u8, 156u8, 79u8, 209u8],
             [252u8, 52u8, 72u8, 112u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(HCUPerBlockBelowMaxPerTx),
+            ::core::stringify!(NotQuotaAdmin),
             ::core::stringify!(CallerMustBeACLContract),
-            ::core::stringify!(CallerNotAllowlisted),
+            ::core::stringify!(NotPauser),
             ::core::stringify!(NotHostOwner),
+            ::core::stringify!(InvalidQuota),
+            ::core::stringify!(QuotaMembershipPaused),
             ::core::stringify!(CallerMustBeFHEVMExecutorContract),
+            ::core::stringify!(HCUStoredDepthExceeded),
             ::core::stringify!(InvalidZeroHandle),
             ::core::stringify!(ERC1967InvalidImplementation),
+            ::core::stringify!(InvalidMaxStoredDepth),
             ::core::stringify!(InvalidCrossTxDepthLimit),
             ::core::stringify!(OnlyScalarOperationsAreSupported),
             ::core::stringify!(NotInitializingFromEmptyProxy),
-            ::core::stringify!(NotAllowlisted),
-            ::core::stringify!(InvalidAllowlisterDeadline),
+            ::core::stringify!(HCUQuotaExceeded),
             ::core::stringify!(HCUTransactionLimitExceeded),
-            ::core::stringify!(NotAllowlister),
+            ::core::stringify!(HCUQuotaPaused),
             ::core::stringify!(AddressEmptyCode),
             ::core::stringify!(HCUCrossTxDepthLimitExceeded),
             ::core::stringify!(UnsupportedOperation),
             ::core::stringify!(CrossTxDepthBelowMaxDepthPerTx),
             ::core::stringify!(UUPSUnsupportedProxiableUUID),
-            ::core::stringify!(HCUBlockLimitExceeded),
+            ::core::stringify!(ContractNotInQuota),
             ::core::stringify!(ERC1967NonPayable),
-            ::core::stringify!(EmptyBatch),
+            ::core::stringify!(HCUQuotaStopped),
+            ::core::stringify!(DefaultQuotaNotStopped),
             ::core::stringify!(FailedCall),
             ::core::stringify!(NotInitializing),
             ::core::stringify!(UUPSUnauthorizedCallContext),
-            ::core::stringify!(NotBlockHCUWhitelisted),
-            ::core::stringify!(CallerNotACLOwnerOrAllowlister),
-            ::core::stringify!(InvalidZeroAddress),
             ::core::stringify!(InvalidInitialization),
-            ::core::stringify!(AlreadyBlockHCUWhitelisted),
             ::core::stringify!(HCUTransactionDepthLimitExceeded),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
-            <HCUPerBlockBelowMaxPerTx as alloy_sol_types::SolError>::SIGNATURE,
+            <NotQuotaAdmin as alloy_sol_types::SolError>::SIGNATURE,
             <CallerMustBeACLContract as alloy_sol_types::SolError>::SIGNATURE,
-            <CallerNotAllowlisted as alloy_sol_types::SolError>::SIGNATURE,
+            <NotPauser as alloy_sol_types::SolError>::SIGNATURE,
             <NotHostOwner as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidQuota as alloy_sol_types::SolError>::SIGNATURE,
+            <QuotaMembershipPaused as alloy_sol_types::SolError>::SIGNATURE,
             <CallerMustBeFHEVMExecutorContract as alloy_sol_types::SolError>::SIGNATURE,
+            <HCUStoredDepthExceeded as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidZeroHandle as alloy_sol_types::SolError>::SIGNATURE,
             <ERC1967InvalidImplementation as alloy_sol_types::SolError>::SIGNATURE,
+            <InvalidMaxStoredDepth as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidCrossTxDepthLimit as alloy_sol_types::SolError>::SIGNATURE,
             <OnlyScalarOperationsAreSupported as alloy_sol_types::SolError>::SIGNATURE,
             <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::SIGNATURE,
-            <NotAllowlisted as alloy_sol_types::SolError>::SIGNATURE,
-            <InvalidAllowlisterDeadline as alloy_sol_types::SolError>::SIGNATURE,
+            <HCUQuotaExceeded as alloy_sol_types::SolError>::SIGNATURE,
             <HCUTransactionLimitExceeded as alloy_sol_types::SolError>::SIGNATURE,
-            <NotAllowlister as alloy_sol_types::SolError>::SIGNATURE,
+            <HCUQuotaPaused as alloy_sol_types::SolError>::SIGNATURE,
             <AddressEmptyCode as alloy_sol_types::SolError>::SIGNATURE,
             <HCUCrossTxDepthLimitExceeded as alloy_sol_types::SolError>::SIGNATURE,
             <UnsupportedOperation as alloy_sol_types::SolError>::SIGNATURE,
             <CrossTxDepthBelowMaxDepthPerTx as alloy_sol_types::SolError>::SIGNATURE,
             <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::SIGNATURE,
-            <HCUBlockLimitExceeded as alloy_sol_types::SolError>::SIGNATURE,
+            <ContractNotInQuota as alloy_sol_types::SolError>::SIGNATURE,
             <ERC1967NonPayable as alloy_sol_types::SolError>::SIGNATURE,
-            <EmptyBatch as alloy_sol_types::SolError>::SIGNATURE,
+            <HCUQuotaStopped as alloy_sol_types::SolError>::SIGNATURE,
+            <DefaultQuotaNotStopped as alloy_sol_types::SolError>::SIGNATURE,
             <FailedCall as alloy_sol_types::SolError>::SIGNATURE,
             <NotInitializing as alloy_sol_types::SolError>::SIGNATURE,
             <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::SIGNATURE,
-            <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::SIGNATURE,
-            <CallerNotACLOwnerOrAllowlister as alloy_sol_types::SolError>::SIGNATURE,
-            <InvalidZeroAddress as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidInitialization as alloy_sol_types::SolError>::SIGNATURE,
-            <AlreadyBlockHCUWhitelisted as alloy_sol_types::SolError>::SIGNATURE,
             <HCUTransactionDepthLimitExceeded as alloy_sol_types::SolError>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
@@ -19467,23 +18859,20 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::AddressEmptyCode(_) => {
                     <AddressEmptyCode as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::AlreadyBlockHCUWhitelisted(_) => {
-                    <AlreadyBlockHCUWhitelisted as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::CallerMustBeACLContract(_) => {
                     <CallerMustBeACLContract as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::CallerMustBeFHEVMExecutorContract(_) => {
                     <CallerMustBeFHEVMExecutorContract as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::CallerNotACLOwnerOrAllowlister(_) => {
-                    <CallerNotACLOwnerOrAllowlister as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::CallerNotAllowlisted(_) => {
-                    <CallerNotAllowlisted as alloy_sol_types::SolError>::SELECTOR
+                Self::ContractNotInQuota(_) => {
+                    <ContractNotInQuota as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::CrossTxDepthBelowMaxDepthPerTx(_) => {
                     <CrossTxDepthBelowMaxDepthPerTx as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::DefaultQuotaNotStopped(_) => {
+                    <DefaultQuotaNotStopped as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::ERC1967InvalidImplementation(_) => {
                     <ERC1967InvalidImplementation as alloy_sol_types::SolError>::SELECTOR
@@ -19491,20 +18880,23 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::ERC1967NonPayable(_) => {
                     <ERC1967NonPayable as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::EmptyBatch(_) => {
-                    <EmptyBatch as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::FailedCall(_) => {
                     <FailedCall as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::HCUBlockLimitExceeded(_) => {
-                    <HCUBlockLimitExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::HCUCrossTxDepthLimitExceeded(_) => {
                     <HCUCrossTxDepthLimitExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::HCUPerBlockBelowMaxPerTx(_) => {
-                    <HCUPerBlockBelowMaxPerTx as alloy_sol_types::SolError>::SELECTOR
+                Self::HCUQuotaExceeded(_) => {
+                    <HCUQuotaExceeded as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::HCUQuotaPaused(_) => {
+                    <HCUQuotaPaused as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::HCUQuotaStopped(_) => {
+                    <HCUQuotaStopped as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::HCUStoredDepthExceeded(_) => {
+                    <HCUStoredDepthExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::HCUTransactionDepthLimitExceeded(_) => {
                     <HCUTransactionDepthLimitExceeded as alloy_sol_types::SolError>::SELECTOR
@@ -19512,29 +18904,20 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::HCUTransactionLimitExceeded(_) => {
                     <HCUTransactionLimitExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidAllowlisterDeadline(_) => {
-                    <InvalidAllowlisterDeadline as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::InvalidCrossTxDepthLimit(_) => {
                     <InvalidCrossTxDepthLimit as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidInitialization(_) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidZeroAddress(_) => {
-                    <InvalidZeroAddress as alloy_sol_types::SolError>::SELECTOR
+                Self::InvalidMaxStoredDepth(_) => {
+                    <InvalidMaxStoredDepth as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidQuota(_) => {
+                    <InvalidQuota as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidZeroHandle(_) => {
                     <InvalidZeroHandle as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotAllowlisted(_) => {
-                    <NotAllowlisted as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotAllowlister(_) => {
-                    <NotAllowlister as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotBlockHCUWhitelisted(_) => {
-                    <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotHostOwner(_) => {
                     <NotHostOwner as alloy_sol_types::SolError>::SELECTOR
@@ -19545,8 +18928,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 Self::NotInitializingFromEmptyProxy(_) => {
                     <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::NotPauser(_) => <NotPauser as alloy_sol_types::SolError>::SELECTOR,
+                Self::NotQuotaAdmin(_) => {
+                    <NotQuotaAdmin as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::OnlyScalarOperationsAreSupported(_) => {
                     <OnlyScalarOperationsAreSupported as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::QuotaMembershipPaused(_) => {
+                    <QuotaMembershipPaused as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::UUPSUnauthorizedCallContext(_) => {
                     <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::SELECTOR
@@ -19577,15 +18967,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 &[u8],
             ) -> alloy_sol_types::Result<HCULimitErrors>] = &[
                 {
-                    fn HCUPerBlockBelowMaxPerTx(
+                    fn NotQuotaAdmin(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <HCUPerBlockBelowMaxPerTx as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotQuotaAdmin as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                             )
-                            .map(HCULimitErrors::HCUPerBlockBelowMaxPerTx)
+                            .map(HCULimitErrors::NotQuotaAdmin)
                     }
-                    HCUPerBlockBelowMaxPerTx
+                    NotQuotaAdmin
                 },
                 {
                     fn CallerMustBeACLContract(
@@ -19599,15 +18989,13 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     CallerMustBeACLContract
                 },
                 {
-                    fn CallerNotAllowlisted(
+                    fn NotPauser(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <CallerNotAllowlisted as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::CallerNotAllowlisted)
+                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(data)
+                            .map(HCULimitErrors::NotPauser)
                     }
-                    CallerNotAllowlisted
+                    NotPauser
                 },
                 {
                     fn NotHostOwner(
@@ -19619,6 +19007,26 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     NotHostOwner
                 },
                 {
+                    fn InvalidQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <InvalidQuota as alloy_sol_types::SolError>::abi_decode_raw(data)
+                            .map(HCULimitErrors::InvalidQuota)
+                    }
+                    InvalidQuota
+                },
+                {
+                    fn QuotaMembershipPaused(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <QuotaMembershipPaused as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitErrors::QuotaMembershipPaused)
+                    }
+                    QuotaMembershipPaused
+                },
+                {
                     fn CallerMustBeFHEVMExecutorContract(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
@@ -19628,6 +19036,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitErrors::CallerMustBeFHEVMExecutorContract)
                     }
                     CallerMustBeFHEVMExecutorContract
+                },
+                {
+                    fn HCUStoredDepthExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <HCUStoredDepthExceeded as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitErrors::HCUStoredDepthExceeded)
+                    }
+                    HCUStoredDepthExceeded
                 },
                 {
                     fn InvalidZeroHandle(
@@ -19650,6 +19069,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitErrors::ERC1967InvalidImplementation)
                     }
                     ERC1967InvalidImplementation
+                },
+                {
+                    fn InvalidMaxStoredDepth(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <InvalidMaxStoredDepth as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitErrors::InvalidMaxStoredDepth)
+                    }
+                    InvalidMaxStoredDepth
                 },
                 {
                     fn InvalidCrossTxDepthLimit(
@@ -19685,26 +19115,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     NotInitializingFromEmptyProxy
                 },
                 {
-                    fn NotAllowlisted(
+                    fn HCUQuotaExceeded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <NotAllowlisted as alloy_sol_types::SolError>::abi_decode_raw(
+                        <HCUQuotaExceeded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                             )
-                            .map(HCULimitErrors::NotAllowlisted)
+                            .map(HCULimitErrors::HCUQuotaExceeded)
                     }
-                    NotAllowlisted
-                },
-                {
-                    fn InvalidAllowlisterDeadline(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <InvalidAllowlisterDeadline as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::InvalidAllowlisterDeadline)
-                    }
-                    InvalidAllowlisterDeadline
+                    HCUQuotaExceeded
                 },
                 {
                     fn HCUTransactionLimitExceeded(
@@ -19718,15 +19137,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     HCUTransactionLimitExceeded
                 },
                 {
-                    fn NotAllowlister(
+                    fn HCUQuotaPaused(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <NotAllowlister as alloy_sol_types::SolError>::abi_decode_raw(
+                        <HCUQuotaPaused as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                             )
-                            .map(HCULimitErrors::NotAllowlister)
+                            .map(HCULimitErrors::HCUQuotaPaused)
                     }
-                    NotAllowlister
+                    HCUQuotaPaused
                 },
                 {
                     fn AddressEmptyCode(
@@ -19784,15 +19203,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     UUPSUnsupportedProxiableUUID
                 },
                 {
-                    fn HCUBlockLimitExceeded(
+                    fn ContractNotInQuota(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <HCUBlockLimitExceeded as alloy_sol_types::SolError>::abi_decode_raw(
+                        <ContractNotInQuota as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                             )
-                            .map(HCULimitErrors::HCUBlockLimitExceeded)
+                            .map(HCULimitErrors::ContractNotInQuota)
                     }
-                    HCUBlockLimitExceeded
+                    ContractNotInQuota
                 },
                 {
                     fn ERC1967NonPayable(
@@ -19806,13 +19225,26 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     ERC1967NonPayable
                 },
                 {
-                    fn EmptyBatch(
+                    fn HCUQuotaStopped(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <EmptyBatch as alloy_sol_types::SolError>::abi_decode_raw(data)
-                            .map(HCULimitErrors::EmptyBatch)
+                        <HCUQuotaStopped as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitErrors::HCUQuotaStopped)
                     }
-                    EmptyBatch
+                    HCUQuotaStopped
+                },
+                {
+                    fn DefaultQuotaNotStopped(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <DefaultQuotaNotStopped as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HCULimitErrors::DefaultQuotaNotStopped)
+                    }
+                    DefaultQuotaNotStopped
                 },
                 {
                     fn FailedCall(
@@ -19846,39 +19278,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     UUPSUnauthorizedCallContext
                 },
                 {
-                    fn NotBlockHCUWhitelisted(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::NotBlockHCUWhitelisted)
-                    }
-                    NotBlockHCUWhitelisted
-                },
-                {
-                    fn CallerNotACLOwnerOrAllowlister(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <CallerNotACLOwnerOrAllowlister as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::CallerNotACLOwnerOrAllowlister)
-                    }
-                    CallerNotACLOwnerOrAllowlister
-                },
-                {
-                    fn InvalidZeroAddress(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <InvalidZeroAddress as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::InvalidZeroAddress)
-                    }
-                    InvalidZeroAddress
-                },
-                {
                     fn InvalidInitialization(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
@@ -19888,17 +19287,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitErrors::InvalidInitialization)
                     }
                     InvalidInitialization
-                },
-                {
-                    fn AlreadyBlockHCUWhitelisted(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <AlreadyBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(HCULimitErrors::AlreadyBlockHCUWhitelisted)
-                    }
-                    AlreadyBlockHCUWhitelisted
                 },
                 {
                     fn HCUTransactionDepthLimitExceeded(
@@ -19932,15 +19320,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 &[u8],
             ) -> alloy_sol_types::Result<HCULimitErrors>] = &[
                 {
-                    fn HCUPerBlockBelowMaxPerTx(
+                    fn NotQuotaAdmin(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <HCUPerBlockBelowMaxPerTx as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                        <NotQuotaAdmin as alloy_sol_types::SolError>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitErrors::HCUPerBlockBelowMaxPerTx)
+                            .map(HCULimitErrors::NotQuotaAdmin)
                     }
-                    HCUPerBlockBelowMaxPerTx
+                    NotQuotaAdmin
                 },
                 {
                     fn CallerMustBeACLContract(
@@ -19954,15 +19342,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     CallerMustBeACLContract
                 },
                 {
-                    fn CallerNotAllowlisted(
+                    fn NotPauser(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <CallerNotAllowlisted as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitErrors::CallerNotAllowlisted)
+                            .map(HCULimitErrors::NotPauser)
                     }
-                    CallerNotAllowlisted
+                    NotPauser
                 },
                 {
                     fn NotHostOwner(
@@ -19976,6 +19364,28 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     NotHostOwner
                 },
                 {
+                    fn InvalidQuota(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <InvalidQuota as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitErrors::InvalidQuota)
+                    }
+                    InvalidQuota
+                },
+                {
+                    fn QuotaMembershipPaused(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <QuotaMembershipPaused as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitErrors::QuotaMembershipPaused)
+                    }
+                    QuotaMembershipPaused
+                },
+                {
                     fn CallerMustBeFHEVMExecutorContract(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
@@ -19985,6 +19395,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitErrors::CallerMustBeFHEVMExecutorContract)
                     }
                     CallerMustBeFHEVMExecutorContract
+                },
+                {
+                    fn HCUStoredDepthExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <HCUStoredDepthExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitErrors::HCUStoredDepthExceeded)
+                    }
+                    HCUStoredDepthExceeded
                 },
                 {
                     fn InvalidZeroHandle(
@@ -20007,6 +19428,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitErrors::ERC1967InvalidImplementation)
                     }
                     ERC1967InvalidImplementation
+                },
+                {
+                    fn InvalidMaxStoredDepth(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <InvalidMaxStoredDepth as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitErrors::InvalidMaxStoredDepth)
+                    }
+                    InvalidMaxStoredDepth
                 },
                 {
                     fn InvalidCrossTxDepthLimit(
@@ -20042,26 +19474,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     NotInitializingFromEmptyProxy
                 },
                 {
-                    fn NotAllowlisted(
+                    fn HCUQuotaExceeded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <NotAllowlisted as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                        <HCUQuotaExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitErrors::NotAllowlisted)
+                            .map(HCULimitErrors::HCUQuotaExceeded)
                     }
-                    NotAllowlisted
-                },
-                {
-                    fn InvalidAllowlisterDeadline(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <InvalidAllowlisterDeadline as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitErrors::InvalidAllowlisterDeadline)
-                    }
-                    InvalidAllowlisterDeadline
+                    HCUQuotaExceeded
                 },
                 {
                     fn HCUTransactionLimitExceeded(
@@ -20075,15 +19496,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     HCUTransactionLimitExceeded
                 },
                 {
-                    fn NotAllowlister(
+                    fn HCUQuotaPaused(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <NotAllowlister as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                        <HCUQuotaPaused as alloy_sol_types::SolError>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitErrors::NotAllowlister)
+                            .map(HCULimitErrors::HCUQuotaPaused)
                     }
-                    NotAllowlister
+                    HCUQuotaPaused
                 },
                 {
                     fn AddressEmptyCode(
@@ -20141,15 +19562,15 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     UUPSUnsupportedProxiableUUID
                 },
                 {
-                    fn HCUBlockLimitExceeded(
+                    fn ContractNotInQuota(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <HCUBlockLimitExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                        <ContractNotInQuota as alloy_sol_types::SolError>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitErrors::HCUBlockLimitExceeded)
+                            .map(HCULimitErrors::ContractNotInQuota)
                     }
-                    HCUBlockLimitExceeded
+                    ContractNotInQuota
                 },
                 {
                     fn ERC1967NonPayable(
@@ -20163,15 +19584,26 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     ERC1967NonPayable
                 },
                 {
-                    fn EmptyBatch(
+                    fn HCUQuotaStopped(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <EmptyBatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                        <HCUQuotaStopped as alloy_sol_types::SolError>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(HCULimitErrors::EmptyBatch)
+                            .map(HCULimitErrors::HCUQuotaStopped)
                     }
-                    EmptyBatch
+                    HCUQuotaStopped
+                },
+                {
+                    fn DefaultQuotaNotStopped(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HCULimitErrors> {
+                        <DefaultQuotaNotStopped as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HCULimitErrors::DefaultQuotaNotStopped)
+                    }
+                    DefaultQuotaNotStopped
                 },
                 {
                     fn FailedCall(
@@ -20207,39 +19639,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     UUPSUnauthorizedCallContext
                 },
                 {
-                    fn NotBlockHCUWhitelisted(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitErrors::NotBlockHCUWhitelisted)
-                    }
-                    NotBlockHCUWhitelisted
-                },
-                {
-                    fn CallerNotACLOwnerOrAllowlister(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <CallerNotACLOwnerOrAllowlister as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitErrors::CallerNotACLOwnerOrAllowlister)
-                    }
-                    CallerNotACLOwnerOrAllowlister
-                },
-                {
-                    fn InvalidZeroAddress(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <InvalidZeroAddress as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitErrors::InvalidZeroAddress)
-                    }
-                    InvalidZeroAddress
-                },
-                {
                     fn InvalidInitialization(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HCULimitErrors> {
@@ -20249,17 +19648,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(HCULimitErrors::InvalidInitialization)
                     }
                     InvalidInitialization
-                },
-                {
-                    fn AlreadyBlockHCUWhitelisted(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<HCULimitErrors> {
-                        <AlreadyBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(HCULimitErrors::AlreadyBlockHCUWhitelisted)
-                    }
-                    AlreadyBlockHCUWhitelisted
                 },
                 {
                     fn HCUTransactionDepthLimitExceeded(
@@ -20291,11 +19679,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::AlreadyBlockHCUWhitelisted(inner) => {
-                    <AlreadyBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::CallerMustBeACLContract(inner) => {
                     <CallerMustBeACLContract as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -20306,18 +19689,18 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::CallerNotACLOwnerOrAllowlister(inner) => {
-                    <CallerNotACLOwnerOrAllowlister as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::CallerNotAllowlisted(inner) => {
-                    <CallerNotAllowlisted as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::ContractNotInQuota(inner) => {
+                    <ContractNotInQuota as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
                 Self::CrossTxDepthBelowMaxDepthPerTx(inner) => {
                     <CrossTxDepthBelowMaxDepthPerTx as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::DefaultQuotaNotStopped(inner) => {
+                    <DefaultQuotaNotStopped as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -20331,24 +19714,31 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::EmptyBatch(inner) => {
-                    <EmptyBatch as alloy_sol_types::SolError>::abi_encoded_size(inner)
-                }
                 Self::FailedCall(inner) => {
                     <FailedCall as alloy_sol_types::SolError>::abi_encoded_size(inner)
-                }
-                Self::HCUBlockLimitExceeded(inner) => {
-                    <HCUBlockLimitExceeded as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
                 }
                 Self::HCUCrossTxDepthLimitExceeded(inner) => {
                     <HCUCrossTxDepthLimitExceeded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
-                Self::HCUPerBlockBelowMaxPerTx(inner) => {
-                    <HCUPerBlockBelowMaxPerTx as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::HCUQuotaExceeded(inner) => {
+                    <HCUQuotaExceeded as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::HCUQuotaPaused(inner) => {
+                    <HCUQuotaPaused as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::HCUQuotaStopped(inner) => {
+                    <HCUQuotaStopped as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::HCUStoredDepthExceeded(inner) => {
+                    <HCUStoredDepthExceeded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -20362,11 +19752,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::InvalidAllowlisterDeadline(inner) => {
-                    <InvalidAllowlisterDeadline as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::InvalidCrossTxDepthLimit(inner) => {
                     <InvalidCrossTxDepthLimit as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -20377,28 +19762,16 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::InvalidZeroAddress(inner) => {
-                    <InvalidZeroAddress as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::InvalidMaxStoredDepth(inner) => {
+                    <InvalidMaxStoredDepth as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
+                }
+                Self::InvalidQuota(inner) => {
+                    <InvalidQuota as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::InvalidZeroHandle(inner) => {
                     <InvalidZeroHandle as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::NotAllowlisted(inner) => {
-                    <NotAllowlisted as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::NotAllowlister(inner) => {
-                    <NotAllowlister as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::NotBlockHCUWhitelisted(inner) => {
-                    <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -20415,8 +19788,19 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
+                Self::NotPauser(inner) => {
+                    <NotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
+                Self::NotQuotaAdmin(inner) => {
+                    <NotQuotaAdmin as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
                 Self::OnlyScalarOperationsAreSupported(inner) => {
                     <OnlyScalarOperationsAreSupported as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::QuotaMembershipPaused(inner) => {
+                    <QuotaMembershipPaused as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -20446,12 +19830,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::AlreadyBlockHCUWhitelisted(inner) => {
-                    <AlreadyBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::CallerMustBeACLContract(inner) => {
                     <CallerMustBeACLContract as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -20464,20 +19842,20 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::CallerNotACLOwnerOrAllowlister(inner) => {
-                    <CallerNotACLOwnerOrAllowlister as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::CallerNotAllowlisted(inner) => {
-                    <CallerNotAllowlisted as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::ContractNotInQuota(inner) => {
+                    <ContractNotInQuota as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
                 Self::CrossTxDepthBelowMaxDepthPerTx(inner) => {
                     <CrossTxDepthBelowMaxDepthPerTx as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::DefaultQuotaNotStopped(inner) => {
+                    <DefaultQuotaNotStopped as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -20494,17 +19872,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::EmptyBatch(inner) => {
-                    <EmptyBatch as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
-                }
                 Self::FailedCall(inner) => {
                     <FailedCall as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
-                }
-                Self::HCUBlockLimitExceeded(inner) => {
-                    <HCUBlockLimitExceeded as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
                 }
                 Self::HCUCrossTxDepthLimitExceeded(inner) => {
                     <HCUCrossTxDepthLimitExceeded as alloy_sol_types::SolError>::abi_encode_raw(
@@ -20512,8 +19881,26 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::HCUPerBlockBelowMaxPerTx(inner) => {
-                    <HCUPerBlockBelowMaxPerTx as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::HCUQuotaExceeded(inner) => {
+                    <HCUQuotaExceeded as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::HCUQuotaPaused(inner) => {
+                    <HCUQuotaPaused as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::HCUQuotaStopped(inner) => {
+                    <HCUQuotaStopped as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::HCUStoredDepthExceeded(inner) => {
+                    <HCUStoredDepthExceeded as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -20530,12 +19917,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::InvalidAllowlisterDeadline(inner) => {
-                    <InvalidAllowlisterDeadline as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::InvalidCrossTxDepthLimit(inner) => {
                     <InvalidCrossTxDepthLimit as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -20548,32 +19929,20 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
-                Self::InvalidZeroAddress(inner) => {
-                    <InvalidZeroAddress as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::InvalidMaxStoredDepth(inner) => {
+                    <InvalidMaxStoredDepth as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidQuota(inner) => {
+                    <InvalidQuota as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
                 Self::InvalidZeroHandle(inner) => {
                     <InvalidZeroHandle as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NotAllowlisted(inner) => {
-                    <NotAllowlisted as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NotAllowlister(inner) => {
-                    <NotAllowlister as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NotBlockHCUWhitelisted(inner) => {
-                    <NotBlockHCUWhitelisted as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -20596,8 +19965,23 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
+                Self::NotPauser(inner) => {
+                    <NotPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                }
+                Self::NotQuotaAdmin(inner) => {
+                    <NotQuotaAdmin as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::OnlyScalarOperationsAreSupported(inner) => {
                     <OnlyScalarOperationsAreSupported as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::QuotaMembershipPaused(inner) => {
+                    <QuotaMembershipPaused as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -20629,29 +20013,23 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HCULimitEvents {
         #[allow(missing_docs)]
-        AllowlistActivationChanged(AllowlistActivationChanged),
-        #[allow(missing_docs)]
-        AllowlistAdded(AllowlistAdded),
-        #[allow(missing_docs)]
-        AllowlistRemoved(AllowlistRemoved),
-        #[allow(missing_docs)]
-        AllowlisterAdded(AllowlisterAdded),
-        #[allow(missing_docs)]
-        AllowlisterRemoved(AllowlisterRemoved),
-        #[allow(missing_docs)]
-        BlockHCUWhitelistAdded(BlockHCUWhitelistAdded),
-        #[allow(missing_docs)]
-        BlockHCUWhitelistRemoved(BlockHCUWhitelistRemoved),
+        ContractQuotaAssigned(ContractQuotaAssigned),
         #[allow(missing_docs)]
         CrossTxDepthLimitSet(CrossTxDepthLimitSet),
-        #[allow(missing_docs)]
-        HCUPerBlockSet(HCUPerBlockSet),
         #[allow(missing_docs)]
         Initialized(Initialized),
         #[allow(missing_docs)]
         MaxHCUDepthPerTxSet(MaxHCUDepthPerTxSet),
         #[allow(missing_docs)]
         MaxHCUPerTxSet(MaxHCUPerTxSet),
+        #[allow(missing_docs)]
+        QuotaAdminSet(QuotaAdminSet),
+        #[allow(missing_docs)]
+        QuotaMaxStoredDepthSet(QuotaMaxStoredDepthSet),
+        #[allow(missing_docs)]
+        QuotaPauseSet(QuotaPauseSet),
+        #[allow(missing_docs)]
+        QuotaSet(QuotaSet),
         #[allow(missing_docs)]
         Upgraded(Upgraded),
     }
@@ -20664,14 +20042,14 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                58u8, 29u8, 121u8, 117u8, 197u8, 250u8, 245u8, 181u8, 31u8, 208u8, 55u8,
-                168u8, 211u8, 222u8, 151u8, 127u8, 51u8, 238u8, 85u8, 185u8, 232u8,
-                253u8, 66u8, 200u8, 47u8, 193u8, 169u8, 162u8, 96u8, 34u8, 106u8, 65u8,
+                11u8, 7u8, 244u8, 210u8, 156u8, 17u8, 249u8, 236u8, 134u8, 2u8, 107u8,
+                207u8, 222u8, 8u8, 82u8, 126u8, 17u8, 113u8, 139u8, 226u8, 191u8, 252u8,
+                209u8, 10u8, 51u8, 162u8, 70u8, 236u8, 48u8, 220u8, 80u8, 102u8,
             ],
             [
-                69u8, 134u8, 128u8, 247u8, 154u8, 169u8, 222u8, 10u8, 224u8, 99u8, 68u8,
-                40u8, 122u8, 59u8, 216u8, 236u8, 97u8, 121u8, 250u8, 160u8, 82u8, 82u8,
-                233u8, 175u8, 129u8, 174u8, 115u8, 77u8, 107u8, 77u8, 198u8, 186u8,
+                83u8, 8u8, 17u8, 44u8, 75u8, 88u8, 181u8, 114u8, 176u8, 90u8, 214u8, 3u8,
+                211u8, 22u8, 237u8, 71u8, 6u8, 33u8, 198u8, 7u8, 183u8, 133u8, 227u8,
+                187u8, 128u8, 24u8, 214u8, 165u8, 27u8, 82u8, 77u8, 142u8,
             ],
             [
                 85u8, 17u8, 177u8, 133u8, 31u8, 196u8, 10u8, 38u8, 41u8, 200u8, 85u8,
@@ -20684,24 +20062,14 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 55u8, 117u8, 138u8, 23u8, 53u8, 130u8, 120u8, 105u8, 97u8, 202u8,
             ],
             [
-                112u8, 35u8, 8u8, 243u8, 7u8, 16u8, 77u8, 44u8, 185u8, 69u8, 153u8,
-                202u8, 157u8, 115u8, 63u8, 5u8, 156u8, 34u8, 70u8, 10u8, 59u8, 189u8,
-                212u8, 140u8, 204u8, 206u8, 194u8, 73u8, 247u8, 183u8, 94u8, 178u8,
+                131u8, 30u8, 195u8, 150u8, 113u8, 171u8, 234u8, 78u8, 85u8, 69u8, 21u8,
+                175u8, 209u8, 64u8, 206u8, 210u8, 212u8, 35u8, 243u8, 168u8, 2u8, 141u8,
+                29u8, 157u8, 13u8, 20u8, 0u8, 32u8, 81u8, 78u8, 206u8, 121u8,
             ],
             [
-                146u8, 252u8, 151u8, 175u8, 21u8, 0u8, 38u8, 70u8, 206u8, 166u8, 60u8,
-                118u8, 51u8, 187u8, 55u8, 91u8, 130u8, 219u8, 124u8, 222u8, 123u8, 72u8,
-                12u8, 117u8, 254u8, 99u8, 65u8, 218u8, 204u8, 41u8, 44u8, 129u8,
-            ],
-            [
-                173u8, 85u8, 59u8, 96u8, 202u8, 55u8, 176u8, 239u8, 181u8, 68u8, 78u8,
-                38u8, 176u8, 224u8, 90u8, 33u8, 4u8, 72u8, 150u8, 188u8, 50u8, 122u8,
-                200u8, 16u8, 237u8, 202u8, 219u8, 221u8, 2u8, 24u8, 194u8, 205u8,
-            ],
-            [
-                179u8, 177u8, 104u8, 199u8, 95u8, 229u8, 213u8, 124u8, 227u8, 173u8, 9u8,
-                138u8, 180u8, 248u8, 158u8, 170u8, 187u8, 41u8, 11u8, 115u8, 84u8, 198u8,
-                125u8, 19u8, 192u8, 72u8, 249u8, 133u8, 50u8, 139u8, 176u8, 23u8,
+                154u8, 99u8, 65u8, 119u8, 110u8, 200u8, 134u8, 246u8, 53u8, 87u8, 106u8,
+                175u8, 227u8, 117u8, 159u8, 9u8, 206u8, 240u8, 25u8, 178u8, 100u8, 223u8,
+                166u8, 162u8, 125u8, 235u8, 180u8, 133u8, 84u8, 21u8, 255u8, 62u8,
             ],
             [
                 188u8, 124u8, 215u8, 90u8, 32u8, 238u8, 39u8, 253u8, 154u8, 222u8, 186u8,
@@ -20709,57 +20077,46 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 12u8, 192u8, 34u8, 91u8, 57u8, 218u8, 46u8, 92u8, 45u8, 59u8,
             ],
             [
-                193u8, 241u8, 252u8, 170u8, 137u8, 138u8, 174u8, 34u8, 99u8, 221u8,
-                237u8, 113u8, 46u8, 23u8, 152u8, 8u8, 63u8, 202u8, 146u8, 114u8, 255u8,
-                128u8, 62u8, 228u8, 21u8, 12u8, 228u8, 143u8, 134u8, 25u8, 137u8, 26u8,
-            ],
-            [
                 199u8, 245u8, 5u8, 178u8, 243u8, 113u8, 174u8, 33u8, 117u8, 238u8, 73u8,
                 19u8, 244u8, 73u8, 158u8, 31u8, 38u8, 51u8, 167u8, 181u8, 147u8, 99u8,
                 33u8, 238u8, 209u8, 205u8, 174u8, 182u8, 17u8, 81u8, 129u8, 210u8,
-            ],
-            [
-                204u8, 161u8, 212u8, 99u8, 132u8, 205u8, 187u8, 238u8, 242u8, 249u8,
-                218u8, 221u8, 183u8, 109u8, 177u8, 56u8, 16u8, 28u8, 153u8, 5u8, 248u8,
-                24u8, 216u8, 103u8, 182u8, 48u8, 25u8, 92u8, 18u8, 141u8, 60u8, 102u8,
             ],
             [
                 221u8, 64u8, 97u8, 205u8, 200u8, 186u8, 39u8, 70u8, 12u8, 173u8, 71u8,
                 169u8, 13u8, 85u8, 150u8, 31u8, 187u8, 252u8, 247u8, 30u8, 234u8, 247u8,
                 136u8, 85u8, 106u8, 154u8, 211u8, 107u8, 104u8, 41u8, 42u8, 178u8,
             ],
+            [
+                233u8, 156u8, 199u8, 205u8, 35u8, 10u8, 91u8, 7u8, 25u8, 61u8, 97u8,
+                217u8, 126u8, 181u8, 197u8, 151u8, 218u8, 78u8, 166u8, 2u8, 189u8, 78u8,
+                71u8, 121u8, 206u8, 126u8, 13u8, 134u8, 97u8, 9u8, 253u8, 208u8,
+            ],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(AllowlistAdded),
-            ::core::stringify!(AllowlistRemoved),
+            ::core::stringify!(QuotaSet),
+            ::core::stringify!(QuotaPauseSet),
             ::core::stringify!(MaxHCUDepthPerTxSet),
             ::core::stringify!(MaxHCUPerTxSet),
-            ::core::stringify!(AllowlisterAdded),
-            ::core::stringify!(BlockHCUWhitelistRemoved),
-            ::core::stringify!(AllowlistActivationChanged),
-            ::core::stringify!(AllowlisterRemoved),
+            ::core::stringify!(ContractQuotaAssigned),
+            ::core::stringify!(QuotaAdminSet),
             ::core::stringify!(Upgraded),
-            ::core::stringify!(HCUPerBlockSet),
             ::core::stringify!(Initialized),
-            ::core::stringify!(BlockHCUWhitelistAdded),
             ::core::stringify!(CrossTxDepthLimitSet),
+            ::core::stringify!(QuotaMaxStoredDepthSet),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
-            <AllowlistAdded as alloy_sol_types::SolEvent>::SIGNATURE,
-            <AllowlistRemoved as alloy_sol_types::SolEvent>::SIGNATURE,
+            <QuotaSet as alloy_sol_types::SolEvent>::SIGNATURE,
+            <QuotaPauseSet as alloy_sol_types::SolEvent>::SIGNATURE,
             <MaxHCUDepthPerTxSet as alloy_sol_types::SolEvent>::SIGNATURE,
             <MaxHCUPerTxSet as alloy_sol_types::SolEvent>::SIGNATURE,
-            <AllowlisterAdded as alloy_sol_types::SolEvent>::SIGNATURE,
-            <BlockHCUWhitelistRemoved as alloy_sol_types::SolEvent>::SIGNATURE,
-            <AllowlistActivationChanged as alloy_sol_types::SolEvent>::SIGNATURE,
-            <AllowlisterRemoved as alloy_sol_types::SolEvent>::SIGNATURE,
+            <ContractQuotaAssigned as alloy_sol_types::SolEvent>::SIGNATURE,
+            <QuotaAdminSet as alloy_sol_types::SolEvent>::SIGNATURE,
             <Upgraded as alloy_sol_types::SolEvent>::SIGNATURE,
-            <HCUPerBlockSet as alloy_sol_types::SolEvent>::SIGNATURE,
             <Initialized as alloy_sol_types::SolEvent>::SIGNATURE,
-            <BlockHCUWhitelistAdded as alloy_sol_types::SolEvent>::SIGNATURE,
             <CrossTxDepthLimitSet as alloy_sol_types::SolEvent>::SIGNATURE,
+            <QuotaMaxStoredDepthSet as alloy_sol_types::SolEvent>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -20785,68 +20142,20 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for HCULimitEvents {
         const NAME: &'static str = "HCULimitEvents";
-        const COUNT: usize = 13usize;
+        const COUNT: usize = 10usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(
-                    <AllowlistActivationChanged as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                    <ContractQuotaAssigned as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
-                    <AllowlistActivationChanged as alloy_sol_types::SolEvent>::decode_raw_log(
+                    <ContractQuotaAssigned as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                         )
-                        .map(Self::AllowlistActivationChanged)
-                }
-                Some(<AllowlistAdded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <AllowlistAdded as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::AllowlistAdded)
-                }
-                Some(<AllowlistRemoved as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <AllowlistRemoved as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::AllowlistRemoved)
-                }
-                Some(<AllowlisterAdded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <AllowlisterAdded as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::AllowlisterAdded)
-                }
-                Some(
-                    <AllowlisterRemoved as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <AllowlisterRemoved as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::AllowlisterRemoved)
-                }
-                Some(
-                    <BlockHCUWhitelistAdded as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <BlockHCUWhitelistAdded as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::BlockHCUWhitelistAdded)
-                }
-                Some(
-                    <BlockHCUWhitelistRemoved as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <BlockHCUWhitelistRemoved as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::BlockHCUWhitelistRemoved)
+                        .map(Self::ContractQuotaAssigned)
                 }
                 Some(
                     <CrossTxDepthLimitSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -20856,13 +20165,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             data,
                         )
                         .map(Self::CrossTxDepthLimitSet)
-                }
-                Some(<HCUPerBlockSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <HCUPerBlockSet as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::HCUPerBlockSet)
                 }
                 Some(<Initialized as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <Initialized as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -20887,6 +20189,33 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         )
                         .map(Self::MaxHCUPerTxSet)
                 }
+                Some(<QuotaAdminSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <QuotaAdminSet as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::QuotaAdminSet)
+                }
+                Some(
+                    <QuotaMaxStoredDepthSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <QuotaMaxStoredDepthSet as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::QuotaMaxStoredDepthSet)
+                }
+                Some(<QuotaPauseSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <QuotaPauseSet as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::QuotaPauseSet)
+                }
+                Some(<QuotaSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <QuotaSet as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                        .map(Self::QuotaSet)
+                }
                 Some(<Upgraded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <Upgraded as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Upgraded)
@@ -20909,31 +20238,10 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
     impl alloy_sol_types::private::IntoLogData for HCULimitEvents {
         fn to_log_data(&self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::AllowlistActivationChanged(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::AllowlistAdded(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::AllowlistRemoved(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::AllowlisterAdded(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::AllowlisterRemoved(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::BlockHCUWhitelistAdded(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::BlockHCUWhitelistRemoved(inner) => {
+                Self::ContractQuotaAssigned(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::CrossTxDepthLimitSet(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::HCUPerBlockSet(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::Initialized(inner) => {
@@ -20943,6 +20251,18 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::MaxHCUPerTxSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::QuotaAdminSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::QuotaMaxStoredDepthSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::QuotaPauseSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::QuotaSet(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::Upgraded(inner) => {
@@ -20952,31 +20272,10 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         }
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
             match self {
-                Self::AllowlistActivationChanged(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::AllowlistAdded(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::AllowlistRemoved(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::AllowlisterAdded(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::AllowlisterRemoved(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::BlockHCUWhitelistAdded(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::BlockHCUWhitelistRemoved(inner) => {
+                Self::ContractQuotaAssigned(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::CrossTxDepthLimitSet(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::HCUPerBlockSet(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::Initialized(inner) => {
@@ -20986,6 +20285,18 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::MaxHCUPerTxSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::QuotaAdminSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::QuotaMaxStoredDepthSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::QuotaPauseSet(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::QuotaSet(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::Upgraded(inner) => {
@@ -21157,43 +20468,18 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, UPGRADE_INTERFACE_VERSIONCall, N> {
             self.call_builder(&UPGRADE_INTERFACE_VERSIONCall)
         }
-        ///Creates a new call builder for the [`addAllowlister`] function.
-        pub fn addAllowlister(
+        ///Creates a new call builder for the [`assignQuota`] function.
+        pub fn assignQuota(
             &self,
+            quotaId: u16,
             account: alloy::sol_types::private::Address,
-            deadline: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, addAllowlisterCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, assignQuotaCall, N> {
             self.call_builder(
-                &addAllowlisterCall {
-                    account,
-                    deadline,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`addToAllowlist`] function.
-        pub fn addToAllowlist(
-            &self,
-            accounts: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-        ) -> alloy_contract::SolCallBuilder<&P, addToAllowlistCall, N> {
-            self.call_builder(&addToAllowlistCall { accounts })
-        }
-        ///Creates a new call builder for the [`addToBlockHCUWhitelist`] function.
-        pub fn addToBlockHCUWhitelist(
-            &self,
-            account: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, addToBlockHCUWhitelistCall, N> {
-            self.call_builder(
-                &addToBlockHCUWhitelistCall {
+                &assignQuotaCall {
+                    quotaId,
                     account,
                 },
             )
-        }
-        ///Creates a new call builder for the [`allowlisterDeadline`] function.
-        pub fn allowlisterDeadline(
-            &self,
-            account: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, allowlisterDeadlineCall, N> {
-            self.call_builder(&allowlisterDeadlineCall { account })
         }
         ///Creates a new call builder for the [`cacheDepth`] function.
         pub fn cacheDepth(
@@ -21801,11 +21087,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`getBlockMeter`] function.
-        pub fn getBlockMeter(
+        ///Creates a new call builder for the [`getContractQuota`] function.
+        pub fn getContractQuota(
             &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getBlockMeterCall, N> {
-            self.call_builder(&getBlockMeterCall)
+            account: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, getContractQuotaCall, N> {
+            self.call_builder(&getContractQuotaCall { account })
         }
         ///Creates a new call builder for the [`getCrossTxDepthLimit`] function.
         pub fn getCrossTxDepthLimit(
@@ -21819,12 +21106,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, getFHEVMExecutorAddressCall, N> {
             self.call_builder(&getFHEVMExecutorAddressCall)
         }
-        ///Creates a new call builder for the [`getGlobalHCUCapPerBlock`] function.
-        pub fn getGlobalHCUCapPerBlock(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getGlobalHCUCapPerBlockCall, N> {
-            self.call_builder(&getGlobalHCUCapPerBlockCall)
-        }
         ///Creates a new call builder for the [`getMaxHCUDepthPerTx`] function.
         pub fn getMaxHCUDepthPerTx(
             &self,
@@ -21837,57 +21118,73 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, getMaxHCUPerTxCall, N> {
             self.call_builder(&getMaxHCUPerTxCall)
         }
+        ///Creates a new call builder for the [`getQuota`] function.
+        pub fn getQuota(
+            &self,
+            quotaId: u16,
+        ) -> alloy_contract::SolCallBuilder<&P, getQuotaCall, N> {
+            self.call_builder(&getQuotaCall { quotaId })
+        }
+        ///Creates a new call builder for the [`getQuotaAdmin`] function.
+        pub fn getQuotaAdmin(
+            &self,
+            quotaId: u16,
+        ) -> alloy_contract::SolCallBuilder<&P, getQuotaAdminCall, N> {
+            self.call_builder(&getQuotaAdminCall { quotaId })
+        }
+        ///Creates a new call builder for the [`getQuotaMaxStoredDepth`] function.
+        pub fn getQuotaMaxStoredDepth(
+            &self,
+            quotaId: u16,
+        ) -> alloy_contract::SolCallBuilder<&P, getQuotaMaxStoredDepthCall, N> {
+            self.call_builder(
+                &getQuotaMaxStoredDepthCall {
+                    quotaId,
+                },
+            )
+        }
         ///Creates a new call builder for the [`getVersion`] function.
         pub fn getVersion(
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
             self.call_builder(&getVersionCall)
         }
+        ///Creates a new call builder for the [`grantQuota`] function.
+        pub fn grantQuota(
+            &self,
+            quotaId: u16,
+            account: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, grantQuotaCall, N> {
+            self.call_builder(&grantQuotaCall { quotaId, account })
+        }
         ///Creates a new call builder for the [`initializeFromEmptyProxy`] function.
         pub fn initializeFromEmptyProxy(
             &self,
-            hcuCapPerBlock: alloy::sol_types::private::primitives::aliases::U48,
+            defaultQuotaHCUPerBlock: alloy::sol_types::private::primitives::aliases::U48,
             maxHCUDepthPerTx: alloy::sol_types::private::primitives::aliases::U48,
             maxHCUPerTx: alloy::sol_types::private::primitives::aliases::U48,
         ) -> alloy_contract::SolCallBuilder<&P, initializeFromEmptyProxyCall, N> {
             self.call_builder(
                 &initializeFromEmptyProxyCall {
-                    hcuCapPerBlock,
+                    defaultQuotaHCUPerBlock,
                     maxHCUDepthPerTx,
                     maxHCUPerTx,
                 },
             )
         }
-        ///Creates a new call builder for the [`isAllowlistActivated`] function.
-        pub fn isAllowlistActivated(
+        ///Creates a new call builder for the [`isQuotaPaused`] function.
+        pub fn isQuotaPaused(
             &self,
-        ) -> alloy_contract::SolCallBuilder<&P, isAllowlistActivatedCall, N> {
-            self.call_builder(&isAllowlistActivatedCall)
+            quotaId: u16,
+        ) -> alloy_contract::SolCallBuilder<&P, isQuotaPausedCall, N> {
+            self.call_builder(&isQuotaPausedCall { quotaId })
         }
-        ///Creates a new call builder for the [`isAllowlisted`] function.
-        pub fn isAllowlisted(
+        ///Creates a new call builder for the [`pauseQuota`] function.
+        pub fn pauseQuota(
             &self,
-            account: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, isAllowlistedCall, N> {
-            self.call_builder(&isAllowlistedCall { account })
-        }
-        ///Creates a new call builder for the [`isAllowlister`] function.
-        pub fn isAllowlister(
-            &self,
-            account: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, isAllowlisterCall, N> {
-            self.call_builder(&isAllowlisterCall { account })
-        }
-        ///Creates a new call builder for the [`isBlockHCUWhitelisted`] function.
-        pub fn isBlockHCUWhitelisted(
-            &self,
-            account: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, isBlockHCUWhitelistedCall, N> {
-            self.call_builder(
-                &isBlockHCUWhitelistedCall {
-                    account,
-                },
-            )
+            quotaId: u16,
+        ) -> alloy_contract::SolCallBuilder<&P, pauseQuotaCall, N> {
+            self.call_builder(&pauseQuotaCall { quotaId })
         }
         ///Creates a new call builder for the [`proxiableUUID`] function.
         pub fn proxiableUUID(
@@ -21901,49 +21198,16 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, reinitializeV6Call, N> {
             self.call_builder(&reinitializeV6Call)
         }
-        ///Creates a new call builder for the [`removeAllowlister`] function.
-        pub fn removeAllowlister(
+        ///Creates a new call builder for the [`revokeQuota`] function.
+        pub fn revokeQuota(
             &self,
+            quotaId: u16,
             account: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, removeAllowlisterCall, N> {
-            self.call_builder(&removeAllowlisterCall { account })
-        }
-        ///Creates a new call builder for the [`removeFromAllowlist`] function.
-        pub fn removeFromAllowlist(
-            &self,
-            accounts: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-        ) -> alloy_contract::SolCallBuilder<&P, removeFromAllowlistCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, revokeQuotaCall, N> {
             self.call_builder(
-                &removeFromAllowlistCall {
-                    accounts,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`removeFromBlockHCUWhitelist`] function.
-        pub fn removeFromBlockHCUWhitelist(
-            &self,
-            account: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, removeFromBlockHCUWhitelistCall, N> {
-            self.call_builder(
-                &removeFromBlockHCUWhitelistCall {
+                &revokeQuotaCall {
+                    quotaId,
                     account,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`renounceAllowlister`] function.
-        pub fn renounceAllowlister(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<&P, renounceAllowlisterCall, N> {
-            self.call_builder(&renounceAllowlisterCall)
-        }
-        ///Creates a new call builder for the [`setAllowlistActivated`] function.
-        pub fn setAllowlistActivated(
-            &self,
-            activated: bool,
-        ) -> alloy_contract::SolCallBuilder<&P, setAllowlistActivatedCall, N> {
-            self.call_builder(
-                &setAllowlistActivatedCall {
-                    activated,
                 },
             )
         }
@@ -21959,13 +21223,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     decayPerBlock,
                 },
             )
-        }
-        ///Creates a new call builder for the [`setHCUPerBlock`] function.
-        pub fn setHCUPerBlock(
-            &self,
-            hcuPerBlock: alloy::sol_types::private::primitives::aliases::U48,
-        ) -> alloy_contract::SolCallBuilder<&P, setHCUPerBlockCall, N> {
-            self.call_builder(&setHCUPerBlockCall { hcuPerBlock })
         }
         ///Creates a new call builder for the [`setMaxHCUDepthPerTx`] function.
         pub fn setMaxHCUDepthPerTx(
@@ -21984,6 +21241,54 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             maxHCUPerTx: alloy::sol_types::private::primitives::aliases::U48,
         ) -> alloy_contract::SolCallBuilder<&P, setMaxHCUPerTxCall, N> {
             self.call_builder(&setMaxHCUPerTxCall { maxHCUPerTx })
+        }
+        ///Creates a new call builder for the [`setQuota`] function.
+        pub fn setQuota(
+            &self,
+            quotaId: u16,
+            maxHCU: alloy::sol_types::private::primitives::aliases::U48,
+            decayPerBlock: alloy::sol_types::private::primitives::aliases::U48,
+        ) -> alloy_contract::SolCallBuilder<&P, setQuotaCall, N> {
+            self.call_builder(
+                &setQuotaCall {
+                    quotaId,
+                    maxHCU,
+                    decayPerBlock,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`setQuotaAdmin`] function.
+        pub fn setQuotaAdmin(
+            &self,
+            quotaId: u16,
+            admin: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, setQuotaAdminCall, N> {
+            self.call_builder(
+                &setQuotaAdminCall {
+                    quotaId,
+                    admin,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`setQuotaMaxStoredDepth`] function.
+        pub fn setQuotaMaxStoredDepth(
+            &self,
+            quotaId: u16,
+            maxStoredDepth: alloy::sol_types::private::primitives::aliases::U48,
+        ) -> alloy_contract::SolCallBuilder<&P, setQuotaMaxStoredDepthCall, N> {
+            self.call_builder(
+                &setQuotaMaxStoredDepthCall {
+                    quotaId,
+                    maxStoredDepth,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`unpauseQuota`] function.
+        pub fn unpauseQuota(
+            &self,
+            quotaId: u16,
+        ) -> alloy_contract::SolCallBuilder<&P, unpauseQuotaCall, N> {
+            self.call_builder(&unpauseQuotaCall { quotaId })
         }
         ///Creates a new call builder for the [`upgradeToAndCall`] function.
         pub fn upgradeToAndCall(
@@ -22013,59 +21318,17 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
-        ///Creates a new event filter for the [`AllowlistActivationChanged`] event.
-        pub fn AllowlistActivationChanged_filter(
+        ///Creates a new event filter for the [`ContractQuotaAssigned`] event.
+        pub fn ContractQuotaAssigned_filter(
             &self,
-        ) -> alloy_contract::Event<&P, AllowlistActivationChanged, N> {
-            self.event_filter::<AllowlistActivationChanged>()
-        }
-        ///Creates a new event filter for the [`AllowlistAdded`] event.
-        pub fn AllowlistAdded_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, AllowlistAdded, N> {
-            self.event_filter::<AllowlistAdded>()
-        }
-        ///Creates a new event filter for the [`AllowlistRemoved`] event.
-        pub fn AllowlistRemoved_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, AllowlistRemoved, N> {
-            self.event_filter::<AllowlistRemoved>()
-        }
-        ///Creates a new event filter for the [`AllowlisterAdded`] event.
-        pub fn AllowlisterAdded_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, AllowlisterAdded, N> {
-            self.event_filter::<AllowlisterAdded>()
-        }
-        ///Creates a new event filter for the [`AllowlisterRemoved`] event.
-        pub fn AllowlisterRemoved_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, AllowlisterRemoved, N> {
-            self.event_filter::<AllowlisterRemoved>()
-        }
-        ///Creates a new event filter for the [`BlockHCUWhitelistAdded`] event.
-        pub fn BlockHCUWhitelistAdded_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, BlockHCUWhitelistAdded, N> {
-            self.event_filter::<BlockHCUWhitelistAdded>()
-        }
-        ///Creates a new event filter for the [`BlockHCUWhitelistRemoved`] event.
-        pub fn BlockHCUWhitelistRemoved_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, BlockHCUWhitelistRemoved, N> {
-            self.event_filter::<BlockHCUWhitelistRemoved>()
+        ) -> alloy_contract::Event<&P, ContractQuotaAssigned, N> {
+            self.event_filter::<ContractQuotaAssigned>()
         }
         ///Creates a new event filter for the [`CrossTxDepthLimitSet`] event.
         pub fn CrossTxDepthLimitSet_filter(
             &self,
         ) -> alloy_contract::Event<&P, CrossTxDepthLimitSet, N> {
             self.event_filter::<CrossTxDepthLimitSet>()
-        }
-        ///Creates a new event filter for the [`HCUPerBlockSet`] event.
-        pub fn HCUPerBlockSet_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, HCUPerBlockSet, N> {
-            self.event_filter::<HCUPerBlockSet>()
         }
         ///Creates a new event filter for the [`Initialized`] event.
         pub fn Initialized_filter(&self) -> alloy_contract::Event<&P, Initialized, N> {
@@ -22082,6 +21345,28 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, MaxHCUPerTxSet, N> {
             self.event_filter::<MaxHCUPerTxSet>()
+        }
+        ///Creates a new event filter for the [`QuotaAdminSet`] event.
+        pub fn QuotaAdminSet_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, QuotaAdminSet, N> {
+            self.event_filter::<QuotaAdminSet>()
+        }
+        ///Creates a new event filter for the [`QuotaMaxStoredDepthSet`] event.
+        pub fn QuotaMaxStoredDepthSet_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, QuotaMaxStoredDepthSet, N> {
+            self.event_filter::<QuotaMaxStoredDepthSet>()
+        }
+        ///Creates a new event filter for the [`QuotaPauseSet`] event.
+        pub fn QuotaPauseSet_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, QuotaPauseSet, N> {
+            self.event_filter::<QuotaPauseSet>()
+        }
+        ///Creates a new event filter for the [`QuotaSet`] event.
+        pub fn QuotaSet_filter(&self) -> alloy_contract::Event<&P, QuotaSet, N> {
+            self.event_filter::<QuotaSet>()
         }
         ///Creates a new event filter for the [`Upgraded`] event.
         pub fn Upgraded_filter(&self) -> alloy_contract::Event<&P, Upgraded, N> {
