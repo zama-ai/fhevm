@@ -274,3 +274,10 @@ coprocessor# select * from versioning;
 -----------+---------------+-------------------+------------------------------
  t         | v0.15.0       |                 2 | 2026-07-02 08:31:39.03538+00
 ```
+
+## Check an upgrade attempt with `upgrade-check`
+
+`upgrade-check` is a read-only CLI in this crate that reports whether an
+upgrade attempt cut over, rolled back or has not executed yet, and checks the
+result of a cutover (decision records, ciphertext versions, DB vs S3 digests).
+See [upgrade-check.md](./upgrade-check.md).

@@ -75,7 +75,7 @@ use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
-mod decision;
+pub mod decision;
 pub mod manifest_consensus;
 pub mod s3;
 pub mod state_hash;
