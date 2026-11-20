@@ -44,8 +44,7 @@ fi
 
 eth_key=$(secret_value eth-faucet private-key || true)
 polygon_key=$(secret_value polygon-faucet private-key || true)
-# bnb-faucet exists only on deploy_bnb runs, which is what gates the BSC sweep
-# (the rpc Secret always carries bnb-rpc-url).
+# bnb-rpc-url and bnb-faucet exist only on deploy_bnb runs; the BSC sweep needs both.
 bnb_key=$(secret_value bnb-faucet private-key || true)
 for key in "${eth_key}" "${polygon_key}" "${bnb_key}"; do
   if [[ -n "${key}" ]]; then echo "::add-mask::${key}"; fi

@@ -1,6 +1,6 @@
-# ADDITIVE overlay for the coprocessor-<i> release, passed as an EXTRA `-f` AFTER
-# values-coprocessor-e2e.yaml ONLY when deploy_polygon=true (see
-# preview-env-deploy.yml). Its SOLE purpose is to add Polygon (80002) to this
+# ADDITIVE seed for the coprocessor-<i> release, merged by deploy-coprocessor.sh
+# into the values it passes AFTER values-coprocessor-e2e.yaml ONLY when
+# deploy_polygon=true. Its SOLE purpose is to add Polygon (80002) to this
 # release's chains[] so coprocessor-<i>'s dbMigration seeds the Polygon
 # host_chains row (initialize_db.sh -> seed_host_chains reads HOST_CHAIN_<i>_*
 # for EVERY chains[] entry, regardless of `enabled`). Every Polygon role is
@@ -17,8 +17,9 @@
 # single-chain releases where that collision cannot happen.
 #
 # Helm REPLACES list-typed values wholesale when a later -f redefines them, so
-# this repeats the ETH `host` entry verbatim - it MUST stay in sync with
-# values-coprocessor-e2e.yaml chains[0]. It cannot live in the base file:
+# this file carries only the Polygon entry and is never passed to helm as-is:
+# deploy-coprocessor.sh builds chains[] = values-coprocessor-e2e.yaml's `host`
+# entry + each enabled extra chain's entry. It cannot live in the base file:
 # dbMigration renders HOST_CHAIN_<i>_ACL via valueFrom for every chains[] entry,
 # so a Polygon entry pointing at polygon-sc-addresses would crash the migration
 # Job whenever Polygon isn't deployed.
@@ -30,19 +31,6 @@ commonConfig:
   canonicalProtocolConfigChainId: "12345"
 
 chains:
-  # --- ETH host chain: MUST mirror values-coprocessor-e2e.yaml chains[0] ---
-  - name: host
-    chainId: "12345"
-    wsUrl: "ws://anvil-host-anvil-node:8545"
-    httpUrl: "http://anvil-host-anvil-node:8545"
-    aclContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
-    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
-    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
-    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
-    hostListener: {enabled: false, useLegacyName: true}
-    hostListenerPoller: {enabled: false, useLegacyName: true}
-    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
-    hostListenerConsumer: {enabled: true, useLegacyName: true}
   # --- Polygon host chain (80002): SEED-ONLY (all roles disabled) ---
   # Present solely so coprocessor-<i>'s dbMigration seeds its host_chains row. The
   # Polygon consumer and poller run in their own releases (coprocessor-polygon-<i>

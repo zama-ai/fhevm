@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # chain_mode=testnets: install sync-secrets (same chart gitops uses) so ESO
-# materialises Secret `rpc` (Sepolia + Amoy + BSC testnet URLs) and the faucet
-# keys (`eth-faucet`, `polygon-faucet`, plus `bnb-faucet` when DEPLOY_BNB=true).
+# materialises Secret `rpc` (Sepolia + Amoy URLs, plus BSC testnet when
+# DEPLOY_BNB=true) and the faucet keys (`eth-faucet`, `polygon-faucet`, plus
+# `bnb-faucet` when DEPLOY_BNB=true).
 # Export them masked for runner-side steps that cannot mount.
 # Env: NAMESPACE, SYNC_SECRETS_CHART, SYNC_SECRETS_CHART_VERSION,
 # RPC_SECRET_NAME, ETH_FAUCET_SECRET_NAME, POLYGON_FAUCET_SECRET_NAME,
@@ -15,8 +16,18 @@ set -euo pipefail
 : "${ETH_FAUCET_SECRET_NAME:?}"
 : "${POLYGON_FAUCET_SECRET_NAME:?}"
 
+rpc_values=ci/preview-env/testnets/values-rpc.yaml
+if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
+  # Helm replaces the data list wholesale, so merge the BNB entries in here
+  # rather than passing a second -f.
+  rpc_values="${RUNNER_TEMP:-/tmp}/values-rpc-bnb.generated.yaml"
+  BNB=ci/preview-env/testnets/values-rpc-bnb.yaml yq '
+    .externalSecret.data += load(strenv(BNB)).externalSecret.data |
+    .externalSecret.template.data *= load(strenv(BNB)).externalSecret.template.data
+  ' ci/preview-env/testnets/values-rpc.yaml > "${rpc_values}"
+fi
 helm upgrade --install preview-rpc "${SYNC_SECRETS_CHART}" --version "${SYNC_SECRETS_CHART_VERSION}" \
-  -n "${NAMESPACE}" -f ci/preview-env/testnets/values-rpc.yaml
+  -n "${NAMESPACE}" -f "${rpc_values}"
 helm upgrade --install preview-eth-faucet "${SYNC_SECRETS_CHART}" --version "${SYNC_SECRETS_CHART_VERSION}" \
   -n "${NAMESPACE}" -f ci/preview-env/testnets/values-eth-faucet.yaml
 helm upgrade --install preview-polygon-faucet "${SYNC_SECRETS_CHART}" --version "${SYNC_SECRETS_CHART_VERSION}" \

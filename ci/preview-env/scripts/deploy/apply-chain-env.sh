@@ -349,19 +349,16 @@ patch_extra_host_chain() {
     set_named_env_secret "${xlis}" ".env" APP_BLOCKCHAIN__RPC_URL "${rpc_key}"
   fi
 
-  # Patch whichever of the "host"/<slot> chains[] entries each coprocessor overlay carries.
+  # Each coprocessor overlay carries only the <slot> chains[] entry (deploy-coprocessor.sh
+  # takes the seed's `host` entry from the base file patched above).
   local xpoller="${root}/coprocessor/values-coprocessor-poller-${slot}-e2e.yaml"
   local xcopro=("${root}/coprocessor/values-coprocessor-${slot}-e2e.yaml"
                 "${root}/coprocessor/values-coprocessor-${slot}-consumer-e2e.yaml"
                 "${xpoller}")
   local f
   for f in "${xcopro[@]}"; do
-    HOST_HTTP="${HOST_HTTP}" HOST_WS="${HOST_WS}" HOST_CHAIN_ID="${HOST_CHAIN_ID}" \
-    SLOT="${slot}" X_HTTP="${http}" X_WS="${ws}" X_CHAIN_ID="${chain_id}" yq -i '
+    HOST_CHAIN_ID="${HOST_CHAIN_ID}" SLOT="${slot}" X_HTTP="${http}" X_WS="${ws}" X_CHAIN_ID="${chain_id}" yq -i '
       .commonConfig.canonicalProtocolConfigChainId = strenv(HOST_CHAIN_ID) |
-      (.chains[] | select(.name == "host") | .chainId) = strenv(HOST_CHAIN_ID) |
-      (.chains[] | select(.name == "host") | .httpUrl) = strenv(HOST_HTTP) |
-      (.chains[] | select(.name == "host") | .wsUrl) = strenv(HOST_WS) |
       (.chains[] | select(.name == strenv(SLOT)) | .chainId) = strenv(X_CHAIN_ID) |
       (.chains[] | select(.name == strenv(SLOT)) | .httpUrl) = strenv(X_HTTP) |
       (.chains[] | select(.name == strenv(SLOT)) | .wsUrl) = strenv(X_WS)
@@ -373,7 +370,6 @@ patch_extra_host_chain() {
   ' "${xpoller}"
   if rpc_from_secret; then
     for f in "${xcopro[@]}"; do
-      yq -e '.chains[] | select(.name == "host")' "${f}" >/dev/null 2>&1 && set_chain_urls_secret "${f}" host ethereum-rpc-url ethereum-rpc-ws-url
       set_chain_urls_secret "${f}" "${slot}" "${rpc_key}" "${rpc_ws_key}"
     done
     yq -i '.commonConfig.hostChainHttpUrl = "unused-on-testnets" | .commonConfig.hostChainWsUrl = "unused-on-testnets"' "${xpoller}"

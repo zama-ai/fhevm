@@ -18,23 +18,6 @@ if [[ "${CHAIN_MODE}" == "blockchain-dev" && "${DEPLOY_POLYGON:-false}" == "true
   exit 1
 fi
 
-if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
-  if [[ "${CHAIN_MODE}" == "blockchain-dev" ]]; then
-    echo "::error::chain_mode=blockchain-dev cannot be combined with deploy_bnb: blockchain-dev has no BNB node. Use chain_mode=testnets (Sepolia + Amoy + BSC testnet) or stay on Anvil."
-    exit 1
-  fi
-  # bg-*.sh and the cutover assertions only know the ETH + Polygon chains.
-  if [[ "${BLUE_GREEN:-false}" == "true" ]]; then
-    echo "::error::deploy_bnb is not supported with enable_blue_green."
-    exit 1
-  fi
-  # kms-connector chart 1.x has flat ethereum/polygon keys only, so BNB would never reach the connector.
-  if [[ "${KMS_CONNECTOR_CHART_VERSION:-}" == 1.* ]]; then
-    echo "::error::deploy_bnb needs kms-connector chart 2.x (hostChains map); kms_connector_chart_version=${KMS_CONNECTOR_CHART_VERSION} only supports ethereum + polygon."
-    exit 1
-  fi
-fi
-
 # Both external modes use the blockchain-dev Nitro as gateway.
 NITRO_HTTP="http://gateway-rpc-node.blockchain-dev:8547"
 NITRO_WS="ws://gateway-rpc-node.blockchain-dev:8548"

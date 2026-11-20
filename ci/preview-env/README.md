@@ -46,7 +46,8 @@ ci/preview-env/
 │   ├── values-coprocessor-infra-e2e.yaml    # crossplane/coprocessor-infra overlay: S3 only
 │   └── values-postgres-coprocessor-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to coprocessor
 ├── testnets/
-│   ├── values-rpc.yaml                 # sync-secrets: Sepolia/Amoy/BSC testnet RPC URLs → Secret rpc
+│   ├── values-rpc.yaml                 # sync-secrets: Sepolia/Amoy RPC URLs → Secret rpc
+│   ├── values-rpc-bnb.yaml             # BSC testnet RPC URLs, merged into Secret rpc on deploy_bnb runs
 │   ├── values-eth-faucet.yaml        # sync-secrets: zws-dev/ethereum-faucet → Secret eth-faucet
 │   ├── values-polygon-faucet.yaml    # sync-secrets: zws-dev/polygon-faucet → Secret polygon-faucet
 │   └── values-bnb-faucet.yaml        # sync-secrets: zws-dev/bnb-faucet → Secret bnb-faucet (deploy_bnb)
@@ -350,10 +351,10 @@ The two host chains are the real public testnets, so this is the only preview sh
   RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
   ProtocolConfig (canonical source) exactly as the Anvil Polygon does.
 - **BSC testnet (`97`) joins as a third host chain with `deploy_bnb`** (opt-in; `testnets`
-  does not imply it). Secret `rpc` always carries `bnb-rpc-url` / `bnb-rpc-ws-url` from
-  `zws-dev/external-bnb-rpcs`; Secret **`bnb-faucet`** (`private-key` from **`zws-dev/bnb-faucet`**)
-  is installed only on `deploy_bnb` runs, and its presence is what makes the teardown sweep
-  cover BSC testnet. Floors are 0.05 tBNB for signers and 0.5 tBNB for the deployer: BSC
+  does not imply it). Only on `deploy_bnb` runs, Secret `rpc` also carries `bnb-rpc-url` /
+  `bnb-rpc-ws-url` from `zws-dev/external-bnb-rpcs` (`testnets/values-rpc-bnb.yaml`, merged
+  in by `deploy-rpc-secret.sh`) and Secret **`bnb-faucet`** (`private-key` from
+  **`zws-dev/bnb-faucet`**) is installed; the teardown sweep covers BSC testnet when both exist. Floors are 0.05 tBNB for signers and 0.5 tBNB for the deployer: BSC
   testnet gas sits around 0.1-3 gwei, so the ~36M-gas host-contracts deploy costs ~0.1 tBNB.
   Listeners run `finality_depth` 20 and pollers `--finality-lag` 15 (`BNB_FINALITY_*`), the
   same as the zws-dev `bnb-blockchain` deployments.
@@ -617,6 +618,9 @@ coprocessor `dbMigration` Job renders `HOST_CHAIN_<i>_ACL` for every `chains[]` 
 regardless of whether its consumer is enabled, so a Polygon entry pointing at the
 `polygon-sc-addresses` ConfigMap would crash the migration whenever Polygon isn't
 deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'true'`.
+The seed overlay carries only its own `chains[]` entry; Helm replaces lists, so
+`deploy-coprocessor.sh` passes one file with the base `host` entry plus every enabled
+extra chain.
 
 > Coverage nuance: the Polygon e2e run uses Hardhat network `polygonAmoy`, which **is**
 > in `LIVE_NETWORKS` (see the network-mode section above), so `isLiveNetwork()` is
@@ -637,12 +641,9 @@ Differences from Polygon:
 
 - Opt-in in every chain mode: `chain_mode=testnets` does not imply it, so ordinary testnets
   runs don't spend tBNB.
-- Both seed overlays (`values-coprocessor-polygon-e2e.yaml`, `values-coprocessor-bnb-e2e.yaml`)
-  repeat the whole `chains[]` list because Helm replaces lists, so with both enabled
-  `deploy-coprocessor.sh` appends the `bnb` entry to the Polygon seed and passes one merged file.
 - kms-connector chart 2.x only: `hostChains` is a map there, so the `bnb` entry merges in;
   chart 1.5.3 has no slot for a third chain.
-- `resolve-chain.sh` rejects it with `chain_mode=blockchain-dev` (no BNB node there),
+- `check-labels` rejects it, before any build, with `chain_mode=blockchain-dev` (no BNB node there),
   `enable_blue_green` (the blue-green scripts and the upgrade proposal only know the ETH and
   Polygon host chains) and a 1.x kms-connector chart pin.
 

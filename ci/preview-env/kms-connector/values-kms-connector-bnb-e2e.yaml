@@ -5,7 +5,7 @@
 #
 # Chart 2.x only: hostChains is a map, so Helm deep-merges bnb with the base
 # ethereum (and polygon) entries. Chart 1.5.3 has no slot for a third chain;
-# resolve-chain.sh refuses deploy_bnb with a 1.x chart pin.
+# check-labels refuses deploy_bnb with a 1.x chart pin.
 commonConfig:
   hostChains:
     bnb:

@@ -16,7 +16,7 @@ name: preview-env-deploy
 #     gitops sync-secrets chart (no GitHub secrets). Implies deploy_polygon; slow (12s blocks), real testnet gas.
 #     deploy_bnb adds public BSC testnet 97 (RPC in Secret rpc, faucet key in Secret bnb-faucet).
 # deploy_bnb is opt-in in every mode and rejected with blockchain-dev, blue-green and
-# kms-connector chart 1.x (resolve-chain.sh).
+# kms-connector chart 1.x (check-labels, before any build).
 # Both external modes leave this preview's own contracts on the shared chains after teardown.
 #
 # Four PR labels control deployment (see check-labels below):
@@ -546,6 +546,36 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BCS_KMS_CORE_TAG: ${{ steps.check.outputs.blue_green == 'true' && steps.bcs_pin.outputs.kms_core_tag || '' }}
         run: node ci/preview-env/scripts/resolve/parse-overrides.cjs
+
+      # deploy_bnb is dispatch-only. Reject what it can't run before any build.
+      - name: Validate deploy_bnb topology
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy_bnb == 'true'
+        env:
+          CHAIN_MODE: ${{ steps.check.outputs.chain_mode }}
+          BLUE_GREEN: ${{ steps.check.outputs.blue_green }}
+          KMS_CONNECTOR_CHART_VERSION: ${{ fromJSON(steps.parse_overrides.outputs.overrides_json).kms_connector_chart_version }}
+        run: |
+          if [[ "${CHAIN_MODE}" == "blockchain-dev" ]]; then
+            echo "::error::chain_mode=blockchain-dev cannot be combined with deploy_bnb: blockchain-dev has no BNB node. Use chain_mode=testnets (Sepolia + Amoy + BSC testnet) or stay on Anvil."
+            exit 1
+          fi
+          # bg-*.sh and the cutover assertions only know the ETH + Polygon chains.
+          if [[ "${BLUE_GREEN}" == "true" ]]; then
+            echo "::error::deploy_bnb is not supported with enable_blue_green."
+            exit 1
+          fi
+          # Chart 1.x has flat ethereum/polygon keys only, so BNB would never reach
+          # the connector. Empty = the in-repo 2.x chart. Drop any v / ~ / ^ / >=
+          # prefix before reading the major version.
+          version="${KMS_CONNECTOR_CHART_VERSION}"
+          if [[ -n "${version}" ]]; then
+            major="${version#"${version%%[0-9]*}"}"
+            major="${major%%[!0-9]*}"
+            if [[ -z "${major}" ]] || (( 10#${major} < 2 )); then
+              echo "::error::deploy_bnb needs kms-connector chart 2.x or later (hostChains map); got kms_connector_chart_version=${version}."
+              exit 1
+            fi
+          fi
 
   ##########################################################################
   # Build every fhevm-owned image at this PR's HEAD (or the dispatched

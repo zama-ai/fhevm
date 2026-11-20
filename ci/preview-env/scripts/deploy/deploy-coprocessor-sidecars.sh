@@ -33,7 +33,7 @@ extra_consumer() {
 
 case "${kind}" in
   polygon-consumer|bnb-consumer)
-    # BNB never runs under blue-green (resolve-chain.sh rejects it).
+    # BNB never runs under blue-green (check-labels rejects it).
     if [[ "${BLUE_GREEN:-false}" == "true" ]]; then
       extra_consumer "${kind%-consumer}" "" "${BCS_IMAGE_TAG:?}" "bcs"
     else

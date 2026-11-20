@@ -58,7 +58,7 @@ if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
     --set-string "commonConfig.polygonContractAddresses.acl=${polygon_acl}"
   )
 fi
-# BNB: chart 2.x hostChains map entry only (resolve-chain.sh rejects 1.x pins).
+# BNB: chart 2.x hostChains map entry only (check-labels rejects 1.x pins).
 if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
   bnb_acl=$(kubectl get configmap bnb-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
   require_nonempty "${bnb_acl}" "bnb-sc-addresses[acl.address] is empty"

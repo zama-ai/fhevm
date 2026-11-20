@@ -61,7 +61,9 @@ else
   echo "RELAYER_SDK_VERSION empty - skipping the @zama-fhe/relayer-sdk suite."
 fi
 
-# Extra host chains: one @fhevm/sdk suite per chain, named after its slot.
+# Extra host chains: one @fhevm/sdk suite per chain, named after its slot. Each
+# runs against its own host chain, so start them all before waiting: run back to
+# back they could take up to 2h each inside the deploy job's 360-min budget.
 extra_slots=()
 [[ "${DEPLOY_POLYGON:-false}" == "true" ]] && extra_slots+=(polygon)
 [[ "${DEPLOY_BNB:-false}" == "true" ]] && extra_slots+=(bnb)
@@ -73,5 +75,7 @@ for slot in ${extra_slots[@]+"${extra_slots[@]}"}; do
   echo "Deploying ${slot} @fhevm/sdk workflow (image ${E2E_IMAGE}, phase=${E2E_PHASE})..."
   helm upgrade --install "test-suite-workflow-${slot}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
     -n "${NAMESPACE}" -f "${f3}"
+done
+for slot in ${extra_slots[@]+"${extra_slots[@]}"}; do
   bash "${script_dir}/wait-workflow.sh" "e2e-test-suite-${slot}"
 done

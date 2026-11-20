@@ -101,21 +101,30 @@ if [[ "${with_proxy}" == "true" ]] && ! kubectl get secret "${proxy_tls_secret}"
   echo "Created ${proxy_tls_secret} (SANs: ${sans})"
 fi
 
-# Each extra host chain's seed overlay repeats the whole chains[] list (Helm
-# replaces lists), so with both chains pass one file: the Polygon overlay plus
-# the BNB overlay's `bnb` entry.
+# Helm replaces lists, so each extra host chain's seed overlay carries only its
+# own chains[] entry. Pass one file: chains[] = the base `host` entry + each
+# enabled extra chain's entry, plus the overlays' commonConfig.
+extra_slots=()
+if [[ "${DEPLOY_POLYGON}" == "true" ]]; then extra_slots+=(polygon); fi
+if [[ "${DEPLOY_BNB:-false}" == "true" ]]; then extra_slots+=(bnb); fi
 extra_host_args=()
-polygon_seed=ci/preview-env/coprocessor/values-coprocessor-polygon-e2e.yaml
-bnb_seed=ci/preview-env/coprocessor/values-coprocessor-bnb-e2e.yaml
-if [[ "${DEPLOY_POLYGON}" == "true" && "${DEPLOY_BNB:-false}" == "true" ]]; then
-  merged_seed="${RUNNER_TEMP:-/tmp}/values-coprocessor-polygon-bnb-e2e.yaml"
-  BNB_ENTRY=$(yq -o=json -I=0 '.chains[] | select(.name == "bnb")' "${bnb_seed}") \
-    yq '.chains += [env(BNB_ENTRY)]' "${polygon_seed}" > "${merged_seed}"
-  extra_host_args=(-f "${merged_seed}")
-elif [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-  extra_host_args=(-f "${polygon_seed}")
-elif [[ "${DEPLOY_BNB:-false}" == "true" ]]; then
-  extra_host_args=(-f "${bnb_seed}")
+if (( ${#extra_slots[@]} > 0 )); then
+  extra_seed="${RUNNER_TEMP:-/tmp}/values-coprocessor-extra-hosts-e2e.yaml"
+  BASE=ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
+    yq -n '.chains = load(strenv(BASE)).chains' > "${extra_seed}"
+  for slot in "${extra_slots[@]}"; do
+    SEED="ci/preview-env/coprocessor/values-coprocessor-${slot}-e2e.yaml" yq -i '
+      .commonConfig *= load(strenv(SEED)).commonConfig |
+      .chains += load(strenv(SEED)).chains
+    ' "${extra_seed}"
+  done
+  want="host$(printf ',%s' "${extra_slots[@]}")"
+  got=$(yq '[.chains[].name] | join(",")' "${extra_seed}")
+  if [[ "${got}" != "${want}" ]]; then
+    echo "::error::coprocessor chains[] seed is [${got}], expected [${want}]" >&2
+    exit 1
+  fi
+  extra_host_args=(-f "${extra_seed}")
 fi
 bcs_overlay=()
 if [[ "${BLUE_GREEN}" == "true" ]]; then

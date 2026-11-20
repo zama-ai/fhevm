@@ -1,7 +1,6 @@
-# sync-secrets values: Sepolia + Amoy + BSC testnet RPC URLs (same AWS keys and
-# K8s Secret shape as zama-zws/gitops coprocessor / polygon-blockchain /
-# bnb-blockchain on zws-dev). Helm release name is the ExternalSecret name
-# (preview-rpc). The BNB keys are always synced; only deploy_bnb runs read them.
+# sync-secrets values: Sepolia + Amoy RPC URLs (same AWS keys and K8s Secret
+# shape as zama-zws/gitops coprocessor / polygon-blockchain on zws-dev).
+# Helm release name is the ExternalSecret name (preview-rpc).
 externalSecret:
   enabled: true
   targetSecretName: rpc
@@ -18,17 +17,9 @@ externalSecret:
     - keyReference: "zws-dev/external-polygon-rpcs"
       propertyReference: polygon-amoy-rpc-coprocessor-ws-url
       secretKeyName: polygon_amoy_rpc_ws_url
-    - keyReference: "zws-dev/external-bnb-rpcs"
-      propertyReference: bnb-testnet-rpc-coprocessor-http-url
-      secretKeyName: bnb_testnet_rpc_url
-    - keyReference: "zws-dev/external-bnb-rpcs"
-      propertyReference: bnb-testnet-rpc-coprocessor-ws-url
-      secretKeyName: bnb_testnet_rpc_ws_url
   template:
     data:
       ethereum-rpc-url: '{{ .ethereum_sepolia_rpc_url }}'
       ethereum-rpc-ws-url: '{{ .ethereum_sepolia_rpc_ws_url }}'
       polygon-rpc-url: '{{ .polygon_amoy_rpc_url }}'
       polygon-rpc-ws-url: '{{ .polygon_amoy_rpc_ws_url }}'
-      bnb-rpc-url: '{{ .bnb_testnet_rpc_url }}'
-      bnb-rpc-ws-url: '{{ .bnb_testnet_rpc_ws_url }}'
