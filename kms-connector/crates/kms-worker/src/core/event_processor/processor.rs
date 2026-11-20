@@ -1,9 +1,8 @@
 use crate::core::event_processor::{
     KmsClient, KmsPollTarget, ProcessingError, RequestCheckError,
     context::ContextManager,
-    decryption::{DecryptionProcessor, UserDecryptionExtraData},
+    decryption::{DecryptionProcessor, pad},
     kms::KMSGenerationProcessor,
-    pad,
     protocol_config::ProtocolConfigProcessor,
 };
 use alloy::{primitives::B256, providers::Provider};
@@ -67,12 +66,22 @@ where
         // poll. This relies on the requests being idempotent on the KMS Core side.
         let send_response =
             if matches!(poll_target, KmsPollTarget::ResultOnSend) || !event.already_sent {
-                // We optimistically prepare the request while running the checks.
-                let ((), request) = tokio::try_join!(
-                    biased;
-                    self.check_request(event),
-                    self.prepare_grpc_request(event),
-                )
+                let request = if let ProtocolEventKind::PadDecryption(_) = &event.kind {
+                    // Preparing a pad decryption costs compute to third parties: authorize it first.
+                    async {
+                        self.check_request(event).await?;
+                        self.prepare_grpc_request(event).await
+                    }
+                    .await
+                } else {
+                    // We optimistically prepare the request while running the checks.
+                    tokio::try_join!(
+                        biased;
+                        self.check_request(event),
+                        self.prepare_grpc_request(event),
+                    )
+                    .map(|((), request)| request)
+                }
                 .inspect_err(|_| event.error_counter += 1)?;
 
                 let (error_count, result) = self.kms_client.send_request(&request).await;
@@ -219,7 +228,19 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 )?;
                 Ok(())
             }
-            ProtocolEventKind::PadDecryption(_) => Err(pad::unsupported()),
+            ProtocolEventKind::PadDecryption(req) => {
+                tokio::try_join!(
+                    biased;
+                    async {
+                        self.decryption_processor
+                            .check_pad_decryption_request(req)
+                            .await
+                            .map_err(RequestCheckError::record)
+                    },
+                    self.check_context(&req.payload.extraData),
+                )?;
+                Ok(())
+            }
             ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Crsgen(req) => self.check_context(&req.extraData).await,
@@ -249,24 +270,21 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
-                    .prepare_decryption_request(
+                    .prepare_public_decryption_request(
                         req.decryptionId,
                         &req.ctHandles,
                         &req.extraData,
-                        None,
                     )
                     .await
             }
             ProtocolEventKind::UserDecryption(req) => {
                 self.decryption_processor
-                    .prepare_decryption_request(
+                    .prepare_user_decryption_request(
                         req.decryptionId,
                         &req.ctHandles,
                         &req.extraData,
-                        Some(UserDecryptionExtraData::new(
-                            req.userAddress,
-                            req.publicKey.clone(),
-                        )),
+                        req.userAddress,
+                        &req.publicKey,
                     )
                     .await
             }
@@ -274,20 +292,16 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 let payload = &req.payload;
                 let handles: Vec<B256> = req.handles.iter().map(|h| h.handle).collect();
                 self.decryption_processor
-                    .prepare_decryption_request(
+                    .prepare_user_decryption_request(
                         req.decryptionId,
                         &handles,
                         &payload.extraData,
-                        Some(UserDecryptionExtraData::new(
-                            payload.userAddress,
-                            payload.publicKey.clone(),
-                        )),
+                        payload.userAddress,
+                        &payload.publicKey,
                     )
                     .await
             }
-            ProtocolEventKind::PadDecryption(_) => {
-                unreachable!("pad decryptions are rejected by `check_request`")
-            }
+            ProtocolEventKind::PadDecryption(_) => Err(pad::unsupported()),
             ProtocolEventKind::PrepKeygen(req) => {
                 self.kms_generation_processor
                     .prepare_prep_keygen_request(req)

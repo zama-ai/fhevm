@@ -5,7 +5,6 @@ mod decryption;
 mod error;
 mod kms;
 mod kms_client;
-mod pad;
 mod processor;
 mod protocol_config;
 mod rpc;
