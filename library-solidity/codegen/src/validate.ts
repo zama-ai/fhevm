@@ -26,11 +26,6 @@ function isFheTypeName(value: unknown): boolean {
   return typeof value === 'string' && (FHE_TYPE_NAMES as readonly string[]).includes(value);
 }
 
-/** `true` for an optional number field: absent (`undefined`) or a number. */
-function isOptionalNumber(value: unknown): value is number | undefined {
-  return value === undefined || typeof value === 'number';
-}
-
 /**
  * `true` if `value` is one of the values of the numeric enum `enumObject`.
  * A numeric enum object also maps its values back to their names (e.g. `{ 0: 'Binary', Binary: 0 }`), so only the
@@ -228,13 +223,23 @@ function validateCostMap(
   }
 }
 
+/** `true` for a `Price`: a `work` and a `latency`, both numbers. */
+function isPrice(cost: unknown): boolean {
+  return (
+    isRecord(cost) &&
+    Object.keys(cost).length === 2 &&
+    typeof cost.work === 'number' &&
+    typeof cost.latency === 'number'
+  );
+}
+
 /** `true` for an `NBucketedCost`: `le10` is required, the other buckets are optional. */
 function isNBucketedCost(cost: unknown): boolean {
-  if (!isRecord(cost) || typeof cost.le10 !== 'number') {
+  if (!isRecord(cost) || !isPrice(cost.le10)) {
     return false;
   }
   const buckets = ['le10', 'le30', 'le60', 'le100', 'le128'];
-  return Object.entries(cost).every(([bucket, value]) => buckets.includes(bucket) && isOptionalNumber(value));
+  return Object.entries(cost).every(([bucket, value]) => buckets.includes(bucket) && isPrice(value));
 }
 
 /**
@@ -274,10 +279,9 @@ function validateOperatorsPrices(prices: PriceData): void {
     if (typeof entry.numberInputs !== 'number') {
       throw new Error(`Invalid numberInputs value for operator: ${operatorName}`);
     }
-    const isNumber = (cost: unknown): boolean => typeof cost === 'number';
-    validateCostMap(entry.scalar, isNumber, operatorName, 'scalar');
-    validateCostMap(entry.nonScalar, isNumber, operatorName, 'nonScalar');
-    validateCostMap(entry.types, isNumber, operatorName, 'types');
+    validateCostMap(entry.scalar, isPrice, operatorName, 'scalar');
+    validateCostMap(entry.nonScalar, isPrice, operatorName, 'nonScalar');
+    validateCostMap(entry.types, isPrice, operatorName, 'types');
     validateCostMap(entry.nBucketed, isNBucketedCost, operatorName, 'nBucketed');
   }
 }
