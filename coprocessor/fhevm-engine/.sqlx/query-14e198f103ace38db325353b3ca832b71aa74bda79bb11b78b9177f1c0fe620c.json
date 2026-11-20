@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT block_number\n          FROM host_chain_blocks_valid\n         WHERE chain_id = $1\n           AND block_status = 'finalized'\n           AND OCTET_LENGTH(parent_hash) = 32\n         ORDER BY block_number DESC\n         LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "14e198f103ace38db325353b3ca832b71aa74bda79bb11b78b9177f1c0fe620c"
+}

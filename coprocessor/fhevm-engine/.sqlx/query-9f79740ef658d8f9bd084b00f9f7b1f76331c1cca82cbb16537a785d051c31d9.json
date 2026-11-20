@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH RECURSIVE chains AS (\n            SELECT MIN(chain_id) AS chain_id FROM host_chain_blocks_valid\n            UNION ALL\n            SELECT (SELECT MIN(next.chain_id)\n                      FROM host_chain_blocks_valid next\n                     WHERE next.chain_id > chains.chain_id)\n              FROM chains\n             WHERE chains.chain_id IS NOT NULL\n        )\n        SELECT chain_id AS \"chain_id!\" FROM chains WHERE chain_id IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chain_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9f79740ef658d8f9bd084b00f9f7b1f76331c1cca82cbb16537a785d051c31d9"
+}
