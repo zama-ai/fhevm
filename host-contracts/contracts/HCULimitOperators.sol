@@ -855,9 +855,9 @@ abstract contract HCULimitOperators {
         _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, ct, result);
     }
 
-    /// Cast, work/latency: Bool 32/32, Uint8 6/32, Uint16 6/32, Uint32 6/32, Uint64 6/32, Uint128 6/32, Uint256 6/32.
-    uint256 private constant CAST_COSTS_0 = 0x0000000600000020000000060000002000000006000000200000002000000020;
-    uint256 private constant CAST_COSTS_1 = 0x0000000600000020000000000000000000000006000000200000000600000020;
+    /// Cast, work/latency: Bool 32/32, Uint8 6/102, Uint16 6/102, Uint32 6/102, Uint64 6/102, Uint128 6/102, Uint256 6/102.
+    uint256 private constant CAST_COSTS_0 = 0x0000000600000066000000060000006600000006000000660000002000000020;
+    uint256 private constant CAST_COSTS_1 = 0x0000000600000066000000000000000000000006000000660000000600000066;
 
     /**
      * @notice Check the homomorphic complexity units limit for Cast.

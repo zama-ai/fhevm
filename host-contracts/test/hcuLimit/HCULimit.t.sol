@@ -590,8 +590,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
 
     function test_ZeroOperandOperationsIncludeDepthInDependentCast(uint8 operationKind, bool unmetered) public {
         (bytes memory callData, uint256 work, uint256 latency) = _zeroOperandOperation(operationKind, 0);
-        // A 16-bit cast: 6 HCU of work, 32 of latency.
-        (uint256 castWork, uint256 castLatency) = (6, 32);
+        // A 16-bit cast: 6 HCU of work, 102 of latency.
+        (uint256 castWork, uint256 castLatency) = (6, 102);
         _configureZeroOperandDepthLimit(uint48(latency + castLatency - 1), unmetered);
         _assertZeroOperandSuccess(callData, work, latency, unmetered);
 

@@ -110,6 +110,11 @@ runs many operations at once: an 8-bit scalar addition has 84,000 HCU of latency
 The tables below give each operation's latency. Both prices of every operation are in
 [`operatorsPrices.json`](https://github.com/zama-ai/fhevm/blob/main/library-solidity/codegen/src/operatorsPrices.json).
 
+The work column and the casts' latency come from the coprocessors' CPU benchmark,
+[`cpu-results.csv`](https://github.com/zama-ai/fhevm/blob/main/library-solidity/codegen/bench/cpu-results.csv),
+which [`prices_from_bench.py`](https://github.com/zama-ai/fhevm/blob/main/library-solidity/codegen/bench/prices_from_bench.py)
+writes into the table.
+
 ### Boolean operations (`ebool`)
 
 | Function name | HCU (scalar) | HCU (non-scalar) |
@@ -340,9 +345,9 @@ For `isIn` on `eaddress`, see the n-ary table above.
 
 ## Additional Operations
 
-| Function name    | HCU |
-| ---------------- | --- |
-| `cast`           | 32  |
-| `trivialEncrypt` | 32  |
+| Function name    | HCU                   |
+| ---------------- | --------------------- |
+| `cast`           | 102, or 32 to `ebool` |
+| `trivialEncrypt` | 32                    |
 
 `mulDiv` is priced as a multiplication plus a division on the doubled width (`mulDiv` on `euint64` costs about a `mul` plus a `div` on 128 bits), which is why it is the most expensive binary operator.

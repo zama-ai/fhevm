@@ -407,12 +407,12 @@
     "numberInputs": 1,
     "types": {
       "Bool": { "work": 32, "latency": 32 },
-      "Uint8": { "work": 6, "latency": 32 },
-      "Uint16": { "work": 6, "latency": 32 },
-      "Uint32": { "work": 6, "latency": 32 },
-      "Uint64": { "work": 6, "latency": 32 },
-      "Uint128": { "work": 6, "latency": 32 },
-      "Uint256": { "work": 6, "latency": 32 }
+      "Uint8": { "work": 6, "latency": 102 },
+      "Uint16": { "work": 6, "latency": 102 },
+      "Uint32": { "work": 6, "latency": 102 },
+      "Uint64": { "work": 6, "latency": 102 },
+      "Uint128": { "work": 6, "latency": 102 },
+      "Uint256": { "work": 6, "latency": 102 }
     }
   },
   "trivialEncrypt": {
