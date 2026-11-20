@@ -34,8 +34,8 @@ name = "upgrade-controller"
 path = "src/bin/upgrade_controller.rs"
 
 [[bin]]
-name = "verify-cutover"
-path = "src/bin/verify_cutover.rs"
+name = "upgrade-check"
+path = "src/bin/upgrade_check.rs"
 
 [features]
 test-failpoints = []

@@ -1,33 +1,39 @@
-//! verify-cutover: operator-side verification that a Blue/Green cutover
-//! completed successfully.
+//! upgrade-check: operator-side, read-only check of a Blue/Green upgrade
+//! attempt. It tells apart an attempt that cut over, one that rolled back and
+//! one that has not executed yet, and for a cutover it checks the result.
 //!
-//! Any operator runs this independently with a read-only DB role, HTTP read
-//! access to every member's decision bucket, and read-only S3 access to its
-//! own ciphertext bucket. No signing key is involved: the tool only verifies.
+//! Any operator runs this independently with a read-only DB role, a Gateway
+//! RPC, HTTP read access to every member's decision bucket, and read-only S3
+//! access to its own ciphertext bucket. No signing key is involved: the tool
+//! only reads and verifies. See `upgrade-check.md` next to this crate's README.
 //!
 //! The code is deliberately script-like - one linear pass, every SQL query and
 //! S3 key printed - so an operator can audit it and replay any step by hand
-//! with psql and the aws CLI. It reuses only the record FORMAT (types, domain
-//! tag, object key) from consensus-detector; every check is reimplemented
-//! here, so a bug in the detector cannot vouch for itself.
+//! with psql and the aws CLI. It reuses the record FORMAT (types, domain tag,
+//! object key) and the `GatewayConfig` member lookup from consensus-detector;
+//! every check is reimplemented here, so a bug in the detector's checking
+//! logic cannot vouch for itself.
 //!
 //! Checks, in order:
-//!   1. Gate (DB): `upgrade_state` must hold a finished attempt. Any
-//!      `in_progress` row means the cutover has not executed and every later
-//!      assertion is skipped. `versioning.consensus_version` and the
-//!      `consensus_epoch_history` outcome must agree with the target.
+//!   1. Gate (DB): `upgrade_state` must hold a finished attempt. No rows, no
+//!      GCS rows or any `in_progress` row means the cutover has not executed:
+//!      the rows are printed and every later check is skipped. For a
+//!      completed attempt, `versioning.consensus_version` and the
+//!      `consensus_epoch_history` row must agree with the target.
 //!   2. Quorum (Gateway + S3 over HTTP): every member registered in
-//!      `GatewayConfig` at the proposal block wrote a signed `quorum` record
-//!      for this attempt, all records name the identical member set, and each
+//!      `GatewayConfig` (read at `gw_start_block`, or at the Gateway tip when
+//!      that block's state is no longer served) wrote a signed `quorum` record
+//!      for this attempt, all records name the registered member set, and each
 //!      signature recovers to its member. On a failed attempt the tool instead
-//!      confirms a signed `abort` record and reports "rolled back".
-//!   3. Ciphertext versions (DB): every output handle computed at or after
-//!      each chain's `start_block`, and every input handle verified at or
-//!      after `gw_start_block` (a Gateway block), carries
+//!      looks for a signed `abort` record, reports "rolled back" and stops.
+//!   3. Ciphertext versions (DB): every allowed, completed output handle
+//!      computed at or after each chain's `start_block`, and every input
+//!      handle verified at or after `gw_start_block` (a Gateway block), carries
 //!      `ciphertexts.consensus_version` equal to the target.
-//!   4. Digest consistency (DB vs S3): for the same handles, the keccak256 of
-//!      the DB blob, the `ciphertext_digest` row and the S3 object agree for
-//!      ct64 and ct128. Anomalies exactly at a chain's cutover block are
+//!   4. Digest consistency (DB vs S3): for those outputs and for the inputs
+//!      present in `allowed_handles`, the keccak256 of the DB blob, the
+//!      `ciphertext_digest` row and the S3 object agree for ct64 and ct128.
+//!      Anomalies on an output computed exactly at a chain's `start_block` are
 //!      reported as the known boundary condition (a blue digest row that
 //!      survived the merge), not as failures.
 //!
@@ -53,8 +59,8 @@ use sqlx::{PgPool, Row};
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "verify-cutover",
-    about = "Verify that a Blue/Green cutover completed successfully (read-only)"
+    name = "upgrade-check",
+    about = "Check a Blue/Green upgrade attempt: cut over, rolled back or not executed (read-only)"
 )]
 struct Args {
     /// The consensus version the upgrade was supposed to activate.
@@ -407,7 +413,7 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
     let target = args.target_consensus_version;
     report.target_consensus_version = target;
 
-    println!("verify-cutover: target consensus_version {target}");
+    println!("upgrade-check: target consensus_version {target}");
     let pool = PgPoolOptions::new()
         .max_connections(4)
         .connect(&args.database_url)
@@ -718,8 +724,8 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
                             sorted_unique(payload.addresses().iter().map(|a| (*a).to_string()));
                         if record_set != gateway_set {
                             report.fail(format!(
-                                "{} signed member set {record_set:?}, GatewayConfig at block \
-                                 {proposal_block} says {gateway_set:?}",
+                                "{} signed member set {record_set:?}, GatewayConfig says \
+                                 {gateway_set:?}",
                                 member_report.address
                             ));
                         }
