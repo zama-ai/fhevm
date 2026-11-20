@@ -55,7 +55,7 @@ async fn test_get_ciphertext_from_winning_bucket() -> anyhow::Result<()> {
         .build();
     let s3_client = s3_client_from_config(&Config::default())?;
 
-    let bucket_url = format!("{}/{S3_CT_BUCKET}", test_instance.s3_url());
+    let bucket_url = format!("{}/{S3_CT_BUCKET}", test_instance.s3_url()).parse()?;
     let ct = retrieve_verified_ciphertext(
         &s3_client,
         stored_handle()?,
@@ -83,7 +83,7 @@ async fn test_get_ciphertext_rejects_digest_mismatch() -> anyhow::Result<()> {
         .build();
     let s3_client = s3_client_from_config(&Config::default())?;
 
-    let bucket_url = format!("{}/{S3_CT_BUCKET}", test_instance.s3_url());
+    let bucket_url = format!("{}/{S3_CT_BUCKET}", test_instance.s3_url()).parse()?;
     // The object is served, but its bytes do not match the attested digest: the copy is rejected.
     let mut material = stored_material()?;
     material.sns_ciphertext_digest = B256::repeat_byte(0xAB);
@@ -117,7 +117,7 @@ async fn test_get_unstored_ciphertext_is_unavailable() -> anyhow::Result<()> {
         .build();
     let s3_client = s3_client_from_config(&Config::default())?;
 
-    let bucket_url = format!("{}/{S3_CT_BUCKET}", test_instance.s3_url());
+    let bucket_url = format!("{}/{S3_CT_BUCKET}", test_instance.s3_url()).parse()?;
     // A handle with no stored object: every winning-group bucket returns a not-found.
     let unstored_handle = B256::repeat_byte(0x02);
 

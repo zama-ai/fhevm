@@ -3,9 +3,9 @@ use connector_utils::{
     config::{
         ContractConfig, DatabaseUrl, DeserializeConfig, RpcUrl,
         contract::{
-            default_decryption_contract_config, default_gateway_config_contract_config,
+            default_coprocessor_config_contract_config, default_decryption_contract_config,
             default_kms_generation_contract_config, default_protocol_config_contract_config,
-            deserialize_decryption_contract_config, deserialize_gateway_config_contract_config,
+            deserialize_coprocessor_config_contract_config, deserialize_decryption_contract_config,
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
@@ -49,9 +49,6 @@ pub struct Config {
     /// The `Decryption` contract configuration (on Gateway).
     #[serde(deserialize_with = "deserialize_decryption_contract_config")]
     pub decryption_contract: ContractConfig,
-    /// The `GatewayConfig` contract configuration (on Gateway).
-    #[serde(deserialize_with = "deserialize_gateway_config_contract_config")]
-    pub gateway_config_contract: ContractConfig,
 
     /// The Ethereum RPC endpoint.
     pub ethereum_url: RpcUrl,
@@ -63,6 +60,9 @@ pub struct Config {
     /// The `ProtocolConfig` contract configuration (on Ethereum).
     #[serde(deserialize_with = "deserialize_protocol_config_contract_config")]
     pub protocol_config_contract: ContractConfig,
+    /// The `CoprocessorConfig` contract configuration (on Ethereum).
+    #[serde(deserialize_with = "deserialize_coprocessor_config_contract_config")]
+    pub coprocessor_config_contract: ContractConfig,
 
     /// The Host Chains configuration.
     #[serde(deserialize_with = "deserialize_host_chains")]
@@ -333,11 +333,11 @@ impl Default for Config {
             gateway_url: "http://localhost:8545".parse().unwrap(),
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
-            gateway_config_contract: default_gateway_config_contract_config(),
             ethereum_url: "http://localhost:8545".parse().unwrap(),
             ethereum_chain_id: 11155111, // Sepolia
             kms_generation_contract: default_kms_generation_contract_config(),
             protocol_config_contract: default_protocol_config_contract_config(),
+            coprocessor_config_contract: default_coprocessor_config_contract_config(),
             host_chains: vec![HostChainConfig {
                 url: "http://localhost:8545".parse().unwrap(),
                 chain_id: 12345,
@@ -387,7 +387,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_ETHEREUM_URL");
             env::remove_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
-            env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_COPROCESSOR_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_HOST_CHAINS");
@@ -444,7 +444,7 @@ mod tests {
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var(
-                "KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS",
+                "KMS_CONNECTOR_COPROCESSOR_CONFIG_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var(
@@ -509,7 +509,7 @@ mod tests {
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(
-            config.gateway_config_contract.address,
+            config.coprocessor_config_contract.address,
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(

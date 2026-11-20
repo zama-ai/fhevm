@@ -2,7 +2,7 @@ use alloy::{
     hex,
     primitives::{Address, FixedBytes, U256},
     providers::{Provider, mock::Asserter},
-    rpc::types::{Block, Transaction},
+    rpc::types::Transaction,
     sol_types::{SolCall, SolValue},
 };
 use connector_utils::{
@@ -12,16 +12,13 @@ use connector_utils::{
     },
     types::handle::extract_chain_id_from_handle,
 };
-use fhevm_gateway_bindings::{
-    decryption::{
-        Decryption::{
-            CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
-        },
-        IDecryption::ContractsInfo,
-    },
-    gateway_config::GatewayConfig::Coprocessor,
+use fhevm_gateway_bindings::decryption::{
+    Decryption::{CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall},
+    IDecryption::ContractsInfo,
 };
-use fhevm_host_bindings::acl::ACL::ACLInstance;
+use fhevm_host_bindings::{
+    acl::ACL::ACLInstance, i_coprocessor_config_base::ICoprocessorConfigBase::Coprocessor,
+};
 use kms_worker::core::{
     Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
@@ -33,7 +30,7 @@ use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, time::Duration};
 use tokio_util::sync::CancellationToken;
 
-/// Mocks the Gateway RPC responses for the initial Coprocessor registry load of the
+/// Mocks the Ethereum RPC responses for the initial Coprocessor registry load of the
 /// `CiphertextManager`.
 pub fn mock_copro_registry_load(asserter: &Asserter, s3_url: &str) -> Address {
     let copro_tx_sender = rand_address();
@@ -41,16 +38,17 @@ pub fn mock_copro_registry_load(asserter: &Asserter, s3_url: &str) -> Address {
     // `CoprocessorRegistry::connect` first checks the contract has code deployed; any non-empty
     // response satisfies that check.
     asserter.push_success(&vec![0xffu8]);
-    // The latest block, which the load pins every registry read to.
-    asserter.push_success(&Block::<Transaction>::default());
-    asserter.push_success(&vec![copro_tx_sender].abi_encode());
+    // The current context ID.
     asserter.push_success(&U256::ONE.abi_encode());
     let coprocessor = Coprocessor {
+        txSenderAddress: copro_tx_sender,
         signerAddress: s3_ct_attestation_signer().address(),
-        s3BucketUrl: format!("{s3_url}/{S3_CT_BUCKET}"),
+        storageUrl: format!("{s3_url}/{S3_CT_BUCKET}"),
         ..Default::default()
     };
-    asserter.push_success(&coprocessor.abi_encode());
+    asserter.push_success(&vec![coprocessor].abi_encode());
+    // The majority threshold.
+    asserter.push_success(&U256::ONE.abi_encode());
     copro_tx_sender
 }
 

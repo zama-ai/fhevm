@@ -19,6 +19,7 @@ use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{CiphertextFormat as GrpcCiphertextFormat, TypedCiphertext};
 use std::num::NonZeroUsize;
 use tracing::{debug, warn};
+use url::Url;
 
 pub fn s3_client_from_config(config: &Config) -> anyhow::Result<BoundedClient> {
     let client = Client::builder()
@@ -44,7 +45,7 @@ pub async fn retrieve_verified_ciphertext(
     client: &BoundedClient,
     handle: B256,
     material: &ConsensusMaterial,
-    winning_buckets: &[String],
+    winning_buckets: &[Url],
     attempts: NonZeroUsize,
     mut slot: Slot,
 ) -> Result<TypedCiphertext, ProcessingError> {
@@ -191,7 +192,7 @@ mod tests {
             &single_permit_client(),
             bad_handle,
             &material(),
-            &["http://127.0.0.1:1".to_string()],
+            &["http://127.0.0.1:1".parse().unwrap()],
             NonZeroUsize::new(3).unwrap(),
             slot().await,
         )
@@ -200,9 +201,9 @@ mod tests {
     }
 
     /// A bucket serving `body` at any path. Returns its URL, and its accept loop to abort.
-    async fn ciphertext_bucket(body: Vec<u8>) -> (String, JoinHandle<()>) {
+    async fn ciphertext_bucket(body: Vec<u8>) -> (Url, JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
+        let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
         let accept_loop = tokio::spawn(async move {
             while let Ok((mut stream, _)) = listener.accept().await {
                 // Read the request first: closing with unread data resets the connection.
@@ -232,7 +233,7 @@ mod tests {
             &single_permit_client(),
             B256::ZERO,
             &material,
-            &["http://127.0.0.1:1".to_string(), good_bucket],
+            &["http://127.0.0.1:1".parse().unwrap(), good_bucket],
             NonZeroUsize::MIN,
             slot().await,
         )

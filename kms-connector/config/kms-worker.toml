@@ -157,19 +157,6 @@ address = "0x0000000000000000000000000000000000000000"
 # ENV: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
-# Configuration of the GatewayConfig contract (required)
-[gateway_config_contract]
-# Address of the GatewayConfig contract (required)
-# Format: hex string with 0x prefix
-# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
-address = "0x0000000000000000000000000000000000000000"
-# EIP-712 domain name for GatewayConfig contract (optional, defaults to "GatewayConfig")
-# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_NAME
-# domain_name = "GatewayConfig"
-# EIP-712 domain version for GatewayConfig contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_VERSION
-# domain_version = "1"
-
 # Configuration of the KMSGeneration contract on Ethereum (required)
 [kms_generation_contract]
 # Address of the KMSGeneration contract on Ethereum (required)
@@ -194,6 +181,19 @@ address = "0x0000000000000000000000000000000000000000"
 # domain_name = "ProtocolConfig"
 # EIP-712 domain version for ProtocolConfig contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__DOMAIN_VERSION
+# domain_version = "1"
+
+# Configuration of the CoprocessorConfig contract (required)
+[coprocessor_config_contract]
+# Address of the CoprocessorConfig contract on Ethereum (required)
+# Format: hex string with 0x prefix
+# ENV: KMS_CONNECTOR_COPROCESSOR_CONFIG_CONTRACT__ADDRESS
+address = "0x0000000000000000000000000000000000000000"
+# EIP-712 domain name for CoprocessorConfig contract (optional, defaults to "CoprocessorConfig")
+# ENV: KMS_CONNECTOR_COPROCESSOR_CONFIG_CONTRACT__DOMAIN_NAME
+# domain_name = "CoprocessorConfig"
+# EIP-712 domain version for CoprocessorConfig contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_COPROCESSOR_CONFIG_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # List of supported host chains (required)

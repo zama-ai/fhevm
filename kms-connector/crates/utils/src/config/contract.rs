@@ -31,13 +31,13 @@ where
         .map_err(|e| serde::de::Error::custom(e.to_string()))
 }
 
-pub fn deserialize_gateway_config_contract_config<'de, D>(
+pub fn deserialize_coprocessor_config_contract_config<'de, D>(
     deserializer: D,
 ) -> std::result::Result<ContractConfig, D::Error>
 where
     D: Deserializer<'de>,
 {
-    ContractConfig::parse("GatewayConfig", Deserialize::deserialize(deserializer)?)
+    ContractConfig::parse("CoprocessorConfig", Deserialize::deserialize(deserializer)?)
         .map_err(|e| serde::de::Error::custom(e.to_string()))
 }
 
@@ -117,11 +117,11 @@ pub fn default_decryption_contract_config() -> ContractConfig {
     }
 }
 
-pub fn default_gateway_config_contract_config() -> ContractConfig {
+pub fn default_coprocessor_config_contract_config() -> ContractConfig {
     ContractConfig {
-        contract_name: "GatewayConfig".to_string(),
+        contract_name: "CoprocessorConfig".to_string(),
         address: address!("0x0000000000000000000000000000000000000000"),
-        domain_name: "GatewayConfig".to_string(),
+        domain_name: "CoprocessorConfig".to_string(),
         domain_version: "1".to_string(),
     }
 }
