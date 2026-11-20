@@ -16,6 +16,21 @@ struct KmsNode {
 }
 
 /**
+ * @notice Coprocessor metadata in a coprocessor context.
+ */
+struct Coprocessor {
+    /// @notice Wallet that submits the coprocessor's transactions to Ethereum and the host chains.
+    /// @dev It differs from the coprocessor's Gateway wallet registered in `GatewayConfig`.
+    address txSenderAddress;
+    /// @notice Key that signs input proofs, ciphertext attestations and PRF output attestations
+    address signerAddress;
+    /// @notice Public base URL of the coprocessor's storage for ciphertexts and attestations
+    string storageUrl;
+    /// @notice Base URL of the coprocessor's PRF endpoint, empty when the coprocessor does not serve it
+    string prfEndpointUrl;
+}
+
+/**
  * @notice Enclave attestation values for a KMS software build.
  */
 struct PcrValues {
