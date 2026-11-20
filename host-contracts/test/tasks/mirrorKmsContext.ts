@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import hre, { ethers } from 'hardhat';
+import hre, { ethers, run } from 'hardhat';
 
 import { getProtocolConfigReplicaInterface } from '../../tasks/kmsContext';
 import {
@@ -9,11 +9,15 @@ import {
   encodeMirrorKmsEpoch,
 } from '../../tasks/mirrorKmsContext';
 import { readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
+import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import { confirmEpochActivation } from '../utils/protocolConfigEip712';
 import {
   buildControllableKmsCommittee,
+  buildProtocolConfigNodes,
+  buildProtocolConfigThresholds,
+  captureConsoleLog,
   deployFreshProtocolConfigProxy,
   deployFreshProtocolConfigReplicaProxy,
   rotateToNewKmsContext,
@@ -171,6 +175,65 @@ describe('KMS mirror tasks', function () {
       const [finalContextId, finalEpochId] = await replica.getCurrentKmsContextAndEpoch();
       expect(finalContextId).to.equal(snapshot.currentKmsContextId);
       expect(finalEpochId).to.equal(newEpochId);
+    });
+  });
+
+  describe('destruction mirror tasks', function () {
+    let envBackup: NodeJS.ProcessEnv;
+
+    beforeEach(function () {
+      envBackup = { ...process.env };
+    });
+
+    afterEach(function () {
+      for (const key of Object.keys(process.env)) {
+        if (!(key in envBackup)) {
+          delete process.env[key];
+        }
+      }
+      Object.assign(process.env, envBackup);
+    });
+
+    it('broadcasts the destruction of a superseded context and of its epoch', async function () {
+      const firstContextId = KMS_CONTEXT_COUNTER_BASE + 1n;
+      const firstEpochId = EPOCH_COUNTER_BASE + 1n;
+      const nodes = buildProtocolConfigNodes();
+      const thresholds = buildProtocolConfigThresholds();
+      const replicaAddress = await deployFreshProtocolConfigReplicaProxy(
+        deployer,
+        firstContextId,
+        firstEpochId,
+        nodes,
+        thresholds,
+      );
+      const replica = (await ethers.getContractAt(
+        'ProtocolConfigReplica',
+        replicaAddress,
+        deployer,
+      )) as unknown as ProtocolConfigReplica;
+      await (await replica.mirrorKmsContextAndEpoch(firstContextId + 1n, firstEpochId + 1n, nodes, thresholds)).wait();
+      expect(await replica.isValidEpochForContext(firstContextId, firstEpochId)).to.equal(true);
+      process.env.PROTOCOL_CONFIG_CONTRACT_ADDRESS = replicaAddress;
+
+      await run('task:mirrorKmsEpochDestruction', { epochId: firstEpochId.toString() });
+      expect(await replica.isValidEpochForContext(firstContextId, firstEpochId)).to.equal(false);
+      expect(await replica.isLiveKmsContext(firstContextId)).to.equal(true);
+
+      await run('task:mirrorKmsContextDestruction', { contextId: firstContextId.toString() });
+      expect(await replica.isLiveKmsContext(firstContextId)).to.equal(false);
+
+      // The build tasks never broadcast, so they also run against a destroyed ID.
+      const iface = await getProtocolConfigReplicaInterface(hre);
+      expect(
+        await captureConsoleLog(() =>
+          run('task:buildMirrorKmsContextDestructionCalldata', { contextId: firstContextId.toString() }),
+        ),
+      ).to.include(`  calldata: ${iface.encodeFunctionData('mirrorKmsContextDestruction', [firstContextId])}`);
+      expect(
+        await captureConsoleLog(() =>
+          run('task:buildMirrorKmsEpochDestructionCalldata', { epochId: firstEpochId.toString() }),
+        ),
+      ).to.include(`  calldata: ${iface.encodeFunctionData('mirrorKmsEpochDestruction', [firstEpochId])}`);
     });
   });
 });

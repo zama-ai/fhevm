@@ -158,6 +158,13 @@ jobs:
               exit 1
             fi
 
+            # The compose stack deploys no replica proxy. The Hardhat tests cover the replica upgrade.
+            if [ "$name" = "ProtocolConfigReplica" ]; then
+              echo "Skipping $name (no replica proxy in the compose stack)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
             if [ ! -f "previous-contracts/${name}.sol" ]; then
               echo "Skipping prepare-only check for $name (not present in previous release)"
               SKIPPED=$((SKIPPED + 1))
@@ -232,6 +239,13 @@ jobs:
               exit 1
             fi
 
+            # The compose stack deploys no replica proxy. The Hardhat tests cover the replica upgrade.
+            if [ "$name" = "ProtocolConfigReplica" ]; then
+              echo "Skipping $name (no replica proxy in the compose stack)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
             # Skip contracts not present in the previous release (e.g. newly added)
             if [ ! -f "previous-contracts/${name}.sol" ]; then
               echo "Skipping $name (not present in previous release)"
@@ -300,6 +314,12 @@ jobs:
           KMSGeneration_ADDR=$KMS_GENERATION_CONTRACT_ADDRESS
 
           for name in $(jq -r '.[]' upgrade-manifest.json); do
+            # The compose stack deploys no replica proxy. The Hardhat tests cover the replica upgrade.
+            if [ "$name" = "ProtocolConfigReplica" ]; then
+              echo "Skipping $name version check (no replica proxy in the compose stack)"
+              continue
+            fi
+
             addr_var="${name}_ADDR"
             addr="${!addr_var:-}"
             if [ -z "$addr" ]; then
