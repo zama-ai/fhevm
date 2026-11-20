@@ -189,10 +189,12 @@ query() {
 }
 
 # The stack version the database is stamped with, or an empty string when the
-# versioning table does not exist.
+# versioning table does not exist. Fails when either query fails: an unknown
+# stamp must never pass for an absent one.
 live_stack_version() {
-    if [ "$(query "SELECT to_regclass('public.versioning') IS NOT NULL")" = t ]; then
-        query "SELECT stack_version FROM versioning WHERE singleton"
+    exists=$(query "SELECT to_regclass('public.versioning') IS NOT NULL") || return 1
+    if [ "$exists" = t ]; then
+        query "SELECT stack_version FROM versioning WHERE singleton" || return 1
     fi
 }
 
@@ -464,9 +466,11 @@ fi
 # Stamp the release that runs next. Done last: the schema is at the target
 # whatever happens here, and the result line says whether the stamp followed.
 if [ "$STAMP" = true ]; then
-    if ! stamped=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -X -q -At -v v="$STACK_VERSION" \
-        -c "UPDATE versioning SET stack_version = :'v', updated_at = NOW() WHERE singleton RETURNING stack_version" 2>"$command_output") \
-        || [ "$stamped" != "$STACK_VERSION" ]; then
+    # The statement is read from stdin: psql substitutes :'v' there, not in -c.
+    if ! stamped=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -X -q -At -v v="$STACK_VERSION" 2>"$command_output" <<'SQL'
+UPDATE versioning SET stack_version = :'v', updated_at = NOW() WHERE singleton RETURNING stack_version
+SQL
+        ) || [ "$stamped" != "$STACK_VERSION" ]; then
         echo "event=rollback_result action=rollback status=failed previous=$CURRENT_VERSION current=$FINAL_VERSION target=$TARGET_VERSION force=$FORCE reverted=${PLAN:-none} stack_version=$LIVE_STACK_VERSION error=\"the schema is at the target but versioning.stack_version could not be set to $STACK_VERSION: $(compact "$command_output")\"" >&2
         exit 1
     fi

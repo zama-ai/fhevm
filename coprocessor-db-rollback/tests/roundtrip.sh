@@ -281,6 +281,25 @@ stamp_live
 [[ $("$MIGRATE" info 2>&1 | tail -1) == *"in_sync=true stack_version=v0.15.1"* ]] && pass "info reports in sync and the stamp" || fail "info does not report in sync and the stamp: $("$MIGRATE" info 2>&1 | tail -1)"
 
 expect_failure "stamped database: rollback without --stack-version is refused" "pass --stack-version" "$MIGRATE" rollback "$BASELINE"
+
+# The stamp lookup fails (psql breaks on the existence query): the rollback must
+# stop before any down, not treat the database as unstamped.
+broken="$WORK/broken-psql"
+mkdir -p "$broken"
+real_psql=$(command -v psql)
+cat >"$broken/psql" <<STUB
+#!/usr/bin/env bash
+for arg in "\$@"; do
+    case "\$arg" in *to_regclass*) echo "simulated psql failure" >&2; exit 1 ;; esac
+done
+exec "$real_psql" "\$@"
+STUB
+chmod +x "$broken/psql"
+expect_failure "failed stamp lookup: rollback is refused" "could not read versioning.stack_version" \
+    env PATH="$broken:$PATH" "$MIGRATE" rollback "$BASELINE" --stack-version 0.14.8
+[[ $(db_version) == "$LAST" ]] && pass "no down ran after the failed stamp lookup" || fail "a down ran after the failed stamp lookup: version $(db_version)"
+expect_failure "failed stamp lookup: info is refused" "could not read versioning.stack_version" \
+    env PATH="$broken:$PATH" "$MIGRATE" info
 expect_failure "malformed stack version is refused" "stack version must look like" "$MIGRATE" rollback "$BASELINE" --stack-version latest
 
 [[ $("$MIGRATE" rollback "$LAST" 2>&1) == *"status=noop"* ]] && pass "rollback to the current version is a no-op" || fail "rollback to the current version is not a no-op"
