@@ -31,7 +31,7 @@ const simulateWriteRequest = async (
   } as never);
 
   return {
-    request: request as ContractWriteRequest,
+    request: request as unknown as ContractWriteRequest,
     transferredHandle: result as Hex,
   };
 };

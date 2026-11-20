@@ -2,8 +2,16 @@ import type { FheTypeInfo } from '@fhevm/solidity/lib-js/common';
 import { ALL_FHE_TYPE_INFOS } from '@fhevm/solidity/lib-js/fheTypeInfos';
 import { ALL_OPERATORS_PRICES } from '@fhevm/solidity/lib-js/operatorsPrices';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { toBufferBE } from 'bigint-buffer';
-import { ContractMethodArgs, Log, Signer, TransactionReceipt, TransactionRequest, Typed } from 'ethers';
+import {
+  ContractMethodArgs,
+  Log,
+  Signer,
+  TransactionReceipt,
+  TransactionRequest,
+  Typed,
+  getBytes,
+  toBeHex,
+} from 'ethers';
 import { ethers, network } from 'hardhat';
 import hre from 'hardhat';
 
@@ -140,15 +148,15 @@ export const waitForTransactionReceipt = async (txHash: string, timeoutMs = 30_0
 };
 
 export const bigIntToBytes64 = (value: bigint) => {
-  return new Uint8Array(toBufferBE(value, 64));
+  return getBytes(toBeHex(value, 64));
 };
 
 export const bigIntToBytes128 = (value: bigint) => {
-  return new Uint8Array(toBufferBE(value, 128));
+  return getBytes(toBeHex(value, 128));
 };
 
 export const bigIntToBytes256 = (value: bigint) => {
-  return new Uint8Array(toBufferBE(value, 256));
+  return getBytes(toBeHex(value, 256));
 };
 
 const abi = [

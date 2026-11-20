@@ -52,7 +52,7 @@ const simulateWriteRequest = async (
     args: options.args,
   } as never);
 
-  return request as ContractWriteRequest;
+  return request as unknown as ContractWriteRequest;
 };
 
 /** Simulates an encrypted setter call and returns the viem write request. */

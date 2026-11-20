@@ -28,6 +28,6 @@
   },
   "dependencies": {
     "@fhevm/sdk": "file:../../../js-sdk/src",
-    "viem": "^2.50.4"
+    "viem": "^2.54.6"
   }
 }
