@@ -10,7 +10,7 @@ import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUU
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {protocolConfigAdd, ciphertextRootsAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
-import {ProtocolConfigMock} from "./ProtocolConfigMock.sol";
+import {CoprocessorConfigMock} from "./CoprocessorConfigMock.sol";
 
 contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     address internal constant owner = address(456);
@@ -40,17 +40,17 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     address internal nodeF = address(0xA6);
 
     CiphertextRoots internal ciphertextRoots;
-    ProtocolConfigMock internal protocolConfigMock;
+    CoprocessorConfigMock internal coprocessorConfigMock;
 
     function setUp() public {
         _deployACL(owner);
-        deployCodeTo("test/ciphertextRoots/ProtocolConfigMock.sol:ProtocolConfigMock", protocolConfigAdd);
-        protocolConfigMock = ProtocolConfigMock(protocolConfigAdd);
-        vm.label(protocolConfigAdd, "ProtocolConfigMock");
+        deployCodeTo("test/ciphertextRoots/CoprocessorConfigMock.sol:CoprocessorConfigMock", protocolConfigAdd);
+        coprocessorConfigMock = CoprocessorConfigMock(protocolConfigAdd);
+        vm.label(protocolConfigAdd, "CoprocessorConfigMock");
         (ciphertextRoots, ) = _deployCiphertextRoots(owner);
 
         // Context 1: `NODE_COUNT` nodes, majority threshold `MAJORITY_THRESHOLD`.
-        protocolConfigMock.defineContext(CONTEXT_1, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), MAJORITY_THRESHOLD);
+        coprocessorConfigMock.defineContext(CONTEXT_1, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), MAJORITY_THRESHOLD);
         vm.prank(owner);
         ciphertextRoots.setEpochSchedule(CHAIN_ID, START_BLOCK, EPOCH_LENGTH);
     }
@@ -636,14 +636,31 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _assertNotRecorded(EPOCH);
     }
 
+    /// @dev A root's senders come back in post order, even when posts for another root fall in between.
+    function test_getRootSendersInPostOrder() public {
+        _post(nodeC, EPOCH, ROOT_1);
+        _post(nodeB, EPOCH, ROOT_2);
+        _post(nodeA, EPOCH, ROOT_1);
+        _post(nodeD, EPOCH, ROOT_2);
+
+        address[] memory root1Senders = ciphertextRoots.getRootSenders(CHAIN_ID, EPOCH, ROOT_1);
+        assertEq(root1Senders.length, 2);
+        assertEq(root1Senders[0], nodeC);
+        assertEq(root1Senders[1], nodeA);
+        address[] memory root2Senders = ciphertextRoots.getRootSenders(CHAIN_ID, EPOCH, ROOT_2);
+        assertEq(root2Senders.length, 2);
+        assertEq(root2Senders[0], nodeB);
+        assertEq(root2Senders[1], nodeD);
+    }
+
     function test_postEpochRootFirstRootToReachThresholdIsFinal() public {
         // Six nodes, so that two roots can each get three posts. CONTEXT_1 created at setUp is destroyed.
-        protocolConfigMock.defineContext(
+        coprocessorConfigMock.defineContext(
             CONTEXT_2,
             _nodes([nodeA, nodeB, nodeC, nodeD, nodeE, nodeF]),
             MAJORITY_THRESHOLD
         );
-        protocolConfigMock.destroyContext(CONTEXT_1);
+        coprocessorConfigMock.destroyContext(CONTEXT_1);
 
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
@@ -678,7 +695,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
 
     function test_postEpochRootPreviousContextMemberAllowed() public {
         // A is only in the previous context, which is still valid.
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
         _post(nodeA, EPOCH, ROOT_1);
 
         address[] memory senders = ciphertextRoots.getRootSenders(CHAIN_ID, EPOCH, ROOT_1);
@@ -687,8 +704,8 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertPostEpochRootDestroyedPreviousContextMember() public {
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
-        protocolConfigMock.destroyContext(CONTEXT_1);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
+        coprocessorConfigMock.destroyContext(CONTEXT_1);
         vm.prank(nodeA);
         vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NotCoprocessorTxSender.selector, nodeA));
         ciphertextRoots.postEpochRoot(CHAIN_ID, EPOCH, ROOT_1);
@@ -696,8 +713,8 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
 
     function test_revertPostEpochRootOlderContextMember() public {
         // Context 1 stays valid but is neither current nor previous once context 3 is current.
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
-        protocolConfigMock.defineContext(CONTEXT_3, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
+        coprocessorConfigMock.defineContext(CONTEXT_3, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), MAJORITY_THRESHOLD);
         vm.prank(nodeA);
         vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NotCoprocessorTxSender.selector, nodeA));
         ciphertextRoots.postEpochRoot(CHAIN_ID, EPOCH, ROOT_1);
@@ -743,13 +760,13 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     /// is recorded.
     function test_countMembershipWhenCounting() public {
         // The old context: {A, B, C, D, E}, threshold 4.
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), 4);
-        protocolConfigMock.destroyContext(CONTEXT_1);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), 4);
+        coprocessorConfigMock.destroyContext(CONTEXT_1);
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
 
         // The new context: {A, B, C, D, F}, threshold 4. With C it has A, B, C: not enough yet.
-        protocolConfigMock.defineContext(CONTEXT_3, _nodes([nodeA, nodeB, nodeC, nodeD, nodeF]), 4);
+        coprocessorConfigMock.defineContext(CONTEXT_3, _nodes([nodeA, nodeB, nodeC, nodeD, nodeF]), 4);
         _post(nodeC, EPOCH, ROOT_1);
         _assertNotRecorded(EPOCH);
 
@@ -764,13 +781,13 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     /// so the root is recorded under the previous context.
     function test_countFallsBackToPreviousContext() public {
         // The old context: {A, B, C, D, E}, threshold 4.
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), 4);
-        protocolConfigMock.destroyContext(CONTEXT_1);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), 4);
+        coprocessorConfigMock.destroyContext(CONTEXT_1);
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
 
         // The new context: {A, B, C, D, F}, threshold 4. The old one is now the previous context.
-        protocolConfigMock.defineContext(CONTEXT_3, _nodes([nodeA, nodeB, nodeC, nodeD, nodeF]), 4);
+        coprocessorConfigMock.defineContext(CONTEXT_3, _nodes([nodeA, nodeB, nodeC, nodeD, nodeF]), 4);
 
         // E is only in the previous context: its post is accepted and counts only there.
         _post(nodeE, EPOCH, ROOT_1);
@@ -796,7 +813,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _post(nodeD, EPOCH, ROOT_2);
         _assertNotRecorded(EPOCH);
 
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeF]), 2);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeF]), 2);
         _expectRecorded(EPOCH, ROOT_1, CONTEXT_2);
         _post(nodeE, EPOCH, ROOT_2);
         _assertRecorded(EPOCH, ROOT_1);
@@ -808,7 +825,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _post(nodeB, EPOCH, ROOT_1);
         _post(nodeC, EPOCH, ROOT_2);
         _post(nodeD, EPOCH, ROOT_2);
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeF]), 2);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeF]), 2);
 
         uint256 snapshot = vm.snapshotState();
         _post(nodeE, EPOCH, ROOT_2);
@@ -825,7 +842,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
         // A and B stay members; the new threshold is out of reach but the previous one is not.
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeF]), 5);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeF]), 5);
         _expectRecorded(EPOCH, ROOT_1, CONTEXT_1);
         _post(nodeC, EPOCH, ROOT_1);
         _assertRecorded(EPOCH, ROOT_1);
@@ -835,7 +852,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     /// context (2 of its threshold 3) and F only in the current one (1 of its threshold 2): three
     /// posts of the same root, yet neither context reaches its threshold.
     function test_countsNotAddedAcrossContexts() public {
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeD, nodeE, nodeF]), 2);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeD, nodeE, nodeF]), 2);
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
         _post(nodeF, EPOCH, ROOT_1);
@@ -844,11 +861,25 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         ciphertextRoots.recordEpochRoot(CHAIN_ID, EPOCH);
     }
 
-    /// @dev The previous context is the current ID minus one. For the first context that ID was
-    /// never defined, so no previous context counts, and the reads of it that would revert on the
-    /// mock are never made.
+    /// @dev The previous context is the one the current context replaced, whatever its ID.
+    function test_previousContextIsTheOneReplaced() public {
+        // CONTEXT_3 replaces CONTEXT_1 directly: no context has the ID in between.
+        coprocessorConfigMock.defineContext(CONTEXT_3, _nodes([nodeD, nodeE, nodeF]), 3);
+
+        // A, B and C are only in CONTEXT_1. Their posts are accepted and counted under it.
+        _post(nodeA, EPOCH, ROOT_1);
+        _post(nodeB, EPOCH, ROOT_1);
+        _expectRecorded(EPOCH, ROOT_1, CONTEXT_1);
+        _post(nodeC, EPOCH, ROOT_1);
+        _assertRecorded(EPOCH, ROOT_1);
+    }
+
+    /// @dev The first context replaced none, so no previous context counts, and the reads of it that
+    /// would revert on the mock are never made.
     function test_firstContextHasNoPreviousContext() public {
-        assertFalse(protocolConfigMock.isValidCoprocessorContext(CONTEXT_1 - 1));
+        assertFalse(
+            coprocessorConfigMock.isValidCoprocessorContext(coprocessorConfigMock.getPreviousCoprocessorContextId())
+        );
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
         _expectRecorded(EPOCH, ROOT_1, CONTEXT_1);
@@ -896,8 +927,8 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         for (uint256 i = 0; i < nodeCount; i++) {
             nodes[i] = address(uint160(0x1000 + i));
         }
-        protocolConfigMock.defineContext(CONTEXT_2, nodes, threshold);
-        protocolConfigMock.destroyContext(CONTEXT_1);
+        coprocessorConfigMock.defineContext(CONTEXT_2, nodes, threshold);
+        coprocessorConfigMock.destroyContext(CONTEXT_1);
 
         // One post short of the threshold.
         for (uint256 i = 0; i < threshold - 1; i++) {
@@ -919,7 +950,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _post(nodeB, EPOCH, ROOT_1);
         _assertNotRecorded(EPOCH);
 
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), 2);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), 2);
         _expectRecorded(EPOCH, ROOT_1, CONTEXT_2);
         vm.prank(outsider);
         ciphertextRoots.recordEpochRoot(CHAIN_ID, EPOCH);
@@ -932,7 +963,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _post(nodeC, EPOCH, ROOT_2);
         _assertNotRecorded(EPOCH);
 
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), 1);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC, nodeD, nodeE]), 1);
         _expectRecorded(EPOCH, ROOT_1, CONTEXT_2);
         ciphertextRoots.recordEpochRoot(CHAIN_ID, EPOCH);
         _assertRecorded(EPOCH, ROOT_1);
@@ -943,8 +974,8 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     function test_recordEpochRootUnderPreviousContext() public {
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC]), 2);
-        protocolConfigMock.defineContext(CONTEXT_3, _nodes([nodeD, nodeE, nodeF]), 1);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeA, nodeB, nodeC]), 2);
+        coprocessorConfigMock.defineContext(CONTEXT_3, _nodes([nodeD, nodeE, nodeF]), 1);
 
         _expectRecorded(EPOCH, ROOT_1, CONTEXT_2);
         ciphertextRoots.recordEpochRoot(CHAIN_ID, EPOCH);
@@ -955,7 +986,7 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_2);
         _post(nodeC, EPOCH, ROOT_2);
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), 2);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeB, nodeC, nodeD, nodeE, nodeF]), 2);
 
         _expectRecorded(EPOCH, ROOT_2, CONTEXT_2);
         ciphertextRoots.recordEpochRoot(CHAIN_ID, EPOCH);
@@ -965,8 +996,8 @@ contract CiphertextRootsTest is HostContractsDeployerTestUtils {
     function test_recordEpochRootIgnoresDestroyedPreviousContext() public {
         _post(nodeA, EPOCH, ROOT_1);
         _post(nodeB, EPOCH, ROOT_1);
-        protocolConfigMock.defineContext(CONTEXT_2, _nodes([nodeD, nodeE, nodeF]), 1);
-        protocolConfigMock.destroyContext(CONTEXT_1);
+        coprocessorConfigMock.defineContext(CONTEXT_2, _nodes([nodeD, nodeE, nodeF]), 1);
+        coprocessorConfigMock.destroyContext(CONTEXT_1);
 
         // The mock reverts on reads of a destroyed context, so this proves they are never made.
         vm.expectRevert(abi.encodeWithSelector(ICiphertextRoots.NoEpochRootReachesThreshold.selector, CHAIN_ID, EPOCH));

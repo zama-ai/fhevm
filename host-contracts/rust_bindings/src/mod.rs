@@ -13,7 +13,7 @@ pub mod bytes_lib;
 pub mod bytes_ops;
 pub mod calldata_bytes_lib;
 pub mod ciphertext_roots;
-pub mod i_protocol_config_base_shim;
+pub mod i_coprocessor_config_base_shim;
 pub mod confidential_bridge;
 pub mod context_upgradeable;
 pub mod dvn_options;

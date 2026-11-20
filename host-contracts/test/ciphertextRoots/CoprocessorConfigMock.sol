@@ -2,23 +2,25 @@
 pragma solidity ^0.8.24;
 
 /**
- * @dev Mock of ProtocolConfig for the CiphertextRoots tests, which deploy it at ProtocolConfig's
- *      address. It implements the coprocessor context reads CiphertextRoots makes. Unlike the real
- *      contract, it reverts on any read of a context that is invalid, or that is neither the current
- *      one nor the one before it, so the tests prove CiphertextRoots never makes such a read. Tests
- *      define contexts with consecutive IDs.
+ * @dev Mock of CoprocessorConfig for the CiphertextRoots tests, which deploy it at the address
+ *      CiphertextRoots reads the coprocessor contexts from. It implements the coprocessor context
+ *      reads CiphertextRoots makes. Unlike the real contract, it reverts on any read of a context
+ *      that is invalid, or that is neither the current one nor the one it replaced, so the tests
+ *      prove CiphertextRoots never makes such a read.
  */
-contract ProtocolConfigMock {
+contract CoprocessorConfigMock {
     error InvalidCoprocessorContext(uint256 coprocessorContextId);
     error NeitherCurrentNorPreviousContext(uint256 coprocessorContextId);
 
     uint256 private _currentId;
+    uint256 private _previousId;
     mapping(uint256 contextId => bool valid) private _valid;
     mapping(uint256 contextId => uint256 threshold) private _majorityThreshold;
     mapping(uint256 contextId => mapping(address txSender => bool registered)) private _isTxSender;
 
     /// @dev Stores a context and makes it current.
     function defineContext(uint256 contextId, address[] calldata txSenders, uint256 majorityThreshold) external {
+        _previousId = _currentId;
         _currentId = contextId;
         _valid[contextId] = true;
         _majorityThreshold[contextId] = majorityThreshold;
@@ -35,6 +37,10 @@ contract ProtocolConfigMock {
         return _currentId;
     }
 
+    function getPreviousCoprocessorContextId() external view returns (uint256) {
+        return _previousId;
+    }
+
     function isValidCoprocessorContext(uint256 contextId) external view returns (bool) {
         return _valid[contextId];
     }
@@ -49,9 +55,9 @@ contract ProtocolConfigMock {
         return _isTxSender[contextId][txSender];
     }
 
-    /// @dev CiphertextRoots must only read the current context and the one before it, while valid.
+    /// @dev CiphertextRoots must only read the current context and the one it replaced, while valid.
     function _requireValid(uint256 contextId) private view {
-        if (contextId != _currentId && contextId + 1 != _currentId) {
+        if (contextId != _currentId && contextId != _previousId) {
             revert NeitherCurrentNorPreviousContext(contextId);
         }
         if (!_valid[contextId]) {

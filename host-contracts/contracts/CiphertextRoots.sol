@@ -8,11 +8,13 @@ import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
- * @dev Temporary stand-in for `IProtocolConfigBase`: ProtocolConfig's coprocessor context reads,
- *      declared here until that interface carries them. Then delete this and import it.
+ * @dev Temporary stand-in for `ICoprocessorConfigBase`: the coprocessor context reads of
+ *      CoprocessorConfig, declared here until that contract exists. Then delete this and import its
+ *      interface.
  */
-interface IProtocolConfigBaseShim {
+interface ICoprocessorConfigBaseShim {
     function getCurrentCoprocessorContextId() external view returns (uint256);
+    function getPreviousCoprocessorContextId() external view returns (uint256);
     function isValidCoprocessorContext(uint256 coprocessorContextId) external view returns (bool);
     function getCoprocessorMajorityThresholdForContext(uint256 coprocessorContextId) external view returns (uint256);
     function isCoprocessorTxSenderForContext(
@@ -45,22 +47,32 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
     // Other contract references
     // -----------------------------------------------------------------------------------------
 
-    /// @notice The ProtocolConfig contract, source of the coprocessor contexts.
-    /// @dev Use the shim until `IProtocolConfigBase` declares these functions.
-    IProtocolConfigBaseShim private constant PROTOCOL_CONFIG = IProtocolConfigBaseShim(protocolConfigAdd);
+    /// @notice The CoprocessorConfig contract, source of the coprocessor contexts.
+    /// @dev Temporary: the shim and ProtocolConfig's address stand in until CoprocessorConfig exists.
+    ICoprocessorConfigBaseShim private constant COPROCESSOR_CONFIG = ICoprocessorConfigBaseShim(protocolConfigAdd);
 
     // -----------------------------------------------------------------------------------------
     // Structs
     // -----------------------------------------------------------------------------------------
 
+    /// @dev One post: its sender and the index of its root in the epoch's `postedRoots`.
+    ///      For example, if A and B post root X and then C posts root Y, the epoch holds:
+    ///          postedRoots = [X, Y]
+    ///          posts       = [(A, 0), (B, 0), (C, 1)]
+    ///      Storing the index instead of the root makes a post fit in one storage slot: the address
+    ///      takes 20 of the slot's 32 bytes, and `uint96` is the 12 bytes that are left. The index
+    ///      never gets near that size, as it is always below the number of posts of the epoch.
+    struct Post {
+        address sender;
+        uint96 rootIndex;
+    }
+
     /// @dev The state of one epoch of a host chain.
     struct Epoch {
         /// @notice Distinct roots posted, in first-post order.
         bytes32[] postedRoots;
-        /// @notice Senders of each posted root, in post order.
-        mapping(bytes32 root => address[] senders) rootSenders;
-        /// @notice Whether a sender already posted.
-        mapping(address sender => bool posted) hasPosted;
+        /// @notice The posts, in post order.
+        Post[] posts;
         /// @notice The recorded root, zero while no root is recorded.
         bytes32 root;
     }
@@ -79,7 +91,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         mapping(uint256 epoch => Epoch) epochs;
     }
 
-    /// @dev In-memory helper: the current and previous coprocessor contexts, read from ProtocolConfig
+    /// @dev In-memory helper: the current and previous coprocessor contexts, read from CoprocessorConfig
     ///      once per call by `_loadContexts`.
     struct Contexts {
         uint256 currentId;
@@ -193,7 +205,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         }
         HostChain storage chain = _hostChain(chainId);
         Epoch storage epochState = chain.epochs[epoch];
-        if (epochState.hasPosted[msg.sender]) {
+        if (_hasPosted(epochState, msg.sender)) {
             revert EpochRootAlreadyPosted(chainId, epoch, msg.sender);
         }
         Contexts memory contexts = _loadContexts();
@@ -205,13 +217,13 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         // the first root to reach a threshold wins. Then add the post and try to record again.
         bool recorded = epochState.root != bytes32(0) || _tryRecordEpochRoot(chainId, epoch, contexts);
 
-        epochState.hasPosted[msg.sender] = true;
         // A root posted for the first time joins the epoch's list of distinct roots.
-        address[] storage senders = epochState.rootSenders[root];
-        if (senders.length == 0) {
+        (bool rootAlreadyPosted, uint256 rootIndex) = _findPostedRoot(epochState, root);
+        if (!rootAlreadyPosted) {
+            rootIndex = epochState.postedRoots.length;
             epochState.postedRoots.push(root);
         }
-        senders.push(msg.sender);
+        epochState.posts.push(Post({sender: msg.sender, rootIndex: uint96(rootIndex)}));
         emit EpochRootPosted(chainId, epoch, msg.sender, root);
 
         if (!recorded) {
@@ -353,7 +365,12 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         uint256 epoch,
         bytes32 root
     ) external view virtual returns (address[] memory) {
-        return _hostChain(chainId).epochs[epoch].rootSenders[root];
+        Epoch storage epochState = _hostChain(chainId).epochs[epoch];
+        (bool posted, uint256 rootIndex) = _findPostedRoot(epochState, root);
+        if (!posted) {
+            return new address[](0);
+        }
+        return _sendersOfRoot(epochState.posts, rootIndex);
     }
 
     /// @inheritdoc ICiphertextRoots
@@ -385,26 +402,28 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
     }
 
     /**
-     * @dev The previous context is the current ID minus one, as context IDs come from a counter.
-     *      It counts only while ProtocolConfig still reports it valid, i.e. until governance
-     *      destroys it.
+     * @dev The previous context is the one the current context replaced. It counts only while
+     *      CoprocessorConfig still reports it valid, i.e. until governance destroys it.
      */
     function _loadContexts() internal view virtual returns (Contexts memory contexts) {
         // The current context is always valid, no need to check explicitly here.
-        contexts.currentId = PROTOCOL_CONFIG.getCurrentCoprocessorContextId();
-        contexts.currentThreshold = PROTOCOL_CONFIG.getCoprocessorMajorityThresholdForContext(contexts.currentId);
-        contexts.previousId = contexts.currentId - 1;
-        contexts.previousValid = PROTOCOL_CONFIG.isValidCoprocessorContext(contexts.previousId);
+        contexts.currentId = COPROCESSOR_CONFIG.getCurrentCoprocessorContextId();
+        contexts.currentThreshold = COPROCESSOR_CONFIG.getCoprocessorMajorityThresholdForContext(contexts.currentId);
+        contexts.previousId = COPROCESSOR_CONFIG.getPreviousCoprocessorContextId();
+        contexts.previousValid = COPROCESSOR_CONFIG.isValidCoprocessorContext(contexts.previousId);
         if (contexts.previousValid) {
-            contexts.previousThreshold = PROTOCOL_CONFIG.getCoprocessorMajorityThresholdForContext(contexts.previousId);
+            contexts.previousThreshold = COPROCESSOR_CONFIG.getCoprocessorMajorityThresholdForContext(
+                contexts.previousId
+            );
         }
     }
 
     function _isCoprocessorTxSender(Contexts memory contexts, address sender) internal view virtual returns (bool) {
-        if (PROTOCOL_CONFIG.isCoprocessorTxSenderForContext(contexts.currentId, sender)) {
+        if (COPROCESSOR_CONFIG.isCoprocessorTxSenderForContext(contexts.currentId, sender)) {
             return true;
         }
-        return contexts.previousValid && PROTOCOL_CONFIG.isCoprocessorTxSenderForContext(contexts.previousId, sender);
+        return
+            contexts.previousValid && COPROCESSOR_CONFIG.isCoprocessorTxSenderForContext(contexts.previousId, sender);
     }
 
     /**
@@ -413,7 +432,7 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
      */
     function _reachesMajorityThreshold(
         Contexts memory contexts,
-        address[] storage senders
+        address[] memory senders
     ) internal view virtual returns (bool reached, uint256 coprocessorContextId) {
         uint256 senderCount = senders.length;
         bool currentReachable = senderCount >= contexts.currentThreshold;
@@ -425,10 +444,10 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         uint256 previousCount;
         for (uint256 i = 0; i < senderCount; i++) {
             address sender = senders[i];
-            if (currentReachable && PROTOCOL_CONFIG.isCoprocessorTxSenderForContext(contexts.currentId, sender)) {
+            if (currentReachable && COPROCESSOR_CONFIG.isCoprocessorTxSenderForContext(contexts.currentId, sender)) {
                 currentCount++;
             }
-            if (previousReachable && PROTOCOL_CONFIG.isCoprocessorTxSenderForContext(contexts.previousId, sender)) {
+            if (previousReachable && COPROCESSOR_CONFIG.isCoprocessorTxSenderForContext(contexts.previousId, sender)) {
                 previousCount++;
             }
         }
@@ -451,16 +470,74 @@ contract CiphertextRoots is ICiphertextRoots, UUPSUpgradeableEmptyProxy, ACLOwna
         Contexts memory contexts
     ) internal virtual returns (bool) {
         Epoch storage epochState = _hostChain(chainId).epochs[epoch];
-        bytes32[] storage roots = epochState.postedRoots;
-        for (uint256 i = 0; i < roots.length; i++) {
-            bytes32 root = roots[i];
-            (bool reached, uint256 contextId) = _reachesMajorityThreshold(contexts, epochState.rootSenders[root]);
+        // No root can have more senders than the epoch has posts.
+        if (!_canReachAThreshold(contexts, epochState.posts.length)) {
+            return false;
+        }
+        Post[] memory posts = epochState.posts;
+        for (uint256 i = 0; i < epochState.postedRoots.length; i++) {
+            (bool reached, uint256 contextId) = _reachesMajorityThreshold(contexts, _sendersOfRoot(posts, i));
             if (reached) {
-                _recordEpochRoot(chainId, epoch, root, contextId);
+                _recordEpochRoot(chainId, epoch, epochState.postedRoots[i], contextId);
                 return true;
             }
         }
         return false;
+    }
+
+    /// @dev Whether a number of senders is enough for the majority threshold of the current context,
+    ///      or of the previous one while it is still valid.
+    function _canReachAThreshold(Contexts memory contexts, uint256 senderCount) internal pure virtual returns (bool) {
+        if (senderCount >= contexts.currentThreshold) {
+            return true;
+        }
+        return contexts.previousValid && senderCount >= contexts.previousThreshold;
+    }
+
+    /// @dev Whether a sender already posted for the epoch.
+    function _hasPosted(Epoch storage epochState, address sender) internal view virtual returns (bool) {
+        for (uint256 i = 0; i < epochState.posts.length; i++) {
+            if (epochState.posts[i].sender == sender) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// @dev Looks for a root in the epoch's list of distinct roots. Returns whether it is there, and
+    ///      its index if so.
+    function _findPostedRoot(
+        Epoch storage epochState,
+        bytes32 root
+    ) internal view virtual returns (bool found, uint256 index) {
+        for (uint256 i = 0; i < epochState.postedRoots.length; i++) {
+            if (epochState.postedRoots[i] == root) {
+                return (true, i);
+            }
+        }
+        return (false, 0);
+    }
+
+    /// @dev Returns the senders of the posts for the root at `rootIndex`, in post order.
+    function _sendersOfRoot(
+        Post[] memory posts,
+        uint256 rootIndex
+    ) internal pure virtual returns (address[] memory senders) {
+        // Count the senders of the root first.
+        uint256 count = 0;
+        for (uint256 i = 0; i < posts.length; i++) {
+            if (posts[i].rootIndex == rootIndex) {
+                count++;
+            }
+        }
+        senders = new address[](count);
+        uint256 next = 0;
+        for (uint256 i = 0; i < posts.length; i++) {
+            if (posts[i].rootIndex == rootIndex) {
+                senders[next] = posts[i].sender;
+                next++;
+            }
+        }
     }
 
     /// @dev Records the epoch's root and emits `EpochRootRecorded`. Reverts for a zero root and if the

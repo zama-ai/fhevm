@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {CiphertextRoots} from "@fhevm-host-contracts/contracts/CiphertextRoots.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
-import {ProtocolConfigMock} from "./ProtocolConfigMock.sol";
+import {CoprocessorConfigMock} from "./CoprocessorConfigMock.sol";
 
 /**
  * @dev Gas estimate of posting roots, to choose a host chain's epoch length: prints what one node
@@ -42,13 +42,13 @@ contract CiphertextRootsGasTest is HostContractsDeployerTestUtils {
         emit log_named_uint("=> epochs per year", epochsPerYear);
 
         _deployACL(owner);
-        deployCodeTo("test/ciphertextRoots/ProtocolConfigMock.sol:ProtocolConfigMock", protocolConfigAdd);
+        deployCodeTo("test/ciphertextRoots/CoprocessorConfigMock.sol:CoprocessorConfigMock", protocolConfigAdd);
         (CiphertextRoots ciphertextRoots, address implementation) = _deployCiphertextRoots(owner);
         address[] memory nodes = new address[](nodeCount);
         for (uint256 i = 0; i < nodeCount; i++) {
             nodes[i] = address(uint160(0x1000 + i));
         }
-        ProtocolConfigMock(protocolConfigAdd).defineContext((uint256(9) << 248) + 1, nodes, threshold);
+        CoprocessorConfigMock(protocolConfigAdd).defineContext((uint256(9) << 248) + 1, nodes, threshold);
         vm.prank(owner);
         ciphertextRoots.setEpochSchedule(CHAIN_ID, 0, epochLength);
 
