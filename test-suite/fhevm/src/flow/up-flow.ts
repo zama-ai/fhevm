@@ -1970,6 +1970,8 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
       await waitForStableChainListeners(state, target.chainKey);
     }
     await waitForCoprocessor(state);
+    // The key exists after the bootstrap: the recreated pad-workers only load it again.
+    await waitForPadWorkers(state);
     await postBootHealthGate([...coprocessorHealthContainers(state), ...extraTargets.flatMap((target) => target.services)]);
     return;
   }
