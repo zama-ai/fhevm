@@ -21,7 +21,7 @@ const connectorDbRuntime = () => ({
 });
 
 /** Runs a scalar query against one party's kms-connector database. */
-const connectorQuery = async (dbName: string, sql: string) => {
+export const connectorQuery = async (dbName: string, sql: string) => {
   const db = connectorDbRuntime();
   const result = await run([
     "docker", "exec", "-e", `PGPASSWORD=${db.password}`, db.container,

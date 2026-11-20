@@ -35,9 +35,10 @@
  *   5. Node swap (NewKmsContext with a membership change). Broadcast the switch with the swap
  *      committee {1,2,3,5}: node 4 is dropped and the spare is promoted. Node 4's tx-sender is
  *      stopped before the broadcast — a node that cannot transact must not block its own
- *      replacement. Once the spare has confirmed the new context's creation (the context is
- *      Created and the cores reshare), its tx-sender stops until the pending checks have run:
- *      activation needs its confirmation, so the context stays Created during those checks.
+ *      replacement. The spare's tx-sender is also stopped before the broadcast, and the profile
+ *      submits the spare's signed creation confirmation from its connector DB. The context becomes
+ *      Created and the cores reshare, but activation needs the spare's tx-sender, so the context
+ *      stays Created until the pending checks have run and the tx-sender restarts.
  *      After activation, stop `t` continuing members so the live committee is exactly
  *      the 2t+1 quorum including the spare, then decrypt: this proves the spare holds a working
  *      reshared key. Running the swap last also proves a switch still works after every destroy
@@ -69,9 +70,9 @@
 import { PreflightError } from "../errors";
 import { castBool, castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
 import { stepComposeTask } from "../flow/runtime-compose";
-import { columnQuery, checkConnectorsDbColumn } from "../kms-connector-db";
+import { columnQuery, checkConnectorsDbColumn, connectorQuery } from "../kms-connector-db";
 import { castSend, getEventTopic, callContractAndExpectRevert, keccakTopic, loadHostOwner, type Owner } from "../kms-onchain";
-import { kmsConnectorEnvName, kmsTxSenderName, reconstructionThreshold } from "../kms-party";
+import { kmsConnectorDbName, kmsConnectorEnvName, kmsTxSenderName, reconstructionThreshold } from "../kms-party";
 import { envPath } from "../layout";
 import type { State } from "../types";
 import { hostReachableRpcUrl, readEnvFile } from "../utils/fs";
@@ -238,6 +239,11 @@ const switchKmsContext = async (
     );
     await setRunning(droppedTxSenders, "stop");
     await waitForContainersStopped(droppedTxSenders);
+    // Stopped before the broadcast, not once the context is Created: the reshare and the
+    // activation confirmation follow Created within seconds, faster than a stop can react.
+    console.log(`[kms-context-switch] stopping spare(s) ${spares.join(",")} tx-sender to hold the swap at Created…`);
+    await setRunning(spareTxSenders, "stop");
+    await waitForContainersStopped(spareTxSenders);
   }
 
   console.log(
@@ -257,17 +263,30 @@ const switchKmsContext = async (
   await waitForContainer("gateway-sc-context-switch", "complete");
 
   if (swap) {
-    // Hold the swap at Created. Creation needs every new node's confirmation, so the spare's
-    // tx-sender runs until the context is Created, which emits its first NewKmsEpoch and starts
-    // the reshare. Activation needs every new-committee signer, so with the spare's tx-sender
-    // stopped the context stays Created through the checks below.
+    // Hold the swap at Created. Creation needs every new node's confirmation, so submit the
+    // spare's signed confirmation from its connector DB. The contract checks the signer, not the
+    // sender. Activation needs every new-committee signer, so with the spare's tx-sender stopped
+    // the context stays Created through the checks below.
+    const owner = await loadHostOwner();
+    for (const party of spares) {
+      const responseColumn = (column: string) =>
+        connectorQuery(kmsConnectorDbName(party), columnQuery("new_kms_context_responses", "context_id", column, pendingContextId));
+      await checkConnectorsDbColumn(
+        [party], `spare ${party} signed the creation of context ${pendingContextId}`,
+        columnQuery("new_kms_context_responses", "context_id", "status", pendingContextId), ["pending"],
+      );
+      console.log(`[kms-context-switch] submitting spare ${party}'s creation confirmation of context ${pendingContextId}…`);
+      await castSend(
+        target.rpcUrl, target.configAddress, owner, "confirmKmsContextCreation(uint256,bytes,bytes)",
+        pendingContextId.toString(),
+        `0x${await responseColumn("encode(signature, 'hex')")}`,
+        `0x${await responseColumn("encode(extra_data, 'hex')")}`,
+      );
+    }
     await checkConnectorsDbColumn(
       spares, `swap context ${pendingContextId} Created (its NewKmsEpoch reached the spare)`,
       columnQuery("new_kms_epoch", "context_id", "status", pendingContextId), ["pending", "under_process", "completed"],
     );
-    console.log(`[kms-context-switch] stopping spare(s) ${spares.join(",")} tx-sender to hold context ${pendingContextId} at Created…`);
-    await setRunning(spareTxSenders, "stop");
-    await waitForContainersStopped(spareTxSenders);
     await assertCurrentUnchanged(target.rpcUrl, target.configAddress, baseline, "holding the swap at Created");
     if (runProxyCheck) {
       await proxiesRefuseNodes(target.rpcUrl, "Created-only spare", spares, runProxyCheck);
@@ -290,7 +309,8 @@ const switchKmsContext = async (
   }
 
   if (swap) {
-    // The restarted tx-sender sends the activation confirmation stored while it was down.
+    // The restarted tx-sender sends the activation confirmation stored while it was down. Its
+    // stored creation confirmation reverts with KmsContextNotPending and is marked failed.
     console.log(`[kms-context-switch] starting spare(s) ${spares.join(",")} tx-sender so the swap can activate…`);
     await setRunning(spareTxSenders, "start");
     await waitForPartiesRunning(spares);
