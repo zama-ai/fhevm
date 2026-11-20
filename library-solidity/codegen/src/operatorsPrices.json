@@ -3,403 +3,403 @@
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 84000, "latency": 84000 },
-      "Uint16": { "work": 93000, "latency": 93000 },
-      "Uint32": { "work": 95000, "latency": 95000 },
-      "Uint64": { "work": 133000, "latency": 133000 },
-      "Uint128": { "work": 172000, "latency": 172000 }
+      "Uint8": { "work": 1464, "latency": 84000 },
+      "Uint16": { "work": 2931, "latency": 93000 },
+      "Uint32": { "work": 6162, "latency": 95000 },
+      "Uint64": { "work": 12998, "latency": 133000 },
+      "Uint128": { "work": 26487, "latency": 172000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 88000, "latency": 88000 },
-      "Uint16": { "work": 93000, "latency": 93000 },
-      "Uint32": { "work": 125000, "latency": 125000 },
-      "Uint64": { "work": 162000, "latency": 162000 },
-      "Uint128": { "work": 259000, "latency": 259000 }
+      "Uint8": { "work": 1468, "latency": 88000 },
+      "Uint16": { "work": 3040, "latency": 93000 },
+      "Uint32": { "work": 6698, "latency": 125000 },
+      "Uint64": { "work": 13798, "latency": 162000 },
+      "Uint128": { "work": 28674, "latency": 259000 }
     }
   },
   "fheSub": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 84000, "latency": 84000 },
-      "Uint16": { "work": 93000, "latency": 93000 },
-      "Uint32": { "work": 95000, "latency": 95000 },
-      "Uint64": { "work": 133000, "latency": 133000 },
-      "Uint128": { "work": 172000, "latency": 172000 }
+      "Uint8": { "work": 1380, "latency": 84000 },
+      "Uint16": { "work": 2957, "latency": 93000 },
+      "Uint32": { "work": 6239, "latency": 95000 },
+      "Uint64": { "work": 13026, "latency": 133000 },
+      "Uint128": { "work": 26661, "latency": 172000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 91000, "latency": 91000 },
-      "Uint16": { "work": 93000, "latency": 93000 },
-      "Uint32": { "work": 125000, "latency": 125000 },
-      "Uint64": { "work": 162000, "latency": 162000 },
-      "Uint128": { "work": 260000, "latency": 260000 }
+      "Uint8": { "work": 1711, "latency": 91000 },
+      "Uint16": { "work": 3090, "latency": 93000 },
+      "Uint32": { "work": 6590, "latency": 125000 },
+      "Uint64": { "work": 13649, "latency": 162000 },
+      "Uint128": { "work": 28642, "latency": 260000 }
     }
   },
   "fheMul": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 122000, "latency": 122000 },
-      "Uint16": { "work": 193000, "latency": 193000 },
-      "Uint32": { "work": 265000, "latency": 265000 },
-      "Uint64": { "work": 365000, "latency": 365000 },
-      "Uint128": { "work": 696000, "latency": 696000 }
+      "Uint8": { "work": 2324, "latency": 122000 },
+      "Uint16": { "work": 7360, "latency": 193000 },
+      "Uint32": { "work": 22157, "latency": 265000 },
+      "Uint64": { "work": 71279, "latency": 365000 },
+      "Uint128": { "work": 233154, "latency": 696000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 150000, "latency": 150000 },
-      "Uint16": { "work": 222000, "latency": 222000 },
-      "Uint32": { "work": 328000, "latency": 328000 },
-      "Uint64": { "work": 596000, "latency": 596000 },
-      "Uint128": { "work": 1686000, "latency": 1686000 }
+      "Uint8": { "work": 4037, "latency": 150000 },
+      "Uint16": { "work": 16986, "latency": 222000 },
+      "Uint32": { "work": 64295, "latency": 328000 },
+      "Uint64": { "work": 241305, "latency": 596000 },
+      "Uint128": { "work": 964778, "latency": 1686000 }
     }
   },
   "fheDiv": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 210000, "latency": 210000 },
-      "Uint16": { "work": 302000, "latency": 302000 },
-      "Uint32": { "work": 438000, "latency": 438000 },
-      "Uint64": { "work": 715000, "latency": 715000 },
-      "Uint128": { "work": 1225000, "latency": 1225000 }
+      "Uint8": { "work": 5429, "latency": 210000 },
+      "Uint16": { "work": 12165, "latency": 302000 },
+      "Uint32": { "work": 65207, "latency": 438000 },
+      "Uint64": { "work": 142157, "latency": 715000 },
+      "Uint128": { "work": 575908, "latency": 1225000 }
     }
   },
   "fheRem": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 440000, "latency": 440000 },
-      "Uint16": { "work": 580000, "latency": 580000 },
-      "Uint32": { "work": 792000, "latency": 792000 },
-      "Uint64": { "work": 1153000, "latency": 1153000 },
-      "Uint128": { "work": 1943000, "latency": 1943000 }
+      "Uint8": { "work": 9942, "latency": 440000 },
+      "Uint16": { "work": 22872, "latency": 580000 },
+      "Uint32": { "work": 88854, "latency": 792000 },
+      "Uint64": { "work": 191457, "latency": 1153000 },
+      "Uint128": { "work": 754285, "latency": 1943000 }
     }
   },
   "fheBitAnd": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Bool": { "work": 22000, "latency": 22000 },
-      "Uint8": { "work": 31000, "latency": 31000 },
-      "Uint16": { "work": 31000, "latency": 31000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 38000, "latency": 38000 }
+      "Bool": { "work": 132, "latency": 22000 },
+      "Uint8": { "work": 528, "latency": 31000 },
+      "Uint16": { "work": 1056, "latency": 31000 },
+      "Uint32": { "work": 2082, "latency": 32000 },
+      "Uint64": { "work": 4194, "latency": 34000 },
+      "Uint128": { "work": 8209, "latency": 37000 },
+      "Uint256": { "work": 16263, "latency": 38000 }
     },
     "nonScalar": {
-      "Bool": { "work": 25000, "latency": 25000 },
-      "Uint8": { "work": 31000, "latency": 31000 },
-      "Uint16": { "work": 31000, "latency": 31000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 38000, "latency": 38000 }
+      "Bool": { "work": 132, "latency": 25000 },
+      "Uint8": { "work": 528, "latency": 31000 },
+      "Uint16": { "work": 1059, "latency": 31000 },
+      "Uint32": { "work": 2089, "latency": 32000 },
+      "Uint64": { "work": 4194, "latency": 34000 },
+      "Uint128": { "work": 8357, "latency": 37000 },
+      "Uint256": { "work": 16650, "latency": 38000 }
     }
   },
   "fheBitOr": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Bool": { "work": 22000, "latency": 22000 },
-      "Uint8": { "work": 30000, "latency": 30000 },
-      "Uint16": { "work": 30000, "latency": 30000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 38000, "latency": 38000 }
+      "Bool": { "work": 133, "latency": 22000 },
+      "Uint8": { "work": 527, "latency": 30000 },
+      "Uint16": { "work": 1047, "latency": 30000 },
+      "Uint32": { "work": 2100, "latency": 32000 },
+      "Uint64": { "work": 4155, "latency": 34000 },
+      "Uint128": { "work": 8218, "latency": 37000 },
+      "Uint256": { "work": 16307, "latency": 38000 }
     },
     "nonScalar": {
-      "Bool": { "work": 24000, "latency": 24000 },
-      "Uint8": { "work": 30000, "latency": 30000 },
-      "Uint16": { "work": 31000, "latency": 31000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 38000, "latency": 38000 }
+      "Bool": { "work": 133, "latency": 24000 },
+      "Uint8": { "work": 527, "latency": 30000 },
+      "Uint16": { "work": 1051, "latency": 31000 },
+      "Uint32": { "work": 2100, "latency": 32000 },
+      "Uint64": { "work": 4155, "latency": 34000 },
+      "Uint128": { "work": 8340, "latency": 37000 },
+      "Uint256": { "work": 16507, "latency": 38000 }
     }
   },
   "fheBitXor": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Bool": { "work": 22000, "latency": 22000 },
-      "Uint8": { "work": 31000, "latency": 31000 },
-      "Uint16": { "work": 31000, "latency": 31000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 39000, "latency": 39000 }
+      "Bool": { "work": 133, "latency": 22000 },
+      "Uint8": { "work": 524, "latency": 31000 },
+      "Uint16": { "work": 1043, "latency": 31000 },
+      "Uint32": { "work": 2099, "latency": 32000 },
+      "Uint64": { "work": 4168, "latency": 34000 },
+      "Uint128": { "work": 8232, "latency": 37000 },
+      "Uint256": { "work": 16283, "latency": 39000 }
     },
     "nonScalar": {
-      "Bool": { "work": 22000, "latency": 22000 },
-      "Uint8": { "work": 31000, "latency": 31000 },
-      "Uint16": { "work": 31000, "latency": 31000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 39000, "latency": 39000 }
+      "Bool": { "work": 133, "latency": 22000 },
+      "Uint8": { "work": 537, "latency": 31000 },
+      "Uint16": { "work": 1043, "latency": 31000 },
+      "Uint32": { "work": 2101, "latency": 32000 },
+      "Uint64": { "work": 4172, "latency": 34000 },
+      "Uint128": { "work": 8335, "latency": 37000 },
+      "Uint256": { "work": 16727, "latency": 39000 }
     }
   },
   "fheShl": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 32000, "latency": 32000 },
-      "Uint16": { "work": 32000, "latency": 32000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 39000, "latency": 39000 }
+      "Uint8": { "work": 271, "latency": 32000 },
+      "Uint16": { "work": 526, "latency": 32000 },
+      "Uint32": { "work": 1046, "latency": 32000 },
+      "Uint64": { "work": 2081, "latency": 34000 },
+      "Uint128": { "work": 4264, "latency": 37000 },
+      "Uint256": { "work": 8354, "latency": 39000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 92000, "latency": 92000 },
-      "Uint16": { "work": 125000, "latency": 125000 },
-      "Uint32": { "work": 162000, "latency": 162000 },
-      "Uint64": { "work": 208000, "latency": 208000 },
-      "Uint128": { "work": 272000, "latency": 272000 },
-      "Uint256": { "work": 378000, "latency": 378000 }
+      "Uint8": { "work": 2861, "latency": 92000 },
+      "Uint16": { "work": 6804, "latency": 125000 },
+      "Uint32": { "work": 16116, "latency": 162000 },
+      "Uint64": { "work": 35922, "latency": 208000 },
+      "Uint128": { "work": 83091, "latency": 272000 },
+      "Uint256": { "work": 179173, "latency": 378000 }
     }
   },
   "fheShr": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 32000, "latency": 32000 },
-      "Uint16": { "work": 32000, "latency": 32000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 38000, "latency": 38000 }
+      "Uint8": { "work": 264, "latency": 32000 },
+      "Uint16": { "work": 521, "latency": 32000 },
+      "Uint32": { "work": 1057, "latency": 32000 },
+      "Uint64": { "work": 2087, "latency": 34000 },
+      "Uint128": { "work": 4172, "latency": 37000 },
+      "Uint256": { "work": 8354, "latency": 38000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 91000, "latency": 91000 },
-      "Uint16": { "work": 123000, "latency": 123000 },
-      "Uint32": { "work": 163000, "latency": 163000 },
-      "Uint64": { "work": 209000, "latency": 209000 },
-      "Uint128": { "work": 272000, "latency": 272000 },
-      "Uint256": { "work": 369000, "latency": 369000 }
+      "Uint8": { "work": 2835, "latency": 91000 },
+      "Uint16": { "work": 6852, "latency": 123000 },
+      "Uint32": { "work": 16239, "latency": 163000 },
+      "Uint64": { "work": 36421, "latency": 209000 },
+      "Uint128": { "work": 83086, "latency": 272000 },
+      "Uint256": { "work": 177283, "latency": 369000 }
     }
   },
   "fheRotl": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 31000, "latency": 31000 },
-      "Uint16": { "work": 31000, "latency": 31000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 38000, "latency": 38000 }
+      "Uint8": { "work": 524, "latency": 31000 },
+      "Uint16": { "work": 1054, "latency": 31000 },
+      "Uint32": { "work": 2115, "latency": 32000 },
+      "Uint64": { "work": 4224, "latency": 34000 },
+      "Uint128": { "work": 8359, "latency": 37000 },
+      "Uint256": { "work": 16723, "latency": 38000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 91000, "latency": 91000 },
-      "Uint16": { "work": 125000, "latency": 125000 },
-      "Uint32": { "work": 163000, "latency": 163000 },
-      "Uint64": { "work": 209000, "latency": 209000 },
-      "Uint128": { "work": 278000, "latency": 278000 },
-      "Uint256": { "work": 378000, "latency": 378000 }
+      "Uint8": { "work": 2835, "latency": 91000 },
+      "Uint16": { "work": 6650, "latency": 125000 },
+      "Uint32": { "work": 15610, "latency": 163000 },
+      "Uint64": { "work": 35298, "latency": 209000 },
+      "Uint128": { "work": 80642, "latency": 278000 },
+      "Uint256": { "work": 172188, "latency": 378000 }
     }
   },
   "fheRotr": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 31000, "latency": 31000 },
-      "Uint16": { "work": 31000, "latency": 31000 },
-      "Uint32": { "work": 32000, "latency": 32000 },
-      "Uint64": { "work": 34000, "latency": 34000 },
-      "Uint128": { "work": 37000, "latency": 37000 },
-      "Uint256": { "work": 40000, "latency": 40000 }
+      "Uint8": { "work": 527, "latency": 31000 },
+      "Uint16": { "work": 1056, "latency": 31000 },
+      "Uint32": { "work": 2118, "latency": 32000 },
+      "Uint64": { "work": 4174, "latency": 34000 },
+      "Uint128": { "work": 8347, "latency": 37000 },
+      "Uint256": { "work": 16746, "latency": 40000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 93000, "latency": 93000 },
-      "Uint16": { "work": 125000, "latency": 125000 },
-      "Uint32": { "work": 160000, "latency": 160000 },
-      "Uint64": { "work": 209000, "latency": 209000 },
-      "Uint128": { "work": 283000, "latency": 283000 },
-      "Uint256": { "work": 375000, "latency": 375000 }
+      "Uint8": { "work": 2839, "latency": 93000 },
+      "Uint16": { "work": 6643, "latency": 125000 },
+      "Uint32": { "work": 15402, "latency": 160000 },
+      "Uint64": { "work": 35102, "latency": 209000 },
+      "Uint128": { "work": 80161, "latency": 283000 },
+      "Uint256": { "work": 171715, "latency": 375000 }
     }
   },
   "fheEq": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Bool": { "work": 25000, "latency": 25000 },
-      "Uint8": { "work": 55000, "latency": 55000 },
-      "Uint16": { "work": 55000, "latency": 55000 },
-      "Uint32": { "work": 82000, "latency": 82000 },
-      "Uint64": { "work": 83000, "latency": 83000 },
-      "Uint128": { "work": 117000, "latency": 117000 },
-      "Uint160": { "work": 117000, "latency": 117000 },
-      "Uint256": { "work": 118000, "latency": 118000 }
+      "Bool": { "work": 132, "latency": 25000 },
+      "Uint8": { "work": 414, "latency": 55000 },
+      "Uint16": { "work": 673, "latency": 55000 },
+      "Uint32": { "work": 1477, "latency": 82000 },
+      "Uint64": { "work": 2824, "latency": 83000 },
+      "Uint128": { "work": 5677, "latency": 117000 },
+      "Uint160": { "work": 6948, "latency": 117000 },
+      "Uint256": { "work": 11005, "latency": 118000 }
     },
     "nonScalar": {
-      "Bool": { "work": 26000, "latency": 26000 },
-      "Uint8": { "work": 55000, "latency": 55000 },
-      "Uint16": { "work": 83000, "latency": 83000 },
-      "Uint32": { "work": 86000, "latency": 86000 },
-      "Uint64": { "work": 120000, "latency": 120000 },
-      "Uint128": { "work": 122000, "latency": 122000 },
-      "Uint160": { "work": 137000, "latency": 137000 },
-      "Uint256": { "work": 152000, "latency": 152000 }
+      "Bool": { "work": 132, "latency": 26000 },
+      "Uint8": { "work": 672, "latency": 55000 },
+      "Uint16": { "work": 1517, "latency": 83000 },
+      "Uint32": { "work": 2886, "latency": 86000 },
+      "Uint64": { "work": 5762, "latency": 120000 },
+      "Uint128": { "work": 11012, "latency": 122000 },
+      "Uint160": { "work": 13734, "latency": 137000 },
+      "Uint256": { "work": 22277, "latency": 152000 }
     }
   },
   "fheNe": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Bool": { "work": 23000, "latency": 23000 },
-      "Uint8": { "work": 55000, "latency": 55000 },
-      "Uint16": { "work": 55000, "latency": 55000 },
-      "Uint32": { "work": 83000, "latency": 83000 },
-      "Uint64": { "work": 84000, "latency": 84000 },
-      "Uint128": { "work": 117000, "latency": 117000 },
-      "Uint160": { "work": 117000, "latency": 117000 },
-      "Uint256": { "work": 117000, "latency": 117000 }
+      "Bool": { "work": 132, "latency": 23000 },
+      "Uint8": { "work": 420, "latency": 55000 },
+      "Uint16": { "work": 655, "latency": 55000 },
+      "Uint32": { "work": 1481, "latency": 83000 },
+      "Uint64": { "work": 2855, "latency": 84000 },
+      "Uint128": { "work": 5680, "latency": 117000 },
+      "Uint160": { "work": 6962, "latency": 117000 },
+      "Uint256": { "work": 10922, "latency": 117000 }
     },
     "nonScalar": {
-      "Bool": { "work": 23000, "latency": 23000 },
-      "Uint8": { "work": 55000, "latency": 55000 },
-      "Uint16": { "work": 83000, "latency": 83000 },
-      "Uint32": { "work": 85000, "latency": 85000 },
-      "Uint64": { "work": 118000, "latency": 118000 },
-      "Uint128": { "work": 122000, "latency": 122000 },
-      "Uint160": { "work": 136000, "latency": 136000 },
-      "Uint256": { "work": 150000, "latency": 150000 }
+      "Bool": { "work": 132, "latency": 23000 },
+      "Uint8": { "work": 688, "latency": 55000 },
+      "Uint16": { "work": 1512, "latency": 83000 },
+      "Uint32": { "work": 2814, "latency": 85000 },
+      "Uint64": { "work": 5811, "latency": 118000 },
+      "Uint128": { "work": 11085, "latency": 122000 },
+      "Uint160": { "work": 13665, "latency": 136000 },
+      "Uint256": { "work": 22430, "latency": 150000 }
     }
   },
   "fheGe": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 52000, "latency": 52000 },
-      "Uint16": { "work": 55000, "latency": 55000 },
-      "Uint32": { "work": 84000, "latency": 84000 },
-      "Uint64": { "work": 116000, "latency": 116000 },
-      "Uint128": { "work": 149000, "latency": 149000 }
+      "Uint8": { "work": 408, "latency": 52000 },
+      "Uint16": { "work": 669, "latency": 55000 },
+      "Uint32": { "work": 1521, "latency": 84000 },
+      "Uint64": { "work": 3146, "latency": 116000 },
+      "Uint128": { "work": 6532, "latency": 149000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 63000, "latency": 63000 },
-      "Uint16": { "work": 84000, "latency": 84000 },
-      "Uint32": { "work": 118000, "latency": 118000 },
-      "Uint64": { "work": 152000, "latency": 152000 },
-      "Uint128": { "work": 210000, "latency": 210000 }
+      "Uint8": { "work": 676, "latency": 63000 },
+      "Uint16": { "work": 1500, "latency": 84000 },
+      "Uint32": { "work": 3174, "latency": 118000 },
+      "Uint64": { "work": 6478, "latency": 152000 },
+      "Uint128": { "work": 17399, "latency": 210000 }
     }
   },
   "fheGt": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 52000, "latency": 52000 },
-      "Uint16": { "work": 55000, "latency": 55000 },
-      "Uint32": { "work": 84000, "latency": 84000 },
-      "Uint64": { "work": 117000, "latency": 117000 },
-      "Uint128": { "work": 150000, "latency": 150000 }
+      "Uint8": { "work": 402, "latency": 52000 },
+      "Uint16": { "work": 669, "latency": 55000 },
+      "Uint32": { "work": 1514, "latency": 84000 },
+      "Uint64": { "work": 3196, "latency": 117000 },
+      "Uint128": { "work": 6501, "latency": 150000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 59000, "latency": 59000 },
-      "Uint16": { "work": 84000, "latency": 84000 },
-      "Uint32": { "work": 118000, "latency": 118000 },
-      "Uint64": { "work": 152000, "latency": 152000 },
-      "Uint128": { "work": 218000, "latency": 218000 }
+      "Uint8": { "work": 691, "latency": 59000 },
+      "Uint16": { "work": 1509, "latency": 84000 },
+      "Uint32": { "work": 3141, "latency": 118000 },
+      "Uint64": { "work": 6495, "latency": 152000 },
+      "Uint128": { "work": 17300, "latency": 218000 }
     }
   },
   "fheLe": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 58000, "latency": 58000 },
-      "Uint16": { "work": 58000, "latency": 58000 },
-      "Uint32": { "work": 84000, "latency": 84000 },
-      "Uint64": { "work": 119000, "latency": 119000 },
-      "Uint128": { "work": 150000, "latency": 150000 }
+      "Uint8": { "work": 405, "latency": 58000 },
+      "Uint16": { "work": 676, "latency": 58000 },
+      "Uint32": { "work": 1472, "latency": 84000 },
+      "Uint64": { "work": 3198, "latency": 119000 },
+      "Uint128": { "work": 6402, "latency": 150000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 58000, "latency": 58000 },
-      "Uint16": { "work": 83000, "latency": 83000 },
-      "Uint32": { "work": 117000, "latency": 117000 },
-      "Uint64": { "work": 149000, "latency": 149000 },
-      "Uint128": { "work": 218000, "latency": 218000 }
+      "Uint8": { "work": 700, "latency": 58000 },
+      "Uint16": { "work": 1503, "latency": 83000 },
+      "Uint32": { "work": 3189, "latency": 117000 },
+      "Uint64": { "work": 6624, "latency": 149000 },
+      "Uint128": { "work": 17207, "latency": 218000 }
     }
   },
   "fheLt": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 52000, "latency": 52000 },
-      "Uint16": { "work": 58000, "latency": 58000 },
-      "Uint32": { "work": 83000, "latency": 83000 },
-      "Uint64": { "work": 118000, "latency": 118000 },
-      "Uint128": { "work": 149000, "latency": 149000 }
+      "Uint8": { "work": 413, "latency": 52000 },
+      "Uint16": { "work": 682, "latency": 58000 },
+      "Uint32": { "work": 1483, "latency": 83000 },
+      "Uint64": { "work": 3198, "latency": 118000 },
+      "Uint128": { "work": 6459, "latency": 149000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 59000, "latency": 59000 },
-      "Uint16": { "work": 84000, "latency": 84000 },
-      "Uint32": { "work": 117000, "latency": 117000 },
-      "Uint64": { "work": 146000, "latency": 146000 },
-      "Uint128": { "work": 215000, "latency": 215000 }
+      "Uint8": { "work": 688, "latency": 59000 },
+      "Uint16": { "work": 1501, "latency": 84000 },
+      "Uint32": { "work": 3201, "latency": 117000 },
+      "Uint64": { "work": 6481, "latency": 146000 },
+      "Uint128": { "work": 17609, "latency": 215000 }
     }
   },
   "fheMin": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 84000, "latency": 84000 },
-      "Uint16": { "work": 88000, "latency": 88000 },
-      "Uint32": { "work": 117000, "latency": 117000 },
-      "Uint64": { "work": 150000, "latency": 150000 },
-      "Uint128": { "work": 186000, "latency": 186000 }
+      "Uint8": { "work": 952, "latency": 84000 },
+      "Uint16": { "work": 1761, "latency": 88000 },
+      "Uint32": { "work": 3707, "latency": 117000 },
+      "Uint64": { "work": 7516, "latency": 150000 },
+      "Uint128": { "work": 15404, "latency": 186000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 119000, "latency": 119000 },
-      "Uint16": { "work": 146000, "latency": 146000 },
-      "Uint32": { "work": 182000, "latency": 182000 },
-      "Uint64": { "work": 219000, "latency": 219000 },
-      "Uint128": { "work": 289000, "latency": 289000 }
+      "Uint8": { "work": 2372, "latency": 119000 },
+      "Uint16": { "work": 4841, "latency": 146000 },
+      "Uint32": { "work": 9778, "latency": 182000 },
+      "Uint64": { "work": 20503, "latency": 219000 },
+      "Uint128": { "work": 46192, "latency": 289000 }
     }
   },
   "fheMax": {
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 89000, "latency": 89000 },
-      "Uint16": { "work": 89000, "latency": 89000 },
-      "Uint32": { "work": 117000, "latency": 117000 },
-      "Uint64": { "work": 149000, "latency": 149000 },
-      "Uint128": { "work": 180000, "latency": 180000 }
+      "Uint8": { "work": 966, "latency": 89000 },
+      "Uint16": { "work": 1741, "latency": 89000 },
+      "Uint32": { "work": 3698, "latency": 117000 },
+      "Uint64": { "work": 7555, "latency": 149000 },
+      "Uint128": { "work": 15457, "latency": 180000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 121000, "latency": 121000 },
-      "Uint16": { "work": 145000, "latency": 145000 },
-      "Uint32": { "work": 180000, "latency": 180000 },
-      "Uint64": { "work": 218000, "latency": 218000 },
-      "Uint128": { "work": 290000, "latency": 290000 }
+      "Uint8": { "work": 2376, "latency": 121000 },
+      "Uint16": { "work": 4860, "latency": 145000 },
+      "Uint32": { "work": 9968, "latency": 180000 },
+      "Uint64": { "work": 20331, "latency": 218000 },
+      "Uint128": { "work": 45573, "latency": 290000 }
     }
   },
   "fheNeg": {
     "supportScalar": false,
     "numberInputs": 1,
     "types": {
-      "Uint8": { "work": 79000, "latency": 79000 },
-      "Uint16": { "work": 93000, "latency": 93000 },
-      "Uint32": { "work": 95000, "latency": 95000 },
-      "Uint64": { "work": 131000, "latency": 131000 },
-      "Uint128": { "work": 168000, "latency": 168000 },
-      "Uint256": { "work": 269000, "latency": 269000 }
+      "Uint8": { "work": 1361, "latency": 79000 },
+      "Uint16": { "work": 3011, "latency": 93000 },
+      "Uint32": { "work": 6223, "latency": 95000 },
+      "Uint64": { "work": 13124, "latency": 131000 },
+      "Uint128": { "work": 26882, "latency": 168000 },
+      "Uint256": { "work": 56005, "latency": 269000 }
     }
   },
   "fheNot": {
     "supportScalar": false,
     "numberInputs": 1,
     "types": {
-      "Bool": { "work": 2, "latency": 2 },
-      "Uint8": { "work": 9, "latency": 9 },
-      "Uint16": { "work": 16, "latency": 16 },
-      "Uint32": { "work": 32, "latency": 32 },
-      "Uint64": { "work": 63, "latency": 63 },
-      "Uint128": { "work": 130, "latency": 130 },
-      "Uint256": { "work": 130, "latency": 130 }
+      "Bool": { "work": 1, "latency": 2 },
+      "Uint8": { "work": 1, "latency": 9 },
+      "Uint16": { "work": 1, "latency": 16 },
+      "Uint32": { "work": 1, "latency": 32 },
+      "Uint64": { "work": 1, "latency": 63 },
+      "Uint128": { "work": 2, "latency": 130 },
+      "Uint256": { "work": 5, "latency": 130 }
     }
   },
   "cast": {
@@ -407,65 +407,65 @@
     "numberInputs": 1,
     "types": {
       "Bool": { "work": 32, "latency": 32 },
-      "Uint8": { "work": 32, "latency": 32 },
-      "Uint16": { "work": 32, "latency": 32 },
-      "Uint32": { "work": 32, "latency": 32 },
-      "Uint64": { "work": 32, "latency": 32 },
-      "Uint128": { "work": 32, "latency": 32 },
-      "Uint256": { "work": 32, "latency": 32 }
+      "Uint8": { "work": 6, "latency": 102 },
+      "Uint16": { "work": 6, "latency": 102 },
+      "Uint32": { "work": 6, "latency": 102 },
+      "Uint64": { "work": 6, "latency": 102 },
+      "Uint128": { "work": 6, "latency": 102 },
+      "Uint256": { "work": 6, "latency": 102 }
     }
   },
   "trivialEncrypt": {
     "supportScalar": false,
     "numberInputs": 0,
     "types": {
-      "Bool": { "work": 32, "latency": 32 },
-      "Uint8": { "work": 32, "latency": 32 },
-      "Uint16": { "work": 32, "latency": 32 },
-      "Uint32": { "work": 32, "latency": 32 },
-      "Uint64": { "work": 32, "latency": 32 },
-      "Uint128": { "work": 32, "latency": 32 },
-      "Uint160": { "work": 32, "latency": 32 },
-      "Uint256": { "work": 32, "latency": 32 }
+      "Bool": { "work": 1, "latency": 32 },
+      "Uint8": { "work": 1, "latency": 32 },
+      "Uint16": { "work": 1, "latency": 32 },
+      "Uint32": { "work": 1, "latency": 32 },
+      "Uint64": { "work": 1, "latency": 32 },
+      "Uint128": { "work": 1, "latency": 32 },
+      "Uint160": { "work": 1, "latency": 32 },
+      "Uint256": { "work": 1, "latency": 32 }
     }
   },
   "ifThenElse": {
     "supportScalar": false,
     "numberInputs": 3,
     "types": {
-      "Bool": { "work": 55000, "latency": 55000 },
-      "Uint8": { "work": 55000, "latency": 55000 },
-      "Uint16": { "work": 55000, "latency": 55000 },
-      "Uint32": { "work": 55000, "latency": 55000 },
-      "Uint64": { "work": 55000, "latency": 55000 },
-      "Uint128": { "work": 57000, "latency": 57000 },
-      "Uint160": { "work": 83000, "latency": 83000 },
-      "Uint256": { "work": 108000, "latency": 108000 }
+      "Bool": { "work": 408, "latency": 55000 },
+      "Uint8": { "work": 1613, "latency": 55000 },
+      "Uint16": { "work": 3207, "latency": 55000 },
+      "Uint32": { "work": 6462, "latency": 55000 },
+      "Uint64": { "work": 12913, "latency": 55000 },
+      "Uint128": { "work": 25871, "latency": 57000 },
+      "Uint160": { "work": 33330, "latency": 83000 },
+      "Uint256": { "work": 52637, "latency": 108000 }
     }
   },
   "fheRand": {
     "supportScalar": false,
     "numberInputs": 0,
     "types": {
-      "Bool": { "work": 19000, "latency": 19000 },
-      "Uint8": { "work": 23000, "latency": 23000 },
-      "Uint16": { "work": 23000, "latency": 23000 },
-      "Uint32": { "work": 24000, "latency": 24000 },
-      "Uint64": { "work": 24000, "latency": 24000 },
-      "Uint128": { "work": 25000, "latency": 25000 },
-      "Uint256": { "work": 30000, "latency": 30000 }
+      "Bool": { "work": 100, "latency": 19000 },
+      "Uint8": { "work": 399, "latency": 23000 },
+      "Uint16": { "work": 814, "latency": 23000 },
+      "Uint32": { "work": 1604, "latency": 24000 },
+      "Uint64": { "work": 3185, "latency": 24000 },
+      "Uint128": { "work": 6372, "latency": 25000 },
+      "Uint256": { "work": 12734, "latency": 30000 }
     }
   },
   "fheRandBounded": {
     "supportScalar": false,
     "numberInputs": 0,
     "types": {
-      "Uint8": { "work": 23000, "latency": 23000 },
-      "Uint16": { "work": 23000, "latency": 23000 },
-      "Uint32": { "work": 24000, "latency": 24000 },
-      "Uint64": { "work": 24000, "latency": 24000 },
-      "Uint128": { "work": 25000, "latency": 25000 },
-      "Uint256": { "work": 30000, "latency": 30000 }
+      "Uint8": { "work": 408, "latency": 23000 },
+      "Uint16": { "work": 799, "latency": 23000 },
+      "Uint32": { "work": 1599, "latency": 24000 },
+      "Uint64": { "work": 3193, "latency": 24000 },
+      "Uint128": { "work": 6380, "latency": 25000 },
+      "Uint256": { "work": 12788, "latency": 30000 }
     }
   },
   "fheSum": {
@@ -473,32 +473,32 @@
     "numberInputs": -1,
     "nBucketed": {
       "Uint8": {
-        "le10": { "work": 90900, "latency": 90900 },
-        "le30": { "work": 127000, "latency": 127000 },
-        "le60": { "work": 148000, "latency": 148000 },
-        "le100": { "work": 159000, "latency": 159000 }
+        "le10": { "work": 3853, "latency": 90900 },
+        "le30": { "work": 10514, "latency": 127000 },
+        "le60": { "work": 18571, "latency": 148000 },
+        "le100": { "work": 30458, "latency": 159000 }
       },
       "Uint16": {
-        "le10": { "work": 95000, "latency": 95000 },
-        "le30": { "work": 136000, "latency": 136000 },
-        "le60": { "work": 162000, "latency": 162000 },
-        "le100": { "work": 184000, "latency": 184000 }
+        "le10": { "work": 8965, "latency": 95000 },
+        "le30": { "work": 22759, "latency": 136000 },
+        "le60": { "work": 41669, "latency": 162000 },
+        "le100": { "work": 66679, "latency": 184000 }
       },
       "Uint32": {
-        "le10": { "work": 116000, "latency": 116000 },
-        "le30": { "work": 164000, "latency": 164000 },
-        "le60": { "work": 205000, "latency": 205000 },
-        "le100": { "work": 281000, "latency": 281000 }
+        "le10": { "work": 19027, "latency": 116000 },
+        "le30": { "work": 47543, "latency": 164000 },
+        "le60": { "work": 87166, "latency": 205000 },
+        "le100": { "work": 141194, "latency": 281000 }
       },
       "Uint64": {
-        "le10": { "work": 139000, "latency": 139000 },
-        "le30": { "work": 216000, "latency": 216000 },
-        "le60": { "work": 306000, "latency": 306000 }
+        "le10": { "work": 39436, "latency": 139000 },
+        "le30": { "work": 96604, "latency": 216000 },
+        "le60": { "work": 175918, "latency": 306000 }
       },
       "Uint128": {
-        "le10": { "work": 219000, "latency": 219000 },
-        "le30": { "work": 355000, "latency": 355000 },
-        "le60": { "work": 552000, "latency": 552000 }
+        "le10": { "work": 80627, "latency": 219000 },
+        "le30": { "work": 203479, "latency": 355000 },
+        "le60": { "work": 376452, "latency": 552000 }
       }
     }
   },
@@ -507,40 +507,40 @@
     "numberInputs": -2,
     "nBucketed": {
       "Uint8": {
-        "le10": { "work": 71300, "latency": 71300 },
-        "le30": { "work": 148000, "latency": 148000 },
-        "le60": { "work": 247000, "latency": 247000 },
-        "le100": { "work": 374000, "latency": 374000 }
+        "le10": { "work": 7277, "latency": 71300 },
+        "le30": { "work": 21690, "latency": 148000 },
+        "le60": { "work": 42013, "latency": 247000 },
+        "le100": { "work": 68555, "latency": 374000 }
       },
       "Uint16": {
-        "le10": { "work": 103000, "latency": 103000 },
-        "le30": { "work": 218000, "latency": 218000 },
-        "le60": { "work": 378000, "latency": 378000 },
-        "le100": { "work": 605000, "latency": 605000 }
+        "le10": { "work": 15583, "latency": 103000 },
+        "le30": { "work": 45365, "latency": 218000 },
+        "le60": { "work": 88569, "latency": 378000 },
+        "le100": { "work": 149248, "latency": 605000 }
       },
       "Uint32": {
-        "le10": { "work": 137000, "latency": 137000 },
-        "le30": { "work": 300000, "latency": 300000 },
-        "le60": { "work": 531000, "latency": 531000 },
-        "le100": { "work": 827000, "latency": 827000 }
+        "le10": { "work": 28776, "latency": 137000 },
+        "le30": { "work": 84277, "latency": 300000 },
+        "le60": { "work": 168142, "latency": 531000 },
+        "le100": { "work": 279155, "latency": 827000 }
       },
       "Uint64": {
-        "le10": { "work": 218000, "latency": 218000 },
-        "le30": { "work": 492000, "latency": 492000 },
-        "le60": { "work": 879000, "latency": 879000 }
+        "le10": { "work": 56832, "latency": 218000 },
+        "le30": { "work": 167738, "latency": 492000 },
+        "le60": { "work": 330368, "latency": 879000 }
       },
       "Uint128": {
-        "le10": { "work": 256000, "latency": 256000 },
-        "le30": { "work": 535000, "latency": 535000 },
-        "le60": { "work": 921000, "latency": 921000 }
+        "le10": { "work": 111232, "latency": 256000 },
+        "le30": { "work": 332803, "latency": 535000 },
+        "le60": { "work": 669061, "latency": 921000 }
       },
       "Uint160": {
-        "le10": { "work": 286000, "latency": 286000 },
-        "le30": { "work": 584000, "latency": 584000 },
-        "le60": { "work": 885000, "latency": 885000 }
+        "le10": { "work": 136797, "latency": 286000 },
+        "le30": { "work": 413109, "latency": 584000 },
+        "le60": { "work": 854329, "latency": 885000 }
       },
       "Uint256": {
-        "le10": { "work": 321000, "latency": 321000 },
+        "le10": { "work": 228957, "latency": 321000 },
         "le30": { "work": 586000, "latency": 586000 },
         "le60": { "work": 943000, "latency": 943000 }
       }
@@ -550,16 +550,16 @@
     "supportScalar": true,
     "numberInputs": 2,
     "scalar": {
-      "Uint8": { "work": 495000, "latency": 495000 },
-      "Uint16": { "work": 703000, "latency": 703000 },
-      "Uint32": { "work": 1080000, "latency": 1080000 },
-      "Uint64": { "work": 1921000, "latency": 1921000 }
+      "Uint8": { "work": 20966, "latency": 495000 },
+      "Uint16": { "work": 73944, "latency": 703000 },
+      "Uint32": { "work": 211351, "latency": 1080000 },
+      "Uint64": { "work": 655073, "latency": 1921000 }
     },
     "nonScalar": {
-      "Uint8": { "work": 524000, "latency": 524000 },
-      "Uint16": { "work": 766000, "latency": 766000 },
-      "Uint32": { "work": 1311000, "latency": 1311000 },
-      "Uint64": { "work": 2911000, "latency": 2911000 }
+      "Uint8": { "work": 26501, "latency": 524000 },
+      "Uint16": { "work": 94719, "latency": 766000 },
+      "Uint32": { "work": 291061, "latency": 1311000 },
+      "Uint64": { "work": 982983, "latency": 2911000 }
     }
   }
 }

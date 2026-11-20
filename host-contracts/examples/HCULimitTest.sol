@@ -47,9 +47,10 @@ contract HCULimitTest {
     /// @notice Performs a large number of FHE operations with non-sequential FHE operations.
     /// @dev Should revert due to exceeding the HCU for the transaction.
     function aboveTransactionHCUWithNonSequentialOperations() external {
-        euint64 result;
-        for (uint256 i; i < 10000; i++) {
-            result = FHE.randEuint64();
+        euint128 x = FHE.asEuint128(2);
+        euint128 result;
+        for (uint256 i; i < 30; i++) {
+            result = FHE.mul(x, x);
         }
     }
 }

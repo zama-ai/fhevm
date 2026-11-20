@@ -102,13 +102,26 @@ The carried-depth limit bounds every result, including those of a transaction on
 
 ## HCU costs for common operations
 
+Each operation has two prices. Its latency is the time to its result: it adds to the depth of the result. Its work is
+the machine time it occupies, measured as the inverse of its throughput on a saturated CPU coprocessor: it is charged
+to quotas, to the chain's capacity and to the per-transaction HCU limit. Work is far below latency, because a machine
+runs many operations at once: an 8-bit scalar addition has 84,000 HCU of latency and 1,464 of work.
+
+The tables below give each operation's latency. Both prices of every operation are in
+[`operatorsPrices.json`](https://github.com/zama-ai/fhevm/blob/main/library-solidity/codegen/src/operatorsPrices.json).
+
+The work column and the casts' latency come from the coprocessors' CPU benchmark,
+[`cpu-results.csv`](https://github.com/zama-ai/fhevm/blob/main/library-solidity/codegen/bench/cpu-results.csv),
+which [`prices_from_bench.py`](https://github.com/zama-ai/fhevm/blob/main/library-solidity/codegen/bench/prices_from_bench.py)
+writes into the table.
+
 ### Boolean operations (`ebool`)
 
 | Function name | HCU (scalar) | HCU (non-scalar) |
 | ------------- | ------------ | ---------------- |
 | `and`         | 22,000       | 25,000           |
 | `or`          | 22,000       | 24,000           |
-| `xor`         | 2,000        | 22,000           |
+| `xor`         | 22,000       | 22,000           |
 | `not`         | -            | 2                |
 | `select`      | -            | 55,000           |
 | `randEbool`   | -            | 19,000           |
@@ -205,7 +218,7 @@ HCU increase with the bit-width of the encrypted integer type. Below are the det
 | `lt`                 | 83,000       | 117,000          |
 | `min`                | 117,000      | 182,000          |
 | `max`                | 117,000      | 180,000          |
-| `neg`                | -            | 131,000          |
+| `neg`                | -            | 95,000           |
 | `not`                | -            | 32               |
 | `select`             | -            | 55,000           |
 | `mulDiv`             | 1,080,000    | 1,311,000        |
@@ -324,17 +337,17 @@ When using `eaddress` (internally represented as `euint160`), the HCU costs for 
 
 | Function name | HCU (scalar) | HCU (non-scalar) |
 | ------------- | ------------ | ---------------- |
-| `eq`          | 115,000      | 125,000          |
-| `ne`          | 115,000      | 124,000          |
+| `eq`          | 117,000      | 137,000          |
+| `ne`          | 117,000      | 136,000          |
 | `select`      | -            | 83,000           |
 
 For `isIn` on `eaddress`, see the n-ary table above.
 
 ## Additional Operations
 
-| Function name    | HCU |
-| ---------------- | --- |
-| `cast`           | 32  |
-| `trivialEncrypt` | 32  |
+| Function name    | HCU                   |
+| ---------------- | --------------------- |
+| `cast`           | 102, or 32 to `ebool` |
+| `trivialEncrypt` | 32                    |
 
 `mulDiv` is priced as a multiplication plus a division on the doubled width (`mulDiv` on `euint64` costs about a `mul` plus a `div` on 128 bits), which is why it is the most expensive binary operator.

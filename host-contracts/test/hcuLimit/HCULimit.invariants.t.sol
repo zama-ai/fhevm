@@ -27,7 +27,7 @@ contract HCULimitInvariantHandler is Test {
     bytes32 internal constant INPUT_HANDLE = bytes32(uint256(0xA11CE));
     uint48 internal constant NO_CAP = type(uint48).max;
     uint256 internal constant MAX_BPS = 10_000;
-    uint256 internal constant CAST_HCU = 32;
+    uint256 internal constant CAST_HCU = 6;
 
     uint256 internal resultNonce = 1;
     bool public uncappedViolation;
@@ -137,7 +137,7 @@ contract HCULimitInvariantHandler is Test {
 
     /**
      * @dev Accounting-focused burst:
-     *      - uses `checkHCUForCast` (fixed 32 HCU/op) for deterministic delta checks;
+     *      - uses `checkHCUForCast` (fixed 6 HCU of work per operation) for deterministic delta checks;
      *      - keeps bursts small on purpose (not a cap-exhaustion stress test).
      */
     function _runBurst(address caller, uint256 ops) internal {

@@ -27,8 +27,11 @@ contract HCULimitQuotasIntegrationTest is HostContractsDeployerTestUtils {
     address private constant OWNER = address(0xBEEF);
     uint16 private constant DEFAULT_QUOTA = 0;
     uint16 private constant DAPP_QUOTA = 3;
-    uint48 private constant ADD_HCU = 84_000;
-    uint48 private constant RAND_HCU = 23_000;
+    // An 8-bit scalar addition and an 8-bit random value: their work and latency in HCU.
+    uint48 private constant ADD_WORK = 1_464;
+    uint48 private constant ADD_LATENCY = 84_000;
+    uint48 private constant RAND_WORK = 399;
+    uint48 private constant RAND_LATENCY = 23_000;
     bytes32 private constant EXECUTOR_STORAGE_SLOT = 0x4613e1771f6b755d243e536fb5a23c5b15e2826575fee921e8fe7a22a760c800;
 
     ACL private acl;
@@ -53,9 +56,9 @@ contract HCULimitQuotasIntegrationTest is HostContractsDeployerTestUtils {
         vm.prank(fhevmExecutorAdd);
         acl.allowTransient(input, address(dapp));
         vm.prank(OWNER);
-        hcuConfigurator.setMaxHCUDepthPerTx(ADD_HCU);
+        hcuConfigurator.setMaxHCUDepthPerTx(ADD_LATENCY);
         vm.prank(OWNER);
-        hcuConfigurator.setMaxHCUPerTx(ADD_HCU);
+        hcuConfigurator.setMaxHCUPerTx(ADD_WORK);
         bytes32 expectedResult = _addResult();
         assertFalse(acl.isAllowed(expectedResult, address(dapp)));
 
@@ -72,14 +75,14 @@ contract HCULimitQuotasIntegrationTest is HostContractsDeployerTestUtils {
         assertEq(dapp.add(input), expectedResult);
         assertTrue(acl.isAllowed(expectedResult, address(dapp)));
         (, , uint48 usedHCU) = hcuLimit.getQuota(DAPP_QUOTA);
-        assertEq(usedHCU, ADD_HCU);
+        assertEq(usedHCU, ADD_WORK);
     }
 
     function test_fheRandRefusesADappInAStoppedQuotaWithoutSideEffectsThenSucceeds() public {
         vm.prank(OWNER);
-        hcuConfigurator.setMaxHCUDepthPerTx(RAND_HCU);
+        hcuConfigurator.setMaxHCUDepthPerTx(RAND_LATENCY);
         vm.prank(OWNER);
-        hcuConfigurator.setMaxHCUPerTx(RAND_HCU);
+        hcuConfigurator.setMaxHCUPerTx(RAND_WORK);
         uint256 counterBefore = uint256(vm.load(fhevmExecutorAdd, EXECUTOR_STORAGE_SLOT));
         bytes16 expectedSeed = _seed(counterBefore);
         bytes32 expectedResult = _withMetadata(
@@ -102,7 +105,7 @@ contract HCULimitQuotasIntegrationTest is HostContractsDeployerTestUtils {
         assertEq(uint256(vm.load(fhevmExecutorAdd, EXECUTOR_STORAGE_SLOT)), counterBefore + 1);
         assertTrue(acl.isAllowed(expectedResult, address(dapp)));
         (, , uint48 usedHCU) = hcuLimit.getQuota(DAPP_QUOTA);
-        assertEq(usedHCU, RAND_HCU);
+        assertEq(usedHCU, RAND_WORK);
     }
 
     function _admitDapp() private {

@@ -211,8 +211,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      *      quota is stopped, so unknown contracts stay refused, and allowlisted contracts share the global cap in the
      *      allowlist quota, or are unmetered if also block-whitelisted. Otherwise the default quota gets the global cap,
      *      and the upgrade proposal assigns any block-whitelisted contract to a quota that is not metered. The cap
-     *      becomes maximum and decay per block, which allows the same HCU per block. The carried-depth limit
-     *      starts disabled, and the capacity unmetered.
+     *      becomes maximum and decay per block. Quotas count work, which is below the old prices, so the same number
+     *      admits more operations: the upgrade proposal sets quotas in work. The carried-depth limit starts
+     *      disabled, and the capacity unmetered.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer

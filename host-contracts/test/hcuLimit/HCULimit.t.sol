@@ -78,6 +78,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     address internal constant BASIC = address(0xD1);
     uint16 internal constant ALLOWLIST_QUOTA = 1;
     uint16 internal constant BLOCK_WHITELIST_QUOTA = 2;
+    /// @dev Work and latency of the operation `_add` meters. It is fixed, so the meter tests do not follow the prices.
+    uint48 internal constant ADD_HCU = 84_000;
     bytes32 internal constant HCU_LIMIT_STORAGE_LOCATION =
         0xc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad6500;
 
@@ -201,11 +203,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 84000);
-            vm.assertLe(totalTransactionHCU, 172000);
+            vm.assertGe(totalTransactionHCU, 1464);
+            vm.assertLe(totalTransactionHCU, 26_487);
         } else {
-            vm.assertGe(totalTransactionHCU, 88000);
-            vm.assertLe(totalTransactionHCU, 259000);
+            vm.assertGe(totalTransactionHCU, 1468);
+            vm.assertLe(totalTransactionHCU, 28_674);
         }
     }
 
@@ -219,11 +221,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 84000);
-            vm.assertLe(totalTransactionHCU, 172000);
+            vm.assertGe(totalTransactionHCU, 1380);
+            vm.assertLe(totalTransactionHCU, 26_661);
         } else {
-            vm.assertGe(totalTransactionHCU, 91000);
-            vm.assertLe(totalTransactionHCU, 260000);
+            vm.assertGe(totalTransactionHCU, 1711);
+            vm.assertLe(totalTransactionHCU, 28_642);
         }
     }
 
@@ -236,11 +238,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 122000);
-            vm.assertLe(totalTransactionHCU, 696000);
+            vm.assertGe(totalTransactionHCU, 2324);
+            vm.assertLe(totalTransactionHCU, 233_154);
         } else {
-            vm.assertGe(totalTransactionHCU, 150000);
-            vm.assertLe(totalTransactionHCU, 1686000);
+            vm.assertGe(totalTransactionHCU, 4037);
+            vm.assertLe(totalTransactionHCU, 964_778);
         }
     }
 
@@ -262,8 +264,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheDiv(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 210000);
-        vm.assertLe(totalTransactionHCU, 1225000);
+        vm.assertGe(totalTransactionHCU, 5429);
+        vm.assertLe(totalTransactionHCU, 575_908);
     }
 
     function test_PayFheRemWorksAsExpectedForSupportedTypes(uint8 resultType) public {
@@ -274,8 +276,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheRem(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 440000);
-        vm.assertLe(totalTransactionHCU, 1943000);
+        vm.assertGe(totalTransactionHCU, 9942);
+        vm.assertLe(totalTransactionHCU, 754_285);
     }
 
     function test_checkHCUForFheBitAndWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
@@ -285,8 +287,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheBitAnd(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 22000);
-        vm.assertLe(totalTransactionHCU, 38000);
+        vm.assertGe(totalTransactionHCU, 132);
+        vm.assertLe(totalTransactionHCU, 16_650);
     }
 
     function test_checkHCUForFheBitOrWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
@@ -296,8 +298,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheBitOr(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 22000);
-        vm.assertLe(totalTransactionHCU, 38000);
+        vm.assertGe(totalTransactionHCU, 133);
+        vm.assertLe(totalTransactionHCU, 16_507);
     }
 
     function test_PayFheBitXorWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
@@ -306,8 +308,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheBitXor(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 22000);
-        vm.assertLe(totalTransactionHCU, 39000);
+        vm.assertGe(totalTransactionHCU, 133);
+        vm.assertLe(totalTransactionHCU, 16_727);
     }
 
     function test_checkHCUForFheShlWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
@@ -318,11 +320,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 32000);
-            vm.assertLe(totalTransactionHCU, 39000);
+            vm.assertGe(totalTransactionHCU, 271);
+            vm.assertLe(totalTransactionHCU, 8354);
         } else {
-            vm.assertGe(totalTransactionHCU, 92000);
-            vm.assertLe(totalTransactionHCU, 378000);
+            vm.assertGe(totalTransactionHCU, 2861);
+            vm.assertLe(totalTransactionHCU, 179_173);
         }
     }
 
@@ -334,11 +336,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 32000);
-            vm.assertLe(totalTransactionHCU, 38000);
+            vm.assertGe(totalTransactionHCU, 264);
+            vm.assertLe(totalTransactionHCU, 8354);
         } else {
-            vm.assertGe(totalTransactionHCU, 91000);
-            vm.assertLe(totalTransactionHCU, 369000);
+            vm.assertGe(totalTransactionHCU, 2835);
+            vm.assertLe(totalTransactionHCU, 177_283);
         }
     }
 
@@ -350,11 +352,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 31000);
-            vm.assertLe(totalTransactionHCU, 38000);
+            vm.assertGe(totalTransactionHCU, 524);
+            vm.assertLe(totalTransactionHCU, 16_723);
         } else {
-            vm.assertGe(totalTransactionHCU, 91000);
-            vm.assertLe(totalTransactionHCU, 378000);
+            vm.assertGe(totalTransactionHCU, 2835);
+            vm.assertLe(totalTransactionHCU, 172_188);
         }
     }
 
@@ -366,11 +368,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 31000);
-            vm.assertLe(totalTransactionHCU, 40000);
+            vm.assertGe(totalTransactionHCU, 527);
+            vm.assertLe(totalTransactionHCU, 16_746);
         } else {
-            vm.assertGe(totalTransactionHCU, 91000);
-            vm.assertLe(totalTransactionHCU, 378000);
+            vm.assertGe(totalTransactionHCU, 2839);
+            vm.assertLe(totalTransactionHCU, 171_715);
         }
     }
 
@@ -380,8 +382,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheEq(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 25000);
-        vm.assertLe(totalTransactionHCU, 152000);
+        vm.assertGe(totalTransactionHCU, 132);
+        vm.assertLe(totalTransactionHCU, 22_277);
     }
 
     function test_checkHCUForFheNeWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
@@ -390,8 +392,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheNe(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 23000);
-        vm.assertLe(totalTransactionHCU, 150000);
+        vm.assertGe(totalTransactionHCU, 132);
+        vm.assertLe(totalTransactionHCU, 22_430);
     }
 
     function test_checkHCUForFheGeWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {
@@ -402,11 +404,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 52000);
-            vm.assertLe(totalTransactionHCU, 149000);
+            vm.assertGe(totalTransactionHCU, 408);
+            vm.assertLe(totalTransactionHCU, 6532);
         } else {
-            vm.assertGe(totalTransactionHCU, 63000);
-            vm.assertLe(totalTransactionHCU, 210000);
+            vm.assertGe(totalTransactionHCU, 676);
+            vm.assertLe(totalTransactionHCU, 17_399);
         }
     }
 
@@ -418,11 +420,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 52000);
-            vm.assertLe(totalTransactionHCU, 150000);
+            vm.assertGe(totalTransactionHCU, 402);
+            vm.assertLe(totalTransactionHCU, 6501);
         } else {
-            vm.assertGe(totalTransactionHCU, 59000);
-            vm.assertLe(totalTransactionHCU, 218000);
+            vm.assertGe(totalTransactionHCU, 691);
+            vm.assertLe(totalTransactionHCU, 17_300);
         }
     }
 
@@ -434,11 +436,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 58000);
-            vm.assertLe(totalTransactionHCU, 150000);
+            vm.assertGe(totalTransactionHCU, 405);
+            vm.assertLe(totalTransactionHCU, 6402);
         } else {
-            vm.assertGe(totalTransactionHCU, 58000);
-            vm.assertLe(totalTransactionHCU, 218000);
+            vm.assertGe(totalTransactionHCU, 700);
+            vm.assertLe(totalTransactionHCU, 17_207);
         }
     }
 
@@ -450,11 +452,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 52000);
-            vm.assertLe(totalTransactionHCU, 149000);
+            vm.assertGe(totalTransactionHCU, 413);
+            vm.assertLe(totalTransactionHCU, 6459);
         } else {
-            vm.assertGe(totalTransactionHCU, 59000);
-            vm.assertLe(totalTransactionHCU, 215000);
+            vm.assertGe(totalTransactionHCU, 688);
+            vm.assertLe(totalTransactionHCU, 17_609);
         }
     }
 
@@ -466,11 +468,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 84000);
-            vm.assertLe(totalTransactionHCU, 186000);
+            vm.assertGe(totalTransactionHCU, 952);
+            vm.assertLe(totalTransactionHCU, 15_404);
         } else {
-            vm.assertGe(totalTransactionHCU, 119000);
-            vm.assertLe(totalTransactionHCU, 289000);
+            vm.assertGe(totalTransactionHCU, 2372);
+            vm.assertLe(totalTransactionHCU, 46_192);
         }
     }
 
@@ -482,11 +484,11 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
 
         if (scalarByte == 0x01) {
-            vm.assertGe(totalTransactionHCU, 89000);
-            vm.assertLe(totalTransactionHCU, 180000);
+            vm.assertGe(totalTransactionHCU, 966);
+            vm.assertLe(totalTransactionHCU, 15_457);
         } else {
-            vm.assertGe(totalTransactionHCU, 121000);
-            vm.assertLe(totalTransactionHCU, 290000);
+            vm.assertGe(totalTransactionHCU, 2376);
+            vm.assertLe(totalTransactionHCU, 45_573);
         }
     }
 
@@ -496,8 +498,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheNeg(FheType(resultType), mockLHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 79000);
-        vm.assertLe(totalTransactionHCU, 269000);
+        vm.assertGe(totalTransactionHCU, 1361);
+        vm.assertLe(totalTransactionHCU, 56_005);
     }
 
     function test_checkHCUForFheNotWorksAsExpectedForSupportedTypes(uint8 resultType) public {
@@ -506,8 +508,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheNot(FheType(resultType), mockLHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 2);
-        vm.assertLe(totalTransactionHCU, 130);
+        vm.assertGe(totalTransactionHCU, 1);
+        vm.assertLe(totalTransactionHCU, 5);
     }
 
     function test_checkHCUForCastWorksAsExpectedForSupportedTypes(uint8 resultType) public {
@@ -516,7 +518,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForCast(FheType(resultType), mockLHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertEq(totalTransactionHCU, 32);
+        vm.assertGe(totalTransactionHCU, 6);
+        vm.assertLe(totalTransactionHCU, 32);
     }
 
     function test_CheckGasLimitForIfThenElseWorksAsExpectedForSupportedTypes(uint8 resultType) public {
@@ -525,8 +528,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForIfThenElse(FheType(resultType), mockLHS, mockMiddle, mockRHS, mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 55000);
-        vm.assertLe(totalTransactionHCU, 108000);
+        vm.assertGe(totalTransactionHCU, 408);
+        vm.assertLe(totalTransactionHCU, 52_637);
     }
 
     function test_checkHCUForFheRandWorksAsExpectedForSupportedTypes(uint8 resultType) public {
@@ -535,8 +538,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheRand(FheType(resultType), mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 19000);
-        vm.assertLe(totalTransactionHCU, 30000);
+        vm.assertGe(totalTransactionHCU, 100);
+        vm.assertLe(totalTransactionHCU, 12_734);
     }
 
     function test_checkHCUForFheRandBoundedWorksAsExpectedForSupportedTypes(uint8 resultType) public {
@@ -545,8 +548,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheRandBounded(FheType(resultType), mockResult, fhevmExecutor);
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 23000);
-        vm.assertLe(totalTransactionHCU, 30000);
+        vm.assertGe(totalTransactionHCU, 408);
+        vm.assertLe(totalTransactionHCU, 12_788);
     }
 
     function test_ZeroOperandOperationsRevertAboveDepthLimit(
@@ -554,8 +557,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint8 typeIndex,
         bool unmetered
     ) public {
-        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, typeIndex);
-        _configureZeroOperandDepthLimit(uint48(opHCU - 1), unmetered);
+        (bytes memory callData, , uint256 latency) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(uint48(latency - 1), unmetered);
         _assertZeroOperandDepthRevert(callData);
     }
 
@@ -564,15 +567,15 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint8 typeIndex,
         bool unmetered
     ) public {
-        (bytes memory callData, ) = _zeroOperandOperation(operationKind, typeIndex);
+        (bytes memory callData, , ) = _zeroOperandOperation(operationKind, typeIndex);
         _configureZeroOperandDepthLimit(0, unmetered);
         _assertZeroOperandDepthRevert(callData);
     }
 
     function test_ZeroOperandOperationsAcceptAtDepthLimit(uint8 operationKind, uint8 typeIndex, bool unmetered) public {
-        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, typeIndex);
-        _configureZeroOperandDepthLimit(uint48(opHCU), unmetered);
-        _assertZeroOperandSuccess(callData, opHCU, unmetered);
+        (bytes memory callData, uint256 work, uint256 latency) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(uint48(latency), unmetered);
+        _assertZeroOperandSuccess(callData, work, latency, unmetered);
     }
 
     function test_ZeroOperandOperationsAcceptBelowDepthLimit(
@@ -580,36 +583,42 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint8 typeIndex,
         bool unmetered
     ) public {
-        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, typeIndex);
-        _configureZeroOperandDepthLimit(uint48(opHCU + 1), unmetered);
-        _assertZeroOperandSuccess(callData, opHCU, unmetered);
+        (bytes memory callData, uint256 work, uint256 latency) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(uint48(latency + 1), unmetered);
+        _assertZeroOperandSuccess(callData, work, latency, unmetered);
     }
 
     function test_ZeroOperandOperationsIncludeDepthInDependentCast(uint8 operationKind, bool unmetered) public {
-        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, 0);
-        _configureZeroOperandDepthLimit(uint48(opHCU + 31), unmetered);
-        _assertZeroOperandSuccess(callData, opHCU, unmetered);
+        (bytes memory callData, uint256 work, uint256 latency) = _zeroOperandOperation(operationKind, 0);
+        // A 16-bit cast: 6 HCU of work, 102 of latency.
+        (uint256 castWork, uint256 castLatency) = (6, 102);
+        _configureZeroOperandDepthLimit(uint48(latency + castLatency - 1), unmetered);
+        _assertZeroOperandSuccess(callData, work, latency, unmetered);
 
         vm.prank(fhevmExecutor);
         vm.expectRevert(HCULimit.HCUTransactionDepthLimitExceeded.selector);
         hcuLimit.checkHCUForCast(FheType.Uint16, mockResult, mockLHS, address(0xBEEF));
 
-        assertEq(hcuLimit.getHCUForTransaction(), opHCU);
+        assertEq(hcuLimit.getHCUForTransaction(), work);
         (, , uint48 usedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        assertEq(usedHCU, unmetered ? 0 : opHCU);
+        assertEq(usedHCU, unmetered ? 0 : work);
 
         vm.prank(owner);
-        hcuConfigurator.setMaxHCUDepthPerTx(uint48(opHCU + 32));
+        hcuConfigurator.setMaxHCUDepthPerTx(uint48(latency + castLatency));
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForCast(FheType.Uint16, mockResult, mockLHS, address(0xBEEF));
 
-        assertEq(hcuLimit.getHCUForHandle(mockLHS), opHCU + 32);
-        assertEq(hcuLimit.getHCUForTransaction(), opHCU + 32);
+        assertEq(hcuLimit.getHCUForHandle(mockLHS), latency + castLatency);
+        assertEq(hcuLimit.getHCUForTransaction(), work + castWork);
         (, , usedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        assertEq(usedHCU, unmetered ? 0 : opHCU + 32);
+        assertEq(usedHCU, unmetered ? 0 : work + castWork);
     }
 
-    function _zeroOperandOperation(uint8 operationKind, uint8 typeIndex) internal view returns (bytes memory, uint256) {
+    /// @dev Returns the call, its work and its latency.
+    function _zeroOperandOperation(
+        uint8 operationKind,
+        uint8 typeIndex
+    ) internal view returns (bytes memory, uint256, uint256) {
         operationKind %= 3;
         if (operationKind == 0) {
             FheType[8] memory types = [
@@ -627,6 +636,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
                     HCULimitOperators.checkHCUForTrivialEncrypt,
                     (types[typeIndex % types.length], mockResult, address(0xBEEF))
                 ),
+                1,
                 32
             );
         }
@@ -640,7 +650,9 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
             FheType.Uint128,
             FheType.Uint256
         ];
-        uint256[7] memory prices = [uint256(19000), 23000, 23000, 24000, 24000, 25000, 30000];
+        uint256[7] memory randWork = [uint256(100), 399, 814, 1604, 3185, 6372, 12734];
+        uint256[7] memory boundedWork = [uint256(0), 408, 799, 1599, 3193, 6380, 12788];
+        uint256[7] memory latencies = [uint256(19000), 23000, 23000, 24000, 24000, 25000, 30000];
         uint256 index = operationKind == 1
             ? typeIndex % randomTypes.length
             : 1 + (typeIndex % (randomTypes.length - 1));
@@ -650,7 +662,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
                 HCULimitOperators.checkHCUForFheRandBounded,
                 (randomTypes[index], mockResult, address(0xBEEF))
             );
-        return (callData, prices[index]);
+        return (callData, operationKind == 1 ? randWork[index] : boundedWork[index], latencies[index]);
     }
 
     /// @dev The caller computes in the metered default quota, or, if `unmetered`, in an unmetered quota of its own.
@@ -676,14 +688,15 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         assertEq(usedHCU, 0);
     }
 
-    function _assertZeroOperandSuccess(bytes memory callData, uint256 opHCU, bool unmetered) internal {
+    /// @dev The result's depth grows by the latency; the transaction and the quota are charged the work.
+    function _assertZeroOperandSuccess(bytes memory callData, uint256 work, uint256 latency, bool unmetered) internal {
         vm.prank(fhevmExecutor);
         (bool success, ) = address(hcuLimit).call(callData);
         assertTrue(success);
-        assertEq(hcuLimit.getHCUForHandle(mockResult), opHCU);
-        assertEq(hcuLimit.getHCUForTransaction(), opHCU);
+        assertEq(hcuLimit.getHCUForHandle(mockResult), latency);
+        assertEq(hcuLimit.getHCUForTransaction(), work);
         (, , uint48 usedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        assertEq(usedHCU, unmetered ? 0 : opHCU);
+        assertEq(usedHCU, unmetered ? 0 : work);
     }
 
     function test_OnlyFHEVMExecutorCanCallcheckHCUForFheAdd(address randomAccount) public {
@@ -1486,8 +1499,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         hcuLimit.checkHCUForFheIsIn(FheType(resultType), mockLHS, set, mockResult, fhevmExecutor);
 
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 60000);
-        vm.assertLe(totalTransactionHCU, 1_300_000);
+        vm.assertGe(totalTransactionHCU, 7277);
+        vm.assertLe(totalTransactionHCU, 228_957);
     }
 
     function test_OnlyFHEVMExecutorCanCallcheckHCUForFheIsIn(address randomAccount) public {
@@ -1541,11 +1554,12 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         hcuLimit.checkHCUForFheSum(FheType(resultType), values, mockResult, fhevmExecutor);
 
         uint256 totalTransactionHCU = hcuLimit.getHCUForTransaction();
-        vm.assertGe(totalTransactionHCU, 88000);
-        vm.assertLe(totalTransactionHCU, 259000);
+        vm.assertGe(totalTransactionHCU, 3853);
+        vm.assertLe(totalTransactionHCU, 80_627);
     }
 
-    /// FheSum and FheIsIn record their result at the operation's price above their deepest input.
+    /// FheSum and FheIsIn record their result at the operation's latency above their deepest input. On 8 bits with
+    ///      at most 10 elements, FheSum's latency is 90,900 HCU and FheIsIn's 71,300.
     function test_arrayOperationsRecordResultDepthAboveDeepestInput() public {
         bytes32[] memory values = new bytes32[](3);
         for (uint256 i = 0; i < values.length; i++) {
@@ -1555,15 +1569,13 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
 
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheSum(FheType.Uint8, values, mockResult, fhevmExecutor);
-        uint256 sumPrice = hcuLimit.getHCUForTransaction();
-        assertEq(hcuLimit.getHCUForHandle(mockResult), sumPrice + 7_000);
+        assertEq(hcuLimit.getHCUForHandle(mockResult), 90_900 + 7_000);
 
         hcuLimit.setHCUForHandle(mockLHS, 9_000);
         bytes32 isInResult = bytes32(uint256(0xBEEF));
         vm.prank(fhevmExecutor);
         hcuLimit.checkHCUForFheIsIn(FheType.Uint8, mockLHS, values, isInResult, fhevmExecutor);
-        uint256 isInPrice = hcuLimit.getHCUForTransaction() - sumPrice;
-        assertEq(hcuLimit.getHCUForHandle(isInResult), isInPrice + 9_000);
+        assertEq(hcuLimit.getHCUForHandle(isInResult), 71_300 + 9_000);
     }
 
     function test_OnlyFHEVMExecutorCanCallcheckHCUForFheSum(address randomAccount) public {
@@ -1641,8 +1653,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     }
 
     function test_quotaAllowsUsageUpToItsMaximum() public {
-        // Cast costs 32 HCU, so a cap of 64 allows two casts and rejects the third.
-        _setQuotaPerBlock(DEFAULT_QUOTA, 64);
+        // An 8-bit cast costs 6 HCU of work, so a cap of 12 allows two casts and rejects the third.
+        _setQuotaPerBlock(DEFAULT_QUOTA, 12);
 
         vm.startPrank(fhevmExecutor);
         hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, bytes32(uint256(0x2001)), address(0x1234));
@@ -2302,9 +2314,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
 
     /// @dev Expects one 84,000 HCU addition by `caller` to exceed its quota with `retryAfterBlocks`.
     function _expectQuotaExceeded(address caller, uint16 quotaId, uint256 retryAfterBlocks, uint256 resultId) internal {
-        vm.prank(fhevmExecutor);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaExceeded.selector, caller, quotaId, retryAfterBlocks));
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(resultId), caller);
+        _add(caller, resultId);
     }
 
     function _assign(uint16 quotaId, address account) internal {
@@ -2353,15 +2364,17 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
 
     /// @dev Expects one 84,000 HCU addition by `caller` to revert because its quota is paused.
     function _expectQuotaPaused(address caller, uint16 quotaId) internal {
-        vm.prank(fhevmExecutor);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaPaused.selector, caller, quotaId));
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x9001)), caller);
+        _add(caller, 0x9001);
     }
 
     /// @dev One 84,000 HCU addition by `caller`, written to `resultId`.
     function _add(address caller, uint256 resultId) internal {
-        vm.prank(fhevmExecutor);
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(resultId), caller);
+        bytes32[] memory inputs = new bytes32[](2);
+        inputs[0] = mockLHS;
+        inputs[1] = mockRHS;
+        // Hook 2 meters a two-input operation; a cost holds work in its high 32 bits and latency in its low 32 bits.
+        hcuLimit.meterForTest(2, (uint256(ADD_HCU) << 32) | ADD_HCU, caller, inputs, bytes32(resultId));
     }
 
     function _mockPauser(address pauser) internal returns (address) {
@@ -2432,10 +2445,9 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         uint256 retryAfterBlocks,
         uint256 resultId
     ) internal {
-        vm.prank(fhevmExecutor);
         vm.expectRevert(
             abi.encodeWithSelector(HCULimit.HCUChainLoadTooHigh.selector, caller, quotaId, retryAfterBlocks)
         );
-        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(resultId), caller);
+        _add(caller, resultId);
     }
 }
