@@ -37,31 +37,35 @@ jobs:
   roundtrip:
     name: coprocessor-db-rollback-check/roundtrip
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     permissions:
       contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to pull the db-migration image from ghcr.io
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
 
-      - name: Setup Rust
-        uses: ./.github/actions/setup_rust
-        with:
-          toolchain-dir: coprocessor/fhevm-engine
+      - name: Log in to ghcr.io
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      # Same version and features as the db-migration image, so the test runs
-      # the sqlx the migrations are applied with.
-      - name: Cache sqlx-cli
-        id: sqlx-cli-cache
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
-        with:
-          path: ~/.cargo/bin/sqlx
-          key: sqlx-cli-0.7.2-postgres-rustls-${{ runner.os }}-${{ hashFiles('coprocessor/fhevm-engine/rust-toolchain.toml') }}
-
-      - name: Install sqlx-cli
-        if: steps.sqlx-cli-cache.outputs.cache-hit != 'true'
-        run: cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres,rustls --locked
+      # The test must run the sqlx build the migrations are applied with. That
+      # binary is in the db-migration image the rollback image is built on
+      # (DB_MIGRATION_TAG in the Dockerfile), so it is copied from there instead
+      # of being compiled here.
+      - name: Take sqlx-cli from the db-migration image
+        run: |
+          tag=$(sed -n 's/^ARG DB_MIGRATION_TAG=//p' coprocessor-db-rollback/Dockerfile)
+          test -n "$tag"
+          image="ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${tag}"
+          echo "db-migration image: ${image}"
+          id=$(docker create "${image}")
+          mkdir -p "${HOME}/.local/bin"
+          docker cp "${id}:/usr/local/bin/sqlx" "${HOME}/.local/bin/sqlx"
+          docker rm "${id}" >/dev/null
+          chmod +x "${HOME}/.local/bin/sqlx"
+          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+          "${HOME}/.local/bin/sqlx" --version
 
       - name: Round trip against a throwaway Postgres
         run: coprocessor-db-rollback/tests/roundtrip.sh
