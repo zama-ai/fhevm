@@ -10,9 +10,9 @@ use kms_connector_api::{
     HandleEntry as ConnectorHandle, RequestValidity as ConnectorValidity, UserDecryptionPayload,
     UserDecryptionRequest,
 };
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
-use super::{Reply, read_json};
+use super::{Reply, read_json, u64_from_string_or_number};
 use crate::App;
 use crate::config::HttpConfig;
 use crate::endpoint::ApiError;
@@ -21,8 +21,6 @@ use crate::endpoint::validate::{self, Invalid};
 use crate::metrics::FlowName;
 
 pub const ATTESTATION_TYPE: &str = "eip712-unified-user-decrypt-v1";
-/// The connector's longest `requestValidity.durationSeconds`: one year.
-const MAX_DURATION_SECONDS: u64 = 365 * 24 * 60 * 60;
 
 /// Request body. Hex fields are typed: length and format are checked by deserialisation.
 ///
@@ -66,22 +64,6 @@ pub struct RequestValidity {
     pub duration_seconds: u64,
 }
 
-/// The SDK sends these as decimal strings; numbers are accepted too.
-fn u64_from_string_or_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Raw {
-        Number(u64),
-        Text(String),
-    }
-    match Raw::deserialize(deserializer)? {
-        Raw::Number(value) => Ok(value),
-        Raw::Text(text) => text
-            .parse()
-            .map_err(|_| serde::de::Error::custom("must be a decimal integer")),
-    }
-}
-
 /// The current relayer's rules plus the connector's cheap handle rules. `now` in seconds since the epoch.
 pub fn validate(request: &UserDecryptRequest, http: &HttpConfig, now: u64) -> Result<(), Invalid> {
     validate::expect(
@@ -110,29 +92,12 @@ pub fn validate(request: &UserDecryptRequest, http: &HttpConfig, now: u64) -> Re
         return Err(Invalid::new("payload.publicKey", "must not be empty"));
     }
     let validity = &payload.request_validity;
-    if validity.duration_seconds > MAX_DURATION_SECONDS {
-        return Err(Invalid::new(
-            "payload.requestValidity.durationSeconds",
-            format!("at most {MAX_DURATION_SECONDS} seconds"),
-        )
-        .with_value(validity.duration_seconds));
-    }
-    if validity.start_timestamp > now {
-        return Err(Invalid::new(
-            "payload.requestValidity.startTimestamp",
-            "must not be in the future",
-        ));
-    }
-    if validity
-        .start_timestamp
-        .saturating_add(validity.duration_seconds)
-        <= now
-    {
-        return Err(Invalid::new(
-            "payload.requestValidity",
-            "window has already expired",
-        ));
-    }
+    validate::request_validity(
+        "payload.requestValidity",
+        validity.start_timestamp,
+        validity.duration_seconds,
+        now,
+    )?;
     validate::extra_data("payload.extraData", &payload.extra_data)
 }
 
@@ -219,6 +184,7 @@ pub(crate) mod tests {
     use alloy::primitives::address;
 
     use super::*;
+    use crate::endpoint::validate::MAX_DURATION_SECONDS;
     use crate::endpoint::validate::tests::handle;
     use crate::kms_aggregator::mock::EXTRA_DATA_V2;
 

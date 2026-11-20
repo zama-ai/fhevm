@@ -11,11 +11,12 @@ import type {
   ReconstructPadsModuleParameters,
   ReconstructPadsParameters,
 } from './types.js';
+import type { KmsPadDecryptionEip712Domain } from '../../kms/kmsPadDecryptResponseEip712Types.js';
 import { assertIsBytes32Hex, assertIsBytes65Hex, assertIsBytesHex, bytesToHex, hexToBytes } from '../../base/bytes.js';
 import { asUint32Number } from '../../base/uint.js';
-import { createKmsEip712Domain } from '../../kms/createKmsEip712Domain.js';
 import { createKmsExtraDataFromBytesHex, EXTRA_DATA_V2 } from '../../kms/kmsExtraData-p.js';
 import {
+  createKmsPadDecryptionEip712Domain,
   kmsPadDecryptResponseEip712PrimaryType,
   kmsPadDecryptResponseEip712Types,
   kmsPadShareEip712PrimaryType,
@@ -47,12 +48,14 @@ export const encryptWithPadModule: EncryptWithPadModuleFactory = (runtime: Fhevm
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// RFC-030 client-side processing of pad decryption responses, mock only (tech-spec#547).
+// RFC-030 client-side processing of pad decryption responses, mock only (tech-spec#547, #564).
 //
 // The production module delegates all of it to the TKMS WASM (`process_pad_decryption_resp`); this emulates it for
-// the cleartext encoding. For each response: verify its transport signature against the KMS signers of the
-// request's context, decrypt it, and verify every share on its own (signature, context, party, degree, encoding);
-// an invalid response is skipped. Then, label by label, select at least 2t+1 shares from distinct responses that
+// the cleartext encoding. Every signature is under the `fhevm-pad-decryption` EIP-712 domain, anchored on
+// ProtocolConfig. For each response: verify its transport signature against the KMS signers of the request's
+// context, decrypt it, check that the payload's `extraData` names the request's context and epoch, and verify every
+// share on its own (signature over its fields and the payload's `extraData`, party, degree, encoding); an invalid
+// response is skipped. Then, label by label, select at least 2t+1 shares from distinct responses that
 // carry the same `sessionId` and the same `rawShares`, from distinct parties, and reconstruct that label's pad. The
 // selection may differ from label to label.
 //
@@ -72,10 +75,12 @@ type VerifiedResponse = {
 
 type VerifyContext = {
   readonly parameters: ReconstructPadsParameters;
-  readonly domain: ReturnType<typeof createKmsEip712Domain>;
+  readonly domain: KmsPadDecryptionEip712Domain;
   /** The context's signers in party order: `signers[partyId - 1]`, lowercase. */
   readonly signersByParty: readonly string[];
+  /** The context and epoch the request's `extraData` names. */
   readonly kmsContextId: Uint256BigInt;
+  readonly kmsEpochId: Uint256BigInt;
   readonly padLengthByLabel: ReadonlyMap<string, number>;
 };
 
@@ -88,7 +93,7 @@ async function reconstructPads(
   ethereum: EthereumModule,
   parameters: ReconstructPadsParameters,
 ): Promise<ReconstructedPads> {
-  const { responses, witnesses, mpcThreshold } = parameters;
+  const { responses, pads, mpcThreshold } = parameters;
   if (!Number.isInteger(mpcThreshold) || mpcThreshold < 0) {
     throw new Error(`Invalid MPC threshold ${mpcThreshold}.`);
   }
@@ -101,13 +106,14 @@ async function reconstructPads(
 
   const ctx: VerifyContext = {
     parameters,
-    domain: createKmsEip712Domain({
-      chainId: parameters.gatewayChainId,
-      verifyingContractAddressDecryption: parameters.verifyingContractAddressDecryption,
+    domain: createKmsPadDecryptionEip712Domain({
+      protocolConfigChainId: parameters.protocolConfigChainId,
+      protocolConfigAddress: parameters.protocolConfigAddress,
     }),
     signersByParty: parameters.kmsSigners.map((a) => a.toLowerCase()),
     kmsContextId: kmsExtraData.kmsContextId,
-    padLengthByLabel: new Map(witnesses.map((w) => [w.label.toLowerCase(), w.padLength])),
+    kmsEpochId: kmsExtraData.kmsEpochId,
+    padLengthByLabel: new Map(pads.map((pad) => [pad.label.toLowerCase(), pad.padLength])),
   };
 
   // 1. Verify every response on its own. An invalid response is left out (one faulty node must not block the
@@ -125,21 +131,21 @@ async function reconstructPads(
 
   // 2. Per label: select at least 2t+1 shares agreeing on session and encoding, from distinct parties, then
   //    reconstruct the label's pad from them.
-  const pads = new Map<Bytes32Hex, Uint8Array>();
-  for (const w of witnesses) {
+  const reconstructed = new Map<Bytes32Hex, Uint8Array>();
+  for (const pad of pads) {
     // KMS: each party's share differs (a point of the sharing polynomial), so shares can only be grouped by session
     // and encoding; the threshold reconstruction then corrects faulty shares. Cleartext: every honest share is the
     // whole pad, so shares are grouped by their bytes too, which stands in for that error correction.
-    const selected = _selectShares(verified, w.label, mpcThreshold);
+    const selected = _selectShares(verified, pad.label, mpcThreshold);
     if (selected === undefined) {
       const rejectedDetails = rejected.length === 0 ? '' : ` Rejected responses: ${rejected.join('; ')}`;
       throw new Error(
-        `Not enough consistent pad decryption responses for label ${w.label}: got ${verified.length} valid of ${responses.length}, no (session, rawShares) reaches 2t+1 = ${2 * mpcThreshold + 1} distinct parties.${rejectedDetails}`,
+        `Not enough consistent pad decryption responses for label ${pad.label}: got ${verified.length} valid of ${responses.length}, no (session, rawShares) reaches 2t+1 = ${2 * mpcThreshold + 1} distinct parties.${rejectedDetails}`,
       );
     }
-    pads.set(w.label, _truncatePad(_reconstructCleartextPad(selected, w.label), w.padLength));
+    reconstructed.set(pad.label, _truncatePad(_reconstructCleartextPad(selected, pad.label), pad.padLength));
   }
-  return pads;
+  return reconstructed;
 }
 
 /**
@@ -167,6 +173,7 @@ async function _verifyResponse(
   }
 
   const payload = _decryptCleartextPayload(ethereum, response.encryptedPayload, ctx.parameters.transportPublicKey);
+  _checkPayloadExtraData(payload.extraData, ctx);
 
   const sharesByLabel = new Map<string, PadShare>();
   for (const share of payload.shares) {
@@ -174,7 +181,7 @@ async function _verifyResponse(
     if (sharesByLabel.has(label)) {
       throw new Error(`label ${share.label} appears twice`);
     }
-    await _verifyShare(ethereum, share, signer, ctx);
+    await _verifyShare(ethereum, share, payload.extraData, signer, ctx);
     sharesByLabel.set(label, share);
   }
   if (sharesByLabel.size !== ctx.padLengthByLabel.size) {
@@ -183,9 +190,25 @@ async function _verifyResponse(
   return { signer, sharesByLabel };
 }
 
+/** The payload's `extraData` names the context and epoch the request's `extraData` names. */
+function _checkPayloadExtraData(extraData: BytesHex, ctx: VerifyContext): void {
+  let named;
+  try {
+    named = createKmsExtraDataFromBytesHex(extraData);
+  } catch (e) {
+    throw new Error(`payload extraData ${extraData} is malformed: ${String(e)}`, { cause: e });
+  }
+  if (!named.ge(EXTRA_DATA_V2) || named.kmsContextId !== ctx.kmsContextId || named.kmsEpochId !== ctx.kmsEpochId) {
+    throw new Error(
+      `payload extraData ${extraData} does not name the request's context ${String(ctx.kmsContextId)} and epoch ${String(ctx.kmsEpochId)}`,
+    );
+  }
+}
+
 async function _verifyShare(
   ethereum: EthereumModule,
   share: PadShare,
+  payloadExtraData: BytesHex,
   transportSigner: ChecksummedAddress,
   ctx: VerifyContext,
 ): Promise<void> {
@@ -205,19 +228,13 @@ async function _verifyShare(
       rawShares: share.rawShares,
       partyId: share.partyId,
       degree: share.degree,
-      contextId: share.contextId,
       sessionId: share.sessionId,
-      extraData: share.extraData,
+      // Carried once in the payload, signed into every share.
+      extraData: payloadExtraData,
     },
     signature: shareSignature,
   });
 
-  // The signed context is the one the request's extraData names.
-  if (BigInt(share.contextId) !== ctx.kmsContextId) {
-    throw new Error(
-      `contextId ${share.contextId} of label ${share.label} is not the request's ${String(ctx.kmsContextId)}`,
-    );
-  }
   // The signer is the one registered under the share's partyId, and the one that signed the transport.
   if (ctx.signersByParty[share.partyId - 1] !== shareSigner.toLowerCase()) {
     throw new Error(`share of label ${share.label} is signed by ${shareSigner}, not party ${share.partyId}'s signer`);
@@ -284,11 +301,17 @@ function _truncatePad(stream: Uint8Array, padLength: number): Uint8Array {
 /** Bytes per PRF block of the cleartext mock (one keccak256 output). */
 const CLEARTEXT_PAD_BLOCK_BYTES = 32;
 
-/** Version byte leading every cleartext `rawShares`: the whole pad, one 32-byte PRF block per ring element. */
+/**
+ * Version byte leading every cleartext `rawShares`, part of the mock's encoding (RFC-030 leaves `rawShares` opaque):
+ * the whole pad, one 32-byte PRF block per ring element.
+ */
 const CLEARTEXT_RAW_SHARES_VERSION = 0x00;
 
-/** `PadDecryptResponsePayload{PadShare[] shares}`, a `PadShare` being its 8 fields in declaration order. */
-const PAD_DECRYPT_RESPONSE_PAYLOAD_TYPE = '((bytes32,bytes,uint32,uint32,bytes32,bytes16,bytes,bytes)[])';
+/**
+ * `PadDecryptResponsePayload{PadShare[] shares; bytes extraData}`, a `PadShare` being its 6 fields in declaration
+ * order.
+ */
+const PAD_DECRYPT_RESPONSE_PAYLOAD_TYPE = '((bytes32,bytes,uint32,uint32,bytes16,bytes)[],bytes)';
 
 /** The cleartext stand-in for the transport key: the first 32 bytes of the transport public key. */
 function _cleartextMaskOf(transportPublicKey: BytesHex): Uint8Array {
@@ -315,8 +338,9 @@ function _decryptCleartextPayload(
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const encodedData = bytesToHex(hexToBytes(encryptedPayload).map((b, i) => b ^ mask[i % 32]!));
     const [payload] = ethereum.decode({ types: [PAD_DECRYPT_RESPONSE_PAYLOAD_TYPE], encodedData });
-    const [shares] = payload as readonly unknown[];
-    return Object.freeze({ shares: Object.freeze(Array.from(shares as readonly unknown[], _toPadShare)) });
+    const [shares, extraData] = payload as readonly unknown[];
+    assertIsBytesHex(extraData, { subject: 'extraData' });
+    return Object.freeze({ shares: Object.freeze(Array.from(shares as readonly unknown[], _toPadShare)), extraData });
   } catch (e) {
     throw new Error(`pad decryption payload does not decrypt: ${String(e)}`, { cause: e });
   }
@@ -327,22 +351,18 @@ function _decryptCleartextPayload(
  * viem as `number`.
  */
 function _toPadShare(item: unknown, i: number): PadShare {
-  const [label, rawShares, partyId, degree, contextId, sessionId, extraData, signature] = item as readonly unknown[];
+  const [label, rawShares, partyId, degree, sessionId, signature] = item as readonly unknown[];
   const name = `shares[${i}]`;
   assertIsBytes32Hex(label, { subject: `${name}.label` });
   assertIsBytesHex(rawShares, { subject: `${name}.rawShares` });
-  assertIsBytes32Hex(contextId, { subject: `${name}.contextId` });
   assertIsBytesHex(sessionId, { subject: `${name}.sessionId` });
-  assertIsBytesHex(extraData, { subject: `${name}.extraData` });
   assertIsBytesHex(signature, { subject: `${name}.signature` });
   return Object.freeze({
     label,
     rawShares,
     partyId: asUint32Number(Number(partyId), { subject: `${name}.partyId` }),
     degree: asUint32Number(Number(degree), { subject: `${name}.degree` }),
-    contextId,
     sessionId,
-    extraData,
     signature,
   });
 }

@@ -7,8 +7,9 @@ use alloy::primitives::{B256, Bytes as AlloyBytes, b256};
 use async_trait::async_trait;
 use bytes::Bytes;
 use kms_connector_api::{
-    ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest,
-    PublicDecryptionResponse, USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
+    ErrorCode, ErrorResponse, PAD_DECRYPTION_ROUTE, PUBLIC_DECRYPTION_ROUTE, PadDecryptionRequest,
+    PadDecryptionResponse, PublicDecryptionRequest, PublicDecryptionResponse,
+    USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
 };
 use reqwest::header::HeaderValue;
 use serde::Deserialize;
@@ -19,8 +20,8 @@ use super::call::Caller;
 use super::client::{AttemptError, ConnectorClient, Endpoint, HttpReply};
 use super::config::tests::{audience, valid};
 use super::config::{
-    CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig, UserChecks,
-    UserDecryptConfig,
+    CallConfig, EndpointConfig, KmsAggregatorConfig, PadDecryptConfig, PublicDecryptConfig,
+    RetryConfig, UserChecks, UserDecryptConfig,
 };
 use super::signer::RequestSigner;
 use super::signer::tests::test_signer;
@@ -44,6 +45,12 @@ pub fn extra_data_v2() -> AlloyBytes {
     EXTRA_DATA_V2.parse().expect("mock: EXTRA_DATA_V2 is hex")
 }
 
+/// From `kms-connector/crates/api/tests/vectors.json` ("single pad, RFC-033-style request"). A pad response does not
+/// echo `extraData`, so this one keeps the vector's own.
+pub const PAD_REQUEST_JSON: &str = r#"{"attestationType":"eip712-unified-user-decrypt-v1","payload":{"witnessVersion":0,"prfId":0,"chainId":31337,"pads":[{"label":"0xa79e2702c4ba43e4b96a713e39842683da5a84da1361613f889e8cce6be9e5c1","witness":{"submitter":"0x5555555555555555555555555555555555555555","consumer":"0x3333333333333333333333333333333333333333","expirationTimestamp":1770600000,"decryptors":["0x6666666666666666666666666666666666666666"],"nonce":"0x000102030405060708090a0b0c0d0e0f"},"padLength":64}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"extraData":"0x0207070707070707070707070707070707070707070707070707070707070707070808080808080808080808080808080808080808080808080808080808080808"},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"}"#;
+pub const PAD_REQUEST_ID: B256 =
+    b256!("0x4bf59f019e7cd2b600b0333103d9d90553e0d4b38b949ce7d69290e36bc3f34f");
+
 /// A YAML string is either one of our fixed replies or a connector error code (`acl_denied`, `rate_limited`, …).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
@@ -57,13 +64,13 @@ pub enum Reply {
 pub enum Fixed {
     /// `200` with a valid response derived from the request (per-node 65-byte signature and share).
     Ok,
-    /// Public: a different `decryptedResult`; user: same as `Ok`.
+    /// Public: a different `decryptedResult`; user and pad: same as `Ok`.
     Divergent,
     /// A 64-byte signature.
     BadSignature,
     /// Node 0's signature (the same partner answering behind two URLs).
     Duplicate,
-    /// A `decryptionId` that is not the request's content hash.
+    /// A `decryptionId` (pad: `requestId`) that is not the request's content hash.
     WrongId,
     /// Never answers (until cancelled).
     Hang,
@@ -125,6 +132,7 @@ impl MockClient {
                 checks: UserChecks::default(),
             },
             public_decrypt: PublicDecryptConfig { threshold: 1 },
+            pad_decrypt: Some(PadDecryptConfig { threshold: 1 }),
             auth: valid(0).auth,
             endpoints: (0..n)
                 .map(|i| EndpointConfig {
@@ -222,6 +230,9 @@ fn request_facts(route: &str, body: &[u8]) -> (B256, AlloyBytes) {
     if route == USER_DECRYPTION_ROUTE {
         let request: UserDecryptionRequest = serde_json::from_slice(body).expect("mock: user body");
         (request.id(), request.payload.extraData)
+    } else if route == PAD_DECRYPTION_ROUTE {
+        let request: PadDecryptionRequest = serde_json::from_slice(body).expect("mock: pad body");
+        (request.id(), request.payload.extraData)
     } else {
         assert_eq!(route, PUBLIC_DECRYPTION_ROUTE, "mock: unknown route");
         let request: PublicDecryptionRequest =
@@ -245,7 +256,13 @@ pub fn ok_reply(route: &str, body: &[u8], node: usize, fixed: Fixed) -> HttpRepl
     if fixed == Fixed::BadSignature {
         signature = AlloyBytes::copy_from_slice(&signature[..64]);
     }
-    let body = if route == USER_DECRYPTION_ROUTE {
+    let body = if route == PAD_DECRYPTION_ROUTE {
+        serde_json::to_vec(&PadDecryptionResponse {
+            decryption_id,
+            encrypted_payload: share(node),
+            signature,
+        })
+    } else if route == USER_DECRYPTION_ROUTE {
         serde_json::to_vec(&UserDecryptionResponse {
             decryption_id,
             user_decrypted_shares: share(node),
@@ -316,6 +333,19 @@ mod tests {
         );
         let response: PublicDecryptionResponse = serde_json::from_slice(&divergent.body).unwrap();
         assert_eq!(response.decrypted_result, result(1));
+
+        let pad = ok_reply(
+            PAD_DECRYPTION_ROUTE,
+            PAD_REQUEST_JSON.as_bytes(),
+            3,
+            Fixed::Ok,
+        );
+        let response: PadDecryptionResponse = serde_json::from_slice(&pad.body).unwrap();
+        let request: PadDecryptionRequest = serde_json::from_str(PAD_REQUEST_JSON).unwrap();
+        assert_eq!(response.decryption_id, request.id());
+        assert_eq!(request.id(), PAD_REQUEST_ID);
+        assert_eq!(response.encrypted_payload, share(3));
+        assert_eq!(response.signature, signature(3));
 
         let short = ok_reply(
             USER_DECRYPTION_ROUTE,

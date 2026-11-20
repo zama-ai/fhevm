@@ -23,7 +23,9 @@ export interface FetchPostOperationResultMap {
 
 export type RelayerGetOperation = 'KEY_URL';
 export type RelayerPostOperation = keyof FetchPostOperationResultMap;
-export type RelayerOperation = RelayerPostOperation | RelayerGetOperation;
+/** Synchronous relayer-http routes (`/v4/*`): one POST answered with the result, no job to poll. */
+export type RelayerSyncOperation = 'PAD_DECRYPT';
+export type RelayerOperation = RelayerPostOperation | RelayerGetOperation | RelayerSyncOperation;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Fetch Payload
@@ -305,6 +307,32 @@ export type RelayerPublicDecryptSucceeded = RelayerGetResponse200<'PUBLIC_DECRYP
  * ```
  */
 export type RelayerUserDecryptSucceeded = RelayerGetResponse200<'USER_DECRYPT'>;
+
+/**
+ * relayer-http `POST /v4/pad-decrypt` 200 response schema (RFC-030): one entry per KMS node, as the connector sent
+ * it. The envelope's `requestId` is the relayer's correlation id (UUIDv4); each entry's `decryptionId` is the KMS
+ * request id its node signed.
+ * ```json
+ * {
+ *   "status": "succeeded",
+ *   "requestId": "UUIDv4",
+ *   "result": {
+ *     "responses": [{ "decryptionId": "0x...", "encryptedPayload": "0x...", "signature": "0x..." }]
+ *   }
+ * }
+ * ```
+ */
+export type RelayerPadDecryptSucceeded = {
+  status: 'succeeded';
+  requestId: string;
+  result: {
+    responses: Array<{
+      decryptionId: Bytes32Hex;
+      encryptedPayload: BytesHex;
+      signature: Bytes65Hex;
+    }>;
+  };
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Queued: 202

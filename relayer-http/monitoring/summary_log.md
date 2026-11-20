@@ -7,16 +7,16 @@ One INFO line per request, message `request completed`, when the response is sen
 | Field | Meaning |
 | --- | --- |
 | `request_id` | random UUIDv4 of the request; the `x-request-id` header and the `requestId` of the answer |
-| `flow` | `user_decrypt`, `public_decrypt`, or `none` when answered before a flow is known |
+| `flow` | `user_decrypt`, `public_decrypt`, `pad_decrypt`, or `none` when answered before a flow is known |
 | `outcome` | `succeeded` (2xx), `rejected` (4xx), `failed` (5xx, a panic included) or `cancelled` (the client closed the connection before the answer) |
 | `status` | HTTP status of the answer, as text; `none` when the client closed the connection first; `500` for a panic |
 | `code` | `ok`, the API error code of the answer, or `client_closed`; `internal` is a relayer defect (an internal error or a panic) |
 | `elapsed_ms` | milliseconds from receipt to the answer |
-| `handles` | ciphertext handles, comma-separated; at most `http.max_handles_per_decryption` (the validation limit), then `+N more`, so only a request that failed validation is cut; `none` if the body was unreadable |
-| `contract_addresses` | contract addresses of the handles, comma-separated, each once, cut like `handles`; `none` if the body was unreadable or the flow has none (public decrypt) |
-| `allowed_contracts` | the `allowedContracts` of the request (user decrypt), comma-separated, at most `http.max_allowed_contracts` (the validation limit), then `+N more`; `none` otherwise |
-| `user_address` | the user's address (user decrypt); `none` otherwise |
-| `chain_id` | chain id the handles carry; `none` if unreadable |
+| `handles` | ciphertext handles (pad decrypt: the pad labels), comma-separated; at most `http.max_handles_per_decryption` (the validation limit), then `+N more`, so only a request that failed validation is cut; `none` if the body was unreadable |
+| `contract_addresses` | contract addresses of the handles (pad decrypt: the witnesses' consumers), comma-separated, each once, cut like `handles`; `none` if the body was unreadable or the flow has none (public decrypt) |
+| `allowed_contracts` | the `allowedContracts` of the request (user and pad decrypt), comma-separated, at most `http.max_allowed_contracts` (the validation limit), then `+N more`; `none` otherwise |
+| `user_address` | the user's address (user and pad decrypt); `none` otherwise |
+| `chain_id` | chain id the handles carry (pad decrypt: the request's `chainId`); `none` if unreadable |
 | `body_len` | bytes of the request body; 0 when it was not received (unreadable, over the size limit, or refused for its content type) |
 | `decryption_id` | EIP-712 signing hash of the connector request, the id KMS operators know; `none` if the request was never forwarded |
 | `counted` | KMS responses that counted toward the threshold; 0 if the request was never forwarded |

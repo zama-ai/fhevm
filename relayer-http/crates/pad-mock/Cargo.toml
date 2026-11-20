@@ -1,0 +1,25 @@
+[package]
+name = "pad-mock"
+description = "Development only: mock KMS connectors serving /v1/pad-decrypt from the cleartext PaddedInputter, and a flow driver"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+alloy.workspace = true
+axum.workspace = true
+kms-connector-api.workspace = true
+relayer-http = { path = "../relayer-http" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tower.workspace = true

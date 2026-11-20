@@ -26,7 +26,7 @@ relayer-http/
 ├── dev/                                           # local development tooling: Makefile, host run, flow scripts; start with its README.md
 └── crates/relayer-http/src/
     ├── main.rs                # load config → init logging → App → serve until SIGINT/SIGTERM → drain → exit
-    ├── lib.rs                 # App: the one shared state (both aggregators, http config, metrics registry, shutdown token: healthz and the servers, never an aggregation)
+    ├── lib.rs                 # App: the one shared state (the aggregators, http config, metrics registry, shutdown token: healthz and the servers, never an aggregation)
     ├── config.rs              # RelayerConfig, LogConfig, HttpConfig, MetricsConfig: YAML + APP_<SECTION>__<FIELD> overrides
     ├── logging.rs             # tracing subscriber (json | pretty | compact, RUST_LOG), the `log` bridge, the panic hook; test only: the JSON capture helpers
     ├── metrics.rs             # the metric registry, label values, the /metrics listener (its own port)
@@ -35,14 +35,16 @@ relayer-http/
     │   ├── mod.rs             # router(), serve() and the middleware that logs the summary line and counts the request
     │   ├── summary.rs         # Summary: one request's state, the summary line and its field list
     │   ├── error.rs           # ApiError: the one error body and its mapping
-    │   ├── validate.rs        # rules shared by the routes (handles, extraData)
+    │   ├── validate.rs        # rules shared by the routes (handles, validity window, extraData)
     │   ├── ops.rs             # GET /liveness, GET /healthz
-    │   └── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per route: wire types, validation, handler (fills the Summary)
+    │   └── flows/{mod,user_decrypt,public_decrypt,pad_decrypt}.rs   # one file per route: wire types, validation, handler (fills the Summary)
     └── kms_aggregator/        # fan-out to the KMS connectors and t-of-n aggregation; start with its docs.md
         ├── mod.rs, config.rs, client.rs, call.rs, aggregator.rs, signer.rs   # signer: FhevmSig headers (RFC-038)
-        ├── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per flow: checks, counting, output
+        ├── flows/{mod,user_decrypt,public_decrypt,pad_decrypt}.rs   # one file per flow: checks, counting, output
         ├── mock.rs, scenarios.rs                       # test only: scripted connector, YAML scenario runner
         └── scenarios/*.yaml                            # behaviour scenarios, run by the test suite
+crates/pad-mock/               # DEVELOPMENT ONLY (never in the image): mock KMS connectors serving /v1/pad-decrypt from the
+                               # SDK's cleartext stack on anvil, and a flow driver for /v4/pad-decrypt; start with its docs.md
 ```
 
 Two modules, each with its `docs.md` next to the code: `endpoint/docs.md` (routes, payloads, responses, every
@@ -81,7 +83,9 @@ Tests that need an external service are `#[ignore = "<why>"]` and grouped in one
 
 Against the local fhevm stack: `./fhevm-cli up` runs relayer-http in the stack (`fhevm-relayer-http`, :3002);
 `make -C dev run` runs it on the host instead (:4002, the stack's config); `make -C dev public-decrypt` / `user-decrypt`
-(one flow each, from the e2e container); `make -C dev check` (the three commands above). See `dev/README.md`.
+(one flow each, from the e2e container); `make -C dev check` (the three commands above). Pad decryption needs no fhevm stack:
+`make -C dev pad-stack`, `pad-connectors`, `pad-run`, `pad-decrypt` (anvil with the SDK's cleartext stack, the mock
+connectors of `crates/pad-mock`). See `dev/README.md`.
 
 ## Container image
 
@@ -142,6 +146,8 @@ Production-ready means no panic, typed errors, logs, cancellation and tests, not
 
 **Compatibility.** The connector interface comes from the `kms-connector-api` crate (path dependency, never its
 `endpoint` feature): DTOs, routes, error codes and their `retryable` flag are used as they are, never redefined.
+Pad decryption (RFC-030) included: the connector's endpoint accepts it, but its worker rejects every pad request
+until it can process them, so local runs use the mock connectors of `crates/pad-mock`.
 
 **Tests.** A unit test per function, next to it. Paused tokio time (`start_paused`) for anything timed, so durations
 are exact and tests are instant. Behaviour is described in YAML scenarios run by the test suite; adding a case is adding
