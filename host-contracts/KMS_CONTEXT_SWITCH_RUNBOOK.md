@@ -11,8 +11,8 @@ parties:
 
 Both run on the canonical host (Ethereum) only, and they can only ever complete there: the
 KMS connectors watch Ethereum's `ProtocolConfig` and no other chain. Non-canonical hosts run
-`ProtocolConfigReplica`, which has no `defineNew*` functions. They are updated by mirroring
-the result of the canonical operation instead (§5).
+`ProtocolConfigReplica`, which has no `defineNew*` functions. They take the result of the
+canonical operation instead, through the submit path or the mirror path (§5).
 
 Audience: whoever coordinates the governance operation with the external KMS parties.
 
@@ -20,18 +20,15 @@ Audience: whoever coordinates the governance operation with the external KMS par
 
 ## 1. Version prerequisites
 
-The reference release is [`v0.14.0-1`](https://github.com/zama-ai/fhevm/tree/v0.14.0-1)
-— the first release where every component is context-switch aware. Check the deployed
-versions **before** scheduling any window; the standard decrypt path working proves
-nothing about the switch path.
+This runbook uses the signed confirmations flow (RFC 037).
 
-| Component                           | Minimum version              | Artifact                                                                           | How to check the deployment                         |
-| ----------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Host contracts (`ProtocolConfig`)   | ProtocolConfig `>=0.2.0`     | `ghcr.io/zama-ai/fhevm/host-contracts:v0.14.0-1`                                   | `cast call $PROTOCOL_CONFIG "getVersion()(string)"` |
-| Gateway contracts (`GatewayConfig`) | GatewayConfig `>=0.7.0`      | `ghcr.io/zama-ai/fhevm/gateway-contracts:v0.14.0-1`                                | `cast call $GATEWAY_CONFIG "getVersion()(string)"`  |
-| KMS connector (all parties)         | fhevm `v0.14.0-1`            | `ghcr.io/zama-ai/fhevm/kms-connector/{gw-listener,kms-worker,tx-sender}:v0.14.0-1` | Confirm running parties image tag                   |
-| KMS core (all parties)              | kms `v0.14.0-1` or later     | `ghcr.io/zama-ai/kms/core-service:v0.14.0-1`                                       | Confirm running parties image                       |
-| Relayer                             | relayer `v0.14.0-1` or later | `ghcr.io/zama-ai/fhevm/relayer:v0.14.0-1`                                          | Confirm running image tag                           |
+| Component                                   | Minimum version                             | Artifact                                                                        | How to check the deployment                         |
+| ------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Host contracts (`ProtocolConfig`, Ethereum) | ProtocolConfig `>=0.3.0`                    | `ghcr.io/zama-ai/fhevm/host-contracts:v1.0.0`                                   | `cast call $PROTOCOL_CONFIG "getVersion()(string)"` |
+| Gateway contracts (`GatewayConfig`)         | GatewayConfig `>=0.7.0`                     | `ghcr.io/zama-ai/fhevm/gateway-contracts:v0.14.0-1`                             | `cast call $GATEWAY_CONFIG "getVersion()(string)"`  |
+| KMS connector (all parties)                 | fhevm `v1.0.0`                              | `ghcr.io/zama-ai/fhevm/kms-connector/{gw-listener,kms-worker,tx-sender}:v1.0.0` | Confirm running parties image tag                   |
+| KMS core (all parties)                      | A release that signs the four confirmations | `ghcr.io/zama-ai/kms/core-service`                                              | Confirm running parties image                       |
+| Relayer                                     | relayer `v1.0.0`                            | `ghcr.io/zama-ai/fhevm/relayer:v1.0.0`                                          | Confirm running image tag                           |
 
 ## 2. Preparing the KMS node party metadata
 
@@ -41,7 +38,7 @@ full protocol identity — how the chain authenticates it, how the other parties
 cores reach it, and where it publishes its public key material:
 
 - **two distinct wallets**: the _tx-sender_ is the **KMS connector's** wallet. It
-  pays gas. It submits no lifecycle confirmations in this version. The _signer_ is the
+  pays gas. It submits the signed lifecycle confirmations. The _signer_ is the
   **KMS core's** signing key. It signs key-material attestations and the lifecycle
   confirmations. It also signs the core's responses to gRPC commands, such as keygens and
   decryptions. A common mistake is swapping them.
@@ -57,7 +54,7 @@ assemble and validate the env file (Annex B.3).
 
 | Field             | Format                                                                                                                                                                                                                                           | Provided by                      | Used for (end to end)                                                                                                                                                                                                                    | Validation                                                                                                |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `txSenderAddress` | 20-byte EVM address (`0x` + 40 hex)                                                                                                                                                                                                              | **KMS party**                    | The **connector's** wallet. Host chain: sends no switch confirmations in this version (§4.2 step 4). Gateway chain: broadcasts decryption responses. `Decryption` requires the response sender to be this registered node                | Party signs a message with it, or sends a test tx; must be funded on the host chain **and** gateway chain |
+| `txSenderAddress` | 20-byte EVM address (`0x` + 40 hex)                                                                                                                                                                                                              | **KMS party**                    | The **connector's** wallet. Host chain: submits the signed lifecycle confirmations. Gateway chain: broadcasts decryption responses. `Decryption` requires the response sender to be this registered node                                 | Party signs a message with it, or sends a test tx; must be funded on the host chain **and** gateway chain |
 | `signerAddress`   | 20-byte EVM address of the **core's** signing key                                                                                                                                                                                                | **KMS party** (verifiable by us) | Signs the lifecycle confirmations (epoch activation is unanimous per signer) and EIP-712 decryption responses (verified per pinned context on the gateway). The core publishes it at `<storageUrl>/<storagePrefix>/VerfAddress/<handle>` | Fetch from their public storage and compare (Annex B.2)                                                   |
 | `ipAddress`       | URL `scheme://host:port` — host may be a **DNS name** or IP; the **port is mandatory and must be non-default** (`:443`/`:80` are normalized away by the core's URL parser and rejected as "missing port"). E.g. `http://kms.party.example:50001` | **KMS party**                    | The core's MPC endpoint. Consumed **only by the other parties' cores**: each peer parses host+port and dials it for MPC traffic (reshares, decryption sessions).                                                                         | Reachable from every _other_ party's core (peer-to-peer, not from us)                                     |
 | `storageUrl`      | Base URL of the party's public vault (S3-compatible bucket)                                                                                                                                                                                      | **KMS party**                    | Where the core publishes its public material. Emitted in `ActivateEpoch` and served per key/CRS result by `KMSGeneration` → the relayer's `/v2/keyurl`, so clients know where to download public keys and CRS                            | `curl` returns objects (Annex B.2)                                                                        |
@@ -131,20 +128,15 @@ receiver.
    signer, with its key/CRS results and its signed
    `EpochActivationConfirmation`. Once the signatures are unanimous the contract emits
    `ActivateEpoch`.
-   **The connector does not submit this confirmation in this version.** kms-grpc returns
-   no confirmation signature, so the tx-sender marks the result failed and sends nothing.
-   No other service submits it. The new epoch stays Pending, and a rotation cannot
-   complete until planning-blockchain#1369 lands.
+   Each party's connector submits this confirmation.
 4. **Watch**: `task:kmsContextSwitchStatus` (Annex B.1) until "fully live". The
    task labels what it sees on-chain — `same-set-rotation` is _this_ flow (a new
    epoch issued under the same, still-active context), as opposed to
    `context-switch` (a pending context newer than the active one, §4) and `idle`
    (nothing in flight). Alternatively poll `getCurrentKmsContextAndEpoch` for the
-   epoch id to advance. In this version the epoch stays PENDING and the epoch id does
-   not advance (step 3).
+   epoch id to advance.
 5. **Verify**: run a decryption smoke test **after** the epoch id advances. The
    relayer must already be epoch-aware (§1) or requests will carry the stale epoch.
-   In this version the rotation never reaches this step.
 6. **Gateway: nothing to do.**
 7. **Replicas**: mirror the new epoch onto every non-canonical host chain (§5).
 
@@ -243,11 +235,7 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    `confirmKmsContextCreation`. When **all new + (n − t) old** signers have confirmed
    the same digest, the context becomes CREATED and the contract emits the
    `NewKmsEpoch` that starts the reshare.
-   **The connectors do not submit these confirmations in this version.** kms-grpc
-   returns no confirmation signature, so the tx-sender marks each confirmation failed
-   and sends nothing. No other service submits them. The context stays PENDING,
-   the contract never emits `NewKmsEpoch`, and phase 2 never starts. A context switch cannot
-   complete until planning-blockchain#1369 lands.
+   Each party's connector submits these confirmations.
 5. **Phase 2, reshare and activation**: outgoing nodes send (Set 1),
    incoming nodes receive (Set 2), continuing nodes do both. Then every
    **new-committee** signer needs a `confirmEpochActivation`. Unanimity on the
@@ -260,8 +248,7 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    While PENDING it lists exactly which new signers are outstanding and the
    old-side `n − t` target. It counts confirmations of every digest and warns when
    signers confirmed different `extraData`. A signer that confirmed other `extraData`
-   cannot confirm again. This tells you _which party_ to chase. In this version every
-   signer stays outstanding (step 4).
+   cannot confirm again. This tells you _which party_ to chase.
 
 ### 4.3 Verify
 
@@ -280,18 +267,18 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
   Coordinate retention of its old key material per policy (it remains part of the
   previous context's history).
 
-## 5. Mirroring onto non-canonical hosts (replicas)
+## 5. Applying canonical steps on non-canonical hosts (replicas)
 
 Ethereum is the canonical host: §3 and §4 run there and nowhere else. Every other host
 chain (e.g. Polygon) runs `ProtocolConfigReplica`. It has no pending states, no confirmation
 collection, no reshare and no `KMSGeneration`. Anyone may apply a canonical step with the KMS
-confirmation signatures through the `submitKms*` methods. The owner can also use four
-`onlyACLOwner` mirror methods. `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` import state
-Ethereum has already finalized and land it as immediately `Active`. `mirrorKmsContextDestruction`
-and `mirrorKmsEpochDestruction` copy a canonical `destroyKmsContext` / `destroyKmsEpoch`.
-Mirroring a switch activates the new context without retiring the previous one, so a context
-destroyed on Ethereum stays trusted on every replica until its destruction reaches that
-replica (§5.6).
+confirmation signatures through the `submitKms*` methods. This is the submit path. The owner can
+also use four `onlyACLOwner` mirror methods, which do not check signatures. This is the mirror
+path. `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` import state Ethereum has already finalized
+and land it as immediately `Active`. `mirrorKmsContextDestruction` and `mirrorKmsEpochDestruction`
+copy a canonical `destroyKmsContext` / `destroyKmsEpoch`. On a replica, a context switch activates
+the new context without retiring the previous one, so a context destroyed on Ethereum stays
+trusted on every replica until its destruction reaches that replica (§5.6).
 **Bringing each replica forward after a canonical rotation, and retiring on each replica
 what Ethereum retired, is the operator's job** — nothing on-chain does it for you, and
 nothing flags a replica that fell behind.
@@ -330,11 +317,16 @@ host-contracts README. Use the mirror tasks for every rotation after that.
   finalized block cannot be reorged out, which keeps the read reproducible. On Ethereum
   that trails the head by ~13 minutes (two consensus-layer epochs — not KMS epochs). Run the
   task earlier than that and it still sees the pre-rotation state, stopping with
-  `Replica … is already at context <id>, which is >= canonical's <id>`. That message means
-  **"canonical's rotation is not finalized yet"**, not "nothing to do" — wait and re-run.
+  `Replica … is already at context <id>, the same as canonical's.` Either canonical's rotation
+  is not finalized yet, so wait and re-run, or a submitter already applied it.
+  `Replica … is at context <id>, ahead of canonical's <id>.` means that a submitter applied a
+  rotation that is not finalized yet, so wait and re-run. If the replica is also ahead of
+  canonical's head, recover the replica (§5.7).
   Pass `--block-number` to pin the read to a specific canonical height that is already finalized.
   Heights above the latest finalized block are rejected; wait for finalization and re-run.
   The tasks also re-fetch the selected block after reading and abort if its hash changed.
+- **`--block-number` can mirror a destroyed ID.** The task mirrors the IDs that were active at
+  that block. Canonical can destroy those IDs after that block.
 - **No committee metadata to collect.** Unlike §4, there is no questionnaire and no
   `committee.env`: everything the replica needs is read back from canonical. Only two
   connection parameters are required (`--canonical-rpc-url`,
@@ -345,10 +337,12 @@ host-contracts README. Use the mirror tasks for every rotation after that.
   broadcaster (or the DAO executing the calldata) must be that chain's ACL owner.
 - **The tasks reject an ID that is not above the active one, and gaps are fine.** The context
   tasks refuse a context ID that is not above the replica's active one. The epoch tasks require
-  the replica's active context and an epoch ID above the replica's active one. The contract
-  itself does not check the order, so a call with a lower ID moves the replica back. A replica
-  that missed several canonical rotations does not have to replay them one by one: it jumps
-  straight to canonical's current pair in a single call.
+  the replica's active context and an epoch ID above the replica's active one. The mirror
+  methods do not check the order, so a call with a lower ID moves the replica back. The submit
+  path can move the replica past the IDs of a pending DAO mirror proposal. Check the replica's
+  active pair again before the proposal executes. Cancel the proposal if the replica is already
+  at or past its IDs. A replica that missed several canonical rotations does not have to replay
+  them one by one: it jumps straight to canonical's current pair in a single call.
 - **Gateway: nothing to do.** The gateway registers a context once, from the canonical
   flow (§4.2 step 3). It is not per-replica.
 
@@ -380,8 +374,8 @@ The task can fail with these errors:
 
 - `reports version "ProtocolConfigReplica v…"; expected "ProtocolConfig v…"` — the
   `--canonical-protocol-config-address` points at a replica, not at Ethereum's `ProtocolConfig`.
-- `is already at context …` — either canonical's rotation is not finalized yet (§5.2) or this
-  replica is already up to date.
+- `is already at context …` or `is at context …, ahead of canonical's …`. See §5.2 for the
+  causes.
 
 ### 5.4 Mirror an epoch rotation
 
@@ -406,6 +400,10 @@ If the replica is not on canonical's active context yet, the task refuses with
 `… is at context <a>, but canonical's active context is <b>` and tells you to run
 `task:mirrorKmsContextAndEpoch` first — do that (§5.3), then re-run this.
 
+The task can also stop with `is already at epoch …` or
+`is at epoch …, ahead of canonical's …`. The causes are the same as for the context messages
+in §5.2.
+
 ### 5.5 Verify mirroring results
 
 ```bash
@@ -425,15 +423,6 @@ The MPC metadata (`partyId`, `mpcIdentity`, `caCert`, `storagePrefix`), software
 PCR values are not stored on-chain. The replica's `MirrorKmsContextAndEpoch` event does not
 carry them. Read them from canonical's `NewKmsContext` event.
 
-**Upgrade precondition (ProtocolConfig v0.3.0)**: settle any in-flight lifecycle operation
-first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. A pending epoch would keep its v0.3.0
-per-signer flags, so its signers could not confirm again. A pending context would have no node config
-hash, so its signed creation confirmation would commit to a zero hash. An epoch or a context
-destroyed before the upgrade can still collect signed destruction confirmations.
-Canonical never destroys its latest active context or epoch. A mirror call copies only those
-ids, so it never copies a destroyed id. A destruction on canonical does not reach a replica
-that mirrored that id earlier.
-
 `task:kmsContextSwitchStatus` reads canonical only. On a replica it reverts, because the replica
 has no `getCurrentKmsContextIdCounter()`.
 
@@ -441,8 +430,45 @@ has no `getCurrentKmsContextIdCounter()`.
 
 A canonical `destroyKmsContext` or `destroyKmsEpoch` does not reach the replicas: a mirrored
 context stays `Active` there, and `KMSVerifier` keeps accepting its signers, until the
-destruction reaches each replica. For every canonical destruction, take the id from
-canonical's `KmsContextDestroyed` / `KmsEpochDestroyed` event and run on each replica:
+destruction reaches each replica. It reaches a replica through the submit path with the signed
+destruction confirmations, or through the mirror path. Take the ID from canonical's
+`KmsContextDestroyed` or `KmsEpochDestroyed` event.
+
+#### Submit path
+
+Anyone can call `submitKmsContextDestruction` with the signed destruction confirmations. The
+replica checks the call in this order. If a check fails because the replica is behind, retry
+after the replica catches up.
+
+1. The ID must not be the active context ID. Otherwise the call reverts with
+   `LatestActiveKmsContextCannotBeDestroyed`. Usually the replica is behind. If canonical
+   destroyed the replica's active ID, recover the replica (§5.7).
+2. The ID must be live on the replica, so `isLiveKmsContext(<id>)` returns true. Otherwise the
+   call reverts with `InvalidKmsContext`. If the active ID is below the target, the replica is
+   behind. If not, the replica holds nothing to destroy, so stop.
+3. Every signature must come from a distinct signer of the active committee. The set needs the
+   destruction quorum, which is `max(1, n - t)` signatures, where `n` is the size of the active
+   committee and `t` is its MPC threshold. Otherwise the call reverts with
+   `KmsSignatureQuorumNotReached`, `KmsSignerNotInCommittee` or `DuplicateKmsSigner`.
+
+Then the replica sets the ID to `None` and emits `KmsContextDestroyed`. `submitKmsEpochDestruction`
+follows the same order, with `LatestActiveKmsEpochCannotBeDestroyed`, `InvalidKmsEpoch` and
+`KmsEpochDestroyed`.
+
+- **The replica activated a later context, so its active committee changed.** Submit only the
+  signatures from signers of the replica's active committee. If they do not reach the destruction
+  quorum, use the mirror path.
+- **Canonical destroyed an ID before it activated.** A replica stores no pending ID, so it has
+  nothing to destroy unless someone submitted the activation signatures. Check the replica with
+  `isValidKmsContext(<context ID>)` or `isValidEpochForContext(<context ID>, <epoch ID>)`. For an
+  epoch, take the context ID from canonical's `NewKmsEpoch` event.
+  - If the check returns false, do nothing. Check again until the replica's active ID is above
+    that ID. Until then, the activation signatures can still activate it.
+  - If the check returns true, the replica activated the aborted step. Recover the replica (§5.7).
+
+#### Mirror path
+
+For every canonical destruction of an ID that the replica stored, run on each replica:
 
 ```bash
 # Context destroyed — DAO path, then no-DAO path:
@@ -454,15 +480,68 @@ npx hardhat task:buildMirrorKmsEpochDestructionCalldata --network <replica-netwo
 npx hardhat task:mirrorKmsEpochDestruction --network <replica-network> --epoch-id <id>
 ```
 
-- **Mirror cancellations too.** The replica resets the id of a cancelled switch or reshare to
-  `None`.
+The rules below apply when you propagate a canonical destruction. A recovery (§5.7) follows its
+own steps.
+
 - **A context destruction covers its epochs.** Mirror an epoch destruction only after a
   canonical `destroyKmsEpoch`.
 - **The replica refuses to destroy its active context or epoch.** That revert means the
   replica is behind: mirror the successor first (§5.3 or §5.4).
+- **Catch up before you mirror a destruction.** Do not destroy an ID above the replica's active
+  ID. First mirror the canonical active pair (§5.3 or §5.4), then mirror the destruction. In the
+  other order, a later submission can still activate the ID, and `KMSVerifier` would trust it.
 
 Do this with the same urgency as the canonical call: for a context destroyed because it was
 compromised, every replica trusts it until this step is done.
+
+### 5.7 Recover a replica from a context canonical never activated
+
+A replica can activate a context that canonical never activated. The context is either a
+canonical switch that the DAO aborted (Annex A) or a forged context. A forged context needs
+`n - t` signers of the active committee, and a forged epoch needs every signer. If a task reports
+the replica ahead of canonical, first compare with canonical at its head (§5.2).
+
+The committee of that context is the replica's active committee until the recovery. Each switch
+or resharing that it submits adds IDs to destroy. To recover, the owner mirrors a new canonical
+context C4 with an honest committee, then destroys every context and epoch that canonical never
+activated. Use two DAO proposals, and do not put the destructions in the first proposal.
+
+1. Wait until canonical activates C4 (§4). Never use a context of the committee that signed a
+   forged ID, because that committee can sign new IDs.
+2. Proposal 1 calls `mirrorKmsContextAndEpoch` with C4, its epoch ID, nodes and thresholds. This
+   replaces any committee the replica stored under C4. Do not use `mirrorKmsEpoch`. C4 can be
+   below the replica's active ID, for example after a forged ID of `2^255` that canonical can
+   never reach. The method accepts a lower ID, but `task:mirrorKmsContextAndEpoch` refuses it
+   (§5.2), so build that call directly.
+3. After proposal 1 executes, list the IDs to destroy. Read the replica's
+   `SubmitKmsContextAndEpoch` and `SubmitKmsEpoch` events up to the transaction of proposal 1.
+   Find the first context that canonical did not activate with the same committee, thresholds and
+   previous context. Compare with canonical's `NewKmsContext` event for that ID, and check that
+   canonical activated that ID. Do not compare the timing, because a valid signature set can reach
+   a replica before canonical mines the activation. List that context, every context the replica
+   activated after it, and every epoch of those contexts. Keep an ID on the list even if canonical
+   later activated the same number. Remove only C4 and its epoch.
+4. Proposal 2 calls `mirrorKmsContextDestruction` for each listed context ID, then
+   `mirrorKmsEpochDestruction` for each listed epoch ID. A submit or an owner mirror after
+   proposal 1 can activate a listed ID with canonical state. Before proposal 2 executes, read the
+   active pair again, and the `SubmitKmsContextAndEpoch`, `SubmitKmsEpoch`,
+   `MirrorKmsContextAndEpoch` and `MirrorKmsEpoch` events after proposal 1. If the replica
+   activated a listed ID after proposal 1, cancel proposal 2 and submit it again without that ID.
+
+Submit proposal 2 with the same urgency as proposal 1, because `KMSVerifier` trusts every listed
+context until proposal 2 executes.
+
+After the recovery:
+
+- A replay of a forged submission reverts.
+- If canonical later activates a destroyed context ID, a submit of that ID reverts with
+  `KmsContextAlreadyStored`, because the replica still stores the old committee under it. Mirror
+  it with `mirrorKmsContextAndEpoch`, which replaces the stored committee.
+
+One proposal is enough for a resharing epoch that canonical never activated under an honest
+active context. Wait until canonical activates a later epoch. The proposal calls `mirrorKmsEpoch`
+with canonical's active pair, then `mirrorKmsEpochDestruction` for every epoch ID of that context
+that canonical never activated, from the `SubmitKmsEpoch` events.
 
 ## 6. Quick reference
 
@@ -511,9 +590,8 @@ Quorum cheat-sheet:
   identified by a domain-tagged id (`0x07…NN`). **Epoch** = one key-material generation
   under a context (`0x08…NN`). `getCurrentKmsContextAndEpoch()` returns the active pair.
 - **Lifecycle states**: context `Pending → Created → Active`; epoch `Pending → Active`.
-  Governance only _opens_ a switch. The KMS connectors do not submit context creation or
-  epoch activation confirmations in this version (planning-blockchain#1369). The connectors
-  have no code that submits the two destruction confirmations. No other service submits them.
+  `destroyKmsContext` and `destroyKmsEpoch` reset a context or epoch to `None`. Governance only
+  _opens_ a switch. The KMS connectors submit the four signed confirmations.
 - **Node identity is a `(txSenderAddress, signerAddress)` pair.**
   All four confirmation functions (`confirmKmsContextCreation`, `confirmEpochActivation`,
   `confirmKmsContextDestruction`, `confirmKmsEpochDestruction`) authenticate the node by
@@ -563,6 +641,12 @@ Quorum cheat-sheet:
   back (§5.2). `mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction` copy canonical
   destructions. Keeping every replica current, and mirroring every destruction, is
   operational discipline (§5).
+- **Do not abort a canonical step once all but one new-committee signer signed the epoch
+  activation, unless you have a replica recovery plan.**
+  A confirmation tx that lands after the abort reverts, but its signature is public calldata.
+  With the earlier confirmations, anyone can then apply the aborted step on every replica
+  through `submitKmsContextAndEpoch` or `submitKmsEpoch`. Later canonical steps then fail on
+  that replica until the owner recovers it (§5.7).
 - **`mpcIdentity` must equal the identity the core itself is configured with** (its
   `mpc_identity` in the core/peers config). A mismatch makes the reshare role-resolution
   fail on the on-chain-vs-config merge and the reshare never starts (observed failure:
