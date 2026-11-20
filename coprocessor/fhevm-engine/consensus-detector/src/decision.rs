@@ -84,8 +84,14 @@ impl Payload {
 
 impl Record {
     /// True when `expected` signed the record, the record names this attempt,
-    /// and its member set holds `expected`.
+    /// its member set holds `expected`, and it is at most [`MAX_RECORD_BYTES`].
+    /// The signature does not cover the size: a member can pad the URLs or the
+    /// anchors of a record it signs, so the size is checked here, where every
+    /// record is verified.
     fn is_valid_from(&self, expected: Address, proposal_id: &[u8], proposal_block: i64) -> bool {
+        if serde_json::to_vec(self).map_or(true, |body| body.len() > MAX_RECORD_BYTES) {
+            return false;
+        }
         let name = name_of(expected);
         if self.payload.signer != name
             || self.payload.proposal_id != hex::encode(proposal_id)
@@ -324,19 +330,29 @@ pub(crate) async fn get_own(
     Some(record)
 }
 
-/// A decision object of five members is a few KB. A peer serves these bodies,
-/// so a larger one is refused before it is buffered.
-const MAX_OBJECT_BYTES: usize = 256 * 1024;
+/// The largest record that counts, as serialized. A record of five members is
+/// about 1 KB. A larger one fails verification, so no operator relays it and
+/// a relay of verified records always fits [`max_relay_bytes`].
+const MAX_RECORD_BYTES: usize = 16 * 1024;
+
+/// The largest relay a reader accepts: two records per member (one per
+/// decision), each at most [`MAX_RECORD_BYTES`], plus the JSON array syntax.
+/// An honest relay cannot exceed it, so a faulty member cannot make a peer
+/// refuse one by signing a large record.
+fn max_relay_bytes(members: usize) -> usize {
+    2 * members * (MAX_RECORD_BYTES + 1) + 2
+}
 
 /// The body of a peer's object, or `None` when it is absent, unreadable or
-/// larger than [`MAX_OBJECT_BYTES`].
-async fn read_body(http: &reqwest::Client, url: &str) -> Option<Vec<u8>> {
+/// larger than `max_bytes`. A peer serves these bodies, so a larger one is
+/// refused before it is buffered.
+async fn read_body(http: &reqwest::Client, url: &str, max_bytes: usize) -> Option<Vec<u8>> {
     let response = http.get(url).send().await.ok()?;
     if !response.status().is_success() {
         return None;
     }
-    peer_http::read_capped(response, MAX_OBJECT_BYTES, url, || {
-        ExecutionError::InternalError(format!("{url} exceeds {MAX_OBJECT_BYTES} bytes"))
+    peer_http::read_capped(response, max_bytes, url, || {
+        ExecutionError::InternalError(format!("{url} exceeds {max_bytes} bytes"))
     })
     .await
     .map_err(|err| warn!(url, error = %err, "decision object not read; ignoring"))
@@ -357,7 +373,8 @@ pub(crate) async fn get(
         member.url.trim_end_matches('/'),
         key(proposal_id, proposal_block)
     );
-    let record: Record = serde_json::from_slice(&read_body(http, &url).await?).ok()?;
+    let record: Record =
+        serde_json::from_slice(&read_body(http, &url, MAX_RECORD_BYTES).await?).ok()?;
     if !record.is_valid_from(address, proposal_id, proposal_block) {
         warn!(url, "decision record failed verification; ignoring");
         return None;
@@ -399,9 +416,15 @@ pub(crate) async fn put_relay(
 }
 
 /// Read the records this operator republished before a restart, from its own
-/// bucket. `Some` with no records when the object does not exist yet. `None`
-/// when the read failed (timeout, S3 error): the caller must not overwrite the object then, or it
-/// could drop records that no bucket serves any more.
+/// bucket. `Some` with no records only when the object does not exist yet
+/// (`NoSuchKey`). `None` for every other outcome (timeout, S3 error, denied
+/// access, a body that does not parse): the caller must not overwrite the
+/// object then, or it could drop records that no bucket serves any more.
+///
+/// `AccessDenied` is not read as "absent". S3 answers it for an absent key
+/// when the role cannot list the bucket, but also for an existing object the
+/// role cannot read, and the two cannot be told apart. The role therefore
+/// needs `s3:ListBucket`, so an absent key answers `NoSuchKey`.
 pub(crate) async fn get_own_relay(
     client: &Client,
     bucket: &str,
@@ -411,13 +434,8 @@ pub(crate) async fn get_own_relay(
     let key = relay_key(proposal_id, proposal_block);
     let object = match client.get_object().bucket(bucket).key(&key).send().await {
         Ok(object) => object,
-        // S3 answers `AccessDenied` for an absent key when the role cannot
-        // list the bucket, so both codes mean "not written yet".
         Err(err)
-            if matches!(
-                err.as_service_error().and_then(ProvideErrorMetadata::code),
-                Some("NoSuchKey" | "AccessDenied")
-            ) =>
+            if err.as_service_error().and_then(ProvideErrorMetadata::code) == Some("NoSuchKey") =>
         {
             return Some(Vec::new());
         }
@@ -427,7 +445,21 @@ pub(crate) async fn get_own_relay(
         }
     };
     let body = object.body.collect().await.ok()?.into_bytes();
-    Some(serde_json::from_slice(&body).unwrap_or_default())
+    let records = parse_own_relay(&body);
+    if records.is_none() {
+        warn!(
+            bucket,
+            key, "own decision record relay does not parse; not overwriting it"
+        );
+    }
+    records
+}
+
+/// The records of this operator's stored relay, or `None` when the body does
+/// not parse. An unparsable relay is not an empty one: it may hold records
+/// that no bucket serves any more.
+fn parse_own_relay(body: &[u8]) -> Option<Vec<Record>> {
+    serde_json::from_slice(body).ok()
 }
 
 /// True when this operator's relay holds every record it has counted: its
@@ -453,7 +485,7 @@ pub(crate) async fn get_relay(
         member.url.trim_end_matches('/'),
         relay_key(proposal_id, proposal_block)
     );
-    let Some(body) = read_body(http, &url).await else {
+    let Some(body) = read_body(http, &url, max_relay_bytes(members)).await else {
         return Vec::new();
     };
     let records: Vec<Record> = serde_json::from_slice(&body).unwrap_or_default();
@@ -743,11 +775,48 @@ mod tests {
 
         // Valid JSON, padded past the cap.
         let mut padded = body;
-        padded.resize(MAX_OBJECT_BYTES + 1, b' ');
+        padded.resize(max_relay_bytes(2) + 1, b' ');
         members[0].url = origin(padded).await;
         assert!(get_relay(&http, &members[0], &[0x01], 5, 2)
             .await
             .is_empty());
+    }
+
+    /// A member can pad a record it signs. Such a record is not counted, so
+    /// it never enters a relay, and a relay of counted records always fits
+    /// the size a reader accepts.
+    #[tokio::test]
+    async fn an_oversized_record_fails_verification() {
+        let key = PrivateKeySigner::random();
+        let mut members = member_list(&[key.address(), addr(9)]);
+        let (address, record) = signed(&key, Decision::Quorum, &members).await;
+        assert!(record.is_valid_from(address, &[0x01], 5));
+
+        members[1].url = "x".repeat(MAX_RECORD_BYTES);
+        let (address, padded) = signed(&key, Decision::Quorum, &members).await;
+        assert!(!padded.is_valid_from(address, &[0x01], 5));
+        assert!(!padded.is_valid_from_member(&members, &[0x01], 5));
+
+        // Two records per member at the largest counted size still fit.
+        let largest = vec![vec![b'x'; MAX_RECORD_BYTES]; 2 * 5];
+        let relay = largest.iter().map(Vec::len).sum::<usize>() + largest.len() + 1;
+        assert!(relay <= max_relay_bytes(5));
+    }
+
+    /// An unparsable stored relay is "not read", never "empty": the caller
+    /// overwrites an empty relay, and that would drop its records.
+    #[tokio::test]
+    async fn an_unparsable_own_relay_is_not_an_empty_one() {
+        let key = PrivateKeySigner::random();
+        let members = member_list(&[key.address(), addr(9)]);
+        let (_, record) = signed(&key, Decision::Quorum, &members).await;
+
+        let body = serde_json::to_vec(&[&record]).unwrap();
+        assert_eq!(parse_own_relay(&body), Some(vec![record]));
+        assert_eq!(parse_own_relay(b"[]"), Some(Vec::new()));
+        assert_eq!(parse_own_relay(&body[..body.len() - 1]), None);
+        assert_eq!(parse_own_relay(b""), None);
+        assert_eq!(parse_own_relay(b"{\"v\":2}"), None);
     }
 
     /// A record passed on by a peer verifies against the member set, not
