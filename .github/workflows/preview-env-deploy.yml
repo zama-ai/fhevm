@@ -902,6 +902,10 @@ jobs:
           if [[ "${line}" =~ :-(hub\.zama\.org[^}\"[:space:]]+) ]]; then
             image_name="${BASH_REMATCH[1]}"
           fi
+          # v0.15 deploy.sh defaults to core-service-enclave-insecure. Devnet
+          # runs the secure image at the same tag; drop the suffix so the
+          # kms_core_version pin is pulled from core-service-enclave.
+          image_name="${image_name%-insecure}"
           if [[ ! "${image_name}" =~ ^hub\.zama\.org/ghcr/zama-ai/kms/core-service-enclave(-insecure)?$ ]]; then
             echo "::error::refusing unexpected KMS enclave image '${image_name}'"
             exit 1
