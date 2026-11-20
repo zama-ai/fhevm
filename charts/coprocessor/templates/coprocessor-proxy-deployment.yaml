@@ -30,6 +30,10 @@
 {{- if not (or $protocolConfigChain.httpUrl $protocolConfigChain.httpUrlValueFrom) }}
 {{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with httpUrl or httpUrlValueFrom" $canonicalChainId) }}
 {{- end }}
+{{- $idleTimeout := $proxy.clientIdleTimeoutSeconds }}
+{{- if or (lt (int $idleTimeout) 1) (ne (toString (int $idleTimeout)) (toString $idleTimeout)) }}
+{{- fail "coprocessorProxy.clientIdleTimeoutSeconds must be a whole number of seconds, at least 1" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -137,6 +141,8 @@ spec:
               value: "0.0.0.0:{{ $proxy.ports.metrics }}"
             - name: COPROCESSOR_PROXY_SHUTDOWN_DELAY
               value: "{{ int $proxy.shutdownDelaySeconds }}s"
+            - name: COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT
+              value: "{{ int $proxy.clientIdleTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
               value: {{ $canonicalChainId | quote }}
             - name: COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS

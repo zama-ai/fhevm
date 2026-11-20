@@ -159,6 +159,16 @@ impl<P: Provider> Follower<P> {
     /// for a poll that started after this call to finish. Concurrent misses share that poll.
     pub async fn refresh_after_miss(&self, wait: Duration) {
         let mut polls = self.polls.subscribe();
+        let after = self.wake_after_miss();
+        let _ = tokio::time::timeout(wait, async {
+            let _ = polls.wait_for(|polls| polls.finished > after).await;
+        })
+        .await;
+    }
+
+    /// Wakes the poll loop for a request signed by an unknown tx-sender, without waiting. Returns
+    /// the polls started before this call.
+    pub fn wake_after_miss(&self) -> u64 {
         let mut after = 0;
         // Only the first miss for the next poll notifies: each notification wakes every waiter.
         self.polls.send_if_modified(|polls| {
@@ -167,10 +177,7 @@ impl<P: Provider> Follower<P> {
             polls.wanted = polls.started + 1;
             first
         });
-        let _ = tokio::time::timeout(wait, async {
-            let _ = polls.wait_for(|polls| polls.finished > after).await;
-        })
-        .await;
+        after
     }
 }
 

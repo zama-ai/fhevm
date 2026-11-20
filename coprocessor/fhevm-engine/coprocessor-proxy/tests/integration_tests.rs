@@ -14,7 +14,7 @@ use common::{
     stub_attestation, stub_output,
 };
 use coprocessor_proxy::core::{
-    CLIENT_IDLE_TIMEOUT, CLIENT_WRITE_TIMEOUT, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT,
+    CLIENT_WRITE_TIMEOUT, MAX_UNKNOWN_SIGNER_WAITERS, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT,
 };
 use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
@@ -644,6 +644,39 @@ async fn test_refuses_an_unknown_signer_after_the_wait() {
 }
 
 #[tokio::test]
+async fn test_answers_an_unknown_signer_at_once_when_the_waiters_are_full() {
+    let t = start_without_polls().await;
+    // Longer than the wait: every waiter keeps its connection for the whole wait.
+    t.rpc.set_reply_delay(Duration::from_secs(60));
+    const OVERFLOW: usize = 4;
+    let path = prf_path(1);
+    let mut requests = Vec::new();
+    for _ in 0..MAX_UNKNOWN_SIGNER_WAITERS + OVERFLOW {
+        let auth = auth_header(&PrivateKeySigner::random(), &path, b"").await;
+        requests.push(t.client.get(t.url(&path)).header("authorization", auth));
+    }
+
+    // All sent at once: the first MAX_UNKNOWN_SIGNER_WAITERS to arrive wait, the others don't.
+    let answers = futures_util::future::join_all(requests.into_iter().map(|request| async move {
+        let started = Instant::now();
+        let response = request.send().await.unwrap();
+        (started.elapsed(), response)
+    }))
+    .await;
+    let mut waited = 0;
+    for (elapsed, response) in answers {
+        assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
+        if elapsed >= UNKNOWN_SIGNER_WAIT {
+            waited += 1;
+        } else {
+            assert!(elapsed < UNKNOWN_SIGNER_WAIT / 2, "{elapsed:?}");
+        }
+    }
+    assert_eq!(waited, MAX_UNKNOWN_SIGNER_WAITERS);
+    assert_eq!(t.prf_service.hits(), 0);
+}
+
+#[tokio::test]
 async fn test_limits_each_signers_request_rate() {
     let other = PrivateKeySigner::random();
     let rpc = FakeRpc::start(vec![KmsContext::active(&[
@@ -703,7 +736,11 @@ async fn test_limits_each_signers_request_rate() {
 async fn test_closes_client_connections_idle_between_requests() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let t = TestProxy::start(StubPrfService::start().await).await;
+    let idle_timeout = Duration::from_secs(3);
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.client_idle_timeout = idle_timeout;
+    })
+    .await;
     let path = prf_path(1);
     let addr = t.addr;
     let auth = auth_header(&sender(), &path, b"").await;
@@ -732,8 +769,8 @@ async fn test_closes_client_connections_idle_between_requests() {
     assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
     let closed_after = idle.elapsed();
     assert!(
-        closed_after >= CLIENT_IDLE_TIMEOUT - Duration::from_millis(500)
-            && closed_after < CLIENT_IDLE_TIMEOUT + Duration::from_secs(2),
+        closed_after >= idle_timeout - Duration::from_millis(500)
+            && closed_after < idle_timeout + Duration::from_secs(2),
         "{closed_after:?}"
     );
 }

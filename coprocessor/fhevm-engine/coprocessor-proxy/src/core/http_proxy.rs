@@ -53,10 +53,6 @@ const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection")
 // those lack it: an unparsable request head (`400`) and `CONNECT` (`405`).
 const NO_STORE: &str = "no-store";
 
-/// How long a client connection can stay idle between two requests. Pingora otherwise waits for the
-/// next request on a reused connection without a limit.
-pub const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
-
 /// The longest time for one write to a client. A client that stops reading is then disconnected,
 /// and prf-service frees its body. Pingora has no limit by default.
 pub const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -64,6 +60,10 @@ pub const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long a request signed by an unknown signer waits for a poll of the KMS tx-senders that
 /// started after it, before it is checked again.
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
+
+/// The requests that wait for that poll at once. Any key can sign a request, and each waiting
+/// request holds its connection, so the ones beyond still wake the poll but are answered at once.
+pub const MAX_UNKNOWN_SIGNER_WAITERS: usize = 256;
 
 /// The window [`Config::max_requests_per_signer`](crate::core::Config) counts requests in. A
 /// refused request is told to retry after it.
@@ -136,7 +136,7 @@ impl ProxyHttp for Proxy {
         if self.draining.load(Ordering::Relaxed) {
             session.set_keepalive(None);
         } else {
-            session.set_keepalive(Some(CLIENT_IDLE_TIMEOUT.as_secs()));
+            session.set_keepalive(Some(self.config.client_idle_timeout.as_secs()));
         }
         session.set_write_timeout(Some(CLIENT_WRITE_TIMEOUT));
         Ok(())
@@ -190,9 +190,16 @@ impl ProxyHttp for Proxy {
             // The signer can be a node of a KMS context whose activation is finalized but not read
             // yet, so it is checked again after one read before being refused.
             Err(AuthError::UnknownSigner(_)) => {
-                self.kms_tx_senders
-                    .refresh_after_miss(UNKNOWN_SIGNER_WAIT)
-                    .await;
+                match self.unknown_signer_waiters.try_acquire() {
+                    Ok(_waiter) => {
+                        self.kms_tx_senders
+                            .refresh_after_miss(UNKNOWN_SIGNER_WAIT)
+                            .await
+                    }
+                    Err(_) => {
+                        self.kms_tx_senders.wake_after_miss();
+                    }
+                }
                 self.verifier.verify(authorization, target, b"")
             }
             verified => verified,

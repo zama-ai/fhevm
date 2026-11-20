@@ -113,6 +113,16 @@ pub struct Config {
         value_parser = humantime::parse_duration
     )]
     pub shutdown_delay: Duration,
+    /// How long a client connection can stay idle between two requests before the proxy closes
+    /// it. A layer in front of the proxy must close its idle connections sooner, and its own idle
+    /// timeout must outlast the time prf-service can hold a request.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT",
+        default_value = "120s",
+        value_parser = parse_whole_seconds
+    )]
+    pub client_idle_timeout: Duration,
     /// The worker threads of the proxy service. TLS handshakes, signature checks and forwarding
     /// all run on them, as does the readiness self-check's request.
     #[arg(long, env = "COPROCESSOR_PROXY_THREADS", default_value = "2")]
@@ -151,6 +161,15 @@ fn parse_non_zero_duration(value: &str) -> Result<Duration, String> {
     let duration = humantime::parse_duration(value).map_err(|e| e.to_string())?;
     if duration.is_zero() {
         return Err("duration must be greater than 0".to_string());
+    }
+    Ok(duration)
+}
+
+/// Parses a duration in whole seconds, the unit of Pingora's keep-alive timeout.
+fn parse_whole_seconds(value: &str) -> Result<Duration, String> {
+    let duration = parse_non_zero_duration(value)?;
+    if duration.subsec_nanos() != 0 {
+        return Err("duration must be a whole number of seconds".to_string());
     }
     Ok(duration)
 }
@@ -219,6 +238,7 @@ mod tests {
         );
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(10));
         assert_eq!(config.shutdown_delay, Duration::ZERO);
+        assert_eq!(config.client_idle_timeout, Duration::from_secs(120));
         assert_eq!(config.threads.get(), 2);
         assert_eq!(config.max_requests_per_signer.get(), 200);
         assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());
@@ -254,6 +274,7 @@ mod tests {
             ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "45s"),
             ("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT", "7s"),
             ("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "9s"),
+            ("COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT", "30s"),
             ("COPROCESSOR_PROXY_THREADS", "4"),
             ("OTEL_SERVICE_NAME", "coprocessor-proxy-test"),
             ("COPROCESSOR_PROXY_LOG_LEVEL", "debug"),
@@ -293,6 +314,7 @@ mod tests {
         assert_eq!(config.prf_service_response_timeout, Duration::from_secs(45));
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.shutdown_delay, Duration::from_secs(9));
+        assert_eq!(config.client_idle_timeout, Duration::from_secs(30));
         assert_eq!(config.threads.get(), 4);
         assert_eq!(config.service_name, "coprocessor-proxy-test");
         assert_eq!(config.log_level, Level::DEBUG);

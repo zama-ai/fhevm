@@ -1,5 +1,5 @@
 use crate::{
-    core::{Config, SIGNER_RATE_INTERVAL},
+    core::{Config, MAX_UNKNOWN_SIGNER_WAITERS, SIGNER_RATE_INTERVAL},
     kms_tx_senders::Follower,
     monitoring::health,
 };
@@ -27,6 +27,7 @@ use std::{
     },
     time::Duration,
 };
+use tokio::sync::Semaphore;
 use tracing::info;
 
 /// Read at startup only: a renewed certificate is served, and reported, after a restart.
@@ -47,6 +48,9 @@ pub struct Proxy {
     pub(super) kms_tx_senders: Arc<Follower<DynProvider>>,
     /// The authenticated requests of each signer, per [`SIGNER_RATE_INTERVAL`].
     pub(super) signer_requests: Rate,
+    /// The requests signed by an unknown signer that wait for a poll, at most
+    /// [`MAX_UNKNOWN_SIGNER_WAITERS`].
+    pub(super) unknown_signer_waiters: Semaphore,
     /// Set during the shutdown delay: each client connection closes after its next response.
     pub(super) draining: Arc<AtomicBool>,
 }
@@ -125,6 +129,7 @@ impl Proxy {
             prf_service,
             kms_tx_senders: Arc::new(follower),
             signer_requests: Rate::new(SIGNER_RATE_INTERVAL),
+            unknown_signer_waiters: Semaphore::new(MAX_UNKNOWN_SIGNER_WAITERS),
             draining: Arc::default(),
         };
         Ok((proxy, state))

@@ -75,12 +75,13 @@ accepted until the destruction's block is finalized and read: on Ethereum, about
 epochs) plus up to one refresh interval.
 
 The KMS connector serves a new context as soon as its own RPC node reports the activation block
-finalized. An unknown signer wakes a poll and waits at most 3 s before being checked again.
-Concurrent misses share the poll; an in-flight poll can delay the next one, and woken polls start
-at least 1 s apart. A signer still unknown gets `401 auth_unknown_signer` with `retryable: false`,
-as in RFC-038's error table. Connectors still retry it, since its context's activation may not have
-reached the proxy's RPC yet. Any signature that recovers an
-unknown address can trigger this path, including one signed for another audience, path or body.
+finalized. An unknown signer wakes a poll and waits at most 3 s before being checked again. At
+most 256 requests wait at once, since each holds its connection; the ones beyond are checked again
+at once. Concurrent misses share the poll; an in-flight poll can delay the next one, and woken
+polls start at least 1 s apart. A signer still unknown gets `401 auth_unknown_signer` with
+`retryable: false`, as in RFC-038's error table. Connectors still retry it, since its context's
+activation may not have reached the proxy's RPC yet. Any signature that recovers an unknown address
+can trigger this path, including one signed for another audience, path or body.
 
 The NetworkPolicy matches the proxy pods in the release namespace only. When prf-service runs in
 another namespace, add its own policy there.
@@ -140,13 +141,14 @@ every node drain.
 ### Deployment requirement
 
 The proxy authenticates every request before forwarding it, but it does not protect its own
-connections from a client that holds them open. It closes a client connection that stays idle 15 s
-between two requests. Pingora 0.9 caps neither the number of connections nor the total time a
-client takes to send a request head: each read of it waits up to 60 s on a new connection and 15 s
-on a reused one, so a client that sends a byte at a time holds the connection. Pingora accepts
-request heads of up to 1 MiB, and waits up to 60 s for a TLS handshake. Each pending connection
-holds about 48 KB, so about 10,000 slow connections fill the 512Mi memory limit and the replica is
-OOM-killed, at any thread count. The proxy must therefore not be reachable directly from the
+connections from a client that holds them open. It closes a client connection that stays idle
+`coprocessorProxy.clientIdleTimeoutSeconds` (120 s by default) between two requests. Pingora 0.9
+caps neither the number of connections nor the total time a client takes to send a request head:
+each read of it waits up to 60 s on a new connection and the idle timeout on a reused one, so a
+client that sends a byte at a time holds the connection. Pingora accepts request heads of up to
+1 MiB, and waits up to 60 s for a TLS handshake. Each pending connection holds about 48 KB, so
+about 10,000 slow connections fill the 512Mi memory limit and the replica is OOM-killed, at any
+thread count. The proxy must therefore not be reachable directly from the
 internet. Put it behind one of:
 
 - an HTTP-aware layer that terminates the client's TLS connection, receives each request in full
@@ -159,9 +161,10 @@ The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open
 connection: a per-client connection limit must allow the connector's concurrent PRF requests, and
 the limits across all clients must stay well below the connections that fill a replica's memory.
 
-A connector's pool must close its idle connections to the proxy sooner than the proxy does, for
-example after 10 s. Otherwise a request sent as the proxy closes the connection fails with a
-connection error, which the connector then has to retry.
+A connector's pool, and any layer in front of the proxy, must close their idle connections to the
+proxy sooner than `clientIdleTimeoutSeconds`; a connector's pool, for example, after 10 s.
+Otherwise a request sent as the proxy closes the connection fails with a connection error, which
+the client then has to retry.
 
 A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle
 connections to the proxy unchanged. Every timeout of the front layer must sit between the
