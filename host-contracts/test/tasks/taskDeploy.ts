@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import fs from 'fs';
-import hre, { ethers, run } from 'hardhat';
+import hre, { ethers, run, upgrades } from 'hardhat';
 
 import {
   type CanonicalSnapshot,
@@ -111,6 +111,20 @@ describe('task:deployAllHostContracts', function () {
     ).to.be.rejectedWith(/"CANONICAL_CHAIN_ID" env variable is not set/);
   });
 
+  it('rejects --with-ciphertext-roots on a non-canonical host', async function () {
+    await expect(
+      run('task:deployAllHostContracts', { withKmsGeneration: false, withCiphertextRoots: true }),
+    ).to.be.rejectedWith(/--with-ciphertext-roots true requires --with-kms-generation true/);
+  });
+
+  it('deploys CiphertextRoots on the canonical host when asked to', async function () {
+    const ciphertextRoots = await ethers.getContractAt(
+      'CiphertextRoots',
+      readHostAddress('CIPHERTEXT_ROOTS_CONTRACT_ADDRESS'),
+    );
+    expect(await ciphertextRoots.getVersion()).to.equal('CiphertextRoots v0.1.0');
+  });
+
   it('deploys a fresh non-canonical host without a KMSGeneration proxy', async function () {
     process.env.SOLIDITY_COVERAGE = 'true';
     await run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'fresh' });
@@ -130,6 +144,46 @@ describe('task:deployAllHostContracts', function () {
 describe('task:deployEmptyUUPSProxies', function () {
   it('requires the KMSGeneration deployment role to be explicit', async function () {
     await expect(run('task:deployEmptyUUPSProxies')).to.be.rejectedWith(/withKmsGeneration/);
+  });
+});
+
+describe('task:prepareUpgradeCiphertextRootsFromEmptyProxy', function () {
+  const addressEnvVars = ['CIPHERTEXT_ROOTS_CONTRACT_ADDRESS', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS'] as const;
+  let previousEnv: Partial<Record<(typeof addressEnvVars)[number], string | undefined>>;
+
+  beforeEach(function () {
+    previousEnv = {};
+    for (const key of addressEnvVars) {
+      previousEnv[key] = process.env[key];
+    }
+  });
+
+  afterEach(function () {
+    for (const key of addressEnvVars) {
+      const previousValue = previousEnv[key];
+      if (previousValue === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previousValue;
+      }
+    }
+  });
+
+  it('prepares the upgrade of an empty proxy to CiphertextRoots without mutating the proxy implementation', async function () {
+    const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+    const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+    process.env.CIPHERTEXT_ROOTS_CONTRACT_ADDRESS = proxyAddress;
+    process.env.PROTOCOL_CONFIG_CONTRACT_ADDRESS = readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS');
+    const implementationBefore = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+
+    const prepared = await run('task:prepareUpgradeCiphertextRootsFromEmptyProxy', { verifyContract: false });
+    expect(await upgrades.erc1967.getImplementationAddress(proxyAddress)).to.equal(implementationBefore);
+
+    await executeUpgradeProposal(hre, prepared);
+    expect(await upgrades.erc1967.getImplementationAddress(proxyAddress)).to.equal(prepared.newImplementationAddress);
+
+    const ciphertextRoots = await ethers.getContractAt('CiphertextRoots', proxyAddress);
+    expect(await ciphertextRoots.getVersion()).to.equal('CiphertextRoots v0.1.0');
   });
 });
 

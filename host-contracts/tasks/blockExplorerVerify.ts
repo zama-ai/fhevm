@@ -161,6 +161,23 @@ task('task:verifyKMSGeneration')
     await verifyContract(run, proxyAddress);
   });
 
+task('task:verifyCiphertextRoots')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('CIPHERTEXT_ROOTS_CONTRACT_ADDRESS');
+    const implementationCiphertextRootsAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await verifyContract(run, implementationCiphertextRootsAddress);
+    await verifyContract(run, proxyAddress);
+  });
+
 task('task:verifyBridge')
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -251,6 +268,14 @@ task('task:verifyAllHostContracts')
       // to not panic if Etherscan throws an error due to already verified implementation
       console.log('Verify KMSGeneration contract:');
       await hre.run('task:verifyKMSGeneration', { useInternalProxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
+
+    try {
+      // to not panic if Etherscan throws an error due to already verified implementation
+      console.log('Verify CiphertextRoots contract:');
+      await hre.run('task:verifyCiphertextRoots', { useInternalProxyAddress });
     } catch (error) {
       console.error('An error occurred:', error);
     }
