@@ -29,7 +29,7 @@ use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFG
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::{postgres::PgListener, query, query_scalar, Postgres};
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -1546,6 +1546,66 @@ mod operand_boundary_mask_tests {
             (Duration::from_secs(25)..Duration::from_secs(120)).contains(&oldest),
             "the oldest wait is {oldest:?}"
         );
+        Ok(())
+    }
+
+    /// One ct64 query gives each Unmask row of the window its shortest valid ct64.
+    #[tokio::test]
+    async fn attaches_the_ct64_of_several_unmask_rows_in_one_window(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::tests::unmask::{package, store_ct64};
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        // Package 1: one euint16 input, with a stored 64-bit ct64. Package 2: two euint16 inputs,
+        // with a stored 32-bit ct64. Package 3: one euint16 input, without a ct64.
+        let (one, label_one) = package(&[3], &7u16.to_le_bytes());
+        let (two, label_two) = package(&[3, 3], &[1, 0, 2, 0]);
+        let (three, _) = package(&[3], &9u16.to_le_bytes());
+        store_ct64(&pool, label_one, 64).await;
+        store_ct64(&pool, label_two, 32).await;
+        let unmask = |id: u8, package: &[u8], index: u8, transaction: u8| {
+            let mut item = work_item(
+                handle(id),
+                vec![package.to_vec(), vec![index]],
+                None,
+                None,
+                true,
+            );
+            item.fhe_operation = SupportedFheOperations::Unmask as i16;
+            item.transaction_id = vec![transaction; 32];
+            item
+        };
+        let mut work = vec![
+            unmask(1, &one, 0, 0xAA),
+            unmask(2, &two, 0, 0xAA),
+            unmask(3, &two, 1, 0xAA),
+            unmask(4, &three, 0, 0xBB),
+        ];
+
+        let mut trx = pool.begin().await?;
+        let (waiting, _) = attach_unmask_pads(&mut trx, pool.clone(), &mut work).await?;
+        trx.rollback().await?;
+
+        let stored = |label: alloy::primitives::B256, length: i32| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, Vec<u8>>(
+                    "SELECT ciphertext64 FROM pad_ct64 WHERE label = $1 AND pad_length = $2",
+                )
+                .bind(label.as_slice())
+                .bind(length)
+                .fetch_one(&pool)
+                .await
+            }
+        };
+        assert_eq!(work[0].dependencies[2], stored(label_one, 64).await?);
+        assert_eq!(work[1].dependencies[2], stored(label_two, 32).await?);
+        assert_eq!(work[2].dependencies[2], stored(label_two, 32).await?);
+        assert_eq!(work[3].dependencies.len(), 2);
+        assert_eq!(waiting, HashSet::from([vec![0xBB; 32]]));
         Ok(())
     }
 
@@ -4337,23 +4397,26 @@ async fn request_pads(pool: sqlx::Pool<Postgres>, requests: BTreeSet<(i32, Vec<u
     }
 }
 
+/// The prf instance and the label of a pad.
+type PadLabel = (i32, Vec<u8>);
+
 /// Adds the pad ct64 to each `Unmask` row, as its third operand. It is empty for a bad package,
-/// and the operation fails. Uses the shortest ct64 that matches its digest. If no ct64 matches,
-/// requests the pad in a spawned task (see `request_pads`). A bad ct64 is local, so the operation
-/// must not fail. Returns the transactions that wait for a pad, and the age of the oldest `Unmask`
-/// that waits. The wait has no limit: all coprocessors must give the same result.
+/// and the operation fails. Reads the ct64 of all rows in one query, and uses the shortest ct64
+/// that matches its digest. If no ct64 matches, requests the pad in a spawned task (see
+/// `request_pads`). A bad ct64 is local, so the operation must not fail. Returns the transactions
+/// that wait for a pad, and the age of the oldest `Unmask` that waits. The wait has no limit: all
+/// coprocessors must give the same result.
 async fn attach_unmask_pads(
     trx: &mut sqlx::Transaction<'_, Postgres>,
     pool: sqlx::Pool<Postgres>,
     work: &mut [WorkItem],
 ) -> Result<(HashSet<TxHash>, Duration), sqlx::Error> {
-    let mut waiting = HashSet::new();
-    let mut waiting_outputs: Vec<Vec<u8>> = Vec::new();
-    let mut waiting_transactions: Vec<Vec<u8>> = Vec::new();
-    // Sorted, so that two requests lock the rows in the same order and cannot deadlock.
-    let mut requests: BTreeSet<(i32, Vec<u8>, i32)> = BTreeSet::new();
+    // Each Unmask row: its index in `work`, and its pad (prf instance, label, length).
+    let mut unmasks: Vec<(usize, i32, Vec<u8>, i32)> = Vec::new();
+    // The shortest pad of each prf instance and label, so that one query reads all the ct64.
+    let mut shortest: BTreeMap<PadLabel, i32> = BTreeMap::new();
     // A row with a terminal error stamp never runs again, so it needs no pad.
-    for w in work.iter_mut().filter(|w| {
+    for (i, w) in work.iter_mut().enumerate().filter(|(_, w)| {
         w.fhe_operation == SupportedFheOperations::Unmask as i16
             && w.dependencies.len() == 2
             && !(w.is_error && !stamp_is_retryable(w.error_message.as_deref()))
@@ -4364,28 +4427,67 @@ async fn attach_unmask_pads(
         };
         let prf_instance = i32::from(package.prf_id);
         let pad_length = i32::try_from(package.pad_bits()).expect("at most 2048 bits");
-        // A longer pad starts with the same bits.
-        let stored = query!(
-            "SELECT ciphertext64, ciphertext_digest FROM pad_ct64
-              WHERE prf_instance = $1 AND label = $2 AND pad_length >= $3
-              ORDER BY pad_length",
-            prf_instance,
-            package.label.as_slice(),
-            pad_length,
-        )
-        .fetch_all(trx.as_mut())
-        .await?;
-        let (valid, bad): (Vec<_>, Vec<_>) = stored
-            .into_iter()
-            .partition(|s| keccak256(&s.ciphertext64).as_slice() == s.ciphertext_digest);
-        if !bad.is_empty() {
-            error!(target: "tfhe_worker", label = %package.label, rows = bad.len(), "Stored ct64 does not match its digest");
+        let label = package.label.to_vec();
+        shortest
+            .entry((prf_instance, label.clone()))
+            .and_modify(|length| *length = (*length).min(pad_length))
+            .or_insert(pad_length);
+        unmasks.push((i, prf_instance, label, pad_length));
+    }
+    if unmasks.is_empty() {
+        return Ok((HashSet::new(), Duration::ZERO));
+    }
+    let mut prf_instances = Vec::with_capacity(shortest.len());
+    let mut labels = Vec::with_capacity(shortest.len());
+    let mut pad_lengths = Vec::with_capacity(shortest.len());
+    for ((prf, label), length) in shortest {
+        prf_instances.push(prf);
+        labels.push(label);
+        pad_lengths.push(length);
+    }
+    // A longer pad starts with the same bits.
+    let rows = query!(
+        r#"SELECT c.prf_instance AS "prf_instance!", c.label AS "label!",
+                  c.pad_length AS "pad_length!", c.ciphertext64 AS "ciphertext64!",
+                  c.ciphertext_digest AS "ciphertext_digest!"
+             FROM pad_ct64 c
+             JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+               ON c.prf_instance = r.prf AND c.label = r.label AND c.pad_length >= r.length
+            ORDER BY c.prf_instance, c.label, c.pad_length"#,
+        &prf_instances,
+        &labels,
+        &pad_lengths,
+    )
+    .fetch_all(trx.as_mut())
+    .await?;
+    // The valid ct64 of each prf instance and label, shortest first.
+    let mut valid: HashMap<PadLabel, Vec<(i32, Vec<u8>)>> = HashMap::new();
+    for row in rows {
+        if keccak256(&row.ciphertext64).as_slice() == row.ciphertext_digest {
+            valid
+                .entry((row.prf_instance, row.label))
+                .or_default()
+                .push((row.pad_length, row.ciphertext64));
+        } else {
+            error!(target: "tfhe_worker", label = %alloy::primitives::B256::from_slice(&row.label), pad_length = row.pad_length, "Stored ct64 does not match its digest");
         }
-        if let Some(stored) = valid.into_iter().next() {
-            w.dependencies.push(stored.ciphertext64);
+    }
+
+    let mut waiting = HashSet::new();
+    let mut waiting_outputs: Vec<Vec<u8>> = Vec::new();
+    let mut waiting_transactions: Vec<Vec<u8>> = Vec::new();
+    // Sorted, so that two requests lock the rows in the same order and cannot deadlock.
+    let mut requests: BTreeSet<(i32, Vec<u8>, i32)> = BTreeSet::new();
+    for (i, prf_instance, label, pad_length) in unmasks {
+        let w = &mut work[i];
+        let ct64 = valid
+            .get(&(prf_instance, label.clone()))
+            .and_then(|stored| stored.iter().find(|(length, _)| *length >= pad_length));
+        if let Some((_, ct64)) = ct64 {
+            w.dependencies.push(ct64.clone());
             continue;
         }
-        requests.insert((prf_instance, package.label.to_vec(), pad_length));
+        requests.insert((prf_instance, label, pad_length));
         waiting.insert(w.transaction_id.clone());
         waiting_outputs.push(w.output_handle.clone());
         waiting_transactions.push(w.transaction_id.clone());

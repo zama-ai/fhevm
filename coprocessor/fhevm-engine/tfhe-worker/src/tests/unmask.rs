@@ -83,7 +83,7 @@ async fn wait_for_pad_request(pool: &sqlx::PgPool, label: B256) -> i32 {
 }
 
 /// Writes the ct64 as the pad-worker does.
-async fn store_ct64(pool: &sqlx::PgPool, label: B256, pad_length: i32) {
+pub(crate) async fn store_ct64(pool: &sqlx::PgPool, label: B256, pad_length: i32) {
     let ct64 = MockOneTimePadMask::new_random(PRF_ID, label, usize::try_from(pad_length).unwrap())
         .unwrap()
         .compress()
