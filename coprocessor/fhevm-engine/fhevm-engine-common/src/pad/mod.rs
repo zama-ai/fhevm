@@ -251,8 +251,7 @@ pub fn unmask_input(
     }
     if ct64.is_empty() {
         return Err(FhevmError::PadUnmask(
-            "no valid pad: the pad-worker failed it, or its ct64 does not match its digest"
-                .to_string(),
+            "no valid pad: its ct64 does not match its digest".to_string(),
         ));
     }
     unmasker()

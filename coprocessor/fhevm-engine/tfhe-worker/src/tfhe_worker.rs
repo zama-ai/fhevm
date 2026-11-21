@@ -1455,6 +1455,48 @@ mod operand_boundary_mask_tests {
         Ok(())
     }
 
+    /// A failed pad gets a new request only when it is older than `UNMASK_PAD_RETRY_AGE`.
+    #[tokio::test]
+    async fn requests_a_failed_pad_again_at_most_once_a_minute(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+        // Label 1 failed 10 s ago, label 2 failed 2 min ago.
+        for (label, age_secs) in [(1u8, 10.0), (2u8, 120.0)] {
+            sqlx::query(
+                "INSERT INTO pads (prf_instance, label, pad_length, triggered_by, is_error, created_at)
+                 VALUES (1, $1, 16, $2, TRUE, NOW() - make_interval(secs => $3))",
+            )
+            .bind(vec![label; 32])
+            .bind(vec![7u8; 20])
+            .bind(age_secs)
+            .execute(&pool)
+            .await?;
+        }
+
+        request_pads(
+            pool.clone(),
+            [1u8, 2].map(|label| (1, vec![label; 32], 16)).into(),
+        )
+        .await;
+
+        let rows: Vec<(Vec<u8>, bool, Vec<u8>)> =
+            sqlx::query_as("SELECT label, is_error, triggered_by FROM pads ORDER BY label")
+                .fetch_all(&pool)
+                .await?;
+        assert_eq!(
+            rows,
+            vec![
+                (vec![1; 32], true, vec![7; 20]),
+                (vec![2; 32], false, UNMASK_TRIGGERED_BY.to_vec()),
+            ]
+        );
+        Ok(())
+    }
+
     /// Fairness regression for the lockless fallback: the deferred
     /// transaction enters the cooldown, so the next window slice reaches
     /// the younger transaction instead of repeating the same batch forever.
@@ -4156,6 +4198,8 @@ const UNMASK_WAIT_WARNING: Duration = Duration::from_secs(600);
 const UNMASK_WAIT_WARNING_INTERVAL: Duration = Duration::from_secs(60);
 /// The cooldown of a transaction that waits for a pad, when DCID locking is disabled.
 const UNMASK_WAIT_COOLDOWN: Duration = Duration::from_secs(5);
+/// The minimum age of a failed pad before Unmask requests it again: one try a minute at most.
+const UNMASK_PAD_RETRY_AGE: Duration = Duration::from_secs(60);
 
 /// Returns true at most once in each `UNMASK_WAIT_WARNING_INTERVAL`, for the whole process.
 fn unmask_wait_warning_is_due() -> bool {
@@ -4170,7 +4214,9 @@ fn unmask_wait_warning_is_due() -> bool {
             .is_ok()
 }
 
-/// Adds a `pads` row for each request, and gives a connector's pending row to Unmask. Run it
+/// Adds a `pads` row for each request, and gives a connector's pending row to Unmask. Replaces a
+/// failed row older than `UNMASK_PAD_RETRY_AGE`: the failure can be local, and the other
+/// coprocessors can compute the pad. Run it
 /// outside the batch transaction: in that transaction, the pad-worker sees the rows only after the
 /// batch commits, and the row locks stay until then. Spawn it: a second connection from the pool
 /// can time out while the batch transaction holds one. If it fails, the next pass requests the
@@ -4185,6 +4231,23 @@ async fn request_pads(pool: sqlx::Pool<Postgres>, requests: BTreeSet<(i32, Vec<u
         pad_lengths.push(length);
     }
     let result = async {
+        query!(
+            "DELETE FROM pads
+              WHERE (prf_instance, label, pad_length) IN (
+                    SELECT p.prf_instance, p.label, p.pad_length
+                      FROM pads p
+                      JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+                        ON (p.prf_instance, p.label, p.pad_length) = (r.prf, r.label, r.length)
+                     WHERE p.is_error AND p.created_at <= NOW() - make_interval(secs => $4)
+                     ORDER BY 1, 2, 3
+                       FOR UPDATE)",
+            &prf_instances,
+            &labels,
+            &pad_lengths,
+            UNMASK_PAD_RETRY_AGE.as_secs_f64(),
+        )
+        .execute(&pool)
+        .await?;
         query!(
             "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
              SELECT prf, label, length, $4
@@ -4223,8 +4286,8 @@ async fn request_pads(pool: sqlx::Pool<Postgres>, requests: BTreeSet<(i32, Vec<u
 }
 
 /// Adds the pad ct64 to each `Unmask` row, as its third operand. It is empty when the operation
-/// must fail: a bad package, a pad that the pad-worker failed, or a ct64 that does not match its
-/// digest. For a missing ct64, requests the pad in a spawned task (see `request_pads`). Returns
+/// must fail: a bad package, or a ct64 that does not match its digest. For a missing ct64,
+/// requests the pad in a spawned task (see `request_pads`). Returns
 /// the transactions that wait for a pad, and the age of the oldest `Unmask` that waits. The wait
 /// has no limit: all coprocessors must give the same result.
 async fn attach_unmask_pads(
@@ -4267,18 +4330,6 @@ async fn attach_unmask_pads(
                 error!(target: "tfhe_worker", label = %package.label, "Stored ct64 does not match its digest");
                 w.dependencies.push(vec![]);
             }
-            continue;
-        }
-        let failed = query_scalar!(
-            "SELECT is_error FROM pads WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
-            prf_instance,
-            package.label.as_slice(),
-            pad_length,
-        )
-        .fetch_optional(trx.as_mut())
-        .await?;
-        if failed == Some(true) {
-            w.dependencies.push(vec![]);
             continue;
         }
         requests.insert((prf_instance, package.label.to_vec(), pad_length));

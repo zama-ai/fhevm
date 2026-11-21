@@ -67,7 +67,7 @@ fn verify_input(package: &[u8], index: u8, fhe_type: u8, result: Handle) -> Tfhe
 async fn wait_for_pad_request(pool: &sqlx::PgPool, label: B256) -> i32 {
     for _ in 0..240 {
         let pad_length: Option<i32> = sqlx::query_scalar(
-            "SELECT pad_length FROM pads WHERE label = $1 AND triggered_by = $2",
+            "SELECT pad_length FROM pads WHERE label = $1 AND triggered_by = $2 AND NOT is_error",
         )
         .bind(label.as_slice())
         .bind(UNMASK_TRIGGERED_BY.as_slice())
@@ -302,23 +302,39 @@ async fn unmask_error(harness: &EventHarness, package: &[u8]) -> String {
 }
 
 #[tokio::test]
-async fn fails_the_unmask_when_the_pad_worker_failed_the_pad(
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn computes_a_failed_pad_again_for_the_unmask() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let (package, label) = package(&[3], &7u16.to_le_bytes());
+    // The pad-worker of this coprocessor failed the pad, more than a minute ago. The other
+    // coprocessors can compute it.
     sqlx::query(
-        "INSERT INTO pads (prf_instance, label, pad_length, triggered_by, is_error)
-         VALUES ($1, $2, 16, $3, TRUE)",
+        "INSERT INTO pads (prf_instance, label, pad_length, triggered_by, is_error, created_at)
+         VALUES ($1, $2, 16, $3, TRUE, NOW() - INTERVAL '2 minutes')",
     )
     .bind(i32::from(PRF_ID))
     .bind(label.as_slice())
     .bind([7u8; 20].as_slice())
     .execute(&harness.pool)
     .await?;
+    let tx_id = next_handle();
+    let value = next_handle_with_type(3);
 
-    assert!(unmask_error(&harness, &package)
-        .await
-        .contains("the pad-worker failed it"));
+    let mut tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let event = verify_input(&package, 0, 3, value);
+    insert_event(&harness.listener_db, &mut tx, tx_id, event, true).await?;
+    allow_handle(&harness.listener_db, &mut tx, &value).await?;
+    tx.commit().await?;
+
+    // The Unmask waits, and the tfhe-worker asks for the pad again.
+    assert_eq!(wait_for_pad_request(&harness.pool, label).await, 16);
+    store_ct64(&harness.pool, label, 16).await;
+    wait_until_computed(&harness.app).await?;
+    let values = decrypt_handles(&harness.pool, &[value]).await?;
+    assert_eq!(values[0].value, "7");
     Ok(())
 }
 
