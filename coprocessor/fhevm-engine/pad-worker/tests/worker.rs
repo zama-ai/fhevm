@@ -430,6 +430,25 @@ async fn the_connector_with_fewer_rows_in_progress_goes_first() {
 }
 
 #[tokio::test]
+async fn the_rows_for_unmask_go_first() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, INSTANCE, 1, 1, 30.0).await;
+    // Connector 0 has the zero address: the tfhe-worker adds such a row for Unmask.
+    add_row(&pool, INSTANCE, 2, 0, 10.0).await;
+
+    let claim = rows::claim(
+        &pool,
+        INSTANCE,
+        Duration::from_secs(600),
+        Duration::from_secs(60),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(claim.label, B256::repeat_byte(2));
+}
+
+#[tokio::test]
 async fn uploads_the_output_with_its_attestation() {
     let (_instance, pool) = db().await;
     let (_localstack, client, uploader) = s3().await;

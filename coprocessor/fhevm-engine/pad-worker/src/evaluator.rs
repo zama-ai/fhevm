@@ -1,12 +1,13 @@
 //! The pad computation, behind a trait: tests and the e2e stack run without tfhe-rs.
 
 use alloy::primitives::{keccak256, B256};
+use fhevm_engine_common::pad::mock::MockOneTimePadMask;
 use std::{num::NonZeroUsize, time::Duration};
 
 /// The two forms of one PRF output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PadOutputs {
-    /// Before noise squashing, raw: the form that Unmask uses.
+    /// The form before noise squashing, compressed. Unmask uses it.
     pub ct64: Vec<u8>,
     /// After noise squashing, compressed: the body that prf-service serves.
     pub ct128: Vec<u8>,
@@ -17,33 +18,32 @@ pub trait PadEvaluator: Send + Sync {
     fn evaluate(&self, prf: u16, label: B256, pad_length: u16) -> anyhow::Result<PadOutputs>;
 }
 
-/// Mock size of the raw ct64 of one 4-bit block: 256 KiB for a 64-bit pad, 8 MiB for 2,048 bits.
-pub const MOCK_CT64_BLOCK_BYTES: usize = 16 * 1024;
 /// Mock size of the compressed ct128 of one 4-bit block: about 100 KB for a 64-bit pad.
 pub const MOCK_CT128_BLOCK_BYTES: usize = 6 * 1024;
 
-/// Fixed bytes from the inputs, in the sizes of the real outputs (estimates). No FHE.
+/// Gives the mock ct64 of `fhevm_engine_common::pad::mock`, which Unmask can read, and fixed
+/// ct128 bytes. Both have the estimated sizes of the real outputs. It does no FHE.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MockEvaluator;
 
 impl PadEvaluator for MockEvaluator {
     fn evaluate(&self, prf: u16, label: B256, pad_length: u16) -> anyhow::Result<PadOutputs> {
+        let ct64 = MockOneTimePadMask::new_random(prf, label, usize::from(pad_length))?
+            .compress()
+            .into_bytes();
+        let chunk = keccak256(
+            [
+                b"ct128".as_slice(),
+                &prf.to_le_bytes(),
+                label.as_slice(),
+                &pad_length.to_le_bytes(),
+            ]
+            .concat(),
+        );
         let blocks = usize::from(pad_length.div_ceil(4));
-        let bytes = |form: &[u8], block_bytes: usize| -> Vec<u8> {
-            let chunk = keccak256(
-                [
-                    form,
-                    &prf.to_le_bytes(),
-                    label.as_slice(),
-                    &pad_length.to_le_bytes(),
-                ]
-                .concat(),
-            );
-            chunk.repeat(blocks * block_bytes / 32)
-        };
         Ok(PadOutputs {
-            ct64: bytes(b"ct64", MOCK_CT64_BLOCK_BYTES),
-            ct128: bytes(b"ct128", MOCK_CT128_BLOCK_BYTES),
+            ct64,
+            ct128: chunk.repeat(blocks * MOCK_CT128_BLOCK_BYTES / 32),
         })
     }
 }
@@ -82,7 +82,8 @@ mod tests {
         let first = MockEvaluator.evaluate(1, label, 64).unwrap();
         assert_eq!(first, MockEvaluator.evaluate(1, label, 64).unwrap());
         assert_ne!(first.ct64, first.ct128);
-        assert_eq!(first.ct64.len(), 16 * MOCK_CT64_BLOCK_BYTES);
+        // The ct64 of a 64-bit pad is about 2 kB.
+        assert_eq!(first.ct64.len(), 2048);
         assert_eq!(first.ct128.len(), 16 * MOCK_CT128_BLOCK_BYTES);
         assert_ne!(first, MockEvaluator.evaluate(2, label, 64).unwrap());
         assert_ne!(first, MockEvaluator.evaluate(1, label, 32).unwrap());

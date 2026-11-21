@@ -208,6 +208,10 @@ changes the bytes of the outputs needs a new `prfId`.
 The pad-worker has no Service except the metrics one, and `padWorkerShared.serviceMonitor.enabled`
 adds a ServiceMonitor: nothing calls a pad-worker.
 
+Unmask also adds rows to `pads`. When a tfhe-worker has no ct64 for a pad input, it adds a `pads`
+row with the zero address in `triggered_by`. The pad-worker computes these rows before the rows of
+the connectors.
+
 ### Pad garbage collection
 
 Every pad-worker runs the GC every `PAD_GC_INTERVAL` (1 min) on the rows of all PRF instances. It
