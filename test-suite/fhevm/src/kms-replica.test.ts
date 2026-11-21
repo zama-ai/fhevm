@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseContextAndEpoch, parseReplayCalldata } from "./commands/kms-context-switch";
+import { parseContextAndEpoch, parseReplayCalldata } from "./kms-replica";
 
-describe("kms-context-switch parseContextAndEpoch", () => {
+describe("kms-replica parseContextAndEpoch", () => {
   test("parses the two newline-separated uint values cast prints", () => {
     expect(parseContextAndEpoch("2\n5")).toEqual({ contextId: 2n, epochId: 5n });
   });
@@ -39,7 +39,7 @@ describe("kms-context-switch parseContextAndEpoch", () => {
   });
 });
 
-describe("kms-context-switch parseReplayCalldata", () => {
+describe("kms-replica parseReplayCalldata", () => {
   test("returns the calldata of each call in replay order", () => {
     const output = [
       "Nothing to compile",

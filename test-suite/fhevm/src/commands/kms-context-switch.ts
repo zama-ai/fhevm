@@ -71,20 +71,24 @@
  * ones, so it expects a pristine stack. Re-up between runs
  * (`fhevm-cli down && fhevm-cli up --scenario five-party-swap-threshold-kms`).
  */
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { PreflightError } from "../errors";
-import { runContractTask } from "../flow/contracts";
-import { castBool, castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
+import { castBool, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
 import { stepComposeTask } from "../flow/runtime-compose";
-import { defaultHostChain, extraHostChains } from "../flow/topology";
 import { columnQuery, checkConnectorsDbColumn, connectorQuery } from "../kms-connector-db";
 import { castSend, getEventTopic, callContractAndExpectRevert, keccakTopic, loadHostOwner, type Owner } from "../kms-onchain";
 import { kmsConnectorDbName, kmsConnectorEnvName, kmsTxSenderName, reconstructionThreshold } from "../kms-party";
-import { type HostChainRuntime, composePath, envPath } from "../layout";
+import {
+  type ContextAndEpoch,
+  type SwitchTarget,
+  assertReplicasDeployed,
+  readContextAndEpoch,
+  replicasOf,
+  syncReplicas,
+  waitForLatestFinalized,
+} from "../kms-replica";
+import { envPath } from "../layout";
 import type { State } from "../types";
-import { hostReachableRpcUrl, readEnvFile, uint256ToId, withHexPrefix } from "../utils/fs";
+import { readEnvFile, uint256ToId } from "../utils/fs";
 import { run } from "../utils/process";
 import {
   type DecryptionRunner,
@@ -98,37 +102,12 @@ import {
 /** Generous bound: a 4-party reshare + per-party on-chain confirmations. */
 const ACTIVATION_TIMEOUT_MS = 600_000;
 const ACTIVATION_POLL_MS = 5_000;
-const FINALITY_TIMEOUT_MS = 120_000;
-const FINALITY_POLL_MS = 1_000;
-
-export type ContextAndEpoch = { contextId: bigint; epochId: bigint };
 
 /** Runs the app-level input-proof smoke; throws when the flow regresses. */
 export type SmokeRunner = (label: string) => Promise<void>;
 
 /** Runs the "Coprocessor proxy" e2e test titled `test` with `env`; throws unless it passes. */
 export type ProxyCheckRunner = (label: string, test: string, env: Record<string, string>) => Promise<void>;
-
-/** Parses `cast call getCurrentKmsContextAndEpoch()(uint256,uint256)` output into bigints. cast prints
- * each return value as `<decimal> [<scientific-notation>]` (one per line for a tuple), so strip the
- * informational `[…]` annotations and take the first two decimal tokens. The ids are large
- * domain-tagged uint256 values (e.g. contextId `0x07…`, epochId `0x08…`), not small counters.
- * Exported for unit testing. */
-export const parseContextAndEpoch = (raw: string): ContextAndEpoch => {
-  const ids = raw
-    .replace(/\[[^\]]*\]/g, " ")
-    .split(/\s+/)
-    .filter((token) => /^\d+$/.test(token));
-  if (ids.length < 2) {
-    throw new PreflightError(
-      `kms-context-switch: could not parse getCurrentKmsContextAndEpoch output: ${JSON.stringify(raw)}`,
-    );
-  }
-  return { contextId: BigInt(ids[0]), epochId: BigInt(ids[1]) };
-};
-
-const readContextAndEpoch = async (rpcUrl: string, protocolConfig: string): Promise<ContextAndEpoch> =>
-  parseContextAndEpoch(await castCall(rpcUrl, protocolConfig, "getCurrentKmsContextAndEpoch()(uint256,uint256)"));
 
 /** Polls the on-chain active context/epoch until `reached` holds, or throws with the last-seen
  * state on timeout (the signal that the KMS did not finish resharing/confirming). */
@@ -156,72 +135,6 @@ const waitForActivation = async (
   return current;
 };
 
-/** Waits for the latest block to finalize and returns that block's timestamp. */
-const waitForLatestFinalized = async (rpcUrl: string): Promise<number> => {
-  const url = hostReachableRpcUrl(rpcUrl);
-  const castNumber = async (...tag: string[]) =>
-    Number((await run(["cast", ...tag, "--rpc-url", url])).stdout.trim());
-  const latest = await castNumber("block-number");
-  const deadline = Date.now() + FINALITY_TIMEOUT_MS;
-  while ((await castNumber("block", "finalized", "--field", "number")) < latest) {
-    if (Date.now() >= deadline) {
-      throw new PreflightError(`kms-context-switch: block ${latest} not finalized within ${FINALITY_TIMEOUT_MS / 1000}s`);
-    }
-    await Bun.sleep(FINALITY_POLL_MS);
-  }
-  return castNumber("block", String(latest), "--field", "timestamp");
-};
-
-/** Reads the calldata of each call that `task:buildReplicaReplayCalldata` prints, in replay order.
- * Exported for unit testing. */
-export const parseReplayCalldata = (output: string): string[] =>
-  [...output.matchAll(/^\s*calldata:\s*(0x[0-9a-fA-F]+)\s*$/gm)].map((match) => match[1]);
-
-const REPLAY_OUTPUT_FILE = "replica-replay.txt";
-const KMS_SIGNERS_SIGNATURE = "getKmsSignersForContext(uint256)(address[])";
-
-type Replica = { chain: HostChainRuntime; rpcUrl: string; address: string };
-
-const replicasOf = (state: State): Replica[] =>
-  extraHostChains(state).map((chain) => ({
-    chain,
-    rpcUrl: hostReachableRpcUrl(state.discovery!.endpoints.hosts[chain.key].http),
-    address: withHexPrefix(state.discovery!.hosts[chain.key].PROTOCOL_CONFIG_CONTRACT_ADDRESS),
-  }));
-
-const assertReplicaMatchesCanonical = async (replica: Replica, canonical: SwitchTarget, afterWhat: string) => {
-  const expected = await readContextAndEpoch(canonical.rpcUrl, canonical.configAddress);
-  const actual = await readContextAndEpoch(replica.rpcUrl, replica.address);
-  if (actual.contextId !== expected.contextId || actual.epochId !== expected.epochId) {
-    throw new PreflightError(
-      `kms-context-switch: replica on ${replica.chain.key} is at (contextId=${actual.contextId}, epochId=${actual.epochId}) ` +
-        `after ${afterWhat}. Canonical is at (contextId=${expected.contextId}, epochId=${expected.epochId})`,
-    );
-  }
-  const [expectedSigners, actualSigners] = await Promise.all([
-    castCall(canonical.rpcUrl, canonical.configAddress, KMS_SIGNERS_SIGNATURE, expected.contextId.toString()),
-    castCall(replica.rpcUrl, replica.address, KMS_SIGNERS_SIGNATURE, expected.contextId.toString()),
-  ]);
-  if (actualSigners !== expectedSigners) {
-    throw new PreflightError(
-      `kms-context-switch: replica on ${replica.chain.key} lists signers ${actualSigners} for context ${expected.contextId} ` +
-        `after ${afterWhat}. Canonical lists ${expectedSigners}`,
-    );
-  }
-};
-
-const assertReplicasDeployed = async (state: State, canonical: SwitchTarget) => {
-  for (const replica of replicasOf(state)) {
-    const version = await castCall(replica.rpcUrl, replica.address, "getVersion()(string)");
-    if (!version.includes("ProtocolConfigReplica")) {
-      throw new PreflightError(
-        `kms-context-switch: ProtocolConfig on ${replica.chain.key} reports version ${version}, not a ProtocolConfigReplica`,
-      );
-    }
-    await assertReplicaMatchesCanonical(replica, canonical, "deploy");
-  }
-};
-
 /** The KMS nodes confirm a destruction asynchronously, after the destroy call has returned. */
 const waitForDestructionQuorum = async (canonical: SwitchTarget, event: string, destroyedId: bigint) => {
   const topic = await keccakTopic(event);
@@ -240,40 +153,6 @@ const waitForDestructionQuorum = async (canonical: SwitchTarget, event: string, 
       );
     }
     await Bun.sleep(ACTIVATION_POLL_MS);
-  }
-};
-
-/**
- * The replay task reads the canonical events only up to the latest finalized block. Any account may
- * send the calldata, because the replica checks the KMS signatures.
- */
-const syncReplicas = async (state: State, canonical: SwitchTarget, afterWhat: string) => {
-  await waitForLatestFinalized(canonical.rpcUrl);
-  const canonicalChain = defaultHostChain(state);
-  const hostSc = await readEnvFile(envPath("host-sc"));
-  // The host pauser is a funded anvil account on every host chain. It is not the ACL owner of the replica.
-  const sender: Owner = { key: hostSc.PAUSER_PRIVATE_KEY, address: hostSc.PAUSER_ADDRESS_0 };
-  for (const replica of replicasOf(state)) {
-    const { chain } = replica;
-    console.log(`[kms-context-switch] replaying ${afterWhat} onto the replica on ${chain.key}…`);
-    await runContractTask(
-      "host-sc",
-      `${chain.sc}-deploy`,
-      [
-        "npx hardhat task:buildReplicaReplayCalldata",
-        `--canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort}`,
-        `--canonical-protocol-config-address ${canonical.configAddress}`,
-        "--use-internal-proxy-address true",
-        `> /app/addresses/${REPLAY_OUTPUT_FILE} && cat /app/addresses/${REPLAY_OUTPUT_FILE}`,
-      ].join(" "),
-      { envComponent: chain.sc, composeFile: composePath(chain.sc) },
-    );
-    const output = await readFile(path.join(path.dirname(chain.addressesPath), REPLAY_OUTPUT_FILE), "utf8");
-    for (const calldata of parseReplayCalldata(output)) {
-      await castSend(replica.rpcUrl, replica.address, sender, calldata);
-    }
-    await assertReplicaMatchesCanonical(replica, canonical, afterWhat);
-    console.log(`[kms-context-switch] replica on ${chain.key} matches canonical after ${afterWhat}`);
   }
 };
 
@@ -298,8 +177,6 @@ const proxiesRefuseNodes = async (
     );
   }
 };
-
-type SwitchTarget = { rpcUrl: string; configAddress: string; where: string };
 
 /** Node roles on this topology. The initial on-chain committee is parties 1..committeeSize; cores
  * beyond it are spares. The node-swap step drops the last committee slot(s) and promotes the

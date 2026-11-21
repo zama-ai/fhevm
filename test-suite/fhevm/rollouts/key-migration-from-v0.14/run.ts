@@ -1,13 +1,14 @@
 /**
  * Upgrades a 0.14 stack to this branch one step at a time, with checks in between, then migrates
- * the existing key to compressed material and reshares it. Runs as the `key-migration-from-v0.14`
- * test profile on the `key-migration-from-v0.14` scenario, or its `-gpu` variant for the GPU phase.
+ * the existing key to compressed material and reshares it. Last, one replay carries the
+ * ProtocolConfigReplica of every other host chain across both reshares. Runs as the
+ * `key-migration-from-v0.14` test profile on the `key-migration-from-v0.14` scenario, or its `-gpu`
+ * variant for the GPU phase.
  */
 import { createHash } from "node:crypto";
 
 import { runRetainedMaterial } from "../../src/consensus/retained-material-run";
 import { withRolloutSupervisor } from "../../src/consensus/rollout-supervision";
-import { type ContextAndEpoch, parseContextAndEpoch } from "../../src/commands/kms-context-switch";
 import { resolveRolloutSolidityRef } from "../../src/commands/rollout-solidity";
 import type { Stack } from "../../src/commands/stack";
 import type { State } from "../../src/types";
@@ -28,6 +29,7 @@ import {
   kmsPartyIds,
   kmsPublicPrefix,
 } from "../../src/kms-party";
+import { type ContextAndEpoch, parseContextAndEpoch, syncReplicas } from "../../src/kms-replica";
 import { hostReachableRpcUrl, uint256ToId } from "../../src/utils/fs";
 import { run, runStreaming } from "../../src/utils/process";
 import {
@@ -673,5 +675,12 @@ export const runKeyMigrationProfile = async (stack: Stack) => {
       stack.runGatewayContractTask("npx hardhat task:updateKmsContext --use-internal-proxy-address true", {
         env: { KMS_CONTEXT_ID: (before.contextId + 1n).toString() },
       }),
+  );
+
+  logPhase("13 replay the epoch rotation and the context switch onto every replica");
+  await syncReplicas(
+    await stack.readState(),
+    { rpcUrl: target.rpcUrl, configAddress: target.configAddress, where: target.where },
+    "the epoch rotation and the context switch",
   );
 };

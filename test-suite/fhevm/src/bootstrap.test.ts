@@ -137,7 +137,7 @@ describe("blue-green bootstrap", () => {
     expect(bootstrapPhaseEnv(contracts, withoutProxy, ["CONNECTOR_PROXY_VERSION"])).toEqual(contracts);
   });
 
-  test("lists every upgradeable contract through its task and lets the task skip an unmoved reinitializer", () => {
+  test("lists the upgradeable contracts through their tasks and lets the task skip an unmoved reinitializer", () => {
     expect(GATEWAY_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual([
       "Decryption",
       "CiphertextCommits",
@@ -152,7 +152,6 @@ describe("blue-green bootstrap", () => {
       "HCULimit",
       "InputVerifier",
       "KMSVerifier",
-      "ProtocolConfig",
     ]);
     for (const [task, contract] of [
       ...GATEWAY_CONTRACT_UPGRADES,
@@ -167,6 +166,20 @@ describe("blue-green bootstrap", () => {
     expect(command.split("\n").at(-1)).toBe(
       "npx hardhat task:upgradeDecryption --current-implementation previous-contracts/Decryption.sol:Decryption " +
         "--new-implementation contracts/Decryption.sol:Decryption --verify-contract false --use-internal-proxy-address true",
+    );
+  });
+
+  test("upgrades a ProtocolConfig proxy to a ProtocolConfigReplica and compares the reinitializers of both sources", () => {
+    const command = contractUpgradeCommand(
+      "task:upgradeProtocolConfigReplica",
+      "ProtocolConfig",
+      "ProtocolConfigReplica",
+    );
+    expect(command).toContain("previous-contracts/ProtocolConfig.sol | grep");
+    expect(command).toContain("contracts/ProtocolConfigReplica.sol | grep");
+    expect(command.split("\n").at(-1)).toBe(
+      "npx hardhat task:upgradeProtocolConfigReplica --current-implementation previous-contracts/ProtocolConfig.sol:ProtocolConfig " +
+        "--new-implementation contracts/ProtocolConfigReplica.sol:ProtocolConfigReplica --verify-contract false --use-internal-proxy-address true",
     );
   });
 });

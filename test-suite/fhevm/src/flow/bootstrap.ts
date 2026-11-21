@@ -94,20 +94,21 @@ export const bootstrapPhaseEnv = (
  * Upgrades a proxy from the snapshotted previous sources to the current ones, or exits cleanly
  * when the contract's reinitializer did not move: the task would otherwise revert, and the
  * plans below can stay a list of every upgradeable contract rather than a snapshot of one diff.
+ * `newContract` names the new implementation when it is not the current contract.
  */
-export const contractUpgradeCommand = (task: string, contract: string) => {
+export const contractUpgradeCommand = (task: string, contract: string, newContract = contract) => {
   const reinitializer = (file: string) =>
     `$(grep -m1 -oE 'REINITIALIZER_VERSION = [0-9]+' ${file} | grep -oE '[0-9]+' || true)`;
   return [
     `prev=${reinitializer(`previous-contracts/${contract}.sol`)}`,
-    `next=${reinitializer(`contracts/${contract}.sol`)}`,
+    `next=${reinitializer(`contracts/${newContract}.sol`)}`,
     `if [ -n "$prev" ] && [ "$prev" = "$next" ]; then`,
     `  echo "[bootstrap] ${contract}: reinitializer $prev unchanged since the snapshot; nothing to upgrade"; exit 0`,
     "fi",
     [
       `npx hardhat ${task}`,
       `--current-implementation previous-contracts/${contract}.sol:${contract}`,
-      `--new-implementation contracts/${contract}.sol:${contract}`,
+      `--new-implementation contracts/${newContract}.sol:${newContract}`,
       "--verify-contract false",
       "--use-internal-proxy-address true",
     ].join(" "),
@@ -126,12 +127,14 @@ export const GATEWAY_CONTRACT_UPGRADES = [
 /** Deployed on the canonical host chain only. */
 export const CANONICAL_HOST_CONTRACT_UPGRADES = [["task:upgradeKMSGeneration", "KMSGeneration"]] as const;
 
-/** Every host contract with an upgrade task that is deployed on each host chain. */
+/**
+ * Every host contract with an upgrade task that runs the same implementation on each host chain.
+ * ProtocolConfig is not in the list, because it becomes a ProtocolConfigReplica on every other chain.
+ */
 export const HOST_CONTRACT_UPGRADES = [
   ["task:upgradeFHEVMExecutor", "FHEVMExecutor"],
   ["task:upgradeACL", "ACL"],
   ["task:upgradeHCULimit", "HCULimit"],
   ["task:upgradeInputVerifier", "InputVerifier"],
   ["task:upgradeKMSVerifier", "KMSVerifier"],
-  ["task:upgradeProtocolConfig", "ProtocolConfig"],
 ] as const;
