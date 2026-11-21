@@ -839,8 +839,8 @@ export const runKmsContextSwitchProfile = async (
   // 5b) Prove the promoted spare actually holds a working reshared key.
   await proveSpareInQuorum(state, runDecryption);
 
-  // 6b) Every coprocessor-proxy refuses the dropped node once no Active context has it. Every
-  //     replica then drops the same contexts.
+  // 6b) Destroy the pre-swap contexts. Every coprocessor-proxy then refuses the dropped node, and
+  //     the replay drops the same contexts from every replica.
   if (runProxyCheck) {
     const destroyed = await destroyPreSwapContexts(
       { rpcUrl, protocolConfig: configAddress, owner }, { first: baseline, current: afterSwap },
