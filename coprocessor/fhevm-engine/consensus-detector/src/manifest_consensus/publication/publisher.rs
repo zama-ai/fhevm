@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use alloy_primitives::U256;
 use aws_sdk_s3::{error::ProvideErrorMetadata, primitives::ByteStream, Client};
@@ -137,6 +140,7 @@ async fn run_manifest_publisher_with_poll_interval(
 
     let mut ticker = tokio::time::interval(poll_interval);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let mut child_scan = ScanSpacing::default();
 
     loop {
         tokio::select! {
@@ -144,7 +148,17 @@ async fn run_manifest_publisher_with_poll_interval(
             _ = ticker.tick() => {}
         }
 
-        match publish_due_work(&pool, &client, &bucket, &signer, &consensus, &work_gate).await {
+        match publish_due_work(
+            &pool,
+            &client,
+            &bucket,
+            &signer,
+            &consensus,
+            &work_gate,
+            &mut child_scan,
+        )
+        .await
+        {
             Ok(()) => {}
             Err(ExecutionError::DbError(err)) if is_fatal_connection_error(&err) => {
                 return Err(ExecutionError::DbError(err));
@@ -160,6 +174,31 @@ async fn run_manifest_publisher_with_poll_interval(
     }
 }
 
+/// Spaces a recurring scan by its own cost: after a run, the scan waits
+/// [`Self::FACTOR`] times that run's duration, capped at [`Self::CAP`], so it
+/// takes at most ~10 % of the loop's time however large its input grows.
+#[derive(Debug, Default)]
+struct ScanSpacing {
+    not_before: Option<Instant>,
+}
+
+impl ScanSpacing {
+    const FACTOR: u32 = 10;
+    const CAP: Duration = Duration::from_secs(180);
+
+    fn is_due(&self, now: Instant) -> bool {
+        self.not_before.is_none_or(|at| now >= at)
+    }
+
+    fn ran(&mut self, started: Instant, finished: Instant) {
+        let wait = finished
+            .saturating_duration_since(started)
+            .saturating_mul(Self::FACTOR)
+            .min(Self::CAP);
+        self.not_before = Some(finished + wait);
+    }
+}
+
 async fn publish_due_work(
     pool: &PgPool,
     client: &Client,
@@ -167,6 +206,7 @@ async fn publish_due_work(
     signer: &CoproSigner,
     consensus: &ManifestConsensusConfig,
     work_gate: &ManifestWorkGate,
+    child_scan: &mut ScanSpacing,
 ) -> Result<(), ExecutionError> {
     let Some(consensus_epoch) = work_gate.pinned_consensus_epoch() else {
         return Ok(());
@@ -184,14 +224,26 @@ async fn publish_due_work(
     if !work_gate.work_enabled_for(&consensus_epoch) {
         return Ok(());
     }
-    let descendants = discover_children_for_consensus_epoch(pool, &consensus_epoch).await?;
-    if descendants > 0 {
-        debug!(descendants, "Discovered manifest lineage blocks");
-    }
-
     loop {
         if !work_gate.work_enabled_for(&consensus_epoch) {
             return Ok(());
+        }
+        // Sealing discovers the children of each block it seals, so a chain
+        // behind its head advances without this scan. The scan catches children
+        // that arrive after their parent was sealed (a chain at its head), and
+        // forks, and closes finalized parents. It runs inside the loop: a chain
+        // with a backlog keeps the loop going, and a chain at its head would
+        // otherwise wait for that backlog to drain. It walks every open sealed
+        // parent, which grows with the finality gap, so it is spaced by its
+        // own duration.
+        let started = Instant::now();
+        if child_scan.is_due(started) {
+            let descendants = discover_children_for_consensus_epoch(pool, &consensus_epoch).await;
+            child_scan.ran(started, Instant::now());
+            let descendants = descendants?;
+            if descendants > 0 {
+                debug!(descendants, "Discovered manifest lineage blocks");
+            }
         }
         let chain_ids = pending_chain_ids_for_consensus_epoch(pool, &consensus_epoch).await?;
         if chain_ids.is_empty() {
@@ -738,3 +790,28 @@ fn validate_existing_manifest(
 #[cfg(test)]
 #[path = "publisher_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod scan_spacing_tests {
+    use super::*;
+
+    #[test]
+    fn scan_waits_ten_times_its_duration_capped_at_three_minutes() {
+        let t0 = Instant::now();
+        let mut spacing = ScanSpacing::default();
+        assert!(spacing.is_due(t0), "the first scan always runs");
+
+        // 40 s scan (copro 1 BSC today): next one after the 3 min cap.
+        spacing.ran(t0, t0 + Duration::from_secs(40));
+        let end = t0 + Duration::from_secs(40);
+        assert!(!spacing.is_due(end + Duration::from_secs(179)));
+        assert!(spacing.is_due(end + Duration::from_secs(180)));
+
+        // 5 ms scan: next one 50 ms later.
+        let t1 = end + Duration::from_secs(180);
+        spacing.ran(t1, t1 + Duration::from_millis(5));
+        let end = t1 + Duration::from_millis(5);
+        assert!(!spacing.is_due(end + Duration::from_millis(49)));
+        assert!(spacing.is_due(end + Duration::from_millis(50)));
+    }
+}

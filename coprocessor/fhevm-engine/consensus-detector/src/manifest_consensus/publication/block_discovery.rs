@@ -55,6 +55,11 @@ const MANIFEST_WORK_SELECTION_TIMEOUT: Duration = Duration::from_secs(5);
 pub(super) const MANIFEST_HISTORY_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 /// How far an established frontier walks back to pick up late producer rows.
 const MANIFEST_DISCOVERY_BLOCK_OVERLAP: i64 = 5;
+/// A sealed parent with a sealed child stops being polled for more children
+/// once it is this many blocks below its chain's sealed tip, finalized or not:
+/// a new child there would need a reorg deeper than the host listener follows
+/// (50 blocks on BSC; Ethereum finalizes after 64).
+const MANIFEST_DISCOVERY_CLOSE_DEPTH: i64 = 256;
 
 /// Per-chain span of `block_manifest_state` already stored for this consensus_epoch.
 ///
@@ -750,6 +755,15 @@ pub(crate) async fn discover_children(pool: &PgPool) -> Result<u64, ExecutionErr
 // Close only after a finalized successor is durably discovered. The CTE snapshot
 // sees children inserted by an earlier poll, so closure may take one extra poll.
 //
+// Waiting for finality alone kept every sealed block above the finalized
+// frontier open, so this poll walked the whole finality gap (450k BSC parents,
+// 20-40 s per poll on zws-dev). A sealed parent with a sealed child also closes
+// once it is MANIFEST_DISCOVERY_CLOSE_DEPTH below its chain's sealed tip. The
+// tip is read from the open sealed rows: if it has already closed, the bound is
+// lower and fewer parents close. The tip CTE is MATERIALIZED: inlined, Postgres
+// re-aggregates every open sealed row for each candidate parent, which is
+// quadratic in the open set (86 s for 20k parents, hours for 450k).
+//
 // Only sealed parents are expanded: sealing discovers the children of the block
 // it seals, so this poll only catches children and forks that arrive later.
 // Expanding unsealed parents let discovery run one generation ahead per poll and
@@ -790,6 +804,13 @@ pub(crate) async fn discover_children_for_consensus_epoch(
                AND OCTET_LENGTH(child.parent_hash) = 32
             ON CONFLICT (consensus_epoch, host_chain_id, block_hash) DO NOTHING
             RETURNING 1
+        ), sealed_tip AS MATERIALIZED (
+            SELECT host_chain_id, MAX(block_number) AS tip
+              FROM block_manifest_state
+             WHERE NOT child_block_discovery_closed
+               AND consensus_epoch = $1
+               AND block_content_digest IS NOT NULL
+             GROUP BY host_chain_id
         ), closed AS (
             UPDATE block_manifest_state block
                SET child_block_discovery_closed = TRUE,
@@ -815,12 +836,29 @@ pub(crate) async fn discover_children_for_consensus_epoch(
                               AND child.block_status = 'finalized'
                        )
                    )
+                   OR (
+                       block.block_content_digest IS NOT NULL
+                       AND block.block_number <= (
+                           SELECT tip.tip - $2
+                             FROM sealed_tip tip
+                            WHERE tip.host_chain_id = block.host_chain_id
+                       )
+                       AND EXISTS (
+                           SELECT 1
+                             FROM block_manifest_state child
+                            WHERE child.consensus_epoch = block.consensus_epoch
+                              AND child.host_chain_id = block.host_chain_id
+                              AND child.parent_block_hash = block.block_hash
+                              AND child.block_content_digest IS NOT NULL
+                       )
+                   )
                )
             RETURNING 1
         )
         SELECT COUNT(*) AS "inserted!" FROM inserted
         "#,
         consensus_epoch,
+        MANIFEST_DISCOVERY_CLOSE_DEPTH,
     )
     .fetch_one(pool)
     .await?;

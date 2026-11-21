@@ -1425,6 +1425,65 @@ async fn discovery_waits_for_finalized_successor_after_pending_child_replacement
     assert_eq!(discover_children(&pool).await.unwrap(), 0);
 }
 
+/// Above the finalized frontier, a sealed parent with a sealed child stops
+/// being polled once it is MANIFEST_DISCOVERY_CLOSE_DEPTH below the chain's
+/// sealed tip; closer parents, and parents whose child is not sealed, stay open.
+#[tokio::test]
+#[serial(db)]
+async fn discovery_closes_deep_sealed_parents_without_finality() {
+    let (_instance, pool) = setup_pool().await;
+    // (number, hash, parent, sealed)
+    let blocks: [(i64, [u8; 32], [u8; 32], bool); 7] = [
+        (100, [0xa0; 32], [0x9f; 32], true), // deep parent, sealed child
+        (101, [0xa1; 32], [0xa0; 32], true),
+        (120, [0xb0; 32], [0xaf; 32], true), // deep parent, unsealed child
+        (121, [0xb1; 32], [0xb0; 32], false),
+        (300, [0xc0; 32], [0xbf; 32], true), // shallow parent, sealed child
+        (301, [0xc1; 32], [0xc0; 32], true),
+        (400, [0xd0; 32], [0xcf; 32], true), // sealed tip
+    ];
+    for (number, hash, parent, sealed) in &blocks {
+        insert_host_block(&pool, *number, hash, parent, "pending").await;
+        insert_manifest_state(&pool, *number, hash, parent).await;
+        if *sealed {
+            mark_sealed(&pool, hash).await;
+        }
+    }
+    discover_children(&pool).await.expect("discovery poll");
+
+    let closed = |hash: [u8; 32]| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT child_block_discovery_closed FROM block_manifest_state
+                 WHERE host_chain_id = $1 AND block_hash = $2",
+            )
+            .bind(CHAIN_ID)
+            .bind(hash.as_slice())
+            .fetch_one(&pool)
+            .await
+            .expect("read discovery state")
+        }
+    };
+    assert!(
+        closed([0xa0; 32]).await,
+        "deep parent with a sealed child closes"
+    );
+    assert!(
+        !closed([0xa1; 32]).await,
+        "its child has no sealed child yet"
+    );
+    assert!(
+        !closed([0xb0; 32]).await,
+        "an unsealed child keeps its parent open"
+    );
+    assert!(
+        !closed([0xc0; 32]).await,
+        "a parent within the depth stays open"
+    );
+    assert!(!closed([0xd0; 32]).await, "the sealed tip stays open");
+}
+
 const SOURCE_CHAIN_ID: i64 = 1;
 
 async fn insert_bridged_event(
