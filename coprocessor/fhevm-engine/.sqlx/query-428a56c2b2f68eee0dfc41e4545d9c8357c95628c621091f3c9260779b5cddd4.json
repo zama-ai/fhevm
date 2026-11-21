@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT ciphertext64, ciphertext_digest FROM pad_ct64\n              WHERE prf_instance = $1 AND label = $2 AND pad_length >= $3\n              ORDER BY pad_length\n              LIMIT 1",
+  "query": "SELECT ciphertext64, ciphertext_digest FROM pad_ct64\n              WHERE prf_instance = $1 AND label = $2 AND pad_length >= $3\n              ORDER BY pad_length",
   "describe": {
     "columns": [
       {
@@ -26,5 +26,5 @@
       false
     ]
   },
-  "hash": "abe86f1d31b635305b0a6e8491d6b877278509b325ce1422d0d7a5de2170e2b6"
+  "hash": "428a56c2b2f68eee0dfc41e4545d9c8357c95628c621091f3c9260779b5cddd4"
 }

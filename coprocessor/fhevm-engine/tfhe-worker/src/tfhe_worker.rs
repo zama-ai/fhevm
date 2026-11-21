@@ -4285,11 +4285,11 @@ async fn request_pads(pool: sqlx::Pool<Postgres>, requests: BTreeSet<(i32, Vec<u
     }
 }
 
-/// Adds the pad ct64 to each `Unmask` row, as its third operand. It is empty when the operation
-/// must fail: a bad package, or a ct64 that does not match its digest. For a missing ct64,
-/// requests the pad in a spawned task (see `request_pads`). Returns
-/// the transactions that wait for a pad, and the age of the oldest `Unmask` that waits. The wait
-/// has no limit: all coprocessors must give the same result.
+/// Adds the pad ct64 to each `Unmask` row, as its third operand. It is empty for a bad package,
+/// and the operation fails. Uses the shortest ct64 that matches its digest. If no ct64 matches,
+/// requests the pad in a spawned task (see `request_pads`). A bad ct64 is local, so the operation
+/// must not fail. Returns the transactions that wait for a pad, and the age of the oldest `Unmask`
+/// that waits. The wait has no limit: all coprocessors must give the same result.
 async fn attach_unmask_pads(
     trx: &mut sqlx::Transaction<'_, Postgres>,
     pool: sqlx::Pool<Postgres>,
@@ -4315,21 +4315,21 @@ async fn attach_unmask_pads(
         let stored = query!(
             "SELECT ciphertext64, ciphertext_digest FROM pad_ct64
               WHERE prf_instance = $1 AND label = $2 AND pad_length >= $3
-              ORDER BY pad_length
-              LIMIT 1",
+              ORDER BY pad_length",
             prf_instance,
             package.label.as_slice(),
             pad_length,
         )
-        .fetch_optional(trx.as_mut())
+        .fetch_all(trx.as_mut())
         .await?;
-        if let Some(stored) = stored {
-            if keccak256(&stored.ciphertext64).as_slice() == stored.ciphertext_digest {
-                w.dependencies.push(stored.ciphertext64);
-            } else {
-                error!(target: "tfhe_worker", label = %package.label, "Stored ct64 does not match its digest");
-                w.dependencies.push(vec![]);
-            }
+        let (valid, bad): (Vec<_>, Vec<_>) = stored
+            .into_iter()
+            .partition(|s| keccak256(&s.ciphertext64).as_slice() == s.ciphertext_digest);
+        if !bad.is_empty() {
+            error!(target: "tfhe_worker", label = %package.label, rows = bad.len(), "Stored ct64 does not match its digest");
+        }
+        if let Some(stored) = valid.into_iter().next() {
+            w.dependencies.push(stored.ciphertext64);
             continue;
         }
         requests.insert((prf_instance, package.label.to_vec(), pad_length));
@@ -5336,7 +5336,10 @@ fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
             | FhevmError::UnexpectedRandOperandSizeForOutputType { .. }
             | FhevmError::RandOperationUpperBoundCannotBeZero { .. }
             | FhevmError::RandOperationInputsMustAllBeScalar { .. }
-            | FhevmError::UnsupportedFheTypes { .. } => true,
+            | FhevmError::UnsupportedFheTypes { .. }
+            // The error comes from the package, or from a ct64 that matches its attested digest.
+            // All coprocessors get the same error.
+            | FhevmError::PadUnmask(_) => true,
             // NOT terminal, and this is the correction that motivated turning
             // the list into a rule: a `tfhe::Error` out of expansion or
             // compression can be a device fault that surfaced as `Err` rather
@@ -5382,6 +5385,7 @@ mod terminal_verdict_tests {
                 fhe_operation_name: "FheRandBounded".to_string(),
                 upper_bound_value: "0".to_string(),
             },
+            FhevmError::PadUnmask("bad pad package".to_string()),
         ] {
             let message = error.to_string();
             assert!(

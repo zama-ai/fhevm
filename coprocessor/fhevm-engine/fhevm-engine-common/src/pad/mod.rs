@@ -235,7 +235,7 @@ fn unmasker() -> impl PadUnmasker {
 }
 
 /// The `Unmask` operation: input `index` (1 byte) of `package`, unmasked with `ct64`, as a value
-/// of `output_type`. An empty `ct64` means that there is no valid pad.
+/// of `output_type`.
 pub fn unmask_input(
     package: &[u8],
     index: &[u8],
@@ -248,11 +248,6 @@ pub fn unmask_input(
         return Err(FhevmError::PadUnmask(format!(
             "input {index} has type {fhe_type}, the result has type {output_type}"
         )));
-    }
-    if ct64.is_empty() {
-        return Err(FhevmError::PadUnmask(
-            "no valid pad: its ct64 does not match its digest".to_string(),
-        ));
     }
     unmasker()
         .unmask(ct64, &package, index)

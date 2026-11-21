@@ -3,8 +3,8 @@
 
 use crate::tests::event_helpers::{
     allow_handle, decrypt_handles, insert_event, next_handle, next_handle_with_type, scalar_flag,
-    scalar_u128_handle, setup_event_harness, wait_for_error, wait_until_computed, zero_address,
-    EventHarness, TEST_CHAIN_ID,
+    scalar_u128_handle, setup_event_harness, wait_until_computed, zero_address, EventHarness,
+    TEST_CHAIN_ID,
 };
 use alloy::primitives::{keccak256, Bytes, B256};
 use fhevm_engine_common::pad::{mock::mock_pad, mock::MockOneTimePadMask, UNMASK_TRIGGERED_BY};
@@ -276,8 +276,8 @@ async fn gives_a_pending_connector_request_to_the_unmask() -> Result<(), Box<dyn
     Ok(())
 }
 
-/// Adds an event for the only input (euint16) of `package`, and returns the error of its Unmask.
-async fn unmask_error(harness: &EventHarness, package: &[u8]) -> String {
+/// Adds an event for the only input (euint16) of `package`, and returns its allowed result.
+async fn add_unmask(harness: &EventHarness, package: &[u8]) -> Handle {
     let tx_id = next_handle();
     let value = next_handle_with_type(3);
     let mut tx = harness
@@ -294,11 +294,18 @@ async fn unmask_error(harness: &EventHarness, package: &[u8]) -> String {
         .await
         .unwrap();
     tx.commit().await.unwrap();
-    let (is_error, message) = wait_for_error(&harness.pool, value.as_slice(), tx_id.as_slice())
+    value
+}
+
+/// Changes the digest of the stored ct64 of `label` and `pad_length`, as a corruption does.
+async fn corrupt_ct64(pool: &sqlx::PgPool, label: B256, pad_length: i32) {
+    sqlx::query("UPDATE pad_ct64 SET ciphertext_digest = $1 WHERE label = $2 AND pad_length = $3")
+        .bind([0u8; 32].as_slice())
+        .bind(label.as_slice())
+        .bind(pad_length)
+        .execute(pool)
         .await
         .unwrap();
-    assert!(is_error);
-    message.unwrap_or_default()
 }
 
 #[tokio::test]
@@ -316,18 +323,7 @@ async fn computes_a_failed_pad_again_for_the_unmask() -> Result<(), Box<dyn std:
     .bind([7u8; 20].as_slice())
     .execute(&harness.pool)
     .await?;
-    let tx_id = next_handle();
-    let value = next_handle_with_type(3);
-
-    let mut tx = harness
-        .listener_db
-        .new_transaction()
-        .await?
-        .expect("new_transaction() returns Some on a live stack");
-    let event = verify_input(&package, 0, 3, value);
-    insert_event(&harness.listener_db, &mut tx, tx_id, event, true).await?;
-    allow_handle(&harness.listener_db, &mut tx, &value).await?;
-    tx.commit().await?;
+    let value = add_unmask(&harness, &package).await;
 
     // The Unmask waits, and the tfhe-worker asks for the pad again.
     assert_eq!(wait_for_pad_request(&harness.pool, label).await, 16);
@@ -339,19 +335,50 @@ async fn computes_a_failed_pad_again_for_the_unmask() -> Result<(), Box<dyn std:
 }
 
 #[tokio::test]
-async fn fails_the_unmask_when_the_ct64_does_not_match_its_digest(
+async fn uses_a_longer_ct64_when_the_shorter_one_does_not_match_its_digest(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let (package, label) = package(&[3], &7u16.to_le_bytes());
     store_ct64(&harness.pool, label, 16).await;
-    sqlx::query("UPDATE pad_ct64 SET ciphertext_digest = $1 WHERE label = $2")
-        .bind([0u8; 32].as_slice())
+    corrupt_ct64(&harness.pool, label, 16).await;
+    store_ct64(&harness.pool, label, 64).await;
+
+    let value = add_unmask(&harness, &package).await;
+
+    wait_until_computed(&harness.app).await?;
+    let values = decrypt_handles(&harness.pool, &[value]).await?;
+    assert_eq!(values[0].value, "7");
+    Ok(())
+}
+
+#[tokio::test]
+async fn waits_when_no_ct64_matches_its_digest() -> Result<(), Box<dyn std::error::Error>> {
+    let harness = setup_event_harness().await?;
+    let (package, label) = package(&[3], &7u16.to_le_bytes());
+    store_ct64(&harness.pool, label, 16).await;
+    corrupt_ct64(&harness.pool, label, 16).await;
+
+    let value = add_unmask(&harness, &package).await;
+
+    // The bad ct64 is local: the Unmask waits for a pad, and does not fail.
+    assert_eq!(wait_for_pad_request(&harness.pool, label).await, 16);
+    let failed: bool = sqlx::query_scalar(
+        "SELECT COALESCE(bool_or(is_error), FALSE) FROM computations WHERE output_handle = $1",
+    )
+    .bind(value.as_slice())
+    .fetch_one(&harness.pool)
+    .await?;
+    assert!(!failed);
+    // An operator deletes the bad ct64. Its pads row is the pending request, so the pad-worker
+    // writes the ct64 again.
+    sqlx::query("DELETE FROM pad_ct64 WHERE label = $1")
         .bind(label.as_slice())
         .execute(&harness.pool)
         .await?;
-
-    let message = unmask_error(&harness, &package).await;
-    assert!(message.contains("does not match its digest"));
+    store_ct64(&harness.pool, label, 16).await;
+    wait_until_computed(&harness.app).await?;
+    let values = decrypt_handles(&harness.pool, &[value]).await?;
+    assert_eq!(values[0].value, "7");
     Ok(())
 }
 
