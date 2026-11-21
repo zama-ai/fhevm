@@ -35,9 +35,11 @@
  *   5. Node swap (NewKmsContext with a membership change). Broadcast the switch with the swap
  *      committee {1,2,3,5}: node 4 is dropped and the spare is promoted. Node 4's tx-sender is
  *      stopped before the broadcast — a node that cannot transact must not block its own
- *      replacement. Once the spare has confirmed the new context's creation (the context is
- *      Created and the cores reshare), its tx-sender stops until the pending checks have run:
- *      activation needs its confirmation, so the context stays Created during those checks.
+ *      replacement. The profile also stops the spare's tx-sender before the broadcast. It
+ *      relays the spare's signed creation confirmation from the spare's connector DB. The
+ *      context becomes Created and the cores reshare. Activation needs the spare's tx-sender,
+ *      so the context stays Created until the checks on the pending switch end and the
+ *      tx-sender restarts.
  *      After activation, stop `t` continuing members so the live committee is exactly
  *      the 2t+1 quorum including the spare, then decrypt: this proves the spare holds a working
  *      reshared key. Running the swap last also proves a switch still works after every destroy
@@ -62,19 +64,31 @@
  * baseline, while a switch is pending (the previous context must keep serving during the
  * reshare), and after each transition.
  *
+ * Replicas: the second host chain runs a ProtocolConfigReplica. After each canonical step, the
+ * profile replays the signed KMS confirmations onto it (`task:buildReplicaReplayCalldata`, then the
+ * `submit*` calls). The replica must then match the canonical context, epoch and signers.
+ *
  * Disruptive and single-run: the profile advances the KMS context/epoch and destroys the retired
  * ones, so it expects a pristine stack. Re-up between runs
  * (`fhevm-cli down && fhevm-cli up --scenario five-party-swap-threshold-kms`).
  */
 import { PreflightError } from "../errors";
-import { castBool, castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
+import { castBool, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
 import { stepComposeTask } from "../flow/runtime-compose";
-import { columnQuery, checkConnectorsDbColumn } from "../kms-connector-db";
+import { columnQuery, checkConnectorsDbColumn, connectorQuery } from "../kms-connector-db";
 import { castSend, getEventTopic, callContractAndExpectRevert, keccakTopic, loadHostOwner, type Owner } from "../kms-onchain";
-import { kmsConnectorEnvName, kmsTxSenderName, reconstructionThreshold } from "../kms-party";
+import { kmsConnectorDbName, kmsConnectorEnvName, kmsTxSenderName, reconstructionThreshold } from "../kms-party";
+import {
+  type ContextAndEpoch,
+  assertReplicasDeployed,
+  readContextAndEpoch,
+  replicasOf,
+  syncReplicas,
+  waitForLatestFinalized,
+} from "../kms-replica";
 import { envPath } from "../layout";
 import type { State } from "../types";
-import { hostReachableRpcUrl, readEnvFile } from "../utils/fs";
+import { readEnvFile, uint256ToId } from "../utils/fs";
 import { run } from "../utils/process";
 import {
   type DecryptionRunner,
@@ -88,37 +102,12 @@ import {
 /** Generous bound: a 4-party reshare + per-party on-chain confirmations. */
 const ACTIVATION_TIMEOUT_MS = 600_000;
 const ACTIVATION_POLL_MS = 5_000;
-const FINALITY_TIMEOUT_MS = 120_000;
-const FINALITY_POLL_MS = 1_000;
-
-export type ContextAndEpoch = { contextId: bigint; epochId: bigint };
 
 /** Runs the app-level input-proof smoke; throws when the flow regresses. */
 export type SmokeRunner = (label: string) => Promise<void>;
 
 /** Runs the "Coprocessor proxy" e2e test titled `test` with `env`; throws unless it passes. */
 export type ProxyCheckRunner = (label: string, test: string, env: Record<string, string>) => Promise<void>;
-
-/** Parses `cast call getCurrentKmsContextAndEpoch()(uint256,uint256)` output into bigints. cast prints
- * each return value as `<decimal> [<scientific-notation>]` (one per line for a tuple), so strip the
- * informational `[…]` annotations and take the first two decimal tokens. The ids are large
- * domain-tagged uint256 values (e.g. contextId `0x07…`, epochId `0x08…`), not small counters.
- * Exported for unit testing. */
-export const parseContextAndEpoch = (raw: string): ContextAndEpoch => {
-  const ids = raw
-    .replace(/\[[^\]]*\]/g, " ")
-    .split(/\s+/)
-    .filter((token) => /^\d+$/.test(token));
-  if (ids.length < 2) {
-    throw new PreflightError(
-      `kms-context-switch: could not parse getCurrentKmsContextAndEpoch output: ${JSON.stringify(raw)}`,
-    );
-  }
-  return { contextId: BigInt(ids[0]), epochId: BigInt(ids[1]) };
-};
-
-const readContextAndEpoch = async (rpcUrl: string, protocolConfig: string): Promise<ContextAndEpoch> =>
-  parseContextAndEpoch(await castCall(rpcUrl, protocolConfig, "getCurrentKmsContextAndEpoch()(uint256,uint256)"));
 
 /** Polls the on-chain active context/epoch until `reached` holds, or throws with the last-seen
  * state on timeout (the signal that the KMS did not finish resharing/confirming). */
@@ -146,20 +135,25 @@ const waitForActivation = async (
   return current;
 };
 
-/** Waits for the latest block to finalize and returns that block's timestamp. */
-const waitForLatestFinalized = async (rpcUrl: string): Promise<number> => {
-  const url = hostReachableRpcUrl(rpcUrl);
-  const castNumber = async (...tag: string[]) =>
-    Number((await run(["cast", ...tag, "--rpc-url", url])).stdout.trim());
-  const latest = await castNumber("block-number");
-  const deadline = Date.now() + FINALITY_TIMEOUT_MS;
-  while ((await castNumber("block", "finalized", "--field", "number")) < latest) {
+/** The KMS nodes confirm a destruction asynchronously, after the destroy call has returned. */
+const waitForDestructionQuorum = async (canonical: SwitchTarget, event: string, destroyedId: bigint) => {
+  const topic = await keccakTopic(event);
+  const deadline = Date.now() + ACTIVATION_TIMEOUT_MS;
+  const hasQuorum = async () => {
+    const logs = await run([
+      "cast", "logs", "--json", "--from-block", "0", "--address", canonical.configAddress,
+      "--rpc-url", canonical.rpcUrl, topic, `0x${uint256ToId(destroyedId)}`,
+    ]);
+    return (JSON.parse(logs.stdout) as unknown[]).length > 0;
+  };
+  while (!(await hasQuorum())) {
     if (Date.now() >= deadline) {
-      throw new PreflightError(`kms-context-switch: block ${latest} not finalized within ${FINALITY_TIMEOUT_MS / 1000}s`);
+      throw new PreflightError(
+        `kms-context-switch: no ${event} for id ${destroyedId} on ${canonical.where} within ${ACTIVATION_TIMEOUT_MS / 1000}s`,
+      );
     }
-    await Bun.sleep(FINALITY_POLL_MS);
+    await Bun.sleep(ACTIVATION_POLL_MS);
   }
-  return castNumber("block", String(latest), "--field", "timestamp");
 };
 
 /** The private key of KMS party `party`'s tx-sender, from its connector's env. */
@@ -231,13 +225,15 @@ const switchKmsContext = async (
   const gatewayEnv: Record<string, string> = swap ? { GATEWAY_SC_CONTEXT_ENV: "gateway-sc-swap.env" } : {};
 
   if (swap) {
-    // Stopped before the broadcast and left down: the new committee does not include the node.
-    const droppedTxSenders = dropped.map((party) => kmsTxSenderName(party));
+    // The dropped node's tx-sender stays down: the new committee does not include the node. The
+    // spare's tx-sender stops to hold the swap at Created. It must stop before the broadcast,
+    // because the reshare and the activation confirmation follow Created within seconds.
+    const txSenders = [...dropped.map((party) => kmsTxSenderName(party)), ...spareTxSenders];
     console.log(
-      `[kms-context-switch] stopping dropped node(s) ${dropped.join(",")} tx-sender before the switch — a node that cannot confirm must not block its own replacement…`,
+      `[kms-context-switch] stopping the tx-senders of dropped node(s) ${dropped.join(",")} and spare(s) ${spares.join(",")} before the switch…`,
     );
-    await setRunning(droppedTxSenders, "stop");
-    await waitForContainersStopped(droppedTxSenders);
+    await setRunning(txSenders, "stop");
+    await waitForContainersStopped(txSenders);
   }
 
   console.log(
@@ -257,17 +253,26 @@ const switchKmsContext = async (
   await waitForContainer("gateway-sc-context-switch", "complete");
 
   if (swap) {
-    // Hold the swap at Created. Creation needs every new node's confirmation, so the spare's
-    // tx-sender runs until the context is Created, which emits its first NewKmsEpoch and starts
-    // the reshare. Activation needs every new-committee signer, so with the spare's tx-sender
-    // stopped the context stays Created through the checks below.
+    // Creation needs the spare's confirmation, but the spare's tx-sender is down. Relay the signed
+    // confirmation from the spare's connector DB. The contract checks the signer, not the sender.
+    const responseQuery = (column: string) => columnQuery("new_kms_context_responses", "context_id", column, pendingContextId);
+    await checkConnectorsDbColumn(
+      spares, `spare(s) signed the creation of context ${pendingContextId}`, responseQuery("status"), ["pending"],
+    );
+    const owner = await loadHostOwner();
+    for (const party of spares) {
+      const responseHex = async (column: string) =>
+        `0x${await connectorQuery(kmsConnectorDbName(party), responseQuery(`encode(${column}, 'hex')`))}`;
+      console.log(`[kms-context-switch] relaying spare ${party}'s creation confirmation of context ${pendingContextId}…`);
+      await castSend(
+        target.rpcUrl, target.configAddress, owner, "confirmKmsContextCreation(uint256,bytes,bytes)",
+        pendingContextId.toString(), await responseHex("signature"), await responseHex("extra_data"),
+      );
+    }
     await checkConnectorsDbColumn(
       spares, `swap context ${pendingContextId} Created (its NewKmsEpoch reached the spare)`,
       columnQuery("new_kms_epoch", "context_id", "status", pendingContextId), ["pending", "under_process", "completed"],
     );
-    console.log(`[kms-context-switch] stopping spare(s) ${spares.join(",")} tx-sender to hold context ${pendingContextId} at Created…`);
-    await setRunning(spareTxSenders, "stop");
-    await waitForContainersStopped(spareTxSenders);
     await assertCurrentUnchanged(target.rpcUrl, target.configAddress, baseline, "holding the swap at Created");
     if (runProxyCheck) {
       await proxiesRefuseNodes(target.rpcUrl, "Created-only spare", spares, runProxyCheck);
@@ -290,7 +295,9 @@ const switchKmsContext = async (
   }
 
   if (swap) {
-    // The restarted tx-sender sends the activation confirmation stored while it was down.
+    // The restarted tx-sender sends the activation confirmation stored while it was down. Its
+    // stored creation confirmation reverts with KmsContextNotPending. That revert does not block
+    // the activation.
     console.log(`[kms-context-switch] starting spare(s) ${spares.join(",")} tx-sender so the swap can activate…`);
     await setRunning(spareTxSenders, "start");
     await waitForPartiesRunning(spares);
@@ -555,19 +562,19 @@ const destroyContextAndEpoch = async (
   await runSmoke(`kms-context-switch: input-proof after destroying retired context ${oldContextId} and epoch ${oldEpochId}`);
 };
 
-/** Destroys pre-swap contexts and checks refusal after every proxy applies the finalized state. */
-const proxyRefusesDroppedNodes = async (
-  state: State,
+/** Destroys every pre-swap context that is still valid. Returns the destroyed IDs. */
+const destroyPreSwapContexts = async (
   target: DestroyTarget,
   ids: { first: ContextAndEpoch; current: ContextAndEpoch },
-  runProxyCheck: ProxyCheckRunner,
-): Promise<void> => {
+): Promise<bigint[]> => {
   const { rpcUrl, protocolConfig, owner } = target;
   const contextDestroyedTopic = await keccakTopic("KmsContextDestroyed(uint256)");
+  const destroyed: bigint[] = [];
   for (let contextId = ids.first.contextId; contextId < ids.current.contextId; contextId += 1n) {
     if (!(await castBool(rpcUrl, protocolConfig, "isValidKmsContext(uint256)(bool)", contextId.toString()))) {
       continue;
     }
+    destroyed.push(contextId);
     console.log(`[kms-context-switch] destroying context ${contextId}, so only the swap's context stays Active…`);
     const receipt = await castSend(rpcUrl, protocolConfig, owner, "destroyKmsContext(uint256)", contextId.toString());
     if (getEventTopic(receipt, contextDestroyedTopic, 1) !== contextId) {
@@ -575,7 +582,7 @@ const proxyRefusesDroppedNodes = async (
     }
   }
   await assertCurrentUnchanged(rpcUrl, protocolConfig, ids.current, "destroying the pre-swap contexts");
-  await proxiesRefuseNodes(rpcUrl, "dropped", committeePlan(state.scenario.kms).dropped, runProxyCheck);
+  return destroyed;
 };
 
 /**
@@ -710,6 +717,8 @@ export const runKmsContextSwitchProfile = async (
 
   const baseline = await readContextAndEpoch(rpcUrl, configAddress);
   console.log(`[kms-context-switch] baseline on ${where}: contextId=${baseline.contextId} epochId=${baseline.epochId}`);
+  const canonical = { rpcUrl, configAddress, where };
+  await assertReplicasDeployed(state);
 
   // Baseline app smoke first, so a later failure is attributable to the transition it follows.
   await runSmoke("kms-context-switch: input-proof at baseline (before any switch)");
@@ -720,6 +729,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     baseline, false,
   );
+  await syncReplicas(state, "the same-committee context switch");
 
   // 2) Same-committee key resharing (NewKmsEpoch). Then probes the new epoch ID activates.
   console.log("[kms-context-switch] broadcasting defineNewEpochForCurrentKmsContext (NewKmsEpoch)…");
@@ -741,6 +751,7 @@ export const runKmsContextSwitchProfile = async (
     );
   }
   await runSmoke(`kms-context-switch: input-proof after the epoch rotation (epochId=${afterEpoch.epochId})`);
+  await syncReplicas(state, "the epoch rotation");
 
   // 3) Destruction: retire the baseline context and the superseded epoch across every layer.
   const owner = await loadHostOwner();
@@ -756,6 +767,24 @@ export const runKmsContextSwitchProfile = async (
     runDecryption,
     runSmoke,
   );
+  await waitForDestructionQuorum(canonical, "KmsContextDestructionQuorumReached(uint256,bytes)", baseline.contextId);
+  await waitForDestructionQuorum(canonical, "KmsEpochDestructionQuorumReached(uint256,bytes)", afterSwitch.epochId);
+  await syncReplicas(state, "the context and epoch destruction");
+  for (const replica of replicasOf(state)) {
+    const [isContextValid, isEpochValid] = await Promise.all([
+      castBool(replica.rpcUrl, replica.address, "isValidKmsContext(uint256)(bool)", baseline.contextId.toString()),
+      castBool(
+        replica.rpcUrl, replica.address, "isValidEpochForContext(uint256,uint256)(bool)",
+        afterSwitch.contextId.toString(), afterSwitch.epochId.toString(),
+      ),
+    ]);
+    if (isContextValid || isEpochValid) {
+      throw new PreflightError(
+        `kms-context-switch: after the replay, the replica on ${replica.chain.key} reports context ${baseline.contextId} ` +
+          `valid=${isContextValid} and epoch ${afterSwitch.epochId} valid=${isEpochValid}. Both must be false`,
+      );
+    }
+  }
 
   // 4a) A context switch must still work after a destroy. The connector reads the previous
   //     key/CRS material via getCrsMaterials, which resolves the context that material was
@@ -772,6 +801,7 @@ export const runKmsContextSwitchProfile = async (
   console.log(
     `[kms-context-switch] post-destroy switch activated: contextId ${afterEpoch.contextId} -> ${afterDestroySwitch.contextId} (epochId=${afterDestroySwitch.epochId})`,
   );
+  await syncReplicas(state, "the post-destroy context switch");
 
   // 4b) Abort a stuck epoch rotation. Check that the single-in-flight guard reverts a second
   //     operation, that destroying the Pending epoch aborts the rotation, and that a fresh
@@ -779,6 +809,7 @@ export const runKmsContextSwitchProfile = async (
   const recovered = await abortStuckRotation(
     state, { rpcUrl, configAddress, where }, owner, afterDestroySwitch, runDecryption,
   );
+  await syncReplicas(state, "the aborted and recovered epoch rotation");
 
   // 5) Node swap: drop a committee node, promote the spare. Running it after every destroy and
   //    abort above also proves the lifecycle never left the system unable to switch.
@@ -787,6 +818,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     recovered, true, runProxyCheck,
   );
+  await syncReplicas(state, "the node swap");
 
   // 6a) Once the swap is finalized, every coprocessor-proxy accepts the promoted spare, and the
   //     dropped node while the outgoing context is still Active: 6b's refusal then comes from the
@@ -808,11 +840,26 @@ export const runKmsContextSwitchProfile = async (
   // 5b) Prove the promoted spare actually holds a working reshared key.
   await proveSpareInQuorum(state, runDecryption);
 
-  // 6b) Every coprocessor-proxy refuses the dropped node once no Active context has it.
+  // 6b) Destroy the pre-swap contexts. Every coprocessor-proxy then refuses the dropped node, and
+  //     the replay drops the same contexts from every replica.
   if (runProxyCheck) {
-    await proxyRefusesDroppedNodes(
-      state, { rpcUrl, protocolConfig: configAddress, owner }, { first: baseline, current: afterSwap }, runProxyCheck,
+    const destroyed = await destroyPreSwapContexts(
+      { rpcUrl, protocolConfig: configAddress, owner }, { first: baseline, current: afterSwap },
     );
+    await proxiesRefuseNodes(rpcUrl, "dropped", committeePlan(state.scenario.kms).dropped, runProxyCheck);
+    for (const contextId of destroyed) {
+      await waitForDestructionQuorum(canonical, "KmsContextDestructionQuorumReached(uint256,bytes)", contextId);
+    }
+    await syncReplicas(state, "the destruction of the pre-swap contexts");
+    for (const replica of replicasOf(state)) {
+      for (const contextId of destroyed) {
+        if (await castBool(replica.rpcUrl, replica.address, "isValidKmsContext(uint256)(bool)", contextId.toString())) {
+          throw new PreflightError(
+            `kms-context-switch: after the replay, the replica on ${replica.chain.key} reports pre-swap context ${contextId} valid`,
+          );
+        }
+      }
+    }
   }
 
   console.log(
@@ -821,9 +868,9 @@ export const runKmsContextSwitchProfile = async (
       "outcomes and the committee-only cascade asserted); a further switch after the destroy still reshared and activated; a stuck rotation " +
       "was aborted (single-in-flight revert + Pending-epoch destroy) and recovered; the node swap activated " +
       "and the promoted spare serves the 2t+1 quorum; user-decryption works under each transition; the " +
-      "input-proof app flow held at every checkpoint" +
+      "input-proof app flow held at every checkpoint; every replica matched the canonical context, epoch and signers after the replay of each step, and dropped the destroyed context and epoch" +
       (runProxyCheck
-        ? "; and every coprocessor-proxy refused the spare while the swap was held at Created, accepted it once promoted, accepted the dropped node until its context was destroyed, then refused it"
+        ? "; every coprocessor-proxy refused the spare while the swap was held at Created, accepted it once promoted, accepted the dropped node until its context was destroyed, then refused it; and every replica dropped the destroyed pre-swap contexts after the replay"
         : ""),
   );
 };

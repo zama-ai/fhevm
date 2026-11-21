@@ -124,7 +124,7 @@ import {
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, objectStorePublishedEndpoint, validateDiscovery } from "./discovery";
 import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName, kmsPartyIds, reconstructionThreshold } from "../kms-party";
-import { parseContextAndEpoch } from "../commands/kms-context-switch";
+import { assertReplicasDeployed, canonicalProtocolConfig, parseContextAndEpoch, replicasOf } from "../kms-replica";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
   kmsConnectorHealthContainers,
@@ -2342,6 +2342,29 @@ export const upgradeBootstrappedStack = async (state: State, steps: readonly Upg
         );
       }
     }
+    await once("host:ProtocolConfig", () =>
+      runContractTask("host-sc", "host-sc-deploy", contractUpgradeCommand("task:upgradeProtocolConfig", "ProtocolConfig")),
+    );
+    const canonical = canonicalProtocolConfig(state);
+    for (const chain of extraHostChains(state)) {
+      await once(`host:ProtocolConfig@${chain.key}`, () =>
+        runContractTask(
+          "host-sc",
+          `${chain.sc}-deploy`,
+          contractUpgradeCommand("task:upgradeProtocolConfigReplica", "ProtocolConfig", "ProtocolConfigReplica"),
+          {
+            envComponent: chain.sc,
+            composeFile: composePath(chain.sc),
+            env: { CANONICAL_PROTOCOL_CONFIG_ADDRESS: canonical.address, CANONICAL_CHAIN_ID: canonical.chain.chainId },
+          },
+        ),
+      );
+    }
+    // OpenZeppelin upgradeProxy does not wait for its upgrade transaction to be mined.
+    for (const replica of replicasOf(state)) {
+      await run(["cast", "rpc", "--rpc-url", replica.rpcUrl, "evm_mine"]);
+    }
+    await assertReplicasDeployed(state);
   };
   // A KMS core and its connector are one rollout unit: upgrade them operator by operator,
   // like production, through the paired primitive. Software upgrades leave the active epoch
