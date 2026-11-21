@@ -220,7 +220,7 @@ deletes two forms of each output, with separate ages:
 | Form | Table | Setting | Default | Deletes |
 |---|---|---|---|---|
 | ct128 (served to the connectors) | `pads` | `padWorkerShared.config.ct128MaxAgeSeconds` | 3600 (on) | Uploaded or failed rows older than the age |
-| ct64 (used by Unmask) | `pad_ct64` | `padWorkerShared.config.ct64MaxAgeSeconds` | Empty (off) | ct64 older than the age |
+| ct64 (used by Unmask) | `pad_ct64` | `padWorkerShared.config.ct64MaxAgeSeconds` | Empty (off) | ct64 older than the age, without a `pads` row |
 
 - `0` turns a GC off: the pad-worker keeps all rows of that form. For the ct64, empty does the same.
 - The GC also deletes pending rows older than `pendingMaxAgeSeconds` that no pad-worker claims.

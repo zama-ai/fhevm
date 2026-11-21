@@ -328,13 +328,18 @@ pub async fn delete_expired_pending(
     .await
 }
 
-/// Deletes the ct64 of all instances older than `max_age`.
+/// Deletes the ct64 older than `max_age` that have no `pads` row, of all instances. While the row
+/// exists, a new request does not compute the pad again, so Unmask needs the ct64.
 pub async fn delete_old_ct64(pool: &PgPool, max_age: Duration) -> sqlx::Result<u64> {
     in_batches(|| {
         sqlx::query!(
             "DELETE FROM pad_ct64 WHERE ctid IN (
-                 SELECT ctid FROM pad_ct64
-                  WHERE created_at <= NOW() - make_interval(secs => $1)
+                 SELECT c.ctid FROM pad_ct64 c
+                  WHERE c.created_at <= NOW() - make_interval(secs => $1)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM pads p
+                         WHERE (p.prf_instance, p.label, p.pad_length)
+                             = (c.prf_instance, c.label, c.pad_length))
                   LIMIT $2
                     FOR UPDATE SKIP LOCKED)",
             max_age.as_secs_f64(),
