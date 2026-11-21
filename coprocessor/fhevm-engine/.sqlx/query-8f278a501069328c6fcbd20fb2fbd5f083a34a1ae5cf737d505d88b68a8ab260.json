@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pads SET triggered_by = $4\n              WHERE (prf_instance, label, pad_length) IN (\n                    SELECT p.prf_instance, p.label, p.pad_length\n                      FROM pads p\n                      JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)\n                        ON (p.prf_instance, p.label, p.pad_length) = (r.prf, r.label, r.length)\n                     WHERE p.triggered_by <> $4 AND p.signature IS NULL AND NOT p.is_error\n                     ORDER BY 1, 2, 3\n                       FOR UPDATE)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "ByteaArray",
+        "Int4Array",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f278a501069328c6fcbd20fb2fbd5f083a34a1ae5cf737d505d88b68a8ab260"
+}

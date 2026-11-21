@@ -240,6 +240,42 @@ async fn unmasks_with_a_pad_that_is_already_stored() -> Result<(), Box<dyn std::
     Ok(())
 }
 
+#[tokio::test]
+async fn gives_a_pending_connector_request_to_the_unmask() -> Result<(), Box<dyn std::error::Error>>
+{
+    let harness = setup_event_harness().await?;
+    let (package, label) = package(&[3], &7u16.to_le_bytes());
+    // A connector asked for the same pad before, and the row is pending.
+    sqlx::query(
+        "INSERT INTO pads (prf_instance, label, pad_length, triggered_by) VALUES ($1, $2, 16, $3)",
+    )
+    .bind(i32::from(PRF_ID))
+    .bind(label.as_slice())
+    .bind([7u8; 20].as_slice())
+    .execute(&harness.pool)
+    .await?;
+    let tx_id = next_handle();
+    let value = next_handle_with_type(3);
+
+    let mut tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let event = verify_input(&package, 0, 3, value);
+    insert_event(&harness.listener_db, &mut tx, tx_id, event, true).await?;
+    allow_handle(&harness.listener_db, &mut tx, &value).await?;
+    tx.commit().await?;
+
+    // The row now has the Unmask address, so the pad-worker computes it first.
+    assert_eq!(wait_for_pad_request(&harness.pool, label).await, 16);
+    store_ct64(&harness.pool, label, 16).await;
+    wait_until_computed(&harness.app).await?;
+    let values = decrypt_handles(&harness.pool, &[value]).await?;
+    assert_eq!(values[0].value, "7");
+    Ok(())
+}
+
 /// Adds an event for the only input (euint16) of `package`, and returns the error of its Unmask.
 async fn unmask_error(harness: &EventHarness, package: &[u8]) -> String {
     let tx_id = next_handle();

@@ -3976,7 +3976,8 @@ WHERE c.transaction_id IN (
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", count = the_work.len(), dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "Processing work items");
     let dead_boundary = query_dead_boundary_handles(trx, &the_work, gcs_mode).await?;
-    let (waiting_for_pad, oldest_wait) = attach_unmask_pads(trx, &mut the_work).await?;
+    let (waiting_for_pad, oldest_wait) =
+        attach_unmask_pads(trx, deps_chain_mngr.pool().clone(), &mut the_work).await?;
     UNMASK_WAITING_TRANSACTIONS_GAUGE.set(waiting_for_pad.len() as i64);
     UNMASK_OLDEST_WAIT_GAUGE.set(oldest_wait.as_secs() as i64);
     if oldest_wait > UNMASK_WAIT_WARNING && unmask_wait_warning_is_due() {
@@ -4127,12 +4128,14 @@ fn unmask_wait_warning_is_due() -> bool {
 
 /// Adds the pad ct64 to each `Unmask` row, as its third operand. It is empty when the operation
 /// must fail: a bad package, a pad that the pad-worker failed, or a ct64 that does not match its
-/// digest. For a missing ct64, adds a `pads` row for the pad-worker in `trx`. A second connection
-/// from the pool can time out while `trx` holds one. Returns the transactions that wait for a pad,
+/// digest. For a missing ct64, adds a `pads` row for the pad-worker in `trx`, and gives a
+/// connector's pending row to Unmask. A second connection from the pool can time out while `trx`
+/// holds one, so only the spawned update uses `pool`. Returns the transactions that wait for a pad,
 /// and the age of the oldest `Unmask` that waits. The wait has no limit: all coprocessors must
 /// give the same result.
 async fn attach_unmask_pads(
     trx: &mut sqlx::Transaction<'_, Postgres>,
+    pool: sqlx::Pool<Postgres>,
     work: &mut [WorkItem],
 ) -> Result<(HashSet<TxHash>, Duration), sqlx::Error> {
     let mut waiting = HashSet::new();
@@ -4213,6 +4216,30 @@ async fn attach_unmask_pads(
     )
     .execute(trx.as_mut())
     .await?;
+    // A connector can own the row. Give it to Unmask outside `trx`: a lock in `trx` stays until
+    // the batch commits, and the pad-worker cannot claim the row until then.
+    tokio::spawn(async move {
+        let result = query!(
+            "UPDATE pads SET triggered_by = $4
+              WHERE (prf_instance, label, pad_length) IN (
+                    SELECT p.prf_instance, p.label, p.pad_length
+                      FROM pads p
+                      JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+                        ON (p.prf_instance, p.label, p.pad_length) = (r.prf, r.label, r.length)
+                     WHERE p.triggered_by <> $4 AND p.signature IS NULL AND NOT p.is_error
+                     ORDER BY 1, 2, 3
+                       FOR UPDATE)",
+            &prf_instances,
+            &labels,
+            &pad_lengths,
+            UNMASK_TRIGGERED_BY.as_slice(),
+        )
+        .execute(&pool)
+        .await;
+        if let Err(err) = result {
+            warn!(target: "tfhe_worker", error = %err, "Cannot give the pad rows to Unmask");
+        }
+    });
     let oldest: Option<f64> = query_scalar!(
         "SELECT EXTRACT(EPOCH FROM NOW()::TIMESTAMP - MIN(created_at))::FLOAT8 FROM computations
           WHERE output_handle = ANY($1) AND fhe_operation = $2",
