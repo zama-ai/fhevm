@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXTRACT(EPOCH FROM NOW()::TIMESTAMP - MIN(created_at))::FLOAT8 FROM computations\n          WHERE output_handle = ANY($1) AND fhe_operation = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "extract",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "09e7867532a70e8a18cb9dd7b3e411c65c77eb40eadc48da1d2daec8cafb8859"
+}

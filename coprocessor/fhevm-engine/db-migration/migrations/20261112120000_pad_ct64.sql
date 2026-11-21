@@ -17,3 +17,11 @@ CREATE TABLE IF NOT EXISTS pad_ct64 (
 
 -- For the GC of the ct64.
 CREATE INDEX IF NOT EXISTS idx_pad_ct64_by_age ON pad_ct64 (created_at);
+
+-- Wakes the tfhe-workers: a transaction with an Unmask can wait for this ct64.
+DROP TRIGGER IF EXISTS pad_ct64_work_available ON pad_ct64;
+CREATE TRIGGER pad_ct64_work_available
+    AFTER INSERT
+    ON pad_ct64
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION notify_work_available();

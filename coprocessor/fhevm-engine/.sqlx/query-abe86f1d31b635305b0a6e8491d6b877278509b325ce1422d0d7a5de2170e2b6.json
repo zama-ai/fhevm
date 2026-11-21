@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ciphertext64, ciphertext_digest FROM pad_ct64\n              WHERE prf_instance = $1 AND label = $2 AND pad_length >= $3\n              ORDER BY pad_length\n              LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext64",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext_digest",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "abe86f1d31b635305b0a6e8491d6b877278509b325ce1422d0d7a5de2170e2b6"
+}

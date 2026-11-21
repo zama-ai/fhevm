@@ -1,5 +1,6 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
+use alloy::primitives::keccak256;
 use fhevm_engine_common::database::{
     apply_gcs_mode_search_path, connect_pool_with_options,
     connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
@@ -8,6 +9,7 @@ use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::gcs_activation::{
     run_gcs_activation_watcher, GCS_GATE_RECHECK, GCS_NOT_ACTIVATED, WORK_AVAILABLE_CHANNEL,
 };
+use fhevm_engine_common::pad::{PadPackage, UNMASK_TRIGGERED_BY};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts, TxHash};
@@ -27,7 +29,7 @@ use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFG
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::{postgres::PgListener, query, query_scalar, Postgres};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -2363,6 +2365,16 @@ lazy_static! {
         "transactions deferred in the most recent work window of this worker"
     )
     .unwrap();
+    static ref UNMASK_WAITING_TRANSACTIONS_GAUGE: IntGauge = register_int_gauge!(
+        "coprocessor_worker_unmask_waiting_transactions_current",
+        "transactions in the most recent work window of this worker that wait for the pad of an Unmask"
+    )
+    .unwrap();
+    static ref UNMASK_OLDEST_WAIT_GAUGE: IntGauge = register_int_gauge!(
+        "coprocessor_worker_unmask_oldest_wait_seconds",
+        "age of the oldest Unmask in the most recent work window of this worker that waits for its pad"
+    )
+    .unwrap();
     static ref WORK_ITEMS_POLL_COUNTER: IntCounter = register_int_counter!(
         "coprocessor_work_items_polls",
         "times work items are polled from database"
@@ -3964,6 +3976,12 @@ WHERE c.transaction_id IN (
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", count = the_work.len(), dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "Processing work items");
     let dead_boundary = query_dead_boundary_handles(trx, &the_work, gcs_mode).await?;
+    let (waiting_for_pad, oldest_wait) = attach_unmask_pads(trx, &mut the_work).await?;
+    UNMASK_WAITING_TRANSACTIONS_GAUGE.set(waiting_for_pad.len() as i64);
+    UNMASK_OLDEST_WAIT_GAUGE.set(oldest_wait.as_secs() as i64);
+    if oldest_wait > UNMASK_WAIT_WARNING && unmask_wait_warning_is_due() {
+        warn!(target: "tfhe_worker", oldest_wait_secs = oldest_wait.as_secs(), transactions = waiting_for_pad.len(), "Unmask waits for its pad for a long time: check the pad-worker of its PRF instance");
+    }
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
     let (transactions, _earliest_schedule_order, any_deferred) = async {
         let mut earliest_schedule_order = PrimitiveDateTime::MAX;
@@ -3977,6 +3995,16 @@ WHERE c.transaction_id IN (
         let mut transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let transaction_id: &Vec<u8> = transaction_id;
+            if waiting_for_pad.contains(transaction_id) {
+                info!(target: "tfhe_worker", transaction_id = %hex::encode(transaction_id), "Transaction waits for the pad of an Unmask");
+                any_deferred = true;
+                // Use a short cooldown: the pad usually comes in seconds, and its trigger wakes
+                // the worker.
+                if quarantine_deferred {
+                    deferred_cooldown.quarantine_for(transaction_id, UNMASK_WAIT_COOLDOWN);
+                }
+                continue;
+            }
             let prepared =
                 match prepare_transaction_ops(txwork, dcid_filter.as_deref(), &dead_boundary) {
                     Ok(prepared) => prepared,
@@ -4076,6 +4104,127 @@ WHERE c.transaction_id IN (
     Ok((transactions, post_commit_action, true, freeze))
 }
 
+/// When an Unmask waits longer than this for its pad, the tfhe-worker logs a warning. This is the
+/// default pending age of the PRF requests.
+const UNMASK_WAIT_WARNING: Duration = Duration::from_secs(600);
+/// The tfhe-worker logs the warning about a long Unmask wait at most once in this time.
+const UNMASK_WAIT_WARNING_INTERVAL: Duration = Duration::from_secs(60);
+/// The cooldown of a transaction that waits for a pad, when DCID locking is disabled.
+const UNMASK_WAIT_COOLDOWN: Duration = Duration::from_secs(5);
+
+/// Returns true at most once in each `UNMASK_WAIT_WARNING_INTERVAL`, for the whole process.
+fn unmask_wait_warning_is_due() -> bool {
+    static LAST_WARNING_SECS: AtomicI64 = AtomicI64::new(0);
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let last = LAST_WARNING_SECS.load(Ordering::Relaxed);
+    now - last >= UNMASK_WAIT_WARNING_INTERVAL.as_secs() as i64
+        && LAST_WARNING_SECS
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+}
+
+/// Adds the pad ct64 to each `Unmask` row, as its third operand. It is empty when the operation
+/// must fail: a bad package, a pad that the pad-worker failed, or a ct64 that does not match its
+/// digest. For a missing ct64, adds a `pads` row for the pad-worker in `trx`. A second connection
+/// from the pool can time out while `trx` holds one. Returns the transactions that wait for a pad,
+/// and the age of the oldest `Unmask` that waits. The wait has no limit: all coprocessors must
+/// give the same result.
+async fn attach_unmask_pads(
+    trx: &mut sqlx::Transaction<'_, Postgres>,
+    work: &mut [WorkItem],
+) -> Result<(HashSet<TxHash>, Duration), sqlx::Error> {
+    let mut waiting = HashSet::new();
+    let mut waiting_outputs: Vec<Vec<u8>> = Vec::new();
+    // Keep the pad requests sorted, so every batch locks the rows in the same order and no two
+    // batches can deadlock.
+    let mut requests: BTreeSet<(i32, Vec<u8>, i32)> = BTreeSet::new();
+    // A row with a terminal error stamp never runs again, so it needs no pad.
+    for w in work.iter_mut().filter(|w| {
+        w.fhe_operation == SupportedFheOperations::Unmask as i16
+            && w.dependencies.len() == 2
+            && !(w.is_error && !stamp_is_retryable(w.error_message.as_deref()))
+    }) {
+        let Ok(package) = PadPackage::parse(&w.dependencies[0]) else {
+            w.dependencies.push(vec![]);
+            continue;
+        };
+        let prf_instance = i32::from(package.prf_id);
+        let pad_length = i32::try_from(package.pad_bits()).expect("at most 2048 bits");
+        // A longer pad starts with the same bits.
+        let stored = query!(
+            "SELECT ciphertext64, ciphertext_digest FROM pad_ct64
+              WHERE prf_instance = $1 AND label = $2 AND pad_length >= $3
+              ORDER BY pad_length
+              LIMIT 1",
+            prf_instance,
+            package.label.as_slice(),
+            pad_length,
+        )
+        .fetch_optional(trx.as_mut())
+        .await?;
+        if let Some(stored) = stored {
+            if keccak256(&stored.ciphertext64).as_slice() == stored.ciphertext_digest {
+                w.dependencies.push(stored.ciphertext64);
+            } else {
+                error!(target: "tfhe_worker", label = %package.label, "Stored ct64 does not match its digest");
+                w.dependencies.push(vec![]);
+            }
+            continue;
+        }
+        let failed = query_scalar!(
+            "SELECT is_error FROM pads WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+            prf_instance,
+            package.label.as_slice(),
+            pad_length,
+        )
+        .fetch_optional(trx.as_mut())
+        .await?;
+        if failed == Some(true) {
+            w.dependencies.push(vec![]);
+            continue;
+        }
+        requests.insert((prf_instance, package.label.to_vec(), pad_length));
+        waiting.insert(w.transaction_id.clone());
+        waiting_outputs.push(w.output_handle.clone());
+    }
+    if waiting_outputs.is_empty() {
+        return Ok((waiting, Duration::ZERO));
+    }
+    let mut prf_instances = Vec::with_capacity(requests.len());
+    let mut labels = Vec::with_capacity(requests.len());
+    let mut pad_lengths = Vec::with_capacity(requests.len());
+    for (prf, label, length) in requests {
+        prf_instances.push(prf);
+        labels.push(label);
+        pad_lengths.push(length);
+    }
+    query!(
+        "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
+         SELECT prf, label, length, $4
+           FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+          ORDER BY prf, label, length
+         ON CONFLICT DO NOTHING",
+        &prf_instances,
+        &labels,
+        &pad_lengths,
+        UNMASK_TRIGGERED_BY.as_slice(),
+    )
+    .execute(trx.as_mut())
+    .await?;
+    let oldest: Option<f64> = query_scalar!(
+        "SELECT EXTRACT(EPOCH FROM NOW()::TIMESTAMP - MIN(created_at))::FLOAT8 FROM computations
+          WHERE output_handle = ANY($1) AND fhe_operation = $2",
+        &waiting_outputs,
+        SupportedFheOperations::Unmask as i16,
+    )
+    .fetch_one(trx.as_mut())
+    .await?;
+    let oldest = Duration::from_secs_f64(oldest.unwrap_or(0.0).max(0.0));
+    Ok((waiting, oldest))
+}
+
 /// Ops of one transaction, ready for `build_component_nodes`.
 struct PreparedTransaction {
     ops: Vec<DFGOp>,
@@ -4153,10 +4302,14 @@ impl DeferredTransactionCooldown {
     }
 
     fn quarantine(&mut self, transaction_id: &[u8]) {
+        self.quarantine_for(transaction_id, DEFERRED_TRANSACTION_COOLDOWN);
+    }
+
+    fn quarantine_for(&mut self, transaction_id: &[u8], cooldown: Duration) {
         self.prune();
         self.until.insert(
             transaction_id.to_vec(),
-            std::time::Instant::now() + DEFERRED_TRANSACTION_COOLDOWN,
+            std::time::Instant::now() + cooldown,
         );
     }
 
