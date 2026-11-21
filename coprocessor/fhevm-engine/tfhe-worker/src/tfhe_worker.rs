@@ -1497,6 +1497,58 @@ mod operand_boundary_mask_tests {
         Ok(())
     }
 
+    /// The oldest wait counts only the waiting row, not a completed copy in another transaction.
+    #[tokio::test]
+    async fn the_oldest_unmask_wait_ignores_other_copies_of_the_handle(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        let (package, _) = crate::tests::unmask::package(&[3], &7u16.to_le_bytes());
+        let mut item = work_item(
+            handle(0x01),
+            vec![package.clone(), vec![0]],
+            None,
+            None,
+            true,
+        );
+        item.fhe_operation = SupportedFheOperations::Unmask as i16;
+        // The waiting row is 30 s old. A completed copy in another transaction is 1 h old.
+        for (transaction_id, age_secs, completed) in [
+            (item.transaction_id.clone(), 30.0, false),
+            (vec![0xBB; 32], 3600.0, true),
+        ] {
+            sqlx::query(
+                "INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar,
+                                           transaction_id, is_allowed, host_chain_id, is_completed,
+                                           created_at)
+                 VALUES ($1, $2, $3, TRUE, $4, TRUE, 1, $5,
+                         NOW()::TIMESTAMP - make_interval(secs => $6))",
+            )
+            .bind(handle(0x01))
+            .bind(vec![package.clone(), vec![0]])
+            .bind(SupportedFheOperations::Unmask as i16)
+            .bind(transaction_id)
+            .bind(completed)
+            .bind(age_secs)
+            .execute(&pool)
+            .await?;
+        }
+
+        let mut trx = pool.begin().await?;
+        let (_, oldest) =
+            attach_unmask_pads(&mut trx, pool.clone(), std::slice::from_mut(&mut item)).await?;
+        trx.rollback().await?;
+
+        assert!(
+            (Duration::from_secs(25)..Duration::from_secs(120)).contains(&oldest),
+            "the oldest wait is {oldest:?}"
+        );
+        Ok(())
+    }
+
     /// Fairness regression for the lockless fallback: the deferred
     /// transaction enters the cooldown, so the next window slice reaches
     /// the younger transaction instead of repeating the same batch forever.
@@ -4297,6 +4349,7 @@ async fn attach_unmask_pads(
 ) -> Result<(HashSet<TxHash>, Duration), sqlx::Error> {
     let mut waiting = HashSet::new();
     let mut waiting_outputs: Vec<Vec<u8>> = Vec::new();
+    let mut waiting_transactions: Vec<Vec<u8>> = Vec::new();
     // Sorted, so that two requests lock the rows in the same order and cannot deadlock.
     let mut requests: BTreeSet<(i32, Vec<u8>, i32)> = BTreeSet::new();
     // A row with a terminal error stamp never runs again, so it needs no pad.
@@ -4335,16 +4388,20 @@ async fn attach_unmask_pads(
         requests.insert((prf_instance, package.label.to_vec(), pad_length));
         waiting.insert(w.transaction_id.clone());
         waiting_outputs.push(w.output_handle.clone());
+        waiting_transactions.push(w.transaction_id.clone());
     }
     if waiting_outputs.is_empty() {
         return Ok((waiting, Duration::ZERO));
     }
     tokio::spawn(request_pads(pool, requests));
+    // Count only the waiting rows: another transaction can have a completed copy of the handle.
     let oldest: Option<f64> = query_scalar!(
         "SELECT EXTRACT(EPOCH FROM NOW()::TIMESTAMP - MIN(created_at))::FLOAT8 FROM computations
-          WHERE output_handle = ANY($1) AND fhe_operation = $2",
+          WHERE (output_handle, transaction_id) IN (SELECT * FROM UNNEST($1::BYTEA[], $3::BYTEA[]))
+            AND fhe_operation = $2 AND NOT is_completed",
         &waiting_outputs,
         SupportedFheOperations::Unmask as i16,
+        &waiting_transactions,
     )
     .fetch_one(trx.as_mut())
     .await?;

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXTRACT(EPOCH FROM NOW()::TIMESTAMP - MIN(created_at))::FLOAT8 FROM computations\n          WHERE (output_handle, transaction_id) IN (SELECT * FROM UNNEST($1::BYTEA[], $3::BYTEA[]))\n            AND fhe_operation = $2 AND NOT is_completed",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "extract",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int2",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "40e94d639ceaae8ebd8c06929fc9ddea5ac0f6e217b8b8c86eb84e1907ca85c0"
+}
