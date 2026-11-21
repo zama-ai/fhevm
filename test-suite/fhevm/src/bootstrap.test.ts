@@ -137,7 +137,7 @@ describe("blue-green bootstrap", () => {
     expect(bootstrapPhaseEnv(contracts, withoutProxy, ["CONNECTOR_PROXY_VERSION"])).toEqual(contracts);
   });
 
-  test("lists the upgradeable contracts through their tasks and lets the task skip an unmoved reinitializer", () => {
+  test("lists the upgradeable contracts with their tasks and lets each task skip an unmoved reinitializer", () => {
     expect(GATEWAY_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual([
       "Decryption",
       "CiphertextCommits",
@@ -169,14 +169,13 @@ describe("blue-green bootstrap", () => {
     );
   });
 
-  test("upgrades a ProtocolConfig proxy to a ProtocolConfigReplica and compares the reinitializers of both sources", () => {
+  test("always upgrades a ProtocolConfig proxy to a ProtocolConfigReplica", () => {
     const command = contractUpgradeCommand(
       "task:upgradeProtocolConfigReplica",
       "ProtocolConfig",
       "ProtocolConfigReplica",
     );
-    expect(command).toContain("previous-contracts/ProtocolConfig.sol | grep");
-    expect(command).toContain("contracts/ProtocolConfigReplica.sol | grep");
+    expect(command).not.toContain("REINITIALIZER_VERSION");
     expect(command.split("\n").at(-1)).toBe(
       "npx hardhat task:upgradeProtocolConfigReplica --current-implementation previous-contracts/ProtocolConfig.sol:ProtocolConfig " +
         "--new-implementation contracts/ProtocolConfigReplica.sol:ProtocolConfigReplica --verify-contract false --use-internal-proxy-address true",

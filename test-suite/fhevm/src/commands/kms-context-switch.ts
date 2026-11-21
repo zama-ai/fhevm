@@ -80,7 +80,6 @@ import { castSend, getEventTopic, callContractAndExpectRevert, keccakTopic, load
 import { kmsConnectorDbName, kmsConnectorEnvName, kmsTxSenderName, reconstructionThreshold } from "../kms-party";
 import {
   type ContextAndEpoch,
-  type SwitchTarget,
   assertReplicasDeployed,
   readContextAndEpoch,
   replicasOf,
@@ -178,6 +177,8 @@ const proxiesRefuseNodes = async (
     );
   }
 };
+
+type SwitchTarget = { rpcUrl: string; configAddress: string; where: string };
 
 /** Node roles on this topology. The initial on-chain committee is parties 1..committeeSize; cores
  * beyond it are spares. The node-swap step drops the last committee slot(s) and promotes the
@@ -717,7 +718,7 @@ export const runKmsContextSwitchProfile = async (
   const baseline = await readContextAndEpoch(rpcUrl, configAddress);
   console.log(`[kms-context-switch] baseline on ${where}: contextId=${baseline.contextId} epochId=${baseline.epochId}`);
   const canonical = { rpcUrl, configAddress, where };
-  await assertReplicasDeployed(state, canonical);
+  await assertReplicasDeployed(state);
 
   // Baseline app smoke first, so a later failure is attributable to the transition it follows.
   await runSmoke("kms-context-switch: input-proof at baseline (before any switch)");
@@ -728,7 +729,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     baseline, false,
   );
-  await syncReplicas(state, canonical, "the same-committee context switch");
+  await syncReplicas(state, "the same-committee context switch");
 
   // 2) Same-committee key resharing (NewKmsEpoch). Then probes the new epoch ID activates.
   console.log("[kms-context-switch] broadcasting defineNewEpochForCurrentKmsContext (NewKmsEpoch)…");
@@ -750,7 +751,7 @@ export const runKmsContextSwitchProfile = async (
     );
   }
   await runSmoke(`kms-context-switch: input-proof after the epoch rotation (epochId=${afterEpoch.epochId})`);
-  await syncReplicas(state, canonical, "the epoch rotation");
+  await syncReplicas(state, "the epoch rotation");
 
   // 3) Destruction: retire the baseline context and the superseded epoch across every layer.
   const owner = await loadHostOwner();
@@ -768,7 +769,7 @@ export const runKmsContextSwitchProfile = async (
   );
   await waitForDestructionQuorum(canonical, "KmsContextDestructionQuorumReached(uint256,bytes)", baseline.contextId);
   await waitForDestructionQuorum(canonical, "KmsEpochDestructionQuorumReached(uint256,bytes)", afterSwitch.epochId);
-  await syncReplicas(state, canonical, "the context and epoch destruction");
+  await syncReplicas(state, "the context and epoch destruction");
   for (const replica of replicasOf(state)) {
     const [isContextValid, isEpochValid] = await Promise.all([
       castBool(replica.rpcUrl, replica.address, "isValidKmsContext(uint256)(bool)", baseline.contextId.toString()),
@@ -800,7 +801,7 @@ export const runKmsContextSwitchProfile = async (
   console.log(
     `[kms-context-switch] post-destroy switch activated: contextId ${afterEpoch.contextId} -> ${afterDestroySwitch.contextId} (epochId=${afterDestroySwitch.epochId})`,
   );
-  await syncReplicas(state, canonical, "the post-destroy context switch");
+  await syncReplicas(state, "the post-destroy context switch");
 
   // 4b) Abort a stuck epoch rotation. Check that the single-in-flight guard reverts a second
   //     operation, that destroying the Pending epoch aborts the rotation, and that a fresh
@@ -808,7 +809,7 @@ export const runKmsContextSwitchProfile = async (
   const recovered = await abortStuckRotation(
     state, { rpcUrl, configAddress, where }, owner, afterDestroySwitch, runDecryption,
   );
-  await syncReplicas(state, canonical, "the aborted and recovered epoch rotation");
+  await syncReplicas(state, "the aborted and recovered epoch rotation");
 
   // 5) Node swap: drop a committee node, promote the spare. Running it after every destroy and
   //    abort above also proves the lifecycle never left the system unable to switch.
@@ -817,7 +818,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     recovered, true, runProxyCheck,
   );
-  await syncReplicas(state, canonical, "the node swap");
+  await syncReplicas(state, "the node swap");
 
   // 6a) Once the swap is finalized, every coprocessor-proxy accepts the promoted spare, and the
   //     dropped node while the outgoing context is still Active: 6b's refusal then comes from the
@@ -849,7 +850,7 @@ export const runKmsContextSwitchProfile = async (
     for (const contextId of destroyed) {
       await waitForDestructionQuorum(canonical, "KmsContextDestructionQuorumReached(uint256,bytes)", contextId);
     }
-    await syncReplicas(state, canonical, "the destruction of the pre-swap contexts");
+    await syncReplicas(state, "the destruction of the pre-swap contexts");
     for (const replica of replicasOf(state)) {
       for (const contextId of destroyed) {
         if (await castBool(replica.rpcUrl, replica.address, "isValidKmsContext(uint256)(bool)", contextId.toString())) {

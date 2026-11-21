@@ -1,9 +1,3 @@
-/**
- * Helpers for the ProtocolConfigReplica of every non-canonical host chain: read the canonical and
- * replica KMS context and epoch, check that each replica matches the canonical state, and replay
- * the signed KMS confirmations onto each replica (`task:buildReplicaReplayCalldata`, then the
- * `submit*` calls).
- */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -21,8 +15,6 @@ const FINALITY_TIMEOUT_MS = 120_000;
 const FINALITY_POLL_MS = 1_000;
 
 export type ContextAndEpoch = { contextId: bigint; epochId: bigint };
-
-export type SwitchTarget = { rpcUrl: string; configAddress: string; where: string };
 
 /** Parses `cast call getCurrentKmsContextAndEpoch()(uint256,uint256)` output into bigints. cast prints
  * each return value as `<decimal> [<scientific-notation>]` (one per line for a tuple), so strip the
@@ -66,20 +58,41 @@ export const waitForLatestFinalized = async (rpcUrl: string): Promise<number> =>
 export const parseReplayCalldata = (output: string): string[] =>
   [...output.matchAll(/^\s*calldata:\s*(0x[0-9a-fA-F]+)\s*$/gm)].map((match) => match[1]);
 
+/** Reads the chain id and the verifying contract from `cast call eip712Domain()(…)` output. cast
+ * prints one return value per line. The verifying contract is the only 20-byte value, and the chain
+ * id is on the line before it. Exported for unit testing. */
+export const parseEip712Domain = (raw: string) => {
+  const lines = raw.split("\n").map((line) => line.trim());
+  const index = lines.findIndex((line) => /^0x[0-9a-fA-F]{40}$/.test(line));
+  const chainId = index > 0 ? lines[index - 1].replace(/\[[^\]]*\]/g, "").trim() : "";
+  if (!/^\d+$/.test(chainId)) {
+    throw new PreflightError(`kms-replica: could not parse eip712Domain output: ${JSON.stringify(raw)}`);
+  }
+  return { chainId: BigInt(chainId), verifyingContract: lines[index] };
+};
+
 const REPLAY_OUTPUT_FILE = "replica-replay.txt";
 const KMS_SIGNERS_SIGNATURE = "getKmsSignersForContext(uint256)(address[])";
+const EIP712_DOMAIN_SIGNATURE = "eip712Domain()(bytes1,string,string,uint256,address,bytes32,uint256[])";
 
-type Replica = { chain: HostChainRuntime; rpcUrl: string; address: string };
+type ChainProtocolConfig = { chain: HostChainRuntime; rpcUrl: string; address: string };
 
-export const replicasOf = (state: State): Replica[] =>
-  extraHostChains(state).map((chain) => ({
-    chain,
-    rpcUrl: hostReachableRpcUrl(state.discovery!.endpoints.hosts[chain.key].http),
-    address: withHexPrefix(state.discovery!.hosts[chain.key].PROTOCOL_CONFIG_CONTRACT_ADDRESS),
-  }));
+const protocolConfigOn = (state: State, chain: HostChainRuntime): ChainProtocolConfig => ({
+  chain,
+  rpcUrl: hostReachableRpcUrl(state.discovery!.endpoints.hosts[chain.key].http),
+  address: withHexPrefix(state.discovery!.hosts[chain.key].PROTOCOL_CONFIG_CONTRACT_ADDRESS),
+});
 
-const assertReplicaMatchesCanonical = async (replica: Replica, canonical: SwitchTarget, afterWhat: string) => {
-  const expected = await readContextAndEpoch(canonical.rpcUrl, canonical.configAddress);
+export const canonicalProtocolConfig = (state: State) => protocolConfigOn(state, defaultHostChain(state));
+
+export const replicasOf = (state: State) => extraHostChains(state).map((chain) => protocolConfigOn(state, chain));
+
+const assertReplicaMatchesCanonical = async (
+  replica: ChainProtocolConfig,
+  canonical: ChainProtocolConfig,
+  afterWhat: string,
+) => {
+  const expected = await readContextAndEpoch(canonical.rpcUrl, canonical.address);
   const actual = await readContextAndEpoch(replica.rpcUrl, replica.address);
   if (actual.contextId !== expected.contextId || actual.epochId !== expected.epochId) {
     throw new PreflightError(
@@ -88,7 +101,7 @@ const assertReplicaMatchesCanonical = async (replica: Replica, canonical: Switch
     );
   }
   const [expectedSigners, actualSigners] = await Promise.all([
-    castCall(canonical.rpcUrl, canonical.configAddress, KMS_SIGNERS_SIGNATURE, expected.contextId.toString()),
+    castCall(canonical.rpcUrl, canonical.address, KMS_SIGNERS_SIGNATURE, expected.contextId.toString()),
     castCall(replica.rpcUrl, replica.address, KMS_SIGNERS_SIGNATURE, expected.contextId.toString()),
   ]);
   if (actualSigners !== expectedSigners) {
@@ -99,12 +112,23 @@ const assertReplicaMatchesCanonical = async (replica: Replica, canonical: Switch
   }
 };
 
-export const assertReplicasDeployed = async (state: State, canonical: SwitchTarget) => {
+export const assertReplicasDeployed = async (state: State) => {
+  const canonical = canonicalProtocolConfig(state);
   for (const replica of replicasOf(state)) {
     const version = await castCall(replica.rpcUrl, replica.address, "getVersion()(string)");
     if (!version.includes("ProtocolConfigReplica")) {
       throw new PreflightError(
         `kms-replica: ProtocolConfig on ${replica.chain.key} reports version ${version}, not a ProtocolConfigReplica`,
+      );
+    }
+    const domain = parseEip712Domain(await castCall(replica.rpcUrl, replica.address, EIP712_DOMAIN_SIGNATURE));
+    if (
+      domain.chainId !== BigInt(canonical.chain.chainId) ||
+      domain.verifyingContract.toLowerCase() !== canonical.address.toLowerCase()
+    ) {
+      throw new PreflightError(
+        `kms-replica: replica on ${replica.chain.key} verifies signatures under the EIP-712 domain of ${domain.verifyingContract} on chain ${domain.chainId}. ` +
+          `Canonical is ${canonical.address} on chain ${canonical.chain.chainId}`,
       );
     }
     await assertReplicaMatchesCanonical(replica, canonical, "deploy");
@@ -115,9 +139,9 @@ export const assertReplicasDeployed = async (state: State, canonical: SwitchTarg
  * The replay task reads the canonical events only up to the latest finalized block. Any account may
  * send the calldata, because the replica checks the KMS signatures.
  */
-export const syncReplicas = async (state: State, canonical: SwitchTarget, afterWhat: string) => {
+export const syncReplicas = async (state: State, afterWhat: string) => {
+  const canonical = canonicalProtocolConfig(state);
   await waitForLatestFinalized(canonical.rpcUrl);
-  const canonicalChain = defaultHostChain(state);
   const hostSc = await readEnvFile(envPath("host-sc"));
   // The host pauser is a funded anvil account on every host chain. It is not the ACL owner of the replica.
   const sender: Owner = { key: hostSc.PAUSER_PRIVATE_KEY, address: hostSc.PAUSER_ADDRESS_0 };
@@ -129,8 +153,8 @@ export const syncReplicas = async (state: State, canonical: SwitchTarget, afterW
       `${chain.sc}-deploy`,
       [
         "npx hardhat task:buildReplicaReplayCalldata",
-        `--canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort}`,
-        `--canonical-protocol-config-address ${canonical.configAddress}`,
+        `--canonical-rpc-url http://${canonical.chain.node}:${canonical.chain.rpcPort}`,
+        `--canonical-protocol-config-address ${canonical.address}`,
         "--use-internal-proxy-address true",
         `> /app/addresses/${REPLAY_OUTPUT_FILE} && cat /app/addresses/${REPLAY_OUTPUT_FILE}`,
       ].join(" "),

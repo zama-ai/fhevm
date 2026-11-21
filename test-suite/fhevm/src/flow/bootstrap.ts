@@ -93,18 +93,25 @@ export const bootstrapPhaseEnv = (
 /**
  * Upgrades a proxy from the snapshotted previous sources to the current ones, or exits cleanly
  * when the contract's reinitializer did not move: the task would otherwise revert, and the
- * plans below can stay a list of every upgradeable contract rather than a snapshot of one diff.
- * `newContract` names the new implementation when it is not the current contract.
+ * plans below can list the upgradeable contracts rather than a snapshot of one diff.
+ * `newContract` differs from `contract` when the proxy moves to another contract. The guard does not
+ * apply then, because the reinitializers of two different contracts do not compare.
  */
 export const contractUpgradeCommand = (task: string, contract: string, newContract = contract) => {
   const reinitializer = (file: string) =>
     `$(grep -m1 -oE 'REINITIALIZER_VERSION = [0-9]+' ${file} | grep -oE '[0-9]+' || true)`;
+  const guard =
+    newContract === contract
+      ? [
+          `prev=${reinitializer(`previous-contracts/${contract}.sol`)}`,
+          `next=${reinitializer(`contracts/${contract}.sol`)}`,
+          `if [ -n "$prev" ] && [ "$prev" = "$next" ]; then`,
+          `  echo "[bootstrap] ${contract}: reinitializer $prev unchanged since the snapshot; nothing to upgrade"; exit 0`,
+          "fi",
+        ]
+      : [];
   return [
-    `prev=${reinitializer(`previous-contracts/${contract}.sol`)}`,
-    `next=${reinitializer(`contracts/${newContract}.sol`)}`,
-    `if [ -n "$prev" ] && [ "$prev" = "$next" ]; then`,
-    `  echo "[bootstrap] ${contract}: reinitializer $prev unchanged since the snapshot; nothing to upgrade"; exit 0`,
-    "fi",
+    ...guard,
     [
       `npx hardhat ${task}`,
       `--current-implementation previous-contracts/${contract}.sol:${contract}`,
@@ -128,8 +135,8 @@ export const GATEWAY_CONTRACT_UPGRADES = [
 export const CANONICAL_HOST_CONTRACT_UPGRADES = [["task:upgradeKMSGeneration", "KMSGeneration"]] as const;
 
 /**
- * Every host contract with an upgrade task that runs the same implementation on each host chain.
- * ProtocolConfig is not in the list, because it becomes a ProtocolConfigReplica on every other chain.
+ * Every host contract that has an upgrade task and the same implementation on each host chain.
+ * ProtocolConfig is not in the list, because it becomes a ProtocolConfigReplica on each extra host chain.
  */
 export const HOST_CONTRACT_UPGRADES = [
   ["task:upgradeFHEVMExecutor", "FHEVMExecutor"],

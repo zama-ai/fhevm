@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseContextAndEpoch, parseReplayCalldata } from "./kms-replica";
+import { parseContextAndEpoch, parseEip712Domain, parseReplayCalldata } from "./kms-replica";
 
 describe("kms-replica parseContextAndEpoch", () => {
   test("parses the two newline-separated uint values cast prints", () => {
@@ -36,6 +36,28 @@ describe("kms-replica parseContextAndEpoch", () => {
 
   test("throws on empty output", () => {
     expect(() => parseContextAndEpoch("")).toThrow(/getCurrentKmsContextAndEpoch/);
+  });
+});
+
+describe("kms-replica parseEip712Domain", () => {
+  test("reads the chain id and the verifying contract from the seven lines cast prints", () => {
+    const raw = [
+      "0x0f",
+      '"ProtocolConfig"',
+      '"1"',
+      "12345 [1.234e4]",
+      "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "[]",
+    ].join("\n");
+    expect(parseEip712Domain(raw)).toEqual({
+      chainId: 12345n,
+      verifyingContract: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    });
+  });
+
+  test("throws when the output has no verifying contract", () => {
+    expect(() => parseEip712Domain("Error: execution reverted")).toThrow(/eip712Domain/);
   });
 });
 

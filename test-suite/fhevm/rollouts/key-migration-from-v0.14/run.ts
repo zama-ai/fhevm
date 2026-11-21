@@ -1,9 +1,8 @@
 /**
  * Upgrades a 0.14 stack to this branch one step at a time, with checks in between, then migrates
- * the existing key to compressed material and reshares it. Last, one replay carries the
- * ProtocolConfigReplica of every other host chain across both reshares. Runs as the
- * `key-migration-from-v0.14` test profile on the `key-migration-from-v0.14` scenario, or its `-gpu`
- * variant for the GPU phase.
+ * the existing key to compressed material and reshares it. Last, it replays both reshares onto the
+ * ProtocolConfigReplica of every extra host chain. Runs as the `key-migration-from-v0.14` test
+ * profile on the `key-migration-from-v0.14` scenario, or its `-gpu` variant for the GPU phase.
  */
 import { createHash } from "node:crypto";
 
@@ -678,9 +677,5 @@ export const runKeyMigrationProfile = async (stack: Stack) => {
   );
 
   logPhase("13 replay the epoch rotation and the context switch onto every replica");
-  await syncReplicas(
-    await stack.readState(),
-    { rpcUrl: target.rpcUrl, configAddress: target.configAddress, where: target.where },
-    "the epoch rotation and the context switch",
-  );
+  await syncReplicas(await stack.readState(), "the epoch rotation and the context switch");
 };
