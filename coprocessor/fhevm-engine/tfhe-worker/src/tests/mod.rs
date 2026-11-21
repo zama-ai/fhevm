@@ -14,7 +14,7 @@ mod revert_coprocessor_db_state;
 mod scheduling_bench;
 mod shared_db;
 mod test_cases;
-mod unmask;
+pub(crate) mod unmask;
 mod utils;
 mod versioning;
 

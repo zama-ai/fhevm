@@ -1411,6 +1411,50 @@ mod operand_boundary_mask_tests {
         Ok(())
     }
 
+    /// The pad-worker sees the pad request of an Unmask while the batch transaction is open.
+    #[tokio::test]
+    async fn requests_the_pad_outside_the_batch_transaction(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        let (package, label) = crate::tests::unmask::package(&[3], &7u16.to_le_bytes());
+        let mut item = work_item(handle(0x01), vec![package, vec![0]], None, None, true);
+        item.fhe_operation = SupportedFheOperations::Unmask as i16;
+
+        let mut trx = pool.begin().await?;
+        let (waiting, _) =
+            attach_unmask_pads(&mut trx, pool.clone(), std::slice::from_mut(&mut item)).await?;
+        assert!(waiting.contains(&item.transaction_id));
+        let mut visible = false;
+        for _ in 0..100 {
+            visible = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pads WHERE label = $1 AND triggered_by = $2)",
+            )
+            .bind(label.as_slice())
+            .bind(UNMASK_TRIGGERED_BY.as_slice())
+            .fetch_one(&pool)
+            .await?;
+            if visible {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(visible, "the pads row is visible before the batch commits");
+        trx.rollback().await?;
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pads WHERE label = $1")
+            .bind(label.as_slice())
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(
+            rows, 1,
+            "the pad request stays after a rollback of the batch"
+        );
+        Ok(())
+    }
+
     /// Fairness regression for the lockless fallback: the deferred
     /// transaction enters the cooldown, so the next window slice reaches
     /// the younger transaction instead of repeating the same batch forever.
@@ -4126,13 +4170,63 @@ fn unmask_wait_warning_is_due() -> bool {
             .is_ok()
 }
 
+/// Adds a `pads` row for each request, and gives a connector's pending row to Unmask. Run it
+/// outside the batch transaction: in that transaction, the pad-worker sees the rows only after the
+/// batch commits, and the row locks stay until then. Spawn it: a second connection from the pool
+/// can time out while the batch transaction holds one. If it fails, the next pass requests the
+/// pads again.
+async fn request_pads(pool: sqlx::Pool<Postgres>, requests: BTreeSet<(i32, Vec<u8>, i32)>) {
+    let mut prf_instances = Vec::with_capacity(requests.len());
+    let mut labels = Vec::with_capacity(requests.len());
+    let mut pad_lengths = Vec::with_capacity(requests.len());
+    for (prf, label, length) in requests {
+        prf_instances.push(prf);
+        labels.push(label);
+        pad_lengths.push(length);
+    }
+    let result = async {
+        query!(
+            "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
+             SELECT prf, label, length, $4
+               FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+              ORDER BY prf, label, length
+             ON CONFLICT DO NOTHING",
+            &prf_instances,
+            &labels,
+            &pad_lengths,
+            UNMASK_TRIGGERED_BY.as_slice(),
+        )
+        .execute(&pool)
+        .await?;
+        query!(
+            "UPDATE pads SET triggered_by = $4
+              WHERE (prf_instance, label, pad_length) IN (
+                    SELECT p.prf_instance, p.label, p.pad_length
+                      FROM pads p
+                      JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+                        ON (p.prf_instance, p.label, p.pad_length) = (r.prf, r.label, r.length)
+                     WHERE p.triggered_by <> $4 AND p.signature IS NULL AND NOT p.is_error
+                     ORDER BY 1, 2, 3
+                       FOR UPDATE)",
+            &prf_instances,
+            &labels,
+            &pad_lengths,
+            UNMASK_TRIGGERED_BY.as_slice(),
+        )
+        .execute(&pool)
+        .await
+    }
+    .await;
+    if let Err(err) = result {
+        warn!(target: "tfhe_worker", error = %err, "Cannot request the pads of Unmask");
+    }
+}
+
 /// Adds the pad ct64 to each `Unmask` row, as its third operand. It is empty when the operation
 /// must fail: a bad package, a pad that the pad-worker failed, or a ct64 that does not match its
-/// digest. For a missing ct64, adds a `pads` row for the pad-worker in `trx`, and gives a
-/// connector's pending row to Unmask. A second connection from the pool can time out while `trx`
-/// holds one, so only the spawned update uses `pool`. Returns the transactions that wait for a pad,
-/// and the age of the oldest `Unmask` that waits. The wait has no limit: all coprocessors must
-/// give the same result.
+/// digest. For a missing ct64, requests the pad in a spawned task (see `request_pads`). Returns
+/// the transactions that wait for a pad, and the age of the oldest `Unmask` that waits. The wait
+/// has no limit: all coprocessors must give the same result.
 async fn attach_unmask_pads(
     trx: &mut sqlx::Transaction<'_, Postgres>,
     pool: sqlx::Pool<Postgres>,
@@ -4140,8 +4234,7 @@ async fn attach_unmask_pads(
 ) -> Result<(HashSet<TxHash>, Duration), sqlx::Error> {
     let mut waiting = HashSet::new();
     let mut waiting_outputs: Vec<Vec<u8>> = Vec::new();
-    // Keep the pad requests sorted, so every batch locks the rows in the same order and no two
-    // batches can deadlock.
+    // Sorted, so that two requests lock the rows in the same order and cannot deadlock.
     let mut requests: BTreeSet<(i32, Vec<u8>, i32)> = BTreeSet::new();
     // A row with a terminal error stamp never runs again, so it needs no pad.
     for w in work.iter_mut().filter(|w| {
@@ -4195,51 +4288,7 @@ async fn attach_unmask_pads(
     if waiting_outputs.is_empty() {
         return Ok((waiting, Duration::ZERO));
     }
-    let mut prf_instances = Vec::with_capacity(requests.len());
-    let mut labels = Vec::with_capacity(requests.len());
-    let mut pad_lengths = Vec::with_capacity(requests.len());
-    for (prf, label, length) in requests {
-        prf_instances.push(prf);
-        labels.push(label);
-        pad_lengths.push(length);
-    }
-    query!(
-        "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
-         SELECT prf, label, length, $4
-           FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
-          ORDER BY prf, label, length
-         ON CONFLICT DO NOTHING",
-        &prf_instances,
-        &labels,
-        &pad_lengths,
-        UNMASK_TRIGGERED_BY.as_slice(),
-    )
-    .execute(trx.as_mut())
-    .await?;
-    // A connector can own the row. Give it to Unmask outside `trx`: a lock in `trx` stays until
-    // the batch commits, and the pad-worker cannot claim the row until then.
-    tokio::spawn(async move {
-        let result = query!(
-            "UPDATE pads SET triggered_by = $4
-              WHERE (prf_instance, label, pad_length) IN (
-                    SELECT p.prf_instance, p.label, p.pad_length
-                      FROM pads p
-                      JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
-                        ON (p.prf_instance, p.label, p.pad_length) = (r.prf, r.label, r.length)
-                     WHERE p.triggered_by <> $4 AND p.signature IS NULL AND NOT p.is_error
-                     ORDER BY 1, 2, 3
-                       FOR UPDATE)",
-            &prf_instances,
-            &labels,
-            &pad_lengths,
-            UNMASK_TRIGGERED_BY.as_slice(),
-        )
-        .execute(&pool)
-        .await;
-        if let Err(err) = result {
-            warn!(target: "tfhe_worker", error = %err, "Cannot give the pad rows to Unmask");
-        }
-    });
+    tokio::spawn(request_pads(pool, requests));
     let oldest: Option<f64> = query_scalar!(
         "SELECT EXTRACT(EPOCH FROM NOW()::TIMESTAMP - MIN(created_at))::FLOAT8 FROM computations
           WHERE output_handle = ANY($1) AND fhe_operation = $2",

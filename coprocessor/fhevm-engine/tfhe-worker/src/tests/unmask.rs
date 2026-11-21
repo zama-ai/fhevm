@@ -16,7 +16,7 @@ use std::time::Duration;
 const PRF_ID: u16 = 1;
 
 /// A package of `parts` with the values `plain` (each part LSB first), masked with the mock pad.
-fn package(parts: &[u8], plain: &[u8]) -> (Vec<u8>, B256) {
+pub(crate) fn package(parts: &[u8], plain: &[u8]) -> (Vec<u8>, B256) {
     let mut witness = vec![0u8];
     witness.extend(PRF_ID.to_be_bytes());
     witness.extend(TEST_CHAIN_ID.to_be_bytes());
