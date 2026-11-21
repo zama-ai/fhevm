@@ -16,6 +16,7 @@ pub mod healthz_server;
 pub mod host_chains;
 pub mod keys;
 pub mod metrics_server;
+pub mod pad;
 pub mod pg_pool;
 #[cfg(feature = "test-failpoints")]
 pub mod reservation_test_control;

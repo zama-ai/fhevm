@@ -39,4 +39,6 @@ enum FheOperation {
   FHE_IS_IN = 29;
   FHE_MUL_DIV = 30;
   FHE_GET_CIPHERTEXT = 32;
+  // `m = c XOR r` for one input of a pad-based input package.
+  FHE_UNMASK = 33;
 }

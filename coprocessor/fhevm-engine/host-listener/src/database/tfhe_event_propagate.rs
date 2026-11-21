@@ -16,6 +16,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, PoolRefreshHandle,
 };
+use fhevm_engine_common::pad::is_pad_package;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{
     is_valid_multi_output_arity, AllowEvents, SchedulePriority,
@@ -1301,8 +1302,7 @@ impl Database {
             &event.data,
             E::Initialized(_)
                 |  E::Upgraded(_)
-                |  E::VerifyInput(_)
-        ) {
+        ) && !matches!(&event.data, E::VerifyInput(v) if !is_pad_package(&v.inputProof)) {
             self.record_transaction_begin(
                 &log.transaction_hash.map(|h| h.to_vec()),
                 log.block_number,
@@ -1372,6 +1372,11 @@ impl Database {
                     insert_computation_bytes(tx, result, &[factor1, factor2], &[divisor.to_vec()], &NO_SCALAR).await
                 }
             }
+
+            // A pad-based input. The executor minted `result`, and Unmask computes it.
+            E::VerifyInput(C::VerifyInput {inputHandle, inputProof, result, ..})
+                if is_pad_package(inputProof)
+            => insert_computation_bytes(tx, result, &[], &[inputProof.to_vec(), vec![inputHandle[29]]], &HAS_SCALAR).await,
 
             | E::Initialized(_)
             | E::Upgraded(_)
@@ -2959,6 +2964,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheSum(_) => O::FheSum as i32,
         E::FheIsIn(_) => O::FheIsIn as i32,
         E::FheMulDiv(_) => O::FheMulDiv as i32,
+        E::VerifyInput(v) if is_pad_package(&v.inputProof) => O::Unmask as i32,
         // Not tfhe ops
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
@@ -2999,6 +3005,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheMulDiv(_) => "FheMulDiv",
         E::Initialized(_) => "Initialized",
         E::Upgraded(_) => "Upgraded",
+        E::VerifyInput(v) if is_pad_package(&v.inputProof) => "Unmask",
         E::VerifyInput(_) => "VerifyInput",
     }
 }
@@ -3058,6 +3065,11 @@ pub fn tfhe_result_handles(op: &TfheContractEvents) -> Vec<Handle> {
         | E::FheSum(C::FheSum { result, .. })
         | E::FheIsIn(C::FheIsIn { result, .. })
         | E::FheMulDiv(C::FheMulDiv { result, .. }) => vec![*result],
+
+        // The executor mints the result of a pad-based input, and Unmask computes it.
+        E::VerifyInput(C::VerifyInput {
+            inputProof, result, ..
+        }) if is_pad_package(inputProof) => vec![*result],
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
@@ -3240,5 +3252,40 @@ mod sealed_chain_tests {
             sealed.peek(&hash(0xA3)).is_none(),
             "the oldest reconstructed producer is the one to drop"
         );
+    }
+}
+
+#[cfg(test)]
+mod pad_input_tests {
+    use super::*;
+
+    fn verify_input(first_proof_byte: u8) -> TfheContractEvents {
+        TfheContractEvents::VerifyInput(TfheContract::VerifyInput {
+            caller: Address::ZERO,
+            inputHandle: Handle::from([1u8; 32]),
+            userAddress: Address::ZERO,
+            inputProof: vec![first_proof_byte, 1, 2].into(),
+            inputType: 5,
+            result: Handle::from([2u8; 32]),
+        })
+    }
+
+    #[test]
+    fn a_pad_input_is_an_unmask_of_its_result() {
+        let event = verify_input(0);
+        assert_eq!(
+            event_to_op_int(&event),
+            SupportedFheOperations::Unmask as i32
+        );
+        assert_eq!(event_name(&event), "Unmask");
+        assert_eq!(tfhe_result_handles(&event), vec![Handle::from([2u8; 32])]);
+    }
+
+    #[test]
+    fn a_regular_input_is_not_an_operation() {
+        let event = verify_input(1);
+        assert_eq!(event_to_op_int(&event), -1);
+        assert_eq!(event_name(&event), "VerifyInput");
+        assert!(tfhe_result_handles(&event).is_empty());
     }
 }

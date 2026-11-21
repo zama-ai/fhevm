@@ -2,6 +2,7 @@
 
 use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
+use fhevm_engine_common::pad::UNMASK_TRIGGERED_BY;
 use sqlx::{types::Uuid, PgPool};
 use std::time::Duration;
 
@@ -22,8 +23,9 @@ pub struct Claim {
     pub token: Uuid,
 }
 
-/// Claims the next pending row of `prf_instance`, if any. The connector with the fewest rows in
-/// progress goes first, then the oldest row. Skips expired rows and rows with a live claim.
+/// Claims the next pending row of `prf_instance`, if any. Rows for Unmask go first, then the
+/// connector with the fewest rows in progress, then the oldest row. Skips expired rows and rows
+/// with a live claim.
 pub async fn claim(
     pool: &PgPool,
     prf_instance: u16,
@@ -45,12 +47,13 @@ pub async fn claim(
             WHERE p.prf_instance = $1 AND p.signature IS NULL AND NOT p.is_error
               AND p.created_at > NOW() - make_interval(secs => $2)
               AND (p.claimed_at IS NULL OR p.claimed_at <= NOW() - make_interval(secs => $3))
-            ORDER BY COALESCE(i.rows, 0), p.created_at
+            ORDER BY p.triggered_by = $4 DESC, COALESCE(i.rows, 0), p.created_at
             LIMIT 1
               FOR UPDATE OF p SKIP LOCKED"#,
         i32::from(prf_instance),
         pending_max_age.as_secs_f64(),
         claim_timeout.as_secs_f64(),
+        UNMASK_TRIGGERED_BY.as_slice(),
     )
     .fetch_optional(tx.as_mut())
     .await?;
@@ -325,13 +328,18 @@ pub async fn delete_expired_pending(
     .await
 }
 
-/// Deletes the ct64 of all instances older than `max_age`.
+/// Deletes the ct64 older than `max_age` that have no `pads` row, of all instances. While the row
+/// exists, a new request does not compute the pad again, so Unmask needs the ct64.
 pub async fn delete_old_ct64(pool: &PgPool, max_age: Duration) -> sqlx::Result<u64> {
     in_batches(|| {
         sqlx::query!(
             "DELETE FROM pad_ct64 WHERE ctid IN (
-                 SELECT ctid FROM pad_ct64
-                  WHERE created_at <= NOW() - make_interval(secs => $1)
+                 SELECT c.ctid FROM pad_ct64 c
+                  WHERE c.created_at <= NOW() - make_interval(secs => $1)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM pads p
+                         WHERE (p.prf_instance, p.label, p.pad_length)
+                             = (c.prf_instance, c.label, c.pad_length))
                   LIMIT $2
                     FOR UPDATE SKIP LOCKED)",
             max_age.as_secs_f64(),

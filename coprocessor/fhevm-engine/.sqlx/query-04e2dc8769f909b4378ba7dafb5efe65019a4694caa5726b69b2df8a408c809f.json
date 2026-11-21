@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.prf_instance AS \"prf_instance!\", c.label AS \"label!\",\n                  c.pad_length AS \"pad_length!\", c.ciphertext64 AS \"ciphertext64!\",\n                  c.ciphertext_digest AS \"ciphertext_digest!\"\n             FROM pad_ct64 c\n             JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)\n               ON c.prf_instance = r.prf AND c.label = r.label AND c.pad_length >= r.length\n            ORDER BY c.prf_instance, c.label, c.pad_length",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "prf_instance!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "label!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "pad_length!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext64!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ciphertext_digest!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "ByteaArray",
+        "Int4Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "04e2dc8769f909b4378ba7dafb5efe65019a4694caa5726b69b2df8a408c809f"
+}

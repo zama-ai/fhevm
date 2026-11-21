@@ -1,5 +1,6 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
+use alloy::primitives::keccak256;
 use fhevm_engine_common::database::{
     apply_gcs_mode_search_path, connect_pool_with_options,
     connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
@@ -8,6 +9,7 @@ use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::gcs_activation::{
     run_gcs_activation_watcher, GCS_GATE_RECHECK, GCS_NOT_ACTIVATED, WORK_AVAILABLE_CHANNEL,
 };
+use fhevm_engine_common::pad::{PadPackage, UNMASK_TRIGGERED_BY};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts, TxHash};
@@ -27,7 +29,7 @@ use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFG
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::{postgres::PgListener, query, query_scalar, Postgres};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -1409,6 +1411,204 @@ mod operand_boundary_mask_tests {
         Ok(())
     }
 
+    /// The pad-worker sees the pad request of an Unmask while the batch transaction is open.
+    #[tokio::test]
+    async fn requests_the_pad_outside_the_batch_transaction(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        let (package, label) = crate::tests::unmask::package(&[3], &7u16.to_le_bytes());
+        let mut item = work_item(handle(0x01), vec![package, vec![0]], None, None, true);
+        item.fhe_operation = SupportedFheOperations::Unmask as i16;
+
+        let mut trx = pool.begin().await?;
+        let (waiting, _) =
+            attach_unmask_pads(&mut trx, pool.clone(), std::slice::from_mut(&mut item)).await?;
+        assert!(waiting.contains(&item.transaction_id));
+        let mut visible = false;
+        for _ in 0..100 {
+            visible = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pads WHERE label = $1 AND triggered_by = $2)",
+            )
+            .bind(label.as_slice())
+            .bind(UNMASK_TRIGGERED_BY.as_slice())
+            .fetch_one(&pool)
+            .await?;
+            if visible {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(visible, "the pads row is visible before the batch commits");
+        trx.rollback().await?;
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pads WHERE label = $1")
+            .bind(label.as_slice())
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(
+            rows, 1,
+            "the pad request stays after a rollback of the batch"
+        );
+        Ok(())
+    }
+
+    /// A failed pad gets a new request only when it is older than `UNMASK_PAD_RETRY_AGE`.
+    #[tokio::test]
+    async fn requests_a_failed_pad_again_at_most_once_a_minute(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+        // Label 1 failed 10 s ago, label 2 failed 2 min ago.
+        for (label, age_secs) in [(1u8, 10.0), (2u8, 120.0)] {
+            sqlx::query(
+                "INSERT INTO pads (prf_instance, label, pad_length, triggered_by, is_error, created_at)
+                 VALUES (1, $1, 16, $2, TRUE, NOW() - make_interval(secs => $3))",
+            )
+            .bind(vec![label; 32])
+            .bind(vec![7u8; 20])
+            .bind(age_secs)
+            .execute(&pool)
+            .await?;
+        }
+
+        request_pads(
+            pool.clone(),
+            [1u8, 2].map(|label| (1, vec![label; 32], 16)).into(),
+        )
+        .await;
+
+        let rows: Vec<(Vec<u8>, bool, Vec<u8>)> =
+            sqlx::query_as("SELECT label, is_error, triggered_by FROM pads ORDER BY label")
+                .fetch_all(&pool)
+                .await?;
+        assert_eq!(
+            rows,
+            vec![
+                (vec![1; 32], true, vec![7; 20]),
+                (vec![2; 32], false, UNMASK_TRIGGERED_BY.to_vec()),
+            ]
+        );
+        Ok(())
+    }
+
+    /// The oldest wait counts only the waiting row, not a completed copy in another transaction.
+    #[tokio::test]
+    async fn the_oldest_unmask_wait_ignores_other_copies_of_the_handle(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        let (package, _) = crate::tests::unmask::package(&[3], &7u16.to_le_bytes());
+        let mut item = work_item(
+            handle(0x01),
+            vec![package.clone(), vec![0]],
+            None,
+            None,
+            true,
+        );
+        item.fhe_operation = SupportedFheOperations::Unmask as i16;
+        // The waiting row is 30 s old. A completed copy in another transaction is 1 h old.
+        for (transaction_id, age_secs, completed) in [
+            (item.transaction_id.clone(), 30.0, false),
+            (vec![0xBB; 32], 3600.0, true),
+        ] {
+            sqlx::query(
+                "INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar,
+                                           transaction_id, is_allowed, host_chain_id, is_completed,
+                                           created_at)
+                 VALUES ($1, $2, $3, TRUE, $4, TRUE, 1, $5,
+                         NOW()::TIMESTAMP - make_interval(secs => $6))",
+            )
+            .bind(handle(0x01))
+            .bind(vec![package.clone(), vec![0]])
+            .bind(SupportedFheOperations::Unmask as i16)
+            .bind(transaction_id)
+            .bind(completed)
+            .bind(age_secs)
+            .execute(&pool)
+            .await?;
+        }
+
+        let mut trx = pool.begin().await?;
+        let (_, oldest) =
+            attach_unmask_pads(&mut trx, pool.clone(), std::slice::from_mut(&mut item)).await?;
+        trx.rollback().await?;
+
+        assert!(
+            (Duration::from_secs(25)..Duration::from_secs(120)).contains(&oldest),
+            "the oldest wait is {oldest:?}"
+        );
+        Ok(())
+    }
+
+    /// One ct64 query gives each Unmask row of the window its shortest valid ct64.
+    #[tokio::test]
+    async fn attaches_the_ct64_of_several_unmask_rows_in_one_window(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::tests::unmask::{package, store_ct64};
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        // Package 1: one euint16 input, with a stored 64-bit ct64. Package 2: two euint16 inputs,
+        // with a stored 32-bit ct64. Package 3: one euint16 input, without a ct64.
+        let (one, label_one) = package(&[3], &7u16.to_le_bytes());
+        let (two, label_two) = package(&[3, 3], &[1, 0, 2, 0]);
+        let (three, _) = package(&[3], &9u16.to_le_bytes());
+        store_ct64(&pool, label_one, 64).await;
+        store_ct64(&pool, label_two, 32).await;
+        let unmask = |id: u8, package: &[u8], index: u8, transaction: u8| {
+            let mut item = work_item(
+                handle(id),
+                vec![package.to_vec(), vec![index]],
+                None,
+                None,
+                true,
+            );
+            item.fhe_operation = SupportedFheOperations::Unmask as i16;
+            item.transaction_id = vec![transaction; 32];
+            item
+        };
+        let mut work = vec![
+            unmask(1, &one, 0, 0xAA),
+            unmask(2, &two, 0, 0xAA),
+            unmask(3, &two, 1, 0xAA),
+            unmask(4, &three, 0, 0xBB),
+        ];
+
+        let mut trx = pool.begin().await?;
+        let (waiting, _) = attach_unmask_pads(&mut trx, pool.clone(), &mut work).await?;
+        trx.rollback().await?;
+
+        let stored = |label: alloy::primitives::B256, length: i32| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, Vec<u8>>(
+                    "SELECT ciphertext64 FROM pad_ct64 WHERE label = $1 AND pad_length = $2",
+                )
+                .bind(label.as_slice())
+                .bind(length)
+                .fetch_one(&pool)
+                .await
+            }
+        };
+        assert_eq!(work[0].dependencies[2], stored(label_one, 64).await?);
+        assert_eq!(work[1].dependencies[2], stored(label_two, 32).await?);
+        assert_eq!(work[2].dependencies[2], stored(label_two, 32).await?);
+        assert_eq!(work[3].dependencies.len(), 2);
+        assert_eq!(waiting, HashSet::from([vec![0xBB; 32]]));
+        Ok(())
+    }
+
     /// Fairness regression for the lockless fallback: the deferred
     /// transaction enters the cooldown, so the next window slice reaches
     /// the younger transaction instead of repeating the same batch forever.
@@ -2361,6 +2561,16 @@ lazy_static! {
     static ref DEFERRED_TRANSACTIONS_GAUGE: IntGauge = register_int_gauge!(
         "coprocessor_worker_deferred_transactions_current",
         "transactions deferred in the most recent work window of this worker"
+    )
+    .unwrap();
+    static ref UNMASK_WAITING_TRANSACTIONS_GAUGE: IntGauge = register_int_gauge!(
+        "coprocessor_worker_unmask_waiting_transactions_current",
+        "transactions in the most recent work window of this worker that wait for the pad of an Unmask"
+    )
+    .unwrap();
+    static ref UNMASK_OLDEST_WAIT_GAUGE: IntGauge = register_int_gauge!(
+        "coprocessor_worker_unmask_oldest_wait_seconds",
+        "age of the oldest Unmask in the most recent work window of this worker that waits for its pad"
     )
     .unwrap();
     static ref WORK_ITEMS_POLL_COUNTER: IntCounter = register_int_counter!(
@@ -3964,6 +4174,13 @@ WHERE c.transaction_id IN (
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", count = the_work.len(), dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "Processing work items");
     let dead_boundary = query_dead_boundary_handles(trx, &the_work, gcs_mode).await?;
+    let (waiting_for_pad, oldest_wait) =
+        attach_unmask_pads(trx, deps_chain_mngr.pool().clone(), &mut the_work).await?;
+    UNMASK_WAITING_TRANSACTIONS_GAUGE.set(waiting_for_pad.len() as i64);
+    UNMASK_OLDEST_WAIT_GAUGE.set(oldest_wait.as_secs() as i64);
+    if oldest_wait > UNMASK_WAIT_WARNING && unmask_wait_warning_is_due() {
+        warn!(target: "tfhe_worker", oldest_wait_secs = oldest_wait.as_secs(), transactions = waiting_for_pad.len(), "Unmask waits for its pad for a long time: check the pad-worker of its PRF instance");
+    }
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
     let (transactions, _earliest_schedule_order, any_deferred) = async {
         let mut earliest_schedule_order = PrimitiveDateTime::MAX;
@@ -3977,6 +4194,16 @@ WHERE c.transaction_id IN (
         let mut transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let transaction_id: &Vec<u8> = transaction_id;
+            if waiting_for_pad.contains(transaction_id) {
+                info!(target: "tfhe_worker", transaction_id = %hex::encode(transaction_id), "Transaction waits for the pad of an Unmask");
+                any_deferred = true;
+                // Use a short cooldown: the pad usually comes in seconds, and its trigger wakes
+                // the worker.
+                if quarantine_deferred {
+                    deferred_cooldown.quarantine_for(transaction_id, UNMASK_WAIT_COOLDOWN);
+                }
+                continue;
+            }
             let prepared =
                 match prepare_transaction_ops(txwork, dcid_filter.as_deref(), &dead_boundary) {
                     Ok(prepared) => prepared,
@@ -4076,6 +4303,214 @@ WHERE c.transaction_id IN (
     Ok((transactions, post_commit_action, true, freeze))
 }
 
+/// When an Unmask waits longer than this for its pad, the tfhe-worker logs a warning. This is the
+/// default pending age of the PRF requests.
+const UNMASK_WAIT_WARNING: Duration = Duration::from_secs(600);
+/// The tfhe-worker logs the warning about a long Unmask wait at most once in this time.
+const UNMASK_WAIT_WARNING_INTERVAL: Duration = Duration::from_secs(60);
+/// The cooldown of a transaction that waits for a pad, when DCID locking is disabled.
+const UNMASK_WAIT_COOLDOWN: Duration = Duration::from_secs(5);
+/// The minimum age of a failed pad before Unmask requests it again: one try a minute at most.
+const UNMASK_PAD_RETRY_AGE: Duration = Duration::from_secs(60);
+
+/// Returns true at most once in each `UNMASK_WAIT_WARNING_INTERVAL`, for the whole process.
+fn unmask_wait_warning_is_due() -> bool {
+    static LAST_WARNING_SECS: AtomicI64 = AtomicI64::new(0);
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let last = LAST_WARNING_SECS.load(Ordering::Relaxed);
+    now - last >= UNMASK_WAIT_WARNING_INTERVAL.as_secs() as i64
+        && LAST_WARNING_SECS
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+}
+
+/// Adds a `pads` row for each request, and gives a connector's pending row to Unmask. Replaces a
+/// failed row older than `UNMASK_PAD_RETRY_AGE`: the failure can be local, and the other
+/// coprocessors can compute the pad. Run it
+/// outside the batch transaction: in that transaction, the pad-worker sees the rows only after the
+/// batch commits, and the row locks stay until then. Spawn it: a second connection from the pool
+/// can time out while the batch transaction holds one. If it fails, the next pass requests the
+/// pads again.
+async fn request_pads(pool: sqlx::Pool<Postgres>, requests: BTreeSet<(i32, Vec<u8>, i32)>) {
+    let mut prf_instances = Vec::with_capacity(requests.len());
+    let mut labels = Vec::with_capacity(requests.len());
+    let mut pad_lengths = Vec::with_capacity(requests.len());
+    for (prf, label, length) in requests {
+        prf_instances.push(prf);
+        labels.push(label);
+        pad_lengths.push(length);
+    }
+    let result = async {
+        query!(
+            "DELETE FROM pads
+              WHERE (prf_instance, label, pad_length) IN (
+                    SELECT p.prf_instance, p.label, p.pad_length
+                      FROM pads p
+                      JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+                        ON (p.prf_instance, p.label, p.pad_length) = (r.prf, r.label, r.length)
+                     WHERE p.is_error AND p.created_at <= NOW() - make_interval(secs => $4)
+                     ORDER BY 1, 2, 3
+                       FOR UPDATE)",
+            &prf_instances,
+            &labels,
+            &pad_lengths,
+            UNMASK_PAD_RETRY_AGE.as_secs_f64(),
+        )
+        .execute(&pool)
+        .await?;
+        query!(
+            "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
+             SELECT prf, label, length, $4
+               FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+              ORDER BY prf, label, length
+             ON CONFLICT DO NOTHING",
+            &prf_instances,
+            &labels,
+            &pad_lengths,
+            UNMASK_TRIGGERED_BY.as_slice(),
+        )
+        .execute(&pool)
+        .await?;
+        query!(
+            "UPDATE pads SET triggered_by = $4
+              WHERE (prf_instance, label, pad_length) IN (
+                    SELECT p.prf_instance, p.label, p.pad_length
+                      FROM pads p
+                      JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+                        ON (p.prf_instance, p.label, p.pad_length) = (r.prf, r.label, r.length)
+                     WHERE p.triggered_by <> $4 AND p.signature IS NULL AND NOT p.is_error
+                     ORDER BY 1, 2, 3
+                       FOR UPDATE)",
+            &prf_instances,
+            &labels,
+            &pad_lengths,
+            UNMASK_TRIGGERED_BY.as_slice(),
+        )
+        .execute(&pool)
+        .await
+    }
+    .await;
+    if let Err(err) = result {
+        warn!(target: "tfhe_worker", error = %err, "Cannot request the pads of Unmask");
+    }
+}
+
+/// The prf instance and the label of a pad.
+type PadLabel = (i32, Vec<u8>);
+
+/// Adds the pad ct64 to each `Unmask` row, as its third operand. It is empty for a bad package,
+/// and the operation fails. Reads the ct64 of all rows in one query, and uses the shortest ct64
+/// that matches its digest. If no ct64 matches, requests the pad in a spawned task (see
+/// `request_pads`). A bad ct64 is local, so the operation must not fail. Returns the transactions
+/// that wait for a pad, and the age of the oldest `Unmask` that waits. The wait has no limit: all
+/// coprocessors must give the same result.
+async fn attach_unmask_pads(
+    trx: &mut sqlx::Transaction<'_, Postgres>,
+    pool: sqlx::Pool<Postgres>,
+    work: &mut [WorkItem],
+) -> Result<(HashSet<TxHash>, Duration), sqlx::Error> {
+    // Each Unmask row: its index in `work`, and its pad (prf instance, label, length).
+    let mut unmasks: Vec<(usize, i32, Vec<u8>, i32)> = Vec::new();
+    // The shortest pad of each prf instance and label, so that one query reads all the ct64.
+    let mut shortest: BTreeMap<PadLabel, i32> = BTreeMap::new();
+    // A row with a terminal error stamp never runs again, so it needs no pad.
+    for (i, w) in work.iter_mut().enumerate().filter(|(_, w)| {
+        w.fhe_operation == SupportedFheOperations::Unmask as i16
+            && w.dependencies.len() == 2
+            && !(w.is_error && !stamp_is_retryable(w.error_message.as_deref()))
+    }) {
+        let Ok(package) = PadPackage::parse(&w.dependencies[0]) else {
+            w.dependencies.push(vec![]);
+            continue;
+        };
+        let prf_instance = i32::from(package.prf_id);
+        let pad_length = i32::try_from(package.pad_bits()).expect("at most 2048 bits");
+        let label = package.label.to_vec();
+        shortest
+            .entry((prf_instance, label.clone()))
+            .and_modify(|length| *length = (*length).min(pad_length))
+            .or_insert(pad_length);
+        unmasks.push((i, prf_instance, label, pad_length));
+    }
+    if unmasks.is_empty() {
+        return Ok((HashSet::new(), Duration::ZERO));
+    }
+    let mut prf_instances = Vec::with_capacity(shortest.len());
+    let mut labels = Vec::with_capacity(shortest.len());
+    let mut pad_lengths = Vec::with_capacity(shortest.len());
+    for ((prf, label), length) in shortest {
+        prf_instances.push(prf);
+        labels.push(label);
+        pad_lengths.push(length);
+    }
+    // A longer pad starts with the same bits.
+    let rows = query!(
+        r#"SELECT c.prf_instance AS "prf_instance!", c.label AS "label!",
+                  c.pad_length AS "pad_length!", c.ciphertext64 AS "ciphertext64!",
+                  c.ciphertext_digest AS "ciphertext_digest!"
+             FROM pad_ct64 c
+             JOIN UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS r(prf, label, length)
+               ON c.prf_instance = r.prf AND c.label = r.label AND c.pad_length >= r.length
+            ORDER BY c.prf_instance, c.label, c.pad_length"#,
+        &prf_instances,
+        &labels,
+        &pad_lengths,
+    )
+    .fetch_all(trx.as_mut())
+    .await?;
+    // The valid ct64 of each prf instance and label, shortest first.
+    let mut valid: HashMap<PadLabel, Vec<(i32, Vec<u8>)>> = HashMap::new();
+    for row in rows {
+        if keccak256(&row.ciphertext64).as_slice() == row.ciphertext_digest {
+            valid
+                .entry((row.prf_instance, row.label))
+                .or_default()
+                .push((row.pad_length, row.ciphertext64));
+        } else {
+            error!(target: "tfhe_worker", label = %alloy::primitives::B256::from_slice(&row.label), pad_length = row.pad_length, "Stored ct64 does not match its digest");
+        }
+    }
+
+    let mut waiting = HashSet::new();
+    let mut waiting_outputs: Vec<Vec<u8>> = Vec::new();
+    let mut waiting_transactions: Vec<Vec<u8>> = Vec::new();
+    // Sorted, so that two requests lock the rows in the same order and cannot deadlock.
+    let mut requests: BTreeSet<(i32, Vec<u8>, i32)> = BTreeSet::new();
+    for (i, prf_instance, label, pad_length) in unmasks {
+        let w = &mut work[i];
+        let ct64 = valid
+            .get(&(prf_instance, label.clone()))
+            .and_then(|stored| stored.iter().find(|(length, _)| *length >= pad_length));
+        if let Some((_, ct64)) = ct64 {
+            w.dependencies.push(ct64.clone());
+            continue;
+        }
+        requests.insert((prf_instance, label, pad_length));
+        waiting.insert(w.transaction_id.clone());
+        waiting_outputs.push(w.output_handle.clone());
+        waiting_transactions.push(w.transaction_id.clone());
+    }
+    if waiting_outputs.is_empty() {
+        return Ok((waiting, Duration::ZERO));
+    }
+    tokio::spawn(request_pads(pool, requests));
+    // Count only the waiting rows: another transaction can have a completed copy of the handle.
+    let oldest: Option<f64> = query_scalar!(
+        "SELECT EXTRACT(EPOCH FROM NOW()::TIMESTAMP - MIN(created_at))::FLOAT8 FROM computations
+          WHERE (output_handle, transaction_id) IN (SELECT * FROM UNNEST($1::BYTEA[], $3::BYTEA[]))
+            AND fhe_operation = $2 AND NOT is_completed",
+        &waiting_outputs,
+        SupportedFheOperations::Unmask as i16,
+        &waiting_transactions,
+    )
+    .fetch_one(trx.as_mut())
+    .await?;
+    let oldest = Duration::from_secs_f64(oldest.unwrap_or(0.0).max(0.0));
+    Ok((waiting, oldest))
+}
+
 /// Ops of one transaction, ready for `build_component_nodes`.
 struct PreparedTransaction {
     ops: Vec<DFGOp>,
@@ -4153,10 +4588,14 @@ impl DeferredTransactionCooldown {
     }
 
     fn quarantine(&mut self, transaction_id: &[u8]) {
+        self.quarantine_for(transaction_id, DEFERRED_TRANSACTION_COOLDOWN);
+    }
+
+    fn quarantine_for(&mut self, transaction_id: &[u8], cooldown: Duration) {
         self.prune();
         self.until.insert(
             transaction_id.to_vec(),
-            std::time::Instant::now() + DEFERRED_TRANSACTION_COOLDOWN,
+            std::time::Instant::now() + cooldown,
         );
     }
 
@@ -5056,7 +5495,10 @@ fn is_terminal_verdict(error: Option<&CoprocessorError>) -> bool {
             | FhevmError::UnexpectedRandOperandSizeForOutputType { .. }
             | FhevmError::RandOperationUpperBoundCannotBeZero { .. }
             | FhevmError::RandOperationInputsMustAllBeScalar { .. }
-            | FhevmError::UnsupportedFheTypes { .. } => true,
+            | FhevmError::UnsupportedFheTypes { .. }
+            // The error comes from the package, or from a ct64 that matches its attested digest.
+            // All coprocessors get the same error.
+            | FhevmError::PadUnmask(_) => true,
             // NOT terminal, and this is the correction that motivated turning
             // the list into a rule: a `tfhe::Error` out of expansion or
             // compression can be a device fault that surfaced as `Err` rather
@@ -5102,6 +5544,7 @@ mod terminal_verdict_tests {
                 fhe_operation_name: "FheRandBounded".to_string(),
                 upper_bound_value: "0".to_string(),
             },
+            FhevmError::PadUnmask("bad pad package".to_string()),
         ] {
             let message = error.to_string();
             assert!(

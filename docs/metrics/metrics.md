@@ -198,6 +198,20 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Alarm**: If the counter is a flat line over a period of time.
     - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
 
+#### Metric Name: `coprocessor_worker_unmask_waiting_transactions_current`
+ - **Type**: Gauge
+ - **Description**: Transactions in the most recent work window that wait for the pad of an Unmask.
+   The pad-worker of the PRF instance computes the pad.
+ - **Alarm**: N/A - the gauge shows only the last work window, so it is 0 while the worker processes
+   other chains. The pad-worker alarm on `coprocessor_pad_worker_oldest_pending_row_age_seconds`
+   finds a pad that stays pending.
+
+#### Metric Name: `coprocessor_worker_unmask_oldest_wait_seconds`
+ - **Type**: Gauge
+ - **Description**: Age of the oldest Unmask in the most recent work window that waits for its pad. An Unmask waits without limit, so that all coprocessors give the same result. After a wait of 10 min, the tfhe-worker also logs a warning.
+ - **Alarm**: A pad that does not come, for example because no pad-worker serves its PRF instance, or the pad-worker is down. The gauge is 0 in a window without such an Unmask, so use the maximum over a period.
+    - **Recommendation**: `max_over_time(coprocessor_worker_unmask_oldest_wait_seconds[10m]) > 900`.
+
 ### coprocessor-proxy
 
 Metrics are served at `/metrics` on `COPROCESSOR_PROXY_METRICS_ENDPOINT`. The proxy accepts requests signed by the

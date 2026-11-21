@@ -132,6 +132,8 @@ pub enum FhevmError {
         expected_scalar_operand_count: usize,
     },
     BadInputs,
+    /// The Unmask of a pad-based input failed.
+    PadUnmask(String),
     MissingTfheRsData,
     InvalidHandle,
     UnsupportedFheTypes {
@@ -322,6 +324,9 @@ impl std::fmt::Display for FhevmError {
             Self::BadInputs => {
                 write!(f, "Bad inputs")
             }
+            Self::PadUnmask(reason) => {
+                write!(f, "Unmask of a pad input: {reason}")
+            }
             Self::MissingTfheRsData => {
                 write!(f, "Missing TFHE-rs data")
             }
@@ -416,6 +421,8 @@ pub enum SupportedFheOperations {
     FheIsIn = 29,
     FheMulDiv = 30,
     FheGetInputCiphertext = 32,
+    /// `m = c ⊕ r` for one input of a pad-based input package.
+    Unmask = 33,
 }
 
 #[derive(PartialEq, Eq)]
@@ -828,7 +835,9 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheTrivialEncrypt
             | SupportedFheOperations::FheRand
             | SupportedFheOperations::FheRandBounded => FheOperationType::Other,
-            SupportedFheOperations::FheGetInputCiphertext => FheOperationType::Other,
+            SupportedFheOperations::FheGetInputCiphertext | SupportedFheOperations::Unmask => {
+                FheOperationType::Other
+            }
             SupportedFheOperations::FheSum
             | SupportedFheOperations::FheIsIn
             | SupportedFheOperations::FheMulDiv => FheOperationType::Other,
@@ -854,6 +863,7 @@ impl SupportedFheOperations {
                 | SupportedFheOperations::FheRandBounded
                 | SupportedFheOperations::FheTrivialEncrypt
                 | SupportedFheOperations::FheMulDiv
+                | SupportedFheOperations::Unmask
         )
     }
 
@@ -864,7 +874,8 @@ impl SupportedFheOperations {
             // All operands are plaintext.
             SupportedFheOperations::FheRand
             | SupportedFheOperations::FheRandBounded
-            | SupportedFheOperations::FheTrivialEncrypt => true,
+            | SupportedFheOperations::FheTrivialEncrypt
+            | SupportedFheOperations::Unmask => true,
             // [lhs, rhs, divisor]: divisor is always plaintext; rhs is plaintext on the scalar path.
             SupportedFheOperations::FheMulDiv => idx == 2 || (idx == 1 && is_work_scalar),
             // Binary ops: rhs is plaintext on the scalar path.
@@ -922,7 +933,8 @@ impl SupportedFheOperations {
             | SupportedFheOperations::FheGetInputCiphertext
             | SupportedFheOperations::FheSum
             | SupportedFheOperations::FheIsIn
-            | SupportedFheOperations::FheMulDiv => false,
+            | SupportedFheOperations::FheMulDiv
+            | SupportedFheOperations::Unmask => false,
         }
     }
 }
@@ -963,6 +975,7 @@ impl TryFrom<i16> for SupportedFheOperations {
             29 => Ok(SupportedFheOperations::FheIsIn),
             30 => Ok(SupportedFheOperations::FheMulDiv),
             32 => Ok(SupportedFheOperations::FheGetInputCiphertext),
+            33 => Ok(SupportedFheOperations::Unmask),
             _ => Err(FhevmError::UnknownFheOperation(value as i32)),
         };
 

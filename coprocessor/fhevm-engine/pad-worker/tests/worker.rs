@@ -430,6 +430,25 @@ async fn the_connector_with_fewer_rows_in_progress_goes_first() {
 }
 
 #[tokio::test]
+async fn the_rows_for_unmask_go_first() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, INSTANCE, 1, 1, 30.0).await;
+    // Connector 0 has the zero address: the tfhe-worker adds such a row for Unmask.
+    add_row(&pool, INSTANCE, 2, 0, 10.0).await;
+
+    let claim = rows::claim(
+        &pool,
+        INSTANCE,
+        Duration::from_secs(600),
+        Duration::from_secs(60),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(claim.label, B256::repeat_byte(2));
+}
+
+#[tokio::test]
 async fn uploads_the_output_with_its_attestation() {
     let (_instance, pool) = db().await;
     let (_localstack, client, uploader) = s3().await;
@@ -773,12 +792,13 @@ async fn the_gc_skips_the_rows_that_another_transaction_locks() {
         .unwrap();
     }
 
+    // Use the order of `gc_pass`: the ct64 GC deletes a ct64 only after its `pads` row.
     let gc = async {
-        let ct64 = rows::delete_old_ct64(&pool, Duration::from_secs(1800)).await?;
         let deleted = rows::delete_old_outputs(&pool, Duration::from_secs(1800)).await?;
         let expired =
             rows::delete_expired_pending(&pool, Duration::from_secs(600), Duration::from_secs(60))
                 .await?;
+        let ct64 = rows::delete_old_ct64(&pool, Duration::from_secs(1800)).await?;
         Ok::<_, sqlx::Error>((ct64, deleted, expired))
     };
     let changed = tokio::time::timeout(Duration::from_secs(5), gc)
@@ -842,6 +862,35 @@ async fn deletes_the_old_ct64_of_all_instances() {
     assert_eq!(deleted, 2);
     assert_eq!(ct64_labels(&pool, INSTANCE).await, vec![2]);
     assert!(ct64_labels(&pool, INSTANCE + 1).await.is_empty());
+}
+
+#[tokio::test]
+async fn keeps_an_old_ct64_while_its_pads_row_exists() {
+    let (_instance, pool) = db().await;
+    // Row 1: complete, and the ct128 GC keeps it because the upload fails. Row 2: pending.
+    // Label 3: no row.
+    add_row(&pool, INSTANCE, 1, 1, 3600.0).await;
+    set_state(&pool, INSTANCE, 1, "not_uploaded").await;
+    add_row(&pool, INSTANCE, 2, 1, 60.0).await;
+    for label in [1, 2, 3] {
+        add_ct64(&pool, INSTANCE, label, 3600.0).await;
+    }
+
+    let deleted = rows::delete_old_ct64(&pool, Duration::from_secs(1800))
+        .await
+        .unwrap();
+
+    assert_eq!(deleted, 1);
+    assert_eq!(ct64_labels(&pool, INSTANCE).await, vec![1, 2]);
+    // Without its `pads` row, the GC deletes the ct64. A new request then computes the pad again.
+    sqlx::query("DELETE FROM pads")
+        .execute(&pool)
+        .await
+        .unwrap();
+    rows::delete_old_ct64(&pool, Duration::from_secs(1800))
+        .await
+        .unwrap();
+    assert!(ct64_labels(&pool, INSTANCE).await.is_empty());
 }
 
 #[tokio::test]

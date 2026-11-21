@@ -208,6 +208,10 @@ changes the bytes of the outputs needs a new `prfId`.
 The pad-worker has no Service except the metrics one, and `padWorkerShared.serviceMonitor.enabled`
 adds a ServiceMonitor: nothing calls a pad-worker.
 
+Unmask also adds rows to `pads`. When a tfhe-worker has no ct64 for a pad input, it adds a `pads`
+row with the zero address in `triggered_by`. The pad-worker computes these rows before the rows of
+the connectors.
+
 ### Pad garbage collection
 
 Every pad-worker runs the GC every `PAD_GC_INTERVAL` (1 min) on the rows of all PRF instances. It
@@ -216,7 +220,7 @@ deletes two forms of each output, with separate ages:
 | Form | Table | Setting | Default | Deletes |
 |---|---|---|---|---|
 | ct128 (served to the connectors) | `pads` | `padWorkerShared.config.ct128MaxAgeSeconds` | 3600 (on) | Uploaded or failed rows older than the age |
-| ct64 (used by Unmask) | `pad_ct64` | `padWorkerShared.config.ct64MaxAgeSeconds` | Empty (off) | ct64 older than the age |
+| ct64 (used by Unmask) | `pad_ct64` | `padWorkerShared.config.ct64MaxAgeSeconds` | Empty (off) | ct64 older than the age, without a `pads` row |
 
 - `0` turns a GC off: the pad-worker keeps all rows of that form. For the ct64, empty does the same.
 - The GC also deletes pending rows older than `pendingMaxAgeSeconds` that no pad-worker claims.
