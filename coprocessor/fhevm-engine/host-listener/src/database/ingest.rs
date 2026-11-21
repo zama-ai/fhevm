@@ -12,6 +12,7 @@ use fhevm_engine_common::handle_metadata::{
     validate_acl_handle_metadata, validate_computed_handle_metadata,
     validate_verified_input_metadata,
 };
+use fhevm_engine_common::pad::{is_pad_package, validate_pad_input};
 use fhevm_engine_common::types::{
     Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
 };
@@ -168,13 +169,23 @@ fn validate_tfhe_event(
         validate_computed_handle_metadata(&handle.0, chain_id)?;
     }
     if let TfheContract::TfheContractEvents::VerifyInput(verify) = event {
-        validate_verified_input_metadata(
-            &verify.inputHandle.0,
-            &verify.result.0,
-            verify.inputType,
-            verify.inputProof.as_ref(),
-            chain_id,
-        )?;
+        if is_pad_package(&verify.inputProof) {
+            validate_pad_input(
+                &verify.inputHandle.0,
+                &verify.result.0,
+                verify.inputType,
+                verify.inputProof.as_ref(),
+                chain_id,
+            )?;
+        } else {
+            validate_verified_input_metadata(
+                &verify.inputHandle.0,
+                &verify.result.0,
+                verify.inputType,
+                verify.inputProof.as_ref(),
+                chain_id,
+            )?;
+        }
     }
     Ok(())
 }
@@ -3679,5 +3690,87 @@ mod tests {
             assert!(logs_contain(message));
             assert!(logs_contain("host_chain_id=2"));
         }
+    }
+}
+
+#[cfg(test)]
+mod pad_input_tests {
+    use super::*;
+    use crate::contracts::TfheContract;
+    use crate::contracts::TfheContract::TfheContractEvents;
+    use alloy::primitives::{keccak256, Bytes, FixedBytes};
+
+    const CHAIN: u64 = 12345;
+    const EUINT8: u8 = 2;
+
+    /// A package of one euint8 input on `chain_id`, with a label from its witness.
+    fn package(chain_id: u64) -> Vec<u8> {
+        let mut witness = vec![0u8];
+        witness.extend(1u16.to_be_bytes());
+        witness.extend(chain_id.to_be_bytes());
+        witness.extend([0x11; 20]);
+        witness.extend([0x22; 20]);
+        witness.extend(u64::MAX.to_be_bytes());
+        witness.push(0);
+        witness.extend([0x55; 16]);
+        let label = keccak256([b"FHE_padl".as_slice(), &witness].concat());
+        let mut bytes = vec![0u8];
+        bytes.extend(witness);
+        bytes.extend(label);
+        bytes.extend([1, EUINT8, 0xaa]);
+        bytes
+    }
+
+    /// The `VerifyInput` event of input 0 of `package`, for `result`.
+    fn verify_input(package: &[u8], result: [u8; 32]) -> TfheContractEvents {
+        let mut external =
+            keccak256([b"FHE_padp".as_slice(), package].concat()).0;
+        external[29] = 0;
+        external[30] = EUINT8;
+        external[31] = 0;
+        TfheContractEvents::VerifyInput(TfheContract::VerifyInput {
+            caller: Address::ZERO,
+            inputHandle: FixedBytes::from(external),
+            userAddress: Address::ZERO,
+            inputProof: Bytes::from(package.to_vec()),
+            inputType: EUINT8,
+            result: FixedBytes::from(result),
+        })
+    }
+
+    /// A computed handle of an euint8 on `CHAIN`.
+    fn result() -> [u8; 32] {
+        let mut handle = [0x77u8; 32];
+        handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
+        handle[22..30].copy_from_slice(&CHAIN.to_be_bytes());
+        handle[30] = EUINT8;
+        handle[31] = HANDLE_VERSION;
+        handle
+    }
+
+    #[test]
+    fn accepts_a_pad_input_that_paddedinputter_accepts() {
+        let event = verify_input(&package(CHAIN), result());
+        assert_eq!(validate_tfhe_event(&event, CHAIN), Ok(()));
+    }
+
+    #[test]
+    fn refuses_a_pad_input_of_another_chain() {
+        let event = verify_input(&package(CHAIN + 1), result());
+        assert_eq!(
+            validate_tfhe_event(&event, CHAIN),
+            Err("pad package has the wrong chain id")
+        );
+    }
+
+    #[test]
+    fn refuses_a_pad_input_whose_result_is_not_a_computed_handle() {
+        let mut minted = result();
+        minted[21] = 0;
+        let event = verify_input(&package(CHAIN), minted);
+        assert_eq!(
+            validate_tfhe_event(&event, CHAIN),
+            Err("computed result handle is missing its marker")
+        );
     }
 }
