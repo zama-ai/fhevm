@@ -1980,6 +1980,20 @@ pub fn get_op_size_on_gpu(
                 }),
             }
         }
+        SupportedFheOperations::Unmask => match input_operands {
+            [SupportedFheCiphertexts::Scalar(package), SupportedFheCiphertexts::Scalar(index), _] =>
+            {
+                let (package, index) = crate::pad::package_input(package, index)?;
+                Ok(
+                    trivial_encrypt_be_bytes(package.parts[index].fhe_type, &[1u8])?
+                        .get_size_on_gpu(),
+                )
+            }
+            _ => Err(FhevmError::UnsupportedFheTypes {
+                fhe_operation: format!("{:?}", fhe_operation),
+                input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+            }),
+        },
         SupportedFheOperations::FheSum => {
             get_fhe_sum_size_on_gpu(fhe_operation_int, input_operands)
         }

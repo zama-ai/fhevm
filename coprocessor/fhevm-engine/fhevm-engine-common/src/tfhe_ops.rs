@@ -789,6 +789,30 @@ pub fn check_fhe_operand_types(
                     }
                     Ok(())
                 }
+                SupportedFheOperations::Unmask => {
+                    // The package, the input index (1 byte) and the ct64. All are plaintext.
+                    let expected_operands = 3;
+                    if input_handles.len() != expected_operands {
+                        return Err(FhevmError::UnexpectedOperandCountForFheOperation {
+                            fhe_operation,
+                            fhe_operation_name: format!("{:?}", fhe_op),
+                            expected_operands,
+                            got_operands: input_handles.len(),
+                        });
+                    }
+                    if !is_input_handle_scalar.iter().all(|s| *s) {
+                        return Err(FhevmError::PadUnmask(
+                            "all operands must be plaintext".to_string(),
+                        ));
+                    }
+                    if input_handles[1].len() != 1 {
+                        return Err(FhevmError::PadUnmask(format!(
+                            "input index of {} bytes",
+                            input_handles[1].len()
+                        )));
+                    }
+                    Ok(())
+                }
                 other => Err(FhevmError::UnsupportedFheTypes {
                     fhe_operation: format!("Unexpected op_type branch: {:?}", other),
                     input_types: vec![],
@@ -2237,6 +2261,17 @@ pub fn perform_fhe_operation_impl(
             fhe_operation: format!("{:?}", fhe_operation),
             input_types: input_operands.iter().map(|i| i.type_name()).collect(),
         }),
+        SupportedFheOperations::Unmask => {
+            let [SupportedFheCiphertexts::Scalar(package), SupportedFheCiphertexts::Scalar(index), SupportedFheCiphertexts::Scalar(ct64)] =
+                input_operands
+            else {
+                return Err(FhevmError::UnsupportedFheTypes {
+                    fhe_operation: format!("{:?}", fhe_operation),
+                    input_types: input_operands.iter().map(|i| i.type_name()).collect(),
+                });
+            };
+            crate::pad::unmask_input(package, index, ct64, output_type)
+        }
         SupportedFheOperations::FheSum => {
             if input_operands.is_empty() {
                 if !matches!(output_type, 2..=6) {
